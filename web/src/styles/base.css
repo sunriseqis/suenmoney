@@ -1,0 +1,309 @@
+/* ==========================================================================
+   基础层 —— 重置与全局排版
+   --------------------------------------------------------------------------
+   这里只放"每个页面都会用到"的东西。任何只服务单个页面的样式都不要写进来。
+
+   ## 必须包在 @layer 里（这是一个真实踩过的坑，改动前务必读完）
+
+   base.css 的内容以前是**未分层**的裸 CSS。Tailwind v4 把产物放进
+   `@layer theme, base, components, utilities` 四层，而 CSS 级联有一条硬规则：
+
+       未分层的样式 **永远** 压过分层样式 —— 与选择器优先级、与源码先后都无关。
+
+   于是这里的两条重置：
+
+       button, input, select, textarea { font: inherit; }
+       button { background: 0 0; border: 0; padding: 0; }
+
+   把全站**每一个按钮**上的 `bg-*` / `px-*` / `py-*` / `text-*` / `font-*`
+   工具类全部悄悄干掉了。表现是所有按钮退化成一行裸文字：
+   没有底色、没有内边距（高度塌到 23px）、字重回到 400、字号跟着父级走。
+   它不报错、不警告，只有在浏览器里量 computed style 才看得见。
+
+   所以：**基础重置 → @layer base，可复用的类 → @layer components**。
+   这样 utilities 层始终能覆盖它们，才是符合直觉的行为。
+   ========================================================================== */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  html {
+    background: var(--bg);
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--fs-md);
+    line-height: var(--lh-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    /**
+     * 全局等宽数字。
+     * 这是记账应用，屏幕上的数字要能**竖直对齐**才能一眼扫出量级差异 ——
+     * 比例数字（1 比 0 窄）会让「¥1,111」和「¥9,999」位数错位，列表滚起来
+     * 数字左右跳。这条比任何视觉装饰都更影响实际使用。
+     */
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+
+    /* 移动端：禁用点击高亮，避免记账时误选文字 */
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ---- 排版默认值 ---- */
+  h1,
+  h2,
+  h3,
+  h4,
+  p {
+    margin: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: var(--fw-bold);
+    line-height: var(--lh-tight);
+    letter-spacing: -0.02em;
+  }
+
+  a {
+    color: var(--primary-text);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  /* ---- 表单元素继承字体（浏览器默认不复用） ---- */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+    border: 0;
+    background: none;
+    padding: 0;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  /**
+   * 焦点态。
+   * Flat Design 没有阴影，所以焦点必须用**明确的外轮廓**表达，
+   * 不能靠发光或阴影扩散。
+   */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* 鼠标点击不显示焦点环，键盘导航才显示 —— 否则每次点按钮都闪一圈 */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: var(--accent-fill);
+    color: var(--on-accent);
+  }
+
+  /* 尊重系统的「减少动态效果」 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ---- 骨架屏：Flat 下不能用阴影脉冲，改用透明度呼吸 ---- */
+@keyframes suen-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@layer components {
+  .skeleton {
+    background: var(--bg-subtle);
+    border-radius: var(--r-sm);
+    animation: suen-breathe 1.6s var(--ease) infinite;
+  }
+
+  /* ---- 屏幕阅读器可见、视觉隐藏 ---- */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ---- 单行 / 两行省略 ---- */
+  .ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /**
+   * 中文的「标签感」。
+   *
+   * 框架原本靠 UPPERCASE + 字距制造标签感，但**中文没有大小写**，那条路在
+   * 中文界面里走不通。替代方案是：小字号 + 加宽字距 + 半粗 + 次级色 ——
+   * 视觉上同样能把「标签」与「内容」区分开。
+   */
+  .label-cn {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+  }
+}
+
+/* ==========================================================================
+   动效
+   --------------------------------------------------------------------------
+   目的：让界面有物理感，而不是一叠静态色块。
+   Flat 没有阴影和渐变可用，动效是这里唯一的「材质」——
+   一个会回弹的按钮、一道扫过骨架屏的高光，比任何阴影都更能传达「这是可按的」。
+
+   两条硬约束：
+   1. 所有缓动统一走令牌，不散落 magic cubic-bezier
+   2. prefers-reduced-motion 必须尊重 —— 用户系统里明确说了不要动，
+      就一行动画都不能有，这是无障碍要求不是可选项。
+   ========================================================================== */
+@layer base {
+  :root {
+    /* 弹性：末端过冲约 8%，像是被弹簧推到位再稳住 */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* 快出缓停：位移与淡入用，不过冲 */
+    --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes su-pop {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes su-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+
+  /*
+   * 按压反馈：全站按钮统一「被按下去」。
+   * 写在 base 层而不是逐个加 active:scale-95，是因为按压感必须是一致的 ——
+   * 有的按钮回弹有的不回弹，比全都不回弹更糟。
+   * 140ms + 弹性缓动：足够快到不拖泥带水，又能让人感知到位移。
+   */
+  button:not(:disabled) {
+    transition: transform 140ms var(--ease-spring);
+  }
+  button:not(:disabled):active {
+    transform: scale(0.96);
+  }
+}
+
+@layer components {
+  /*
+   * 骨架屏：一道高光扫过。
+   * 纯透明度脉动（animate-pulse）看起来像「坏了」，扫光看起来像「正在来」。
+   */
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--bg-sunken) 25%,
+      var(--bg-surface) 50%,
+      var(--bg-sunken) 75%
+    );
+    background-size: 200% 100%;
+    animation: su-shimmer 1.4s linear infinite;
+  }
+
+  /* 进场：轻微上浮 + 过冲。用在列表项与卡片上，不要用在整页（会晕） */
+  .pop-in {
+    animation: su-pop 260ms var(--ease-out-soft) both;
+  }
+}
+
+/* 页面切换：淡入 + 上浮。out-in 保证两屏不叠在一起闪 */
+.page-enter-active {
+  transition:
+    opacity 200ms var(--ease-out-soft),
+    transform 200ms var(--ease-out-soft);
+}
+.page-leave-active {
+  transition: opacity 120ms ease-out;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-leave-to {
+  opacity: 0;
+}
+
+/* 用户系统里要求减少动效：全部退化成瞬时切换 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

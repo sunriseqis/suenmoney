@@ -1,0 +1,86 @@
+/* ==========================================================================
+   样式总入口 —— 这是 main.ts 里唯一 import 的 CSS 文件
+   --------------------------------------------------------------------------
+   顺序有讲究，别调：
+     1. tailwindcss    —— 先建立基础层
+     2. tokens.css     —— 令牌必须早于 @theme 映射，否则 @theme inline 取不到值
+     3. base.css       —— 重置与全局排版
+     4. @theme inline  —— 把令牌暴露成 Tailwind 工具类
+   ========================================================================== */
+
+@import 'tailwindcss';
+@import './tokens.css';
+@import './base.css';
+
+/**
+ * 把设计令牌映射成 Tailwind 工具类。
+ *
+ * 用 `inline` 关键字是必须的：不加它，Tailwind 会把 var() 表达式**求值成
+ * 静态颜色**写进产物，主题切换（data-theme / prefers-color-scheme）就彻底失效。
+ * 加 `inline` 后生成的是 `var(--bg)` 本身，浅暗切换才真正生效。
+ *
+ * 命名刻意做成语义化的（canvas / ink / line），而不是 primary-500 这种刻度名 ——
+ * 刻度名会让人在写组件时自由挑色号，语义名会逼着人先想「这块是背景还是文字」。
+ */
+@theme inline {
+  /* 底色层 */
+  --color-canvas: var(--bg);
+  --color-surface: var(--bg-subtle);
+  --color-sunken: var(--bg-sunken);
+
+  /* 文字层 */
+  --color-ink: var(--fg);
+  --color-ink-muted: var(--fg-muted);
+
+  /* 描边（Flat 少用，分区优先靠色块） */
+  --color-line: var(--border);
+
+  /* 强调色：fill 用于填充块，*-text 用于文字，两者不可混用（对比度要求不同） */
+  --color-primary: var(--primary);
+  --color-primary-fill: var(--primary-fill);
+  --color-primary-text: var(--primary-text);
+  --color-on-primary: var(--on-primary);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-fill: var(--secondary-fill);
+  --color-secondary-text: var(--secondary-text);
+  --color-on-secondary: var(--on-secondary);
+
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-text: var(--accent-text);
+  --color-on-accent: var(--on-accent);
+
+  --color-danger: var(--danger);
+  --color-danger-fill: var(--danger-fill);
+  --color-danger-text: var(--danger-text);
+  --color-on-danger: var(--on-danger);
+
+  /* 字体 */
+  --font-sans: var(--font-sans);
+
+  /* 圆角：框架规定统一 6–8px */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-pill: var(--r-pill);
+
+  /**
+   * 字号阶梯。
+   * 注意 base 被压到 15px（Tailwind 默认 16px）——这是为了流水列表的信息密度，
+   * 属于刻意决定：列表是「数据」，不是「排版展示」。撑视觉重量的任务交给
+   * amount / display / hero 三档超大字号，台阶拉开后层级反而更清楚。
+   */
+  --text-xs: var(--fs-xs);
+  --text-sm: var(--fs-sm);
+  --text-base: var(--fs-md);
+  --text-lg: var(--fs-lg);
+  --text-xl: var(--fs-xl);
+  --text-2xl: var(--fs-2xl);
+  --text-3xl: var(--fs-3xl);
+  --text-amount: var(--fs-amount);
+  --text-display: var(--fs-display);
+  --text-hero: var(--fs-hero);
+
+  /* 动效 */
+  --ease-snap: var(--ease);
+}

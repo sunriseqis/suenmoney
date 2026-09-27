@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)" />
+    <title>SuenMoney</title>
+    <script>
+      // 主题只有两种来源：系统偏好，或用户在设置里显式选择。
+      // 只在**显式选择过**时才写 data-theme —— 不写就由 tokens.css 里的
+      // prefers-color-scheme 分支接管，这样「跟随系统」是真正实时的（用户在
+      // 系统里切深浅色，我们的界面立刻跟着变，不需要刷新）。
+      try {
+        var saved = localStorage.getItem('suenmoney:theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.dataset.theme = saved;
+        }
+      } catch (error) {
+        /* 隐私模式下 localStorage 可能不可用，忽略即可，退回跟随系统 */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

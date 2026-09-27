@@ -1,0 +1,19 @@
+{
+  "name": "suenmoney",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "家庭共用记账系统 —— 只记支出，看月度/年度总额与构成",
+  "engines": {
+    "node": ">=22.9"
+  },
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix web install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "test": "npm --prefix server test && npm --prefix web test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck",
+    "build:web": "npm --prefix web run build",
+    "check": "npm run typecheck && npm test && npm run build:web"
+  }
+}

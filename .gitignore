@@ -1,0 +1,44 @@
+# ============================================================================
+#  产物与运行时数据一律不入库。
+#  产物类型新增时，必须同步在 docs/conventions.md 的产物表里补一行。
+# ============================================================================
+
+# ---- 依赖 ----
+node_modules/
+
+# ---- server：没有构建步骤，只有运行时数据 ----
+server/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# ---- web：Vite 生产构建产物 ----
+web/dist/
+web/.vite/
+web/coverage/
+
+# ---- android：Gradle 与打包产物 ----
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/local.properties
+android/**/*.apk
+android/**/*.aab
+
+# ---- ios：Xcode 与打包产物 ----
+ios/App/build/
+ios/App/Pods/
+ios/**/*.xcworkspace/xcuserdata/
+ios/**/*.xcodeproj/xcuserdata/
+ios/**/*.ipa
+ios/**/*.xcarchive
+ios/App/App/public/
+
+# ---- 通用 ----
+*.log
+.DS_Store
+
+# ---- 本地环境变量 ----
+.env
+.env.local

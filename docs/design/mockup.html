@@ -1,0 +1,1395 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SuenMoney 界面方案预览</title>
+
+<!--
+  字体仅用于预览。真机/生产走 npm 本地包（@fontsource-variable/outfit + misans），
+  这里用 CDN 只是为了让你在浏览器里看到接近真实的字面。断网时自动回落系统字体，
+  不影响布局判断。
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400..800&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans@5.0.0/lib/Normal/MiSansVF.min.css">
+
+<style>
+/* ==========================================================================
+   1. 令牌
+   --------------------------------------------------------------------------
+   与项目 tokens.css 同一套 Flat Design 令牌，这里只挑预览要用的。
+   关键改动：**页面底色改成灰、卡片改成白**。
+   原始 Flat 设计系统写的是 "Solid background color (White on Gray page)"，
+   而我们之前做反了（白页面 + 灰块），所以整屏看起来是一张白纸。
+   ========================================================================== */
+:root {
+  --page: #f3f4f6;
+  --card: #ffffff;
+  --sunken: #f9fafb;
+
+  --ink: #111827;
+  --ink-2: #4b5563;
+  --ink-3: #6b7280;      /* 白底 4.83:1，是最浅的一档，不再往下调 */
+  --line: #e5e7eb;
+  --line-2: #d1d5db;
+
+  --primary: #3b82f6;
+  --primary-fill: #2563eb;
+  --on-primary: #ffffff;
+
+  --accent: #f59e0b;
+  --accent-soft: #fef3c7;
+  --danger: #dc2626;
+  --danger-text: #b91c1c;
+  --danger-soft: #fee2e2;
+  --ok: #047857;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  --font: 'Outfit Variable', 'MiSans VF', -apple-system, BlinkMacSystemFont,
+          'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0f1623;
+    --card: #1f2937;
+    --sunken: #111827;
+    --ink: #f9fafb;
+    --ink-2: #d1d5db;
+    --ink-3: #9ca3af;
+    --line: #374151;
+    --line-2: #4b5563;
+    --primary: #60a5fa;
+    --primary-fill: #2563eb;
+    --danger-text: #f87171;
+    --danger-soft: #7f1d1d;
+    --accent-soft: #78350f;
+    --ok: #34d399;
+  }
+}
+
+/* 内联 SVG 图标（生产里用 @lucide/vue，这里用 symbol 精灵避免重复标记） */
+.ico {
+  width: 18px; height: 18px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.ico-lg { width: 20px; height: 20px; }
+
+* { box-sizing: border-box; }
+html { background: #e8eaee; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+h1,h2,h3,h4,p,ul,li,table { margin: 0; }
+ul { padding: 0; list-style: none; }
+a { color: inherit; text-decoration: none; }
+
+/* ==========================================================================
+   2. 预览工具条（不属于设计稿本身）
+   ========================================================================== */
+.toolbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+  padding: 10px 16px;
+  background: #111827; color: #f9fafb;
+  font-size: 13px;
+}
+.toolbar strong { font-size: 14px; letter-spacing: -.01em; }
+.tool-group { display: flex; align-items: center; gap: 6px; }
+.tool-group > span.lbl { color: #9ca3af; font-size: 12px; }
+.toolbar button {
+  padding: 5px 11px; border-radius: 6px;
+  background: #1f2937; color: #d1d5db; font-weight: 600; font-size: 12px;
+  transition: background .15s, color .15s;
+}
+.toolbar button:hover { background: #374151; color: #fff; }
+.toolbar button.on { background: var(--primary-fill); color: #fff; }
+.toolbar input[type=range] { width: 180px; }
+.toolbar input[type=checkbox] { accent-color: var(--primary-fill); }
+.toolbar .hint { color: #6b7280; font-size: 12px; }
+
+.stage { padding: 24px; display: flex; justify-content: center; }
+/* container-type 让「窄屏/宽屏」按**容器宽度**判断，而不是浏览器窗口 ——
+   这样才能在同一页里并排比较不同宽度。 */
+.frame {
+  container-type: inline-size;
+  width: 1280px; max-width: 100%;
+  background: var(--page);
+  border-radius: 12px;
+  outline: 1px solid #d5d9e0;
+  transition: width .18s ease;
+  /* 画框本身就是一个「应用窗口」：固定高度 + 内部滚动。
+     之前画框高度跟着内容走，所以内容少时页面下方会剩一大块浏览器底色，
+     看起来像没写完。现在画框至少占满视口高度，滚动发生在画框内部。 */
+  height: calc(100vh - 104px);
+  min-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* 窄屏时把画框变成一台「手机」。这个类由 JS 按宽度加 ——
+   容器查询改不了容器自己。 */
+.frame.narrow {
+  height: 812px;
+  border-radius: 22px;
+  outline: 8px solid #111827;
+}
+/* 内容比「屏幕」短时，底栏仍然贴在底部 */
+.frame .app { min-height: 100%; }
+
+/* ==========================================================================
+   3. 设计说明标注（可关）
+   ========================================================================== */
+.note { display: none; }
+body.show-notes .note {
+  display: block;
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-sm);
+  font-size: 12px; line-height: 1.6; color: var(--ink-3);
+  background: var(--sunken);
+}
+body.show-notes .note b { color: var(--ink-2); }
+/* 说明条目的编号。用样式化的圆点数字，不用 ① 这类字符 ——
+   带圈数字在部分系统上会被渲染成 emoji，字号字重都不受控。 */
+.ntag {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px; height: 17px; padding: 0 4px; margin-right: 2px;
+  border-radius: 999px; background: var(--ink); color: var(--page);
+  font-size: 11px; font-style: normal; font-weight: 700; vertical-align: 1px;
+}
+/* 行内小标记：指向被改动的具体位置 */
+.tag {
+  display: none;
+}
+body.show-notes .tag {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ink); color: var(--page);
+  font-size: 11px; font-weight: 700; vertical-align: 2px;
+}
+
+/* ==========================================================================
+   4. 外壳：导航（顶栏 / 底栏）
+   ========================================================================== */
+/* 高度由 .frame .app { min-height: 100% } 撑满，不写死像素 */
+.app { display: flex; flex-direction: column; }
+
+.topnav { display: none; }
+.topnav-in {
+  max-width: 1120px; margin: 0 auto;
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 24px; height: 60px;
+}
+.brand { font-weight: 800; font-size: 15px; letter-spacing: -.02em; margin-right: 18px; }
+.navlink {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 12px; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 600; color: var(--ink-2);
+  transition: background .15s, color .15s;
+}
+.navlink:hover { background: var(--sunken); color: var(--ink); }
+.navlink.on { background: var(--card); color: var(--primary-fill); }
+.navlink .ic { font-size: 15px; line-height: 1; }
+.spacer { flex: 1; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: var(--r-sm); font-weight: 700; font-size: 14px;
+  padding: 9px 16px; transition: transform .15s, background .15s;
+}
+.btn-primary { background: var(--primary-fill); color: var(--on-primary); }
+.btn-primary:hover { transform: scale(1.03); }
+.btn-primary:active { transform: scale(.96); }
+.btn-ghost { color: var(--ink-2); font-weight: 600; }
+.btn-ghost:hover { background: var(--sunken); color: var(--ink); }
+.btn-outline { border: 2px solid var(--line-2); color: var(--ink-2); }
+.btn-outline:hover { border-color: var(--primary-fill); color: var(--primary-fill); }
+.btn-sm { padding: 7px 12px; font-size: 13px; }
+.btn-lg { padding: 12px 20px; font-size: 15px; }
+
+.bottombar { display: none; }
+
+/* ==========================================================================
+   5. 页面与区块
+   ========================================================================== */
+/* 页面本身是纵向 flex 容器，这样「记一笔」那页的遮罩才能撑满
+   导航以下的全部高度 —— 之前用 block，遮罩只能按内容高度撑，
+   于是下面剩一块空白，键盘也被挤出可视区。 */
+.page { display: none; flex: 1; min-height: 0; }
+.page.on { display: flex; flex-direction: column; }
+/*
+  必须写 width: 100%。
+  在 flex 列容器里，交叉轴上的 auto 边距（margin: 0 auto）会**覆盖
+  align-items: stretch**，于是这个元素从「撑满」变成「按内容宽度收缩」——
+  实测桌面端内容列只剩 870px，本该是 1120px，表格跟着窄了一圈。
+  这正是「最近流水 / 流水列表没有占满页面」的根因。
+*/
+.wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 20px 16px 40px; }
+
+/* 页码标题只在窄屏出现（宽屏靠顶部导航已经知道在哪） */
+.pagehead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.pagehead h1 { font-size: 22px; font-weight: 800; letter-spacing: -.03em; }
+
+/* 区块：宽屏是一张白卡，窄屏也是白卡但内边距更小 */
+.block {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.block-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px;
+}
+.block-title { font-size: 13px; font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+.block-title-lg { font-size: 15px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); }
+
+/* ==========================================================================
+   6. 首页 hero —— Flat 设计系统里的 "full-section color block"
+   ========================================================================== */
+.hero {
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  border-radius: var(--r-lg);
+  padding: 22px 20px;
+  margin-bottom: 14px;
+  display: grid; gap: 20px; grid-template-columns: 1fr;
+}
+/* 近 6 个月走势。窄屏隐藏 —— 它是「补充信息」，不该和本月数字抢位置。 */
+.spark { display: none; }
+.spark-bars { display: flex; align-items: flex-end; gap: 5px; height: 54px; }
+.spark-bars i { width: 13px; border-radius: 3px 3px 0 0; background: rgba(255,255,255,.42); }
+.spark-bars i.cur { background: #fff; }
+.spark-cap { display: block; margin-top: 8px; font-size: 11px; opacity: .75; text-align: right; }
+.hero-top { display: flex; align-items: center; gap: 8px; }
+.hero-month { font-size: 14px; font-weight: 700; opacity: .92; }
+.mstep {
+  width: 26px; height: 26px; border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  background: rgba(255,255,255,.16); color: #fff; font-size: 13px;
+}
+.mstep:hover { background: rgba(255,255,255,.3); }
+.hero-amt {
+  margin-top: 12px;
+  font-size: min(64px, 13cqw); font-weight: 800; line-height: 1; letter-spacing: -.035em;
+}
+/* 次要指标：窄屏 2×2、宽屏一行四列 —— 用宽度承载信息层级 */
+.hero-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px; }
+.hero-stat { font-size: 12px; }
+.hero-stat span { opacity: .78; display: block; }
+.hero-stat b { font-size: 15px; font-weight: 700; }
+
+/* ==========================================================================
+   7. 需要处理：卡片行（不是固定两栏）
+   --------------------------------------------------------------------------
+   多张卡按可容纳宽度自动换行；没有内容时整块不出现，**不会留下空洞**。
+   ========================================================================== */
+.cards { display: grid; gap: 10px; grid-template-columns: 1fr; }
+.duo { display: grid; gap: 14px; grid-template-columns: 1fr; }
+
+/* 待办 / 待还卡：中性底 + 左侧 4px 色条，紧急度只由色条与文字表达 */
+.item {
+  position: relative; overflow: hidden;
+  background: var(--sunken);
+  border-radius: var(--r-md);
+  padding: 12px 14px 12px 18px;
+}
+.item::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 4px;
+  background: var(--line-2);
+}
+.item.urgent::before { background: var(--danger); }
+.item.soon::before { background: var(--accent); }
+.item-top { display: flex; align-items: flex-start; gap: 10px; }
+.avatar {
+  width: 34px; height: 34px; flex: none; border-radius: var(--r-sm);
+  display: grid; place-items: center; font-size: 13px; font-weight: 700;
+  background: var(--card); color: var(--ink-2);
+}
+.avatar .ico { width: 17px; height: 17px; }
+.avatar.sm { width: 28px; height: 28px; }
+.avatar.sm .ico { width: 15px; height: 15px; }
+.item-main { flex: 1; min-width: 0; }
+.item-name { font-size: 14px; font-weight: 700; display: flex; align-items: baseline; gap: 6px; }
+.item-name .seq { font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.item-meta { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.item-meta.danger { color: var(--danger-text); font-weight: 600; }
+.item-meta.soon { color: #b45309; font-weight: 600; }
+.item-amt { font-size: 16px; font-weight: 700; white-space: nowrap; }
+
+/* 分期进度：用分段刻度而不是一根条 —— 段数本身就是信息 */
+.meter { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.meter-bars { display: flex; gap: 3px; }
+.meter-bars i { width: 4px; height: 10px; border-radius: 2px; background: var(--line-2); }
+.meter-bars i.f { background: var(--primary); }
+.meter-txt { font-size: 11px; color: var(--ink-3); }
+
+.item-acts { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
+.item-acts .btn { padding: 7px 14px; font-size: 13px; }
+.iconbtn {
+  width: 32px; height: 32px; border-radius: var(--r-sm);
+  display: grid; place-items: center; color: var(--ink-3); font-size: 15px;
+}
+.iconbtn:hover { background: var(--card); color: var(--ink); }
+.acts-right { margin-left: auto; display: flex; gap: 4px; }
+
+/* ==========================================================================
+   8. 支出构成：堆叠条 + 明细
+   ========================================================================== */
+.stack { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--line); }
+.stack i { display: block; height: 100%; }
+/* 两栏时用 grid-auto-flow: column 按**列**填充：
+   左列是金额最高的三项，右列是后面三项。默认的按行填充会把
+   第 1、2 名拆到左右两列，读起来就乱了。 */
+.legend { display: grid; gap: 2px 20px; grid-template-columns: 1fr; margin-top: 14px; }
+.lrow { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.lname { flex: 1; min-width: 0; font-size: 14px; }
+.lpct { font-size: 12px; color: var(--ink-3); }
+.lamt { font-size: 14px; font-weight: 600; white-space: nowrap; }
+
+/* ==========================================================================
+   9. 表格（流水 / 报表明细）
+   --------------------------------------------------------------------------
+   宽屏加列，窄屏隐藏列并把每行折成两行 —— 不是把几段摊开。
+   ========================================================================== */
+.table { width: 100%; border-collapse: collapse; }
+.table th {
+  text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  color: var(--ink-3); padding: 0 10px 8px; border-bottom: 1px solid var(--line);
+}
+.table td { padding: 11px 10px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover { background: var(--sunken); }
+.num { text-align: right; font-weight: 600; white-space: nowrap; }
+.muted { color: var(--ink-3); font-size: 12px; }
+.when { white-space: nowrap; }
+.when b { font-weight: 600; }
+.when span { display: block; font-size: 11px; color: var(--ink-3); }
+.cat { display: flex; align-items: center; gap: 8px; }
+.cat .ico { width: 16px; height: 16px; color: var(--ink-3); }
+.catrow .avatar .ico { color: var(--ink-2); }
+
+/* 只在宽屏出现的列 */
+.col-lg { display: none; }
+/* 窄屏显示的两行式行 */
+.mini {
+  padding: 11px 0; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 10px;
+}
+.mini:last-child { border-bottom: 0; }
+
+/* ==========================================================================
+   10. 筛选条
+   ========================================================================== */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: var(--r-sm);
+  background: var(--sunken); color: var(--ink-2);
+  font-size: 13px; font-weight: 600;
+}
+.chip:hover { background: var(--line); }
+.chip.on { background: var(--primary-fill); color: var(--on-primary); }
+.search {
+  flex: 1; min-width: 160px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: var(--r-sm);
+  background: var(--sunken); color: var(--ink-3); font-size: 13px;
+}
+
+/* ==========================================================================
+   11. 报表：环图（inline SVG，无依赖）+ 排名行
+   --------------------------------------------------------------------------
+   排名行必须有「条」。
+   这类行是**数据排名**，如果把名称和金额摆在 840px 宽的两端，中间会空出一大块，
+   眼睛要横跨整行才能把名字和数字对上。
+   注意这与设置页的列表不同 —— 设置页一行只有「名称 + 一个尾部值」两段信息，
+   那种右对齐的留白是正常的（macOS 设置面板就是这样）；**数据排名不行，中间要有东西**。
+   ========================================================================== */
+/* 窄屏折成两行（名称/金额 → 条/笔数），宽屏摊成一行四列。
+   最初写的是定宽 flex，四段固定宽度加起来的 354px 在 390px 的手机上
+   超出容器 32px —— 这就是「移动端报表超出页面」的一个来源。 */
+.barrow {
+  display: grid; grid-template-columns: 1fr auto; gap: 7px 10px;
+  padding: 10px 0; align-items: center;
+}
+.barrow .nm { grid-area: 1 / 1; font-size: 14px; min-width: 0;
+              display: flex; align-items: center; gap: 7px; }
+.barrow .amt { grid-area: 1 / 2; text-align: right; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.barrow .track { grid-area: 2 / 1; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.barrow .track i { display: block; height: 100%; border-radius: 999px; }
+.barrow .cnt { grid-area: 2 / 2; text-align: right; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+
+@container (min-width: 620px) {
+  .barrow { grid-template-columns: 136px 1fr 52px 100px; gap: 12px; }
+  .barrow .nm { grid-area: 1 / 1; }
+  .barrow .track { grid-area: 1 / 2; }
+  .barrow .cnt { grid-area: 1 / 3; }
+  .barrow .amt { grid-area: 1 / 4; }
+}
+
+/* 大数字用容器查询单位，永远不吃掉容器宽度。
+   报表页原本写死 64px，「¥2,328.40」在 390px 的手机上会直接溢出 ——
+   这是「移动端报表所有项目均超出页面」最主要的一处。 */
+.bignum { font-size: min(64px, 12.5cqw); font-weight: 800; line-height: 1; letter-spacing: -.035em; }
+.donutwrap { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.donut { flex: none; }
+.donut-c { position: relative; }
+.donut-center {
+  position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
+}
+.donut-center b { display: block; font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+.donut-center span { font-size: 11px; color: var(--ink-3); }
+
+/* ==========================================================================
+   12. 设置：侧栏 + 内容（宽屏）/ 横条 tab（窄屏）
+   ========================================================================== */
+.settings { display: block; }
+.snav { display: none; }
+.snav-group { margin-bottom: 18px; }
+.snav-title {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--ink-3);
+  padding: 0 10px 7px;
+}
+.snav a {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 600; color: var(--ink-2);
+}
+.snav a:hover { background: var(--sunken); color: var(--ink); }
+.snav a.on { background: var(--card); color: var(--primary-fill); }
+/* 窄屏：横向 tab 条（就是「一级目录 tab」）。等分，不放滚动条 ——
+   横向可滚的 tab 条等于把后半截入口藏起来，用户根本不知道还有。 */
+.stabs { display: flex; gap: 5px; margin-bottom: 14px; }
+.stabs a {
+  flex: 1 1 0; min-width: 0; padding: 9px 4px;
+  border-radius: var(--r-sm); background: var(--card); color: var(--ink-2);
+  font-size: 13px; font-weight: 600; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stabs a.on { background: var(--primary-fill); color: var(--on-primary); }
+
+/* 分类树：父行 + 子行，子行缩进且用箭头 */
+.grp-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; margin-bottom: 6px;
+  border-radius: var(--r-sm); background: var(--sunken);
+  font-size: 12px; font-weight: 700; color: var(--ink-2);
+}
+.grp-head .n { color: var(--ink-3); font-weight: 600; }
+.catrow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px; border-radius: var(--r-sm);
+}
+.catrow:hover { background: var(--sunken); }
+.catrow.parent { background: var(--sunken); }
+.catrow.child { padding-left: 30px; }
+.catrow .cname { flex: 1; min-width: 0; font-size: 14px; }
+.catrow.parent .cname { font-weight: 700; }
+.catrow.child .cname { color: var(--ink-2); }
+/* 子分类的缩进箭头。生产里应当用**该分类自己的颜色**（参考 Maybe 的做法），
+   静态稿里统一用次级色；关键是它必须看得见 —— 第一版用了 --line-2，几乎和白底同色。 */
+.arrow { color: var(--ink-3); font-size: 13px; }
+.catrow .cnt { font-size: 12px; color: var(--ink-3); }
+.divider { height: 1px; background: var(--line); margin: 8px 0; }
+
+/* ==========================================================================
+   13. 记录详情 / 记一笔：宽屏右侧面板，窄屏底部抽屉
+   ========================================================================== */
+/* 遮罩层撑满「导航以下」的全部高度 */
+.overlay { position: relative; flex: 1; min-height: 0; }
+.scrim {
+  position: absolute; inset: 0; background: rgba(17,24,39,.45);
+  display: flex; align-items: flex-end; justify-content: stretch;
+}
+.panel {
+  background: var(--card);
+  width: 100%; max-height: 100%;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  overflow: auto;
+  padding: 20px;
+  /* 纵向 flex + 键盘 margin-top:auto —— 键盘**停在面板底部**。
+     不这么做的话，桌面右侧面板会比内容高出一截，键盘上面留一块空白，
+     看起来像没画完；而手机上键盘又会被顶到可视区之外，需要下拉才看得到。 */
+  display: flex; flex-direction: column;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.panel-head h2 { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .07em; color: var(--ink-3); margin-bottom: 7px; }
+.input {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: var(--r-sm);
+  background: var(--sunken); font-size: 15px;
+}
+.input.big { font-size: 30px; font-weight: 800; letter-spacing: -.03em; padding: 14px; }
+.input .cursor { width: 2px; height: 26px; background: var(--primary-fill); }
+.fieldgrid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+.hintbox {
+  padding: 11px 13px; border-radius: var(--r-sm);
+  background: var(--accent-soft); color: #92400e;
+  font-size: 12.5px; font-weight: 600; line-height: 1.55;
+}
+/* margin-top:auto 把键盘推到面板底部（配合 .panel 的纵向 flex） */
+.keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: auto; padding-top: 18px; }
+.keypad button {
+  padding: 14px 0; border-radius: var(--r-sm); background: var(--sunken);
+  font-size: 19px; font-weight: 600;
+}
+.keypad button:hover { background: var(--line); }
+.keypad button.ok { grid-column: span 2; background: var(--primary-fill); color: var(--on-primary); font-size: 15px; font-weight: 700; }
+
+/* ==========================================================================
+   14. 容器查询：按 frame 宽度切换，而不是浏览器窗口
+   ========================================================================== */
+@container (min-width: 1024px) {
+  .topnav { display: block; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+  .bottombar { display: none; }
+  .wrap { padding: 26px 24px 48px; }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); }
+  .legend { grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(3, auto); }
+  .hero-stats { grid-template-columns: repeat(4, auto); justify-content: start; gap: 26px; }
+  .col-lg { display: table-cell; }
+  /* 必须是 table，不能是 block。
+     <table> 被设成 display:block 后，浏览器会在内部生成一个**匿名表格**包住行和单元格，
+     那个匿名表是 shrink-to-fit 的 —— 外层 div 确实占满 100%，但里面的表格只到
+     各列固定宽度之和就停了，右侧留一大块白。我在浏览器里量的正是外层那个 100% 的壳，
+     所以「量出来相等」完全没意义。这是本次返工里最典型的一次错误验证。 */
+  .fulllist { display: table; }
+  .minilist { display: none; }
+  .hero { padding: 26px 30px; grid-template-columns: 1fr auto; align-items: end; gap: 40px; }
+  .spark { display: block; }
+  .hero-amt { font-size: 64px; }
+  .block { padding: 22px 24px; }
+  .settings { display: grid; grid-template-columns: 240px 1fr; gap: 28px; align-items: start; }
+  .snav { display: block; }
+  .stabs { display: none; }
+  .scrim { align-items: stretch; justify-content: flex-end; }
+  .panel { width: 500px; max-height: none; border-radius: 0; padding: 24px; }
+  .keypad { max-width: 340px; }
+  .fieldgrid.wide { grid-template-columns: 1fr 1fr 1fr; }
+}
+@container (min-width: 640px) and (max-width: 1023px) {
+  .legend { grid-template-columns: 1fr 1fr; }
+}
+
+/* 窄屏（默认）：底部导航 */
+@container (max-width: 1023px) {
+  .topnav { display: none; }
+  .bottombar {
+    display: block;
+    position: sticky; bottom: 0; z-index: 20;
+    background: var(--card); border-top: 1px solid var(--line);
+  }
+  .bottombar-in { display: flex; }
+  .bottombar a {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 9px 0 11px; font-size: 11px; font-weight: 600; color: var(--ink-3);
+  }
+  .bottombar a .ic { font-size: 19px; line-height: 1; }
+  .bottombar a.on { color: var(--primary-fill); }
+  .minilist { display: block; }
+  .fulllist { display: none; }
+  .pagehead { display: flex; }
+
+  /* 记一笔：面板要装得下键盘，不做「需要下拉才看得见保存键」的设计。
+     实测 390px 下内容比面板高 52px，三处一起压：折叠备注、缩字段间距、压键盘。 */
+  .field { margin-bottom: 13px; }
+  .field.compact { margin-bottom: 10px; }
+  .field.compact .input { padding: 9px 10px; font-size: 14px; background: transparent; }
+
+  /* 环图在窄屏独占一行，居中比贴左好看 */
+  .donutwrap { justify-content: center; }
+  .panel { padding: 16px; }
+  .panel-head { margin-bottom: 14px; }
+  .keypad { gap: 7px; padding-top: 14px; }
+  .keypad button { padding: 12px 0; font-size: 18px; }
+}
+</style>
+</head>
+
+<body class="show-notes" data-page="home">
+
+<!--
+  图标精灵。生产里这些来自 @lucide/vue，静态稿里手写路径，形状对齐 lucide 的 24×24 线性风格。
+  稿内**禁止使用 emoji** —— emoji 在不同系统上字形、字重、基线全不一样，
+  而且无法继承 currentColor，一旦拼进深色主题就彻底失控。
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- 导航 -->
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.4 12 3l9 7.4"/><path d="M5.5 9.5V20h13V9.5"/><path d="M9.5 20v-5.5h5V20"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M6 20V11M12 20V4M18 20v-6"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 17.3 17"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M18.8 5.2l-1.9 1.9M7.1 16.9l-1.9 1.9"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9.5 5.5 16 12l-6.5 6.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9.5 12 15.5 18 9.5"/></symbol>
+  <symbol id="i-backspace" viewBox="0 0 24 24"><path d="M9 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6.5-7z"/><path d="M17 9.5 12.5 14M12.5 9.5 17 14"/></symbol>
+
+  <!-- 分类 -->
+  <symbol id="i-utensils" viewBox="0 0 24 24"><path d="M3 2.5v6.5a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V2.5"/><path d="M7 2.5v19"/><path d="M21 14.5V2.5a5 5 0 0 0-5 5v5.5c0 1.1.9 2 2 2h3Zm0 0v7"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M4.2 7h15.6l-1.2 12.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4.2 7z"/><path d="M9 7V5.2a3 3 0 0 1 6 0V7"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 12.5 5.8 7A2 2 0 0 1 7.7 5.5h8.6A2 2 0 0 1 18.2 7L20 12.5"/><rect x="4" y="12.5" width="16" height="5.5" rx="1.6"/><path d="M7.5 18v1.8M16.5 18v1.8"/><circle cx="8.3" cy="15.3" r="1"/><circle cx="15.7" cy="15.3" r="1"/></symbol>
+  <symbol id="i-bed" viewBox="0 0 24 24"><path d="M3 6v13M3 14h18v5M21 14v-3.5a2 2 0 0 0-2-2h-8V14"/><circle cx="7.5" cy="10.5" r="2.2"/></symbol>
+  <symbol id="i-gamepad" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="5"/><path d="M8 12h3M9.5 10.5v3"/><circle cx="15.5" cy="11.5" r="1"/><circle cx="17.5" cy="13.5" r="1"/></symbol>
+  <symbol id="i-medical" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8.2v7.6M8.2 12h7.6"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.6 3H4v8.6l8.7 8.7a2 2 0 0 0 2.8 0l5.8-5.8a2 2 0 0 0 0-2.8L12.6 3z"/><circle cx="7.6" cy="7.6" r="1.1"/></symbol>
+  <symbol id="i-corner" viewBox="0 0 24 24"><path d="M6 4v6.5a3 3 0 0 0 3 3h8"/><path d="M14.2 10.4 17.8 13.5 14.2 16.6"/></symbol>
+
+  <!-- 支付方式 / 状态 -->
+  <symbol id="i-credit-card" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 14.5h4"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><circle cx="16.6" cy="14.6" r="1.1"/></symbol>
+  <symbol id="i-banknote" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></symbol>
+  <symbol id="i-smartphone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
+
+  <!-- 设置 -->
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0"/><path d="M16.4 5.3a3.2 3.2 0 0 1 0 5.4M17.6 20a6.2 6.2 0 0 0-1.9-4.5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11M7.5 10 12 14.5 16.5 10"/><path d="M4 19.5h16"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></symbol>
+</svg>
+
+<!-- ===================== 预览工具条 ===================== -->
+<header class="toolbar">
+  <strong>SuenMoney 界面方案</strong>
+
+  <div class="tool-group">
+    <span class="lbl">页面</span>
+    <button data-page="home" class="on">首页</button>
+    <button data-page="ledger">流水</button>
+    <button data-page="report">报表</button>
+    <button data-page="settings">设置</button>
+    <button data-page="detail">记一笔 / 详情</button>
+  </div>
+
+  <div class="tool-group">
+    <span class="lbl">宽度</span>
+    <button data-vw="390">手机 390</button>
+    <button data-vw="834">平板 834</button>
+    <button data-vw="1280" class="on">桌面 1280</button>
+    <input type="range" id="wrange" min="360" max="1440" value="1280">
+    <span class="lbl" id="wlabel">1280px</span>
+  </div>
+
+  <label class="tool-group" style="gap:6px">
+    <input type="checkbox" id="notes" checked>
+    <span class="lbl">显示设计说明</span>
+  </label>
+
+  <span class="hint">拖动滑块可以看到布局如何响应</span>
+</header>
+
+<div class="stage">
+  <!-- frame 是容器查询的容器：内部按「frame 的宽度」判断，而不是浏览器窗口 -->
+  <div class="frame" id="frame">
+    <div class="app">
+
+      <!-- ===================== 宽屏顶部导航 ===================== -->
+      <nav class="topnav">
+        <div class="topnav-in">
+          <span class="brand">SuenMoney</span>
+          <a class="navlink on" href="#"><svg class="ico"><use href="#i-home"/></svg>首页</a>
+          <a class="navlink" href="#"><svg class="ico"><use href="#i-list"/></svg>流水</a>
+          <a class="navlink" href="#"><svg class="ico"><use href="#i-chart"/></svg>报表</a>
+          <span class="spacer"></span>
+          <a class="navlink" href="#"><svg class="ico"><use href="#i-repeat"/></svg>计划</a>
+          <a class="navlink" href="#"><svg class="ico"><use href="#i-gear"/></svg>设置</a>
+          <button class="btn btn-primary" style="margin-left:10px" data-goto="detail">
+            <svg class="ico" style="stroke-width:2.6"><use href="#i-plus"/></svg>记一笔
+          </button>
+        </div>
+      </nav>
+
+      <!-- =====================================================================
+           页面：首页
+           ===================================================================== -->
+      <section class="page on" data-page="home">
+        <div class="wrap">
+
+          <!-- hero -->
+          <div class="hero">
+            <div class="hero-main">
+              <div class="hero-top">
+                <button class="mstep" aria-label="上一月"><svg class="ico" style="width:14px;height:14px"><use href="#i-left"/></svg></button>
+                <span class="hero-month">2026 年 9 月</span>
+                <button class="mstep" aria-label="下一月"><svg class="ico" style="width:14px;height:14px"><use href="#i-right"/></svg></button>
+              </div>
+              <div class="hero-amt">¥2,328.40</div>
+              <div class="hero-stats">
+                <div class="hero-stat"><span>较上月</span><b>−64.5%</b></div>
+                <div class="hero-stat"><span>笔数</span><b>38 笔</b></div>
+                <div class="hero-stat"><span>日均</span><b>¥86.24</b></div>
+                <div class="hero-stat"><span>本月待还</span><b>¥1,000.00</b></div>
+              </div>
+            </div>
+
+            <!-- 近 6 个月走势：只在宽屏出现，把大色块右侧的空档用掉 -->
+            <div class="spark">
+              <div class="spark-bars">
+                <i style="height:82%"></i>
+                <i style="height:64%"></i>
+                <i style="height:91%"></i>
+                <i style="height:100%"></i>
+                <i style="height:70%"></i>
+                <i class="cur" style="height:35%"></i>
+              </div>
+              <span class="spark-cap">近 6 个月</span>
+            </div>
+          </div>
+          <div class="note">
+            <b><i class="ntag">1</i> 顶部换成整块色块。</b>原始 Flat 设计系统要求 "Vibrant full-section color blocks"，
+            之前整页纯白是把它丢掉了。次要指标（环比 / 笔数 / 日均 / 待还）窄屏 2×2、宽屏一行四列，
+            <b>用宽度承载信息层级</b>。<br>
+            另外宽屏时右侧补了一张近 6 个月走势小图，否则 1120px 的色块右边会空掉一大片；
+            窄屏隐藏它 —— 它属于补充信息，不该和本月数字抢位置。
+          </div>
+
+          <!-- 需要处理 -->
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title-lg">需要处理</span>
+              <span class="muted">2 笔待确认 · 1 张卡待还</span>
+            </div>
+
+            <div class="cards">
+              <!-- 逾期：红条 -->
+              <div class="item urgent">
+                <div class="item-top">
+                  <span class="avatar"><svg class="ico"><use href="#i-home"/></svg></span>
+                  <div class="item-main">
+                    <div class="item-name">房贷 <span class="seq">第 9 期</span></div>
+                    <div class="item-meta danger">9月20日还款 · 已逾期 7 天</div>
+                  </div>
+                </div>
+                <div class="meter">
+                  <div class="meter-bars">
+                    <i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i>
+                    <i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <span class="meter-txt">已还 8 / 12 期 · 剩余 ¥21,120</span>
+                </div>
+                <div class="item-acts">
+                  <span class="item-amt">¥5,280.00</span>
+                  <div class="acts-right">
+                    <button class="btn btn-primary">确认入账</button>
+                    <button class="iconbtn" title="更多"><svg class="ico"><use href="#i-more"/></svg></button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 即将到期：琥珀条 -->
+              <div class="item soon">
+                <div class="item-top">
+                  <span class="avatar"><svg class="ico"><use href="#i-smartphone"/></svg></span>
+                  <div class="item-main">
+                    <div class="item-name">京东分期 · iPhone <span class="seq">第 2 期</span></div>
+                    <div class="item-meta soon">9月28日还款 · 明天到期</div>
+                  </div>
+                </div>
+                <div class="meter">
+                  <div class="meter-bars">
+                    <i class="f"></i><i></i><i></i><i></i><i></i><i></i>
+                    <i></i><i></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <span class="meter-txt">已付 1 / 12 期 · 原价 ¥6,000</span>
+                </div>
+                <div class="item-acts">
+                  <span class="item-amt">¥500.00</span>
+                  <div class="acts-right">
+                    <button class="btn btn-primary">确认入账</button>
+                    <button class="iconbtn" title="更多"><svg class="ico"><use href="#i-more"/></svg></button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 待还：中性 -->
+              <div class="item">
+                <div class="item-top">
+                  <span class="avatar"><svg class="ico"><use href="#i-credit-card"/></svg></span>
+                  <div class="item-main">
+                    <div class="item-name">招行信用卡</div>
+                    <div class="item-meta">9月28日 还款日 · 还有 1 天</div>
+                  </div>
+                </div>
+                <div class="item-acts" style="margin-top:14px">
+                  <span class="item-amt">¥1,000.00</span>
+                  <div class="acts-right">
+                    <button class="btn btn-ghost btn-sm">查看明细</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="note">
+              <b><i class="ntag">2</i> 紧急度只由左侧 4px 色条与状态文字表达，卡片底色一律中性。</b>
+              之前满色卡片积到 5 张就是一堵色墙，紧急度反而消失。<br>
+              <b><i class="ntag">3</i> 计划卡补上了「身份物」</b>：图标、分期进度刻度、下次还款日 ——
+              之前只有「名字 + 期数 + 金额」，和流水完全不像同族。<br>
+              <b><i class="ntag">4</i> 动作收进主按钮 + 「更多」菜单</b>，不再平铺两个同权重的按钮；「跳过」这种低频且不可逆的，
+              放进「更多」菜单更安全。<br>
+              <b><i class="ntag">5</i> 卡片行按可容纳宽度自动换行</b>（`auto-fill, minmax(268px,1fr)`），
+              所以 1 张和 6 张都不会难看。没有待办时整块不出现，<b>不会留空洞</b>。
+            </div>
+          </div>
+
+          <!-- 支出构成 -->
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title-lg">支出构成</span>
+              <a class="btn btn-ghost btn-sm" data-goto="report">完整报表 →</a>
+            </div>
+
+            <div class="stack">
+              <i style="width:39%;background:#3b82f6"></i>
+              <i style="width:22%;background:#10b981"></i>
+              <i style="width:14%;background:#f59e0b"></i>
+              <i style="width:11%;background:#8b5cf6"></i>
+              <i style="width:8%;background:#ec4899"></i>
+              <i style="width:6%;background:#06b6d4"></i>
+            </div>
+
+            <div class="legend">
+              <div class="lrow"><span class="dot" style="background:#3b82f6"></span><span class="lname">餐饮</span><span class="lpct">39%</span><span class="lamt">¥914.00</span></div>
+              <div class="lrow"><span class="dot" style="background:#10b981"></span><span class="lname">购物</span><span class="lpct">22%</span><span class="lamt">¥512.00</span></div>
+              <div class="lrow"><span class="dot" style="background:#f59e0b"></span><span class="lname">交通</span><span class="lpct">14%</span><span class="lamt">¥326.00</span></div>
+              <div class="lrow"><span class="dot" style="background:#8b5cf6"></span><span class="lname">居住</span><span class="lpct">11%</span><span class="lamt">¥256.00</span></div>
+              <div class="lrow"><span class="dot" style="background:#ec4899"></span><span class="lname">娱乐</span><span class="lpct">8%</span><span class="lamt">¥186.00</span></div>
+              <div class="lrow"><span class="dot" style="background:#06b6d4"></span><span class="lname">医疗</span><span class="lpct">6%</span><span class="lamt">¥134.00</span></div>
+            </div>
+
+            <div class="note">
+              <b><i class="ntag">6</i> 一条整体堆叠条 + 明细列表。</b>之前是六行「名字 + 百分比 + 金额 + 一条各自独立的蓝条」，
+              六个条之间不可比（各自占满宽度），整体比例也看不出来。堆叠条把「构成」这件事一次说清。<br>
+              <b><i class="ntag">7</i> 分类配色终于用上了。</b>`categories.color` 和 `--chart-1..8` 早就在 schema 里，
+              但一直没人用，所有条都是同一个蓝。<br>
+              <b><i class="ntag">8</i> 宽屏下明细排两栏</b>，把卡片里的横向空间用掉，而不是让每行拖得很长。
+            </div>
+          </div>
+
+          <!-- 最近流水 -->
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title-lg">最近流水</span>
+              <a class="btn btn-ghost btn-sm" data-goto="ledger">全部 →</a>
+            </div>
+
+            <!-- 宽屏：表格 -->
+            <table class="table fulllist">
+              <thead>
+                <tr>
+                  <th style="width:88px">日期</th>
+                  <th style="width:150px">分类</th>
+                  <th>备注</th>
+                  <th class="col-lg" style="width:130px">支付方式</th>
+                  <th class="col-lg" style="width:110px">还款日</th>
+                  <th class="num" style="width:110px">金额</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="when"><b>09-26</b><span>周六</span></td>
+                  <td><span class="cat"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 外卖</span></td>
+                  <td class="muted">晚饭</td>
+                  <td class="col-lg muted">招行信用卡</td>
+                  <td class="col-lg muted">10-28</td>
+                  <td class="num">¥38.80</td>
+                </tr>
+                <tr>
+                  <td class="when"><b>09-26</b><span>周六</span></td>
+                  <td><span class="cat"><svg class="ico"><use href="#i-car"/></svg> 交通 · 地铁</span></td>
+                  <td class="muted">—</td>
+                  <td class="col-lg muted">现金</td>
+                  <td class="col-lg muted">09-26</td>
+                  <td class="num">¥6.00</td>
+                </tr>
+                <tr>
+                  <td class="when"><b>09-25</b><span>周五</span></td>
+                  <td><span class="cat"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 下馆子</span></td>
+                  <td class="muted">—</td>
+                  <td class="col-lg muted">招行信用卡</td>
+                  <td class="col-lg muted">10-28</td>
+                  <td class="num">¥218.00</td>
+                </tr>
+                <tr>
+                  <td class="when"><b>09-24</b><span>周四</span></td>
+                  <td><span class="cat"><svg class="ico"><use href="#i-bag"/></svg> 购物 · 日用</span></td>
+                  <td class="muted">厨房用品</td>
+                  <td class="col-lg muted">招行信用卡</td>
+                  <td class="col-lg muted">10-28</td>
+                  <td class="num">¥118.00</td>
+                </tr>
+                <tr>
+                  <td class="when"><b>09-20</b><span>周日</span></td>
+                  <td><span class="cat"><svg class="ico"><use href="#i-bag"/></svg> 购物 · 日用</span></td>
+                  <td class="muted">退货退款</td>
+                  <td class="col-lg muted">招行信用卡</td>
+                  <td class="col-lg muted">10-28</td>
+                  <td class="num" style="color:var(--danger-text)">¥−129.00</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 窄屏：两行式 -->
+            <div class="minilist">
+              <div class="mini">
+                <div class="when"><b>09-26</b><span>周六</span></div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:14px"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 外卖</div>
+                  <div class="muted">晚饭 · 招行信用卡</div>
+                </div>
+                <div class="num">¥38.80</div>
+              </div>
+              <div class="mini">
+                <div class="when"><b>09-26</b><span>周六</span></div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:14px"><svg class="ico"><use href="#i-car"/></svg> 交通 · 地铁</div>
+                  <div class="muted">现金</div>
+                </div>
+                <div class="num">¥6.00</div>
+              </div>
+              <div class="mini">
+                <div class="when"><b>09-25</b><span>周五</span></div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:14px"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 下馆子</div>
+                  <div class="muted">招行信用卡</div>
+                </div>
+                <div class="num">¥218.00</div>
+              </div>
+            </div>
+
+            <div class="note">
+              <b><i class="ntag">9</i> 宽屏加列（备注 / 支付方式 / 还款日），窄屏隐藏这两列并折成两行。</b>
+              之前是四段摊开、中间空 600px；空出来的宽度要用<b>新列</b>去填，不是让弹性段摊平。<br>
+              <b><i class="ntag">10</i> 「9月28日 还款」那个灰药丸去掉了。</b>它几乎每行都挂一个，是纯噪音，
+              而且这个信息在列表语境里没用 —— 它现在是独立的一列，可排序、可扫。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           页面：流水
+           ===================================================================== -->
+      <section class="page" data-page="ledger">
+        <div class="wrap">
+          <div class="pagehead">
+            <h1>流水</h1>
+            <button class="btn btn-primary btn-sm" data-goto="detail">＋ 记一笔</button>
+          </div>
+
+          <div class="filters">
+            <button class="chip">‹ 9 月</button>
+            <button class="chip on">全部类别</button>
+            <button class="chip">现金</button>
+            <button class="chip">招行信用卡</button>
+            <button class="chip">花呗</button>
+            <div class="search"><svg class="ico"><use href="#i-search"/></svg> 搜索备注</div>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">2026 年 9 月</span>
+              <span class="muted">共 38 笔 · 合计 <b style="color:var(--ink)">¥2,328.40</b></span>
+            </div>
+
+            <table class="table fulllist">
+              <thead>
+                <tr>
+                  <th style="width:88px">日期</th>
+                  <th style="width:160px">分类</th>
+                  <th>备注</th>
+                  <th class="col-lg" style="width:130px">支付方式</th>
+                  <th class="col-lg" style="width:110px">还款日</th>
+                  <th class="col-lg" style="width:100px">记录人</th>
+                  <th class="num" style="width:110px">金额</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="when"><b>09-27</b><span>周日</span></td><td><span class="cat"><svg class="ico"><use href="#i-bag"/></svg> 购物 · 日用</span></td><td class="muted">纸巾囤货</td><td class="col-lg muted">花呗</td><td class="col-lg muted">10-09</td><td class="col-lg muted">爱人</td><td class="num">¥64.00</td></tr>
+                <tr><td class="when"><b>09-26</b><span>周六</span></td><td><span class="cat"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 外卖</span></td><td class="muted">晚饭</td><td class="col-lg muted">招行信用卡</td><td class="col-lg muted">10-28</td><td class="col-lg muted">我</td><td class="num">¥38.80</td></tr>
+                <tr><td class="when"><b>09-26</b><span>周六</span></td><td><span class="cat"><svg class="ico"><use href="#i-car"/></svg> 交通 · 地铁</span></td><td class="muted">—</td><td class="col-lg muted">现金</td><td class="col-lg muted">09-26</td><td class="col-lg muted">我</td><td class="num">¥6.00</td></tr>
+                <tr><td class="when"><b>09-25</b><span>周五</span></td><td><span class="cat"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 下馆子</span></td><td class="muted">—</td><td class="col-lg muted">招行信用卡</td><td class="col-lg muted">10-28</td><td class="col-lg muted">爱人</td><td class="num">¥218.00</td></tr>
+                <tr><td class="when"><b>09-24</b><span>周四</span></td><td><span class="cat"><svg class="ico"><use href="#i-bag"/></svg> 购物 · 日用</span></td><td class="muted">厨房用品</td><td class="col-lg muted">招行信用卡</td><td class="col-lg muted">10-28</td><td class="col-lg muted">我</td><td class="num">¥118.00</td></tr>
+                <tr><td class="when"><b>09-23</b><span>周三</span></td><td><span class="cat"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 买菜</span></td><td class="muted">—</td><td class="col-lg muted">现金</td><td class="col-lg muted">09-23</td><td class="col-lg muted">爱人</td><td class="num">¥167.20</td></tr>
+                <tr><td class="when"><b>09-22</b><span>周二</span></td><td><span class="cat"><svg class="ico"><use href="#i-gamepad"/></svg> 娱乐 · 订阅</span></td><td class="muted">音乐会员</td><td class="col-lg muted">花呗</td><td class="col-lg muted">10-09</td><td class="col-lg muted">我</td><td class="num">¥15.00</td></tr>
+                <tr><td class="when"><b>09-21</b><span>周一</span></td><td><span class="cat"><svg class="ico"><use href="#i-car"/></svg> 交通 · 打车</span></td><td class="muted">机场往返</td><td class="col-lg muted">招行信用卡</td><td class="col-lg muted">10-28</td><td class="col-lg muted">爱人</td><td class="num">¥53.00</td></tr>
+                <tr><td class="when"><b>09-20</b><span>周日</span></td><td><span class="cat"><svg class="ico"><use href="#i-bag"/></svg> 购物 · 日用</span></td><td class="muted">退货退款</td><td class="col-lg muted">招行信用卡</td><td class="col-lg muted">10-28</td><td class="col-lg muted">我</td><td class="num" style="color:var(--danger-text)">¥−129.00</td></tr>
+              </tbody>
+            </table>
+
+            <div class="minilist">
+              <div class="mini"><div class="when"><b>09-27</b><span>周日</span></div><div style="flex:1;min-width:0"><div style="font-size:14px"><svg class="ico"><use href="#i-bag"/></svg> 购物 · 日用</div><div class="muted">纸巾囤货 · 花呗</div></div><div class="num">¥64.00</div></div>
+              <div class="mini"><div class="when"><b>09-26</b><span>周六</span></div><div style="flex:1;min-width:0"><div style="font-size:14px"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 外卖</div><div class="muted">晚饭 · 招行信用卡</div></div><div class="num">¥38.80</div></div>
+              <div class="mini"><div class="when"><b>09-26</b><span>周六</span></div><div style="flex:1;min-width:0"><div style="font-size:14px"><svg class="ico"><use href="#i-car"/></svg> 交通 · 地铁</div><div class="muted">现金</div></div><div class="num">¥6.00</div></div>
+              <div class="mini"><div class="when"><b>09-25</b><span>周五</span></div><div style="flex:1;min-width:0"><div style="font-size:14px"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 下馆子</div><div class="muted">招行信用卡</div></div><div class="num">¥218.00</div></div>
+            </div>
+
+            <div class="note">
+              <b><i class="ntag">11</i> 筛选做成一行可点的胶囊，不再是两排横向滚动的分类。</b>
+              配合上面的合计，用户能立刻知道自己筛出了什么、多少钱。<br>
+              <b><i class="ntag">12</i> 表格表头常驻。</b>列一多就必须要表头，否则「这一列是什么」只能靠猜。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           页面：报表
+           ===================================================================== -->
+      <section class="page" data-page="report">
+        <div class="wrap">
+          <div class="pagehead">
+            <h1>报表</h1>
+            <div style="display:flex;gap:6px">
+              <button class="chip on">按月</button>
+              <button class="chip">按年</button>
+            </div>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <div style="display:flex;align-items:center;gap:10px">
+                <button class="iconbtn" aria-label="上一期"><svg class="ico" style="width:14px;height:14px"><use href="#i-left"/></svg></button>
+                <span class="block-title-lg">2026 年 9 月</span>
+                <button class="iconbtn" aria-label="下一期"><svg class="ico" style="width:14px;height:14px"><use href="#i-right"/></svg></button>
+              </div>
+              <span class="muted">共 38 笔</span>
+            </div>
+            <div style="font-size:64px;font-weight:800;letter-spacing:-.035em;line-height:1">¥2,328.40</div>
+            <div style="margin-top:8px" class="muted">较上月 <b style="color:var(--ok)">−64.5%</b>（上月 ¥6,560.90）</div>
+          </div>
+
+          <div class="duo">
+            <div class="block">
+              <div class="block-head"><span class="block-title-lg">钱花在什么上</span></div>
+              <div class="donutwrap">
+                <!-- 纯 inline SVG，无任何依赖 -->
+                <div class="donut-c">
+                  <svg class="donut" width="140" height="140" viewBox="0 0 42 42">
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#e5e7eb" stroke-width="6"></circle>
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#3b82f6" stroke-width="6"
+                            stroke-dasharray="39 61" stroke-dashoffset="25"></circle>
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#10b981" stroke-width="6"
+                            stroke-dasharray="22 78" stroke-dashoffset="-14"></circle>
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#f59e0b" stroke-width="6"
+                            stroke-dasharray="14 86" stroke-dashoffset="-36"></circle>
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#8b5cf6" stroke-width="6"
+                            stroke-dasharray="11 89" stroke-dashoffset="-50"></circle>
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#ec4899" stroke-width="6"
+                            stroke-dasharray="8 92" stroke-dashoffset="-61"></circle>
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#06b6d4" stroke-width="6"
+                            stroke-dasharray="6 94" stroke-dashoffset="-69"></circle>
+                  </svg>
+                  <div class="donut-center"><b>¥2,328</b><span>6 个分类</span></div>
+                </div>
+                <div style="flex:1;min-width:220px">
+                  <div class="lrow"><span class="dot" style="background:#3b82f6"></span><span class="lname">餐饮</span><span class="lpct">39%</span><span class="lamt">¥914.00</span></div>
+                  <div class="lrow"><span class="dot" style="background:#10b981"></span><span class="lname">购物</span><span class="lpct">22%</span><span class="lamt">¥512.00</span></div>
+                  <div class="lrow"><span class="dot" style="background:#f59e0b"></span><span class="lname">交通</span><span class="lpct">14%</span><span class="lamt">¥326.00</span></div>
+                  <div class="lrow"><span class="dot" style="background:#8b5cf6"></span><span class="lname">居住</span><span class="lpct">11%</span><span class="lamt">¥256.00</span></div>
+                  <div class="lrow"><span class="dot" style="background:#ec4899"></span><span class="lname">娱乐</span><span class="lpct">8%</span><span class="lamt">¥186.00</span></div>
+                  <div class="lrow"><span class="dot" style="background:#06b6d4"></span><span class="lname">医疗</span><span class="lpct">6%</span><span class="lamt">¥134.00</span></div>
+                </div>
+              </div>
+              <div class="note">
+                <b><i class="ntag">13</i> 「支出构成」用环图 + 明细表，而不是六行各自独立的横条。</b>
+                独立横条之间不可比，整体比例也看不出来。环图一眼给出「构成」，明细给出精确值。
+              </div>
+            </div>
+
+            <div class="block">
+              <div class="block-head"><span class="block-title-lg">怎么花的</span></div>
+
+              <div class="block-title" style="margin-bottom:8px">按支付方式</div>
+              <div class="barrow">
+                <span class="nm"><span class="avatar sm"><svg class="ico"><use href="#i-credit-card"/></svg></span>招行信用卡</span>
+                <span class="track"><i style="width:79%;background:var(--primary)"></i></span>
+                <span class="cnt">24 笔</span><span class="amt">¥1,842.60</span>
+              </div>
+              <div class="barrow">
+                <span class="nm"><span class="avatar sm"><svg class="ico"><use href="#i-banknote"/></svg></span>现金</span>
+                <span class="track"><i style="width:12%;background:var(--primary)"></i></span>
+                <span class="cnt">9 笔</span><span class="amt">¥286.00</span>
+              </div>
+              <div class="barrow">
+                <span class="nm"><span class="avatar sm"><svg class="ico"><use href="#i-credit-card"/></svg></span>花呗</span>
+                <span class="track"><i style="width:9%;background:var(--primary)"></i></span>
+                <span class="cnt">5 笔</span><span class="amt">¥199.80</span>
+              </div>
+
+              <div class="divider" style="margin:18px 0"></div>
+
+              <div class="block-title" style="margin-bottom:8px">按记录人</div>
+              <div class="barrow">
+                <span class="nm"><span class="avatar sm">我</span>我</span>
+                <span class="track"><i style="width:57%;background:var(--primary)"></i></span>
+                <span class="cnt">21 笔</span><span class="amt">¥1,320.40</span>
+              </div>
+              <div class="barrow">
+                <span class="nm"><span class="avatar sm">爱</span>爱人</span>
+                <span class="track"><i style="width:43%;background:var(--primary)"></i></span>
+                <span class="cnt">17 笔</span><span class="amt">¥1,008.00</span>
+              </div>
+
+              <div class="note">
+                <b><i class="ntag">14</i> 排名行中间有占比条。</b>这类行是**数据排名**，
+                名称和金额摆在 840px 宽的两端会空出一大块，眼睛要横跨整行才能把两者对上。
+                （设置页的列表不用这样 —— 那里一行只有「名称 + 一个尾部值」，
+                右对齐留白是正常的，macOS 设置面板就是这样。）<br>
+                <b><i class="ntag">15</i> 支付方式有图标、金额右对齐、笔数右对齐</b>，三列各司其职。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           页面：设置
+           ===================================================================== -->
+      <section class="page" data-page="settings">
+        <div class="wrap">
+          <div class="pagehead">
+            <h1>设置</h1>
+          </div>
+
+          <!-- 窄屏：一级目录 tab 条 -->
+          <!--
+            窄屏：纯文字 5 个 tab，等分宽度。
+            带图标时 5 项共 430px，超出 358px 的容器 → 只能左右滑，
+            而横向滑动的 tab 条等于把一半入口藏起来。
+            等分 + 去图标后必然放得下；图标只在宽屏侧栏里出现（那里有位置）。
+          -->
+          <div class="stabs">
+            <a class="on" href="#">分类</a>
+            <a href="#">支付方式</a>
+            <a href="#">计划</a>
+            <a href="#">家庭</a>
+            <a href="#">数据</a>
+          </div>
+
+          <div class="settings">
+            <!-- 宽屏：侧栏 -->
+            <aside class="snav">
+              <div class="snav-group">
+                <div class="snav-title">账目</div>
+                <a class="on" href="#"><svg class="ico"><use href="#i-tag"/></svg> 分类</a>
+                <a href="#"><svg class="ico"><use href="#i-wallet"/></svg> 支付方式</a>
+                <a href="#"><svg class="ico"><use href="#i-repeat"/></svg> 计划</a>
+              </div>
+              <div class="snav-group">
+                <div class="snav-title">家庭与数据</div>
+                <a href="#"><svg class="ico"><use href="#i-users"/></svg> 家庭成员与设备</a>
+                <a href="#"><svg class="ico"><use href="#i-database"/></svg> 导入导出与备份</a>
+              </div>
+            </aside>
+
+            <!-- 内容：分类 -->
+            <div>
+              <div class="block">
+                <div class="block-head">
+                  <div>
+                    <span class="block-title-lg">分类</span>
+                    <span class="muted" style="margin-left:8px">9 个一级 · 25 个二级</span>
+                  </div>
+                  <div style="display:flex;gap:6px">
+                    <button class="btn btn-primary btn-sm">＋ 新建分类</button>
+                    <button class="iconbtn" title="更多"><svg class="ico"><use href="#i-more"/></svg></button>
+                  </div>
+                </div>
+
+                <div class="grp-head">支出分类 <span class="n">· 9</span></div>
+
+                <div class="catrow parent"><span class="avatar"><svg class="ico"><use href="#i-utensils"/></svg></span><span class="cname">餐饮</span><span class="cnt">3 个二级 · 12 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">外卖</span><span class="cnt">5 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">下馆子</span><span class="cnt">3 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">买菜</span><span class="cnt">4 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+
+                <div class="divider"></div>
+
+                <div class="catrow parent"><span class="avatar"><svg class="ico"><use href="#i-bag"/></svg></span><span class="cname">购物</span><span class="cnt">2 个二级 · 6 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">日用</span><span class="cnt">4 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">数码</span><span class="cnt">2 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+
+                <div class="divider"></div>
+
+                <div class="catrow parent"><span class="avatar"><svg class="ico"><use href="#i-car"/></svg></span><span class="cname">交通</span><span class="cnt">2 个二级 · 5 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">打车</span><span class="cnt">2 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+                <div class="catrow child"><span class="arrow"><svg class="ico"><use href="#i-corner"/></svg></span><span class="cname">地铁</span><span class="cnt">3 笔</span><button class="iconbtn" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button></div>
+
+                <div class="note">
+                  <b><i class="ntag">16</i> 设置拆成独立页面 + 导航</b>（窄屏横向 tab 条 = 你说的「一级目录 tab」，宽屏变成左侧栏）。
+                  之前所有区块堆在一页，手机上要滚过约 40 屏才到「登录设备」。<br>
+                  <b><i class="ntag">17</i> 分类加分组头 `支出分类 · 9`</b>，父分类有底色、子分类缩进 + 箭头，
+                  父分组之间才有分隔线 —— 不再是一路平铺。<br>
+                  <b><i class="ntag">18</i> 每行的「停用」按钮收进「更多」菜单。</b>几十个重复按钮就是噪音；
+                  参考项目里所有行内操作都在溢出菜单里。<br>
+                  <b><i class="ntag">19</i> 每行给出「3 个二级 · 12 笔」</b>，不用展开就知道这一支的规模。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           页面：记一笔 / 记录详情（覆盖层）
+           ===================================================================== -->
+      <section class="page" data-page="detail">
+        <div class="overlay">
+          <!-- 背景页面（虚化示意） -->
+          <div class="wrap" style="opacity:.35;pointer-events:none">
+            <div class="block"><div class="block-title-lg">最近流水</div>
+              <div class="mini"><div class="when"><b>09-26</b><span>周六</span></div><div style="flex:1"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 外卖</div><div class="num">¥38.80</div></div>
+              <div class="mini"><div class="when"><b>09-25</b><span>周五</span></div><div style="flex:1"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 下馆子</div><div class="num">¥218.00</div></div>
+            </div>
+          </div>
+
+          <div class="scrim">
+            <div class="panel">
+              <div class="panel-head">
+                <h2>记一笔</h2>
+                <button class="iconbtn" aria-label="关闭"><svg class="ico"><use href="#i-close"/></svg></button>
+              </div>
+
+              <div class="field">
+                <label>金额</label>
+                <div class="input big">1,258<span class="cursor"></span></div>
+              </div>
+
+              <div class="field">
+                <label>分类</label>
+                <div class="input"><svg class="ico"><use href="#i-utensils"/></svg> 餐饮 · 外卖 <span class="spacer"></span> <span class="muted"><svg class="ico" style="width:14px;height:14px"><use href="#i-chevron"/></svg></span></div>
+              </div>
+
+              <div class="field">
+                <label>支付方式 · 日期</label>
+                <div class="fieldgrid">
+                  <div class="input">招行信用卡 <span class="spacer"></span><span class="muted"><svg class="ico" style="width:14px;height:14px"><use href="#i-chevron"/></svg></span></div>
+                  <div class="input">2026-09-27</div>
+                </div>
+              </div>
+
+              <div class="hintbox">
+                这笔会记在 <b>2026 年 10 月</b>（还款日 10月28日）
+              </div>
+
+              <!--
+                备注是折叠项：**不放标签**，让框内文字自己说明它是什么。
+                第一版把标签藏掉却留着「可选」两个字，结果就是一个无名的空框，
+                根本看不出那是什么 —— 省高度不能省到这个地步。
+              -->
+              <div class="field compact">
+                <div class="input">
+                  <svg class="ico" style="width:15px;height:15px"><use href="#i-plus"/></svg>
+                  <span class="muted">添加备注</span>
+                </div>
+              </div>
+
+              <div class="keypad">
+                <button>1</button><button>2</button><button>3</button><button aria-label="退格"><svg class="ico"><use href="#i-backspace"/></svg></button>
+                <button>4</button><button>5</button><button>6</button><button>＋</button>
+                <button>7</button><button>8</button><button>9</button><button>−</button>
+                <button>00</button><button>0</button><button>.</button><button class="ok">保存</button>
+              </div>
+
+              <div class="note">
+                <b><i class="ntag">20</i> 宽屏下改成右侧定宽面板（500px），窄屏仍然是底部抽屉。</b>
+                现在是 `inset-x-0` 通栏无 max-width —— 1440px 屏幕上就是一个
+                1440×846 的贴底大抽屉，输入框横跨整屏。<br>
+                <b>㉑ 键盘上方常驻「本月已支出 ¥2,328」</b>（这里省略了，实际会加），
+                每次记账都能顺手看到那个数字。<br>
+                <b>㉒ 跨月提示保持醒目</b>，这条之前做对了，不要动。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 窄屏底部导航 ===================== -->
+      <nav class="bottombar">
+        <div class="bottombar-in">
+          <a class="on" href="#"><svg class="ico ico-lg"><use href="#i-home"/></svg>首页</a>
+          <a href="#" data-goto="ledger"><svg class="ico ico-lg"><use href="#i-list"/></svg>流水</a>
+          <a href="#" data-goto="detail"><svg class="ico ico-lg"><use href="#i-plus"/></svg>记一笔</a>
+          <a href="#" data-goto="report"><svg class="ico ico-lg"><use href="#i-chart"/></svg>报表</a>
+        </div>
+      </nav>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var body = document.body;
+  var frame = document.getElementById('frame');
+  var range = document.getElementById('wrange');
+  var label = document.getElementById('wlabel');
+  var pageBtns = document.querySelectorAll('.toolbar [data-page]');
+  var vwBtns = document.querySelectorAll('.toolbar [data-vw]');
+
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(function (el) {
+      el.classList.toggle('on', el.dataset.page === name);
+    });
+    pageBtns.forEach(function (b) {
+      b.classList.toggle('on', b.dataset.page === name);
+    });
+    body.dataset.page = name;
+  }
+
+  function setWidth(px) {
+    px = Math.max(360, Math.min(1440, Number(px) || 1280));
+    frame.style.width = px + 'px';
+    label.textContent = px + 'px';
+    range.value = px;
+    // 窄屏时把画框变成一台可滚动的手机 —— 容器查询改不了容器自己，
+    // 所以这件事只能由 JS 做。
+    frame.classList.toggle('narrow', px < 1024);
+    frame.scrollTop = 0;
+    vwBtns.forEach(function (b) {
+      b.classList.toggle('on', Number(b.dataset.vw) === px);
+    });
+  }
+
+  pageBtns.forEach(function (b) {
+    b.addEventListener('click', function () { showPage(b.dataset.page); });
+  });
+  vwBtns.forEach(function (b) {
+    b.addEventListener('click', function () { setWidth(b.dataset.vw); });
+  });
+  range.addEventListener('input', function () { setWidth(range.value); });
+  document.getElementById('notes').addEventListener('change', function (e) {
+    body.classList.toggle('show-notes', e.target.checked);
+  });
+
+  // 稿内的跳转（点击「记一笔」等）
+  document.querySelectorAll('[data-goto]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      showPage(el.dataset.goto);
+    });
+  });
+
+  setWidth(1280);
+  showPage('home');
+})();
+</script>
+</body>
+</html>
