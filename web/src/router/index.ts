@@ -14,7 +14,14 @@ import SettingsView from '@/views/SettingsView.vue';
  */
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
-  { path: '/', name: 'dashboard', component: DashboardView },
+  {
+    path: '/',
+    redirect: () => {
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+      return isMobile ? { name: 'ledger' } : { name: 'dashboard' };
+    },
+  },
+  { path: '/dashboard', name: 'dashboard', component: DashboardView },
   { path: '/ledger', name: 'ledger', component: LedgerView },
   { path: '/report', name: 'report', component: ReportView },
   { path: '/settings', name: 'settings', component: SettingsView },
@@ -49,11 +56,6 @@ router.beforeEach(async (to) => {
   if (to.name === 'login' && authStore.isAuthenticated) {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
     return isMobile ? { name: 'ledger' } : { name: 'dashboard' };
-  }
-
-  // 移动端单页化：首屏落地页为流水页（§6.6 四）
-  if (to.path === '/' && typeof window !== 'undefined' && window.innerWidth < 1024) {
-    return { name: 'ledger' };
   }
 
   return true;

@@ -36,8 +36,12 @@ export async function expenseRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/expenses', { preHandler: requireAuth }, async (request) => {
     const query = asRecord(request.query);
 
+    const byParam = optionalStrParam(query['by'], 'by');
+    const by = byParam === 'repayment_date' ? 'repayment_date' : 'spend_date';
+
     return listExpenses(getDatabase(), {
       month: optionalMonthParam(query['month'], 'month'),
+      by,
       from: optionalDateParam(query['from'], 'from'),
       to: optionalDateParam(query['to'], 'to'),
       categoryId: optionalStrParam(query['categoryId'], 'categoryId'),

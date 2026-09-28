@@ -20,12 +20,12 @@ import {
   type SummaryReport,
   type YearlyReport,
 } from '@/api';
+import PaymentIcon from '@/components/PaymentIcon.vue';
 import PeriodPicker from '@/components/PeriodPicker.vue';
 import { useUiStore } from '@/stores/ui';
 import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors';
 import { currentMonth, elapsedDays, formatMonthDay, formatMonthLabel } from '@/utils/dates';
 import { buildDonutArcs, DONUT_RADIUS } from '@/utils/donut';
-import { resolvePaymentMethodIcon } from '@/utils/icons';
 import { formatCompact, formatYuan } from '@/utils/money';
 
 const route = useRoute();
@@ -955,8 +955,9 @@ const memberRows = computed(() => {
                   :key="card.paymentMethodId"
                   class="flex items-center justify-between text-[11px]"
                 >
-                  <span class="text-ink-muted">
-                    {{ card.name }} · {{ formatMonthDay(card.repaymentDate || '') }} 到期
+                  <span class="inline-flex items-center gap-1.5 text-ink-muted">
+                    <PaymentIcon :name="card.name" :size="13" />
+                    <span>{{ card.name }} · {{ formatMonthDay(card.repaymentDate || '') }} 到期</span>
                   </span>
                   <span class="font-medium text-ink tabular-nums">{{ formatYuan(card.cents) }}</span>
                 </li>
@@ -971,12 +972,7 @@ const memberRows = computed(() => {
                 class="flex items-center justify-between gap-3 py-2 text-xs"
               >
                 <span class="flex min-w-0 items-center gap-2">
-                  <component
-                    :is="resolvePaymentMethodIcon(row.type)"
-                    :size="15"
-                    class="shrink-0 text-ink-muted"
-                    aria-hidden="true"
-                  />
+                  <PaymentIcon :name="row.name" :size="16" />
                   <span class="truncate font-medium text-ink">{{ row.name }}</span>
                 </span>
 

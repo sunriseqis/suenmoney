@@ -32,6 +32,7 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
       type: requireEnum<PaymentMethodType>(body, 'type', ['cash', 'credit']),
       billingDay: optionalInt(body, 'billingDay'),
       repaymentDay: optionalInt(body, 'repaymentDay'),
+      icon: optionalString(body, 'icon', ''),
       sortOrder: optionalInt(body, 'sortOrder'),
       actorId: auth.user.id,
     });
@@ -47,6 +48,7 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
     const patch: UpdatePaymentMethodInput = { actorId: auth.user.id };
 
     if (body['name'] !== undefined) patch.name = requireString(body, 'name');
+    if (body['icon'] !== undefined) patch.icon = optionalString(body, 'icon', '');
     if (body['billingDay'] !== undefined) patch.billingDay = optionalInt(body, 'billingDay') ?? 0;
     if (body['repaymentDay'] !== undefined) patch.repaymentDay = optionalInt(body, 'repaymentDay') ?? 0;
     if (body['sortOrder'] !== undefined) patch.sortOrder = optionalInt(body, 'sortOrder') ?? 0;

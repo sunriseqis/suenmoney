@@ -20,6 +20,7 @@ import {
   type SummaryReport,
   type YearlyReport,
 } from '@/api';
+import PaymentIcon from '@/components/PaymentIcon.vue';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -537,6 +538,7 @@ async function handleSkip(todoId: string): Promise<void> {
               :key="item.paymentMethodId"
               class="flex items-center justify-between py-2 text-xs"
             >
+              <PaymentIcon :name="item.name" :size="20" class="mr-2.5" />
               <div class="min-w-0 flex-1">
                 <span class="block truncate font-semibold text-ink">{{ item.name }}</span>
                 <span

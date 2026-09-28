@@ -17,6 +17,7 @@ import { centsToInput, formatCompact, formatYuan, parseYuanToCents } from '@/uti
 
 import ChipButton from './ChipButton.vue';
 import NumericKeypad from './NumericKeypad.vue';
+import PaymentIcon from './PaymentIcon.vue';
 import type { KeypadKey } from './keypad';
 
 const props = withDefaults(
@@ -565,9 +566,12 @@ function close(): void {
               :active="method.id === paymentMethodId"
               @click="paymentMethodId = method.id"
             >
-              {{ method.name }}
-              <span v-if="method.type === 'credit'" class="text-xs opacity-70">
-                {{ method.billingDay }}/{{ method.repaymentDay }}
+              <span class="inline-flex items-center gap-1.5">
+                <PaymentIcon :name="method.name" :icon="method.icon" :size="14" />
+                <span>{{ method.name }}</span>
+                <span v-if="method.type === 'credit'" class="text-xs opacity-70">
+                  {{ method.billingDay }}/{{ method.repaymentDay }}
+                </span>
               </span>
             </ChipButton>
           </div>

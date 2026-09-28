@@ -30,6 +30,8 @@ export interface PaymentMethod {
   id: string;
   name: string;
   type: PaymentMethodType;
+  /** 图标名（见 utils/payment-icons.ts 的登记表）；空字符串表示没设过 */
+  icon: string;
   /** 账单日 / 入账日。仅信用类有值 */
   billingDay: number | null;
   /** 还款日。仅信用类有值 */

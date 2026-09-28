@@ -18,6 +18,7 @@ import {
   paymentMethods as paymentMethodsApi,
   users as usersApi,
   type Category,
+  type PaymentMethod,
   type PaymentMethodType,
   type User,
 } from '@/api';
@@ -27,6 +28,8 @@ import ChipButton from '@/components/ChipButton.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
 import DataPanel from '@/components/DataPanel.vue';
 import IconPicker from '@/components/IconPicker.vue';
+import PaymentIcon from '@/components/PaymentIcon.vue';
+import PaymentIconPicker from '@/components/PaymentIconPicker.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { useUiStore } from '@/stores/ui';
@@ -269,10 +272,63 @@ async function moveCategory(id: string, parentId: string): Promise<void> {
 const newMethod = ref({
   name: '',
   type: 'cash' as PaymentMethodType,
+  icon: '',
   billingDay: '',
   repaymentDay: '',
 });
 const showMethodForm = ref(false);
+
+const editingMethodId = ref<string | null>(null);
+const editMethodForm = ref({
+  name: '',
+  icon: '',
+  billingDay: '',
+  repaymentDay: '',
+});
+
+function toggleEditMethod(method: PaymentMethod): void {
+  if (editingMethodId.value === method.id) {
+    editingMethodId.value = null;
+  } else {
+    editingMethodId.value = method.id;
+    editMethodForm.value = {
+      name: method.name,
+      icon: method.icon || '',
+      billingDay: method.billingDay ? String(method.billingDay) : '',
+      repaymentDay: method.repaymentDay ? String(method.repaymentDay) : '',
+    };
+  }
+}
+
+async function saveEditMethod(id: string, methodType: PaymentMethodType): Promise<void> {
+  clearMessages();
+  busy.value = true;
+  try {
+    const payload: {
+      name: string;
+      icon?: string;
+      billingDay?: number;
+      repaymentDay?: number;
+    } = {
+      name: editMethodForm.value.name.trim(),
+      icon: editMethodForm.value.icon,
+    };
+    if (methodType === 'credit') {
+      const b = Number(editMethodForm.value.billingDay);
+      const r = Number(editMethodForm.value.repaymentDay);
+      if (b >= 1 && b <= 31) payload.billingDay = b;
+      if (r >= 1 && r <= 31) payload.repaymentDay = r;
+    }
+    await paymentMethodsApi.update(id, payload);
+    editingMethodId.value = null;
+    await dict.load(true);
+    ui.markDataChanged();
+  } catch (error) {
+    report(error, '修改支付方式失败');
+  } finally {
+    busy.value = false;
+  }
+}
 
 async function addMethod(): Promise<void> {
   clearMessages();
@@ -280,6 +336,7 @@ async function addMethod(): Promise<void> {
   const payload = {
     name: newMethod.value.name.trim(),
     type: newMethod.value.type,
+    icon: newMethod.value.icon || undefined,
     ...(newMethod.value.type === 'credit'
       ? {
           billingDay: Number(newMethod.value.billingDay),
@@ -291,7 +348,7 @@ async function addMethod(): Promise<void> {
   busy.value = true;
   try {
     await paymentMethodsApi.create(payload);
-    newMethod.value = { name: '', type: 'cash', billingDay: '', repaymentDay: '' };
+    newMethod.value = { name: '', type: 'cash', icon: '', billingDay: '', repaymentDay: '' };
     showMethodForm.value = false;
     await dict.load(true);
     ui.markDataChanged();
@@ -685,34 +742,108 @@ function formatTimestamp(iso: string): string {
           <li
             v-for="method in dict.paymentMethods"
             :key="method.id"
-            class="flex items-center gap-3 rounded-md bg-surface px-4 py-3"
+            class="rounded-md bg-surface px-4 py-3"
           >
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium">
-                {{ method.name }}
-                <span v-if="!method.isEnabled" class="ml-1 text-xs text-ink-muted">（已停用）</span>
+            <div class="flex items-center gap-3">
+              <PaymentIcon :name="method.name" :icon="method.icon" :size="22" />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium">
+                  {{ method.name }}
+                  <span v-if="!method.isEnabled" class="ml-1 text-xs text-ink-muted">（已停用）</span>
+                </span>
+                <span class="block text-xs text-ink-muted">
+                  {{
+                    method.type === 'credit'
+                      ? `信用卡 · 账单日 ${method.billingDay} · 还款日 ${method.repaymentDay}`
+                      : '现金 / 储蓄卡'
+                  }}
+                  · {{ method.expenseCount }} 笔
+                </span>
               </span>
-              <span class="block text-xs text-ink-muted">
-                {{
-                  method.type === 'credit'
-                    ? `信用卡 · 账单日 ${method.billingDay} · 还款日 ${method.repaymentDay}`
-                    : '现金 / 储蓄卡'
-                }}
-                · {{ method.expenseCount }} 笔
-              </span>
-            </span>
-            <button
-              type="button"
-              :disabled="busy"
-              class="shrink-0 rounded-sm px-3 py-2 text-xs font-semibold transition-colors duration-200 hover:bg-canvas disabled:opacity-40"
-              @click="toggleMethod(method.id, !method.isEnabled)"
+              <button
+                type="button"
+                :disabled="busy"
+                class="shrink-0 rounded-sm px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors duration-200 hover:bg-canvas disabled:opacity-40"
+                @click="toggleEditMethod(method)"
+              >
+                {{ editingMethodId === method.id ? '收起' : '编辑' }}
+              </button>
+              <button
+                type="button"
+                :disabled="busy"
+                class="shrink-0 rounded-sm px-2.5 py-1.5 text-xs font-semibold text-ink-muted transition-colors duration-200 hover:bg-canvas hover:text-ink disabled:opacity-40"
+                @click="toggleMethod(method.id, !method.isEnabled)"
+              >
+                {{ method.isEnabled ? '停用' : '启用' }}
+              </button>
+            </div>
+
+            <!-- 编辑表单 -->
+            <div
+              v-if="editingMethodId === method.id"
+              class="mt-3 border-t border-line/40 pt-3 space-y-2.5 animate-in fade-in"
             >
-              {{ method.isEnabled ? '停用' : '启用' }}
-            </button>
+              <div>
+                <label class="label-cn block mb-1">名称</label>
+                <input
+                  v-model="editMethodForm.name"
+                  type="text"
+                  placeholder="支付方式名称"
+                  class="w-full rounded-sm bg-sunken px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
+                />
+              </div>
+
+              <div v-if="method.type === 'credit'" class="flex gap-2">
+                <div class="min-w-0 flex-1">
+                  <label class="label-cn block mb-1">账单日 (1–31)</label>
+                  <input
+                    v-model="editMethodForm.billingDay"
+                    inputmode="numeric"
+                    placeholder="账单日 1–31"
+                    class="w-full rounded-sm bg-sunken px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
+                  />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <label class="label-cn block mb-1">还款日 (1–31)</label>
+                  <input
+                    v-model="editMethodForm.repaymentDay"
+                    inputmode="numeric"
+                    placeholder="还款日 1–31"
+                    class="w-full rounded-sm bg-sunken px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="label-cn block mb-1">图标</label>
+                <PaymentIconPicker
+                  v-model="editMethodForm.icon"
+                  :name="editMethodForm.name"
+                />
+              </div>
+
+              <div class="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  class="rounded-sm bg-sunken px-3 py-1.5 text-xs font-medium text-ink-muted hover:text-ink"
+                  @click="editingMethodId = null"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  :disabled="busy || !editMethodForm.name.trim()"
+                  class="rounded-sm bg-primary-fill px-4 py-1.5 text-xs font-bold text-on-primary disabled:opacity-40"
+                  @click="saveEditMethod(method.id, method.type)"
+                >
+                  保存修改
+                </button>
+              </div>
+            </div>
           </li>
         </ul>
 
-        <form v-if="showMethodForm" class="mt-3 space-y-2" @submit.prevent="addMethod">
+        <form v-if="showMethodForm" class="mt-3 space-y-2.5" @submit.prevent="addMethod">
           <input
             v-model="newMethod.name"
             placeholder="名称，如「招行信用卡」"
@@ -739,6 +870,10 @@ function formatTimestamp(iso: string): string {
               placeholder="还款日 1–31"
               class="min-w-0 flex-1 rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
             />
+          </div>
+          <div>
+            <p class="label-cn mb-1.5">图标</p>
+            <PaymentIconPicker v-model="newMethod.icon" :name="newMethod.name" />
           </div>
           <button
             type="submit"

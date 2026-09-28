@@ -491,10 +491,10 @@ describe('权限：读全开放，写仅限创建者', () => {
 });
 
 describe('列表筛选与分页', () => {
-  test('按还款日所在月份筛选（不是按消费日）', async () => {
+  test('按还款日所在月份筛选（当指定 by=repayment_date 时）', async () => {
     const jan = await app.inject({
       method: 'GET',
-      url: '/api/expenses?month=2026-01',
+      url: '/api/expenses?month=2026-01&by=repayment_date',
       headers: auth(),
     });
     const janItems = jan.json().items as Array<Record<string, unknown>>;
@@ -507,17 +507,30 @@ describe('列表筛选与分页', () => {
       );
     }
 
-    // 1/11 那笔虽然消费在 1 月，但还款日在 2 月，应归入 2 月
+    // 1/11 那笔虽然消费在 1 月，但还款日在 2 月，指定 by=repayment_date 时归入 2 月
     const feb = await app.inject({
       method: 'GET',
-      url: '/api/expenses?month=2026-02',
+      url: '/api/expenses?month=2026-02&by=repayment_date',
       headers: auth(),
     });
     assert.ok(
       (feb.json().items as Array<Record<string, unknown>>).some(
         (item) => item['spendDate'] === '2026-01-11',
       ),
-      '1/11 消费、2/28 还款的记录应出现在 2 月列表里',
+      '1/11 消费、2/28 还款的记录应出现在 2 月还款列表里',
+    );
+  });
+
+  test('默认按消费日所在月份筛选（流水展示口径）', async () => {
+    const jan = await app.inject({
+      method: 'GET',
+      url: '/api/expenses?month=2026-01',
+      headers: auth(),
+    });
+    const janItems = jan.json().items as Array<Record<string, unknown>>;
+    assert.ok(
+      janItems.some((item) => item['spendDate'] === '2026-01-11'),
+      '1/11 消费的记录默认应出现在 1 月流水列表里',
     );
   });
 

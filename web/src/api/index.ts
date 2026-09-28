@@ -109,6 +109,7 @@ export const paymentMethods = {
   create: (input: {
     name: string;
     type: PaymentMethodType;
+    icon?: string;
     billingDay?: number;
     repaymentDay?: number;
     sortOrder?: number;
@@ -118,6 +119,7 @@ export const paymentMethods = {
     id: string,
     input: {
       name?: string;
+      icon?: string;
       billingDay?: number;
       repaymentDay?: number;
       sortOrder?: number;
@@ -130,6 +132,7 @@ export const paymentMethods = {
 
 export interface ExpenseQuery {
   month?: string;
+  by?: 'spend_date' | 'repayment_date';
   from?: string;
   to?: string;
   categoryId?: string;

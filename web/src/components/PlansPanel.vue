@@ -32,6 +32,7 @@ import {
 } from '@/api';
 import CategoryIcon from '@/components/CategoryIcon.vue';
 import ChipButton from '@/components/ChipButton.vue';
+import PaymentIcon from '@/components/PaymentIcon.vue';
 import PlanTodoCard from '@/components/PlanTodoCard.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useDictionariesStore } from '@/stores/dictionaries';
@@ -502,7 +503,10 @@ watch(() => ui.dataVersion, () => void plansStore.refresh());
               :active="createForm.paymentMethodId === method.id"
               @click="createForm.paymentMethodId = method.id"
             >
-              {{ method.name }}
+              <span class="inline-flex items-center gap-1.5">
+                <PaymentIcon :name="method.name" :icon="method.icon" :size="14" />
+                <span>{{ method.name }}</span>
+              </span>
             </ChipButton>
           </div>
 

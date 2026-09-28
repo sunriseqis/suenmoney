@@ -31,6 +31,7 @@ import {
 } from '@/api';
 import CategoryIcon from '@/components/CategoryIcon.vue';
 import ChipButton from '@/components/ChipButton.vue';
+import PaymentIcon from '@/components/PaymentIcon.vue';
 import PeriodPicker from '@/components/PeriodPicker.vue';
 import ReportCalendar, { type CalendarCell } from '@/components/ReportCalendar.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
@@ -81,6 +82,8 @@ const categoryId = ref<string | null>(null);
 const paymentMethodId = ref<string | null>(null);
 const keyword = ref('');
 const sortBy = ref<SortBy>('date_desc');
+const isFilterExpanded = ref(false);
+const hasChipFilter = computed(() => categoryId.value !== null || paymentMethodId.value !== null);
 
 // 月档流水数据
 const items = ref<Expense[]>([]);
@@ -141,6 +144,7 @@ const today = todayLocal();
 async function fetchPage(cursor: string | null): Promise<void> {
   const page = await expensesApi.list({
     month: month.value,
+    by: 'spend_date',
     categoryId: categoryId.value ?? undefined,
     paymentMethodId: paymentMethodId.value ?? undefined,
     q: keyword.value.trim() === '' ? undefined : keyword.value.trim(),
@@ -376,9 +380,9 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             :class="dueTodos.length > 0 ? 'grid-cols-2' : 'grid-cols-1'"
           >
             <!-- 左格：本月支出 -->
-            <div class="rounded-sm bg-canvas/70 p-2.5">
-              <span class="block text-[11px] text-ink-muted">本月支出</span>
-              <b class="mt-0.5 block truncate text-base font-bold text-ink tabular-nums">
+            <div class="flex flex-col justify-between rounded-sm bg-canvas/80 p-3">
+              <span class="block text-xs font-medium text-ink-muted">本月支出</span>
+              <b class="mt-1 block truncate text-xl font-extrabold tracking-tight text-ink tabular-nums">
                 {{ formatYuan(currentMonthTotalCents) }}
               </b>
             </div>
@@ -387,11 +391,11 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             <button
               v-if="dueTodos.length > 0"
               type="button"
-              class="rounded-sm bg-canvas/70 p-2.5 text-left transition-colors hover:bg-canvas"
+              class="flex flex-col justify-between rounded-sm bg-canvas/80 p-3 text-left transition-colors hover:bg-canvas"
               @click="isTopCardExpanded = !isTopCardExpanded"
             >
               <div class="flex items-center justify-between">
-                <span class="text-[11px] font-semibold text-ink">
+                <span class="text-xs font-semibold text-ink">
                   {{ hasOverdue ? '有待办逾期' : `${dueTodos.length} 期待处理` }}
                 </span>
                 <span
@@ -408,7 +412,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                   ▾
                 </span>
               </div>
-              <span class="mt-0.5 block truncate text-xs font-bold tabular-nums text-ink">
+              <span class="mt-1 block truncate text-base font-bold tabular-nums text-ink">
                 {{ formatYuan(dueTotalAmount) }}
               </span>
             </button>
@@ -532,7 +536,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             </button>
           </div>
 
-          <!-- 仅月档显示的排序开关 -->
+          <!-- 仅月档显示的排序与筛选开关 -->
           <div v-if="scope === 'month'" class="flex items-center rounded-sm bg-sunken p-0.5 text-xs">
             <button
               type="button"
@@ -549,6 +553,15 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
               @click="sortBy = 'amount_desc'"
             >
               最贵
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-xs px-2 py-0.5 text-[11px] font-medium transition-colors"
+              :class="isFilterExpanded ? 'bg-canvas text-ink shadow-xs font-semibold' : 'text-ink-muted'"
+              @click="isFilterExpanded = !isFilterExpanded"
+            >
+              <span>筛选</span>
+              <span v-if="hasChipFilter" class="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
             </button>
           </div>
         </div>
@@ -639,13 +652,22 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
               >
                 最贵
               </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-xs px-2.5 py-1 text-xs font-medium transition-colors"
+                :class="isFilterExpanded ? 'bg-canvas text-ink shadow-xs font-semibold' : 'text-ink-muted'"
+                @click="isFilterExpanded = !isFilterExpanded"
+              >
+                <span>筛选</span>
+                <span v-if="hasChipFilter" class="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- 仅月档显示的筛选 Chips -->
-        <template v-if="scope === 'month'">
-          <div class="flex flex-col gap-1.5 pt-1">
+        <!-- 仅月档且展开时显示的筛选 Chips -->
+        <template v-if="scope === 'month' && isFilterExpanded">
+          <div class="flex flex-col gap-1.5 pt-1 animate-in fade-in">
             <div class="flex gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
               <ChipButton :active="categoryId === null" @click="categoryId = null">全部分类</ChipButton>
               <ChipButton
@@ -654,7 +676,10 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 :active="categoryId === root.id"
                 @click="categoryId = categoryId === root.id ? null : root.id"
               >
-                {{ root.name }}
+                <span class="inline-flex items-center gap-1.5">
+                  <CategoryIcon :category-id="root.id" :size="13" />
+                  <span>{{ root.name }}</span>
+                </span>
               </ChipButton>
             </div>
 
@@ -668,32 +693,35 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 :active="paymentMethodId === method.id"
                 @click="paymentMethodId = paymentMethodId === method.id ? null : method.id"
               >
-                {{ method.name }}
+                <span class="inline-flex items-center gap-1.5">
+                  <PaymentIcon :name="method.name" :icon="method.icon" :size="14" />
+                  <span>{{ method.name }}</span>
+                </span>
               </ChipButton>
             </div>
           </div>
-
-          <!-- 合计行：只有在有筛选时才展示金额，无筛选时仅展示笔数（§6.2 ③） -->
-          <div class="flex items-center justify-between text-xs text-ink-muted pt-0.5">
-            <span>
-              <template v-if="isFilterActive">
-                筛选结果 <b>{{ items.length }}</b> 笔 · 合计 <b class="text-ink tabular-nums">{{ formatYuan(loadedTotal) }}</b>
-              </template>
-              <template v-else>
-                共 {{ items.length }} 笔记录
-              </template>
-            </span>
-
-            <button
-              v-if="isFilterActive"
-              type="button"
-              class="text-xs text-primary hover:underline"
-              @click="categoryId = null; paymentMethodId = null; keyword = '';"
-            >
-              清除筛选
-            </button>
-          </div>
         </template>
+
+        <!-- 合计行：只有在有筛选时才展示金额，无筛选时仅展示笔数（§6.2 ③） -->
+        <div v-if="scope === 'month'" class="flex items-center justify-between text-xs text-ink-muted pt-0.5">
+          <span>
+            <template v-if="isFilterActive">
+              筛选结果 <b>{{ items.length }}</b> 笔 · 合计 <b class="text-ink tabular-nums">{{ formatYuan(loadedTotal) }}</b>
+            </template>
+            <template v-else>
+              共 {{ items.length }} 笔记录
+            </template>
+          </span>
+
+          <button
+            v-if="isFilterActive"
+            type="button"
+            class="text-xs text-primary hover:underline"
+            @click="categoryId = null; paymentMethodId = null; keyword = '';"
+          >
+            清除筛选
+          </button>
+        </div>
       </div>
     </header>
 
@@ -766,7 +794,10 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 </td>
 
                 <td class="whitespace-nowrap py-2.5 pr-3 text-xs text-ink-muted">
-                  {{ row.paymentMethodName }}
+                  <span class="inline-flex items-center gap-1.5">
+                    <PaymentIcon :name="row.paymentMethodName" :size="13" />
+                    <span>{{ row.paymentMethodName }}</span>
+                  </span>
                 </td>
 
                 <td class="whitespace-nowrap py-2.5 pr-3 text-xs text-ink-muted">
@@ -832,7 +863,10 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                   <!-- 副信息：备注 · 方式 · 账期（窄屏账期让位） -->
                   <span class="min-w-0 flex-1 truncate text-xs text-ink-muted">
                     <span v-if="row.note">{{ row.note }} · </span>
-                    <span>{{ row.paymentMethodName }}</span>
+                    <span class="inline-flex items-center gap-1">
+                      <PaymentIcon :name="row.paymentMethodName" :size="11" />
+                      <span>{{ row.paymentMethodName }}</span>
+                    </span>
                     <span
                       v-if="billingGraceDays(row.spendDate, row.repaymentDate) > 0"
                       class="hidden sm:inline"

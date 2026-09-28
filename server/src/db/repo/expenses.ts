@@ -216,8 +216,10 @@ export function requireOwnExpense(db: DatabaseSync, id: string, actorId: string)
 }
 
 export interface ListExpensesFilter {
-  /** 'YYYY-MM'，按还款日所在月份过滤 */
+  /** 'YYYY-MM'，月份过滤 */
   month?: string | undefined;
+  /** 过滤与排序基准：'spend_date'（消费日）或 'repayment_date'（还款日/报表归属月），默认 'spend_date' */
+  by?: 'spend_date' | 'repayment_date' | undefined;
   from?: string | undefined;
   to?: string | undefined;
   categoryId?: string | undefined;
@@ -226,7 +228,7 @@ export interface ListExpensesFilter {
   /** 备注模糊搜索 */
   keyword?: string | undefined;
   limit?: number | undefined;
-  /** 键集分页游标，格式 `${repayment_date}|${id}` */
+  /** 键集分页游标，格式 `${date}|${id}` */
   cursor?: string | undefined;
 }
 
@@ -242,7 +244,7 @@ const MAX_LIMIT = 200;
 /**
  * 流水分页查询。
  *
- * 用**键集分页**（`(repayment_date, id)` 元组比较）而不是 OFFSET：
+ * 用**键集分页**（`(date, id)` 元组比较）而不是 OFFSET：
  * OFFSET 在深翻页时要求 SQLite 扫描并丢弃前面所有行，而且并发写入会让
  * 分页结果错位（第二页重复或漏掉记录）。键集分页两个问题都没有。
  */
@@ -252,17 +254,19 @@ export function listExpenses(
 ): ListExpensesResult {
   const where: string[] = ['e.deleted_at IS NULL'];
   const params: Array<string | number> = [];
+  const by = filter.by ?? 'spend_date';
+  const dateCol = by === 'repayment_date' ? 'e.repayment_date' : 'e.spend_date';
 
   if (filter.month !== undefined) {
-    where.push("e.repayment_date LIKE ? || '%'");
+    where.push(`${dateCol} LIKE ? || '%'`);
     params.push(filter.month);
   }
   if (filter.from !== undefined) {
-    where.push('e.repayment_date >= ?');
+    where.push(`${dateCol} >= ?`);
     params.push(filter.from);
   }
   if (filter.to !== undefined) {
-    where.push('e.repayment_date <= ?');
+    where.push(`${dateCol} <= ?`);
     params.push(filter.to);
   }
   if (filter.categoryId !== undefined) {
@@ -290,8 +294,8 @@ export function listExpenses(
   if (filter.cursor !== undefined) {
     const [cursorDate, cursorId] = filter.cursor.split('|');
     if (cursorDate !== undefined && cursorId !== undefined) {
-      // 键集分页：按消费发生日 (spend_date) 倒序排列，日期相同时按 id 倒序
-      where.push('(e.spend_date < ? OR (e.spend_date = ? AND e.id < ?))');
+      // 键集分页：按指定日期倒序排列，日期相同时按 id 倒序
+      where.push(`(${dateCol} < ? OR (${dateCol} = ? AND e.id < ?))`);
       params.push(cursorDate, cursorDate, cursorId);
     }
   }
@@ -299,13 +303,12 @@ export function listExpenses(
   const limit = Math.min(Math.max(filter.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
 
   // 多取一条用来判断还有没有下一页，比再发一次 COUNT 查询便宜
-  // 按实际消费日 (spend_date) 倒序展示流水，避免有账期的信用卡按还款日被错误置顶
   const rows = db
     .prepare(
       `SELECT ${DISPLAY_COLUMNS}
          FROM expenses e ${JOINS}
         WHERE ${where.join(' AND ')}
-        ORDER BY e.spend_date DESC, e.id DESC
+        ORDER BY ${dateCol} DESC, e.id DESC
         LIMIT ?`,
     )
     .all(...params, limit + 1) as unknown as ExpenseRowJoined[];
@@ -313,10 +316,11 @@ export function listExpenses(
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const last = page.at(-1);
+  const lastDate = last !== undefined ? (by === 'repayment_date' ? last.repayment_date : last.spend_date) : '';
 
   return {
     items: page.map(toApi),
-    nextCursor: hasMore && last !== undefined ? `${last.spend_date}|${last.id}` : null,
+    nextCursor: hasMore && last !== undefined ? `${lastDate}|${last.id}` : null,
     hasMore,
   };
 }

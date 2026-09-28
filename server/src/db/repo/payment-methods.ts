@@ -13,6 +13,7 @@ export interface PaymentMethodRow {
   type: PaymentMethodType;
   billing_day: number | null;
   repayment_day: number | null;
+  icon: string;
   is_enabled: number;
   sort_order: number;
   created_at: string;
@@ -27,6 +28,8 @@ export interface PaymentMethod {
   id: string;
   name: string;
   type: PaymentMethodType;
+  /** 图标名（见前端 utils/payment-icons.ts 的登记表）；空字符串表示没设过 */
+  icon: string;
   /** 账单日 / 入账日。仅信用类有值 */
   billingDay: number | null;
   /** 还款日。仅信用类有值 */
@@ -36,7 +39,7 @@ export interface PaymentMethod {
   expenseCount: number;
 }
 
-const COLUMNS = `id, name, type, billing_day, repayment_day, is_enabled, sort_order,
+const COLUMNS = `id, name, type, billing_day, repayment_day, icon, is_enabled, sort_order,
                  created_at, updated_at, deleted_at, rev, device_id`;
 
 const nowIso = (): string => new Date().toISOString();
@@ -46,6 +49,7 @@ function toApi(row: PaymentMethodRow): PaymentMethod {
     id: row.id,
     name: row.name,
     type: row.type,
+    icon: row.icon ?? '',
     billingDay: row.billing_day,
     repaymentDay: row.repayment_day,
     isEnabled: row.is_enabled === 1,
@@ -59,6 +63,7 @@ export function toSyncPaymentMethod(row: PaymentMethodRow): Record<string, unkno
     id: row.id,
     name: row.name,
     type: row.type,
+    icon: row.icon ?? '',
     billingDay: row.billing_day,
     repaymentDay: row.repayment_day,
     isEnabled: row.is_enabled === 1,
@@ -191,6 +196,7 @@ export interface CreatePaymentMethodInput {
    */
   billingDay?: number | undefined;
   repaymentDay?: number | undefined;
+  icon?: string | undefined;
   sortOrder?: number | undefined;
   actorId: string;
   deviceId?: string | null;
@@ -206,6 +212,7 @@ export function createPaymentMethod(
 
   const cycle = normalizeCycle(input.type, input.billingDay, input.repaymentDay);
   const timestamp = nowIso();
+  const icon = input.icon?.trim() ?? '';
 
   const row: PaymentMethodRow = {
     id: ulid(),
@@ -213,6 +220,7 @@ export function createPaymentMethod(
     type: input.type,
     billing_day: cycle.billing,
     repayment_day: cycle.repayment,
+    icon,
     is_enabled: 1,
     sort_order: input.sortOrder ?? 0,
     created_at: timestamp,
@@ -227,15 +235,16 @@ export function createPaymentMethod(
       assertNoNameTaken(db, name);
 
       db.prepare(
-        `INSERT INTO payment_methods (id, name, type, billing_day, repayment_day, is_enabled,
+        `INSERT INTO payment_methods (id, name, type, billing_day, repayment_day, icon, is_enabled,
                                       sort_order, created_at, updated_at, deleted_at, rev, device_id)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, NULL, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL, 1, ?)`,
       ).run(
         row.id,
         row.name,
         row.type,
         row.billing_day,
         row.repayment_day,
+        row.icon,
         row.sort_order,
         row.created_at,
         row.updated_at,
@@ -263,6 +272,7 @@ export interface UpdatePaymentMethodInput {
   name?: string | undefined;
   billingDay?: number | undefined;
   repaymentDay?: number | undefined;
+  icon?: string | undefined;
   sortOrder?: number | undefined;
   isEnabled?: boolean | undefined;
   actorId: string;
@@ -298,6 +308,7 @@ export function updatePaymentMethod(
     name,
     billing_day: cycle.billing,
     repayment_day: cycle.repayment,
+    icon: input.icon === undefined ? (existing.icon ?? '') : input.icon.trim(),
     sort_order: input.sortOrder ?? existing.sort_order,
     is_enabled: (input.isEnabled ?? existing.is_enabled === 1) ? 1 : 0,
     updated_at: nowIso(),
@@ -315,13 +326,14 @@ export function updatePaymentMethod(
 
       db.prepare(
         `UPDATE payment_methods
-            SET name = ?, billing_day = ?, repayment_day = ?, sort_order = ?, is_enabled = ?,
+            SET name = ?, billing_day = ?, repayment_day = ?, icon = ?, sort_order = ?, is_enabled = ?,
                 updated_at = ?, rev = ?, device_id = ?
           WHERE id = ?`,
       ).run(
         next.name,
         next.billing_day,
         next.repayment_day,
+        next.icon,
         next.sort_order,
         next.is_enabled,
         next.updated_at,
