@@ -56,6 +56,30 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
     return paymentMethods.value.find((item) => item.id === id) ?? null;
   }
 
+  /**
+   * 某个分类的「视觉身份」：图标 + 颜色。
+   *
+   * 规则：二级分类用**自己的图标**，但**颜色跟一级走** —— 用户给「餐饮」选的紫
+   * 要落在它所有子分类上。合并成一处返回，是因为这条规则一旦在某个视图里漏掉，
+   * 表现只是「这一页的颜色跟别处不一样」，不报错、也不容易被发现。
+   *
+   * 聚合结果（报表的分类桶）没有完整 Category 对象，那种场景继续走
+   * `CategoryIcon` 的 name/color 入参，不用这里。
+   */
+  function visualOf(id: string | null): {
+    name: string;
+    icon: string;
+    color: string;
+    /** 参与颜色推导的名字 */
+    colorName: string;
+  } | null {
+    const self = findCategory(id);
+    if (self === null) return null;
+
+    const source = self.parentId === null ? self : (findCategory(self.parentId) ?? self);
+    return { name: self.name, icon: self.icon, color: source.color, colorName: source.name };
+  }
+
   async function load(force = false): Promise<void> {
     if (loaded.value && !force) return;
     if (loading.value) return;
@@ -91,6 +115,7 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
     selectableChildren,
     findCategory,
     findPaymentMethod,
+    visualOf,
     load,
   };
 });

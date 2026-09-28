@@ -17,6 +17,7 @@ import {
   categories as categoriesApi,
   paymentMethods as paymentMethodsApi,
   users as usersApi,
+  type Category,
   type PaymentMethodType,
   type User,
 } from '@/api';
@@ -24,6 +25,7 @@ import PlansPanel from '@/components/PlansPanel.vue';
 import CategoryIcon from '@/components/CategoryIcon.vue';
 import ChipButton from '@/components/ChipButton.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
+import DataPanel from '@/components/DataPanel.vue';
 import IconPicker from '@/components/IconPicker.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useDictionariesStore } from '@/stores/dictionaries';
@@ -98,17 +100,27 @@ const showCategoryForm = ref(false);
 const pickingIconFor = ref<string | null>(null);
 /**
  * 设置的当前分区。默认「分类」与 mockup 一致。
- * 窄屏 4 个 tab 等分放得下（带图标放不下，mockup 笔记 16 说得明白）；
- * 宽屏侧栏按「账目 / 家庭与账号」分组，与 mockup 的分组一致。
+ *
+ * 「数据」**只给管理员**：导出含全家庭的数据，导入 / 清空会改全家的数据，
+ * 都不是普通成员的操作。客户端隐藏按钮不算权限控制，所以服务端每一条
+ * 数据类路由都挂了 `requireAdmin` —— 这里只是不把一个注定 403 的入口摆出来。
+ *
+ * 窄屏 5 个 tab 等分仍然放得下（15 个汉字 × 12px + 边距 ≈ 300px < 358px）；
+ * 带图标放不下 —— 这正是当初去图标的原因。
  */
 const SETTING_TABS = [
   { id: 'categories', label: '分类', group: '账目' },
   { id: 'payments', label: '支付方式', group: '账目' },
   { id: 'plans', label: '计划', group: '账目' },
-  { id: 'household', label: '家庭与账号', group: '家庭与账号' },
+  { id: 'data', label: '数据', group: '家庭与数据' },
+  { id: 'household', label: '家庭与账号', group: '家庭与数据' },
 ] as const;
 type TabId = (typeof SETTING_TABS)[number]['id'];
-const SETTING_GROUPS = [...new Set(SETTING_TABS.map((t) => t.group))];
+
+/** 管理员才看得到「数据」；分组标题跟着它出现或消失，不留一个空标题。 */
+const visibleTabs = computed(() => SETTING_TABS.filter((tab) => tab.id !== 'data' || isAdmin.value));
+const SETTING_GROUPS = computed(() => [...new Set(visibleTabs.value.map((tab) => tab.group))]);
+
 const activeTab = ref<TabId>('categories');
 
 /**
@@ -183,6 +195,70 @@ async function changeCategoryColor(id: string, color: string): Promise<void> {
     ui.markDataChanged();
   } catch (error) {
     report(error, '改颜色失败');
+  } finally {
+    busy.value = false;
+  }
+}
+
+/**
+ * 改名。
+ *
+ * 挂在 `@change`（失焦或回车才触发）而不是 `@input` —— 后者每敲一个字
+ * 就发一次请求，一个「宠物用品」会打出 4 次 PATCH，而前 3 次写进去的都是
+ * 半截名字。改名的原子性是**一次完整输入**，不是每一次按键。
+ *
+ * 失败时要把输入框恢复成旧名字：服务端的拒绝（同层重名 409 之类）
+ * 不改数据，但用户已经在框里看到新名字了，不还原会让人以为改成功了。
+ */
+async function renameCategory(id: string, event: Event): Promise<void> {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+
+  const current = dict.findCategory(id);
+  const next = input.value.trim();
+
+  if (current === null || next === '' || next === current.name) {
+    input.value = current?.name ?? '';
+    return;
+  }
+
+  clearMessages();
+  busy.value = true;
+  try {
+    await categoriesApi.update(id, { name: next });
+    await dict.load(true);
+    ui.markDataChanged();
+  } catch (error) {
+    report(error, '改名失败');
+    input.value = current.name;
+  } finally {
+    busy.value = false;
+  }
+}
+
+/**
+ * 把二级分类移到另一个一级分类下。
+ *
+ * 只列**启用的**一级分类：服务端会拒绝移进停用的一级（那会让这个二级
+ * 整组从记账选择器里消失），与其让用户点了才被拒，不如根本不列出来。
+ * 也排除它当前所在的那一个 —— 移到自己原本的组里没有任何效果。
+ */
+function moveTargetsFor(childId: string): Category[] {
+  const child = dict.findCategory(childId);
+  if (child === null) return [];
+  return dict.rootCategories.filter((root) => root.id !== child.parentId);
+}
+
+async function moveCategory(id: string, parentId: string): Promise<void> {
+  clearMessages();
+  busy.value = true;
+  try {
+    await categoriesApi.update(id, { parentId });
+    await dict.load(true);
+    ui.markDataChanged();
+    notice.value = '已移动。历史记录的分类归属会跟着变 —— 报表里的分组口径也一起变。';
+  } catch (error) {
+    report(error, '移动失败');
   } finally {
     busy.value = false;
   }
@@ -324,9 +400,9 @@ function formatTimestamp(iso: string): string {
         计划在这里只做**管理**（新建/编辑/规则），hide-todos 关掉「该处理了」：
         待办是首页的事，两页重复同一份提醒只会让人怀疑数据是不是两份。
       -->
-      <div class="mt-4 grid grid-cols-4 gap-1 rounded-md bg-sunken p-1 lg:hidden">
+      <div class="mt-4 grid grid-cols-5 gap-1 rounded-md bg-sunken p-1 lg:hidden">
         <button
-          v-for="t in SETTING_TABS"
+          v-for="t in visibleTabs"
           :key="t.id"
           type="button"
           class="rounded-sm py-2 text-xs font-semibold transition-colors duration-200"
@@ -344,7 +420,7 @@ function formatTimestamp(iso: string): string {
             <p class="label-cn">{{ g }}</p>
             <div class="mt-2 space-y-1">
               <button
-                v-for="t in SETTING_TABS.filter((x) => x.group === g)"
+                v-for="t in visibleTabs.filter((x) => x.group === g)"
                 :key="t.id"
                 type="button"
                 class="block w-full rounded-sm px-3 py-2 text-left text-sm font-semibold transition-colors duration-200"
@@ -359,6 +435,14 @@ function formatTimestamp(iso: string): string {
         </aside>
 
         <div class="min-w-0 flex-1">
+          <!--
+            「数据」用 v-if 而不是 v-show：其余 tab 用 v-show 是为了留住各自的
+            编辑态，而这一页要的恰好相反 —— 每次进来都重新读一遍概览，
+            条数才是当下的。而且用 v-show 的话它会在页面加载时就发一次请求，
+            非管理员即使看不到这个 tab，也会先吃一个 403。
+          -->
+          <DataPanel v-if="isAdmin && activeTab === 'data'" />
+
           <div v-show="activeTab === 'plans'">
             <PlansPanel hide-todos />
           </div>
@@ -416,9 +500,27 @@ function formatTimestamp(iso: string): string {
               </button>
             </div>
 
-            <!-- 图标与颜色在同一个展开面板里：它们都是「这个分类长什么样」，
-                 分成两个入口的话用户要先想清楚自己要改的是哪一个 -->
+            <!--
+              图标与颜色在同一个展开面板里：它们都是「这个分类长什么样」，
+              分成两个入口的话用户要先想清楚自己要改的是哪一个。
+              第三轮把**改名**也收进这个面板：分类树的模板必然对不上每一家
+              （默认叫「外卖」，他家叫「外带」），而改名原先完全没有入口 ——
+              只能停用重建，连带丢掉历史归属。
+              刻意**不做行内编辑**：行内编辑会让整棵树在编辑态下抖动，
+              两级树尤其明显（缩进、折叠箭头、停用按钮都会跟着挪）。
+            -->
             <div v-if="pickingIconFor === root.id" class="mt-1 space-y-1">
+              <label class="block rounded-md bg-sunken p-3">
+                <span class="label-cn">名称</span>
+                <input
+                  :value="root.name"
+                  type="text"
+                  maxlength="20"
+                  class="mt-2 w-full rounded-sm bg-canvas px-3 py-2 text-sm text-ink"
+                  @change="renameCategory(root.id, $event)"
+                />
+              </label>
+
               <IconPicker
                 :model-value="root.icon"
                 @update:model-value="changeCategoryIcon(root.id, $event)"
@@ -427,6 +529,11 @@ function formatTimestamp(iso: string): string {
                 :model-value="root.color"
                 @update:model-value="changeCategoryColor(root.id, $event)"
               />
+
+              <!-- 一级分类没有「移动」这一项：分类最多两级，它无处可移 -->
+              <p class="rounded-md bg-sunken px-3 py-2.5 text-xs text-ink-muted">
+                一级分类不能移动
+              </p>
             </div>
 
             <ul v-if="root.children.length > 0 && expandedCategories[root.id]" class="mt-1 ml-4 space-y-1">
@@ -467,6 +574,17 @@ function formatTimestamp(iso: string): string {
                 </div>
 
                 <div v-if="pickingIconFor === child.id" class="mt-1 ml-10 space-y-1">
+                  <label class="block rounded-md bg-sunken p-3">
+                    <span class="label-cn">名称</span>
+                    <input
+                      :value="child.name"
+                      type="text"
+                      maxlength="20"
+                      class="mt-2 w-full rounded-sm bg-canvas px-3 py-2 text-sm text-ink"
+                      @change="renameCategory(child.id, $event)"
+                    />
+                  </label>
+
                   <IconPicker
                     :model-value="child.icon"
                     @update:model-value="changeCategoryIcon(child.id, $event)"
@@ -475,6 +593,31 @@ function formatTimestamp(iso: string): string {
                     :model-value="child.color"
                     @update:model-value="changeCategoryColor(child.id, $event)"
                   />
+
+                  <!--
+                    同深度移动：把二级挪到另一个一级下。
+                    列的是**启用的**一级且排除它当前所在的那个 —— 服务端会拒绝
+                    移进停用的一级（那会让这个二级整组从记账选择器里消失），
+                    与其让人点了才被拒，不如不列出来。
+                  -->
+                  <div v-if="moveTargetsFor(child.id).length > 0" class="rounded-md bg-sunken p-3">
+                    <span class="label-cn">移动到</span>
+                    <div class="mt-2 flex flex-wrap gap-1.5">
+                      <button
+                        v-for="target in moveTargetsFor(child.id)"
+                        :key="target.id"
+                        type="button"
+                        :disabled="busy"
+                        class="rounded-sm bg-canvas px-3 py-2 text-xs font-semibold text-ink-muted transition-colors duration-200 hover:text-ink disabled:opacity-40"
+                        @click="moveCategory(child.id, target.id)"
+                      >
+                        {{ target.name }}
+                      </button>
+                    </div>
+                    <p class="mt-2 text-xs text-ink-muted">
+                      历史记录的归属会跟着变
+                    </p>
+                  </div>
                 </div>
               </li>
             </ul>

@@ -5,6 +5,7 @@ import { config } from '../config.ts';
 import { HttpError } from '../lib/http-error.ts';
 import { authRoutes } from './auth.ts';
 import { categoryRoutes } from './categories.ts';
+import { dataRoutes } from './data.ts';
 import { expenseRoutes } from './expenses.ts';
 import { paymentMethodRoutes } from './payment-methods.ts';
 import { planRoutes } from './plans.ts';
@@ -68,6 +69,7 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
   await app.register(reportRoutes);
   await app.register(planRoutes);
   await app.register(userRoutes);
+  await app.register(dataRoutes);
 
   return app;
 }

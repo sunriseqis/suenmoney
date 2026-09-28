@@ -53,6 +53,30 @@ export function shiftMonth(month: string, delta: number): string {
   return `${String(nextYear).padStart(4, '0')}-${String(nextMon).padStart(2, '0')}`;
 }
 
+/** 该月有多少天。走 UTC，避免时区/DST 把结果挤到相邻月份。 */
+export function daysInMonth(month: string): number {
+  const [year, mon] = month.split('-').map(Number);
+  if (year === undefined || mon === undefined || !Number.isFinite(year) || !Number.isFinite(mon)) {
+    return 30;
+  }
+  // Date.UTC 的月份从 0 起，day=0 表示「上个月的最后一天」，正好是我们要的
+  return new Date(Date.UTC(year, mon, 0)).getUTCDate();
+}
+
+/**
+ * 这个月已经过了多少天 —— 算「日均」时的分母。
+ *
+ * 口径是「已过天数」而不是整月天数：月初拿整月天数去除，日均会被压得很低，
+ * 看起来像「这个月花得很少」，而实际上只是月还没过完。月末两种算法趋于一致。
+ *
+ * 历史月份按整月算（已经过完了），未来月份也按整月算（反正没有数据）。
+ */
+export function elapsedDays(month: string, today: string = todayLocal()): number {
+  const total = daysInMonth(month);
+  if (month !== today.slice(0, 7)) return total;
+  return Math.min(total, Math.max(1, Number(today.slice(8, 10))));
+}
+
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const;
 
 /** '2026-09-24' → '周四'。同样走 UTC，避免时区把日期挤到前后一天。 */

@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { ApiError, expenses as expensesApi, type Expense } from '@/api';
 import CategoryIcon from '@/components/CategoryIcon.vue';
 import ChipButton from '@/components/ChipButton.vue';
+import PeriodPicker from '@/components/PeriodPicker.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -18,7 +19,6 @@ import {
   formatDayLabel,
   formatMonthDay,
   formatMonthLabel,
-  shiftMonth,
   todayLocal,
   weekdayOf,
 } from '@/utils/dates';
@@ -44,13 +44,25 @@ const loadedTotal = computed(() =>
   items.value.reduce((sum, item) => sum + item.amountCents, 0),
 );
 
+/**
+ * 每段 100 笔（M9 的裁决）。
+ *
+ * 原来是 50 笔的无限加载。范围缩小之后 —— 年 / 全部两档改成了日历，
+ * **真正还长的只剩月档**（一屏多、最多几屏），所以「虚拟滚动 + 段标记」
+ * 是过度设计：段（年 → 月）已经不存在于列表里，按段回收无从谈起；
+ * 页码又会把「9 月」切成好几页。一段 100 笔 + 一个「加载更多」按钮
+ * 在月档足够（一个月的记录极少超过 100 笔），而且**行数确定**
+ * —— 一行一项之后一屏装多少行是可算的。
+ */
+const PAGE_SIZE = 100;
+
 async function fetchPage(cursor: string | null): Promise<void> {
   const page = await expensesApi.list({
     month: month.value,
     categoryId: categoryId.value ?? undefined,
     paymentMethodId: paymentMethodId.value ?? undefined,
     q: keyword.value.trim() === '' ? undefined : keyword.value.trim(),
-    limit: 50,
+    limit: PAGE_SIZE,
     cursor: cursor ?? undefined,
   });
 
@@ -124,34 +136,22 @@ const today = todayLocal();
       class="sticky top-0 z-[var(--z-sticky)] bg-canvas px-4 pt-[calc(var(--safe-top)+16px)] pb-3 lg:px-6"
     >
       <div class="mx-auto w-full max-w-[var(--content-max)]">
+        <!--
+          期间选择与搜索**同一行**。
+          原先期间独占一行（← 标题 → 铺满整行），桌面上 1120px 里就为三个元素
+          花掉一整行，而这一行本来只需要 100px 出头。合并之后手机上还少了一行。
+          期间在左、搜索在右：先定范围、再在范围内搜，顺序与用户心里的因果一致。
+        -->
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="rounded-sm px-2 py-1 text-sm font-semibold text-ink-muted transition-colors duration-200 hover:text-ink"
-            aria-label="上一个月"
-            @click="month = shiftMonth(month, -1)"
-          >
-            ←
-          </button>
-          <h1 class="flex-1 text-center text-sm font-semibold text-ink-muted">
-            {{ formatMonthLabel(month) }}
-          </h1>
-          <button
-            type="button"
-            class="rounded-sm px-2 py-1 text-sm font-semibold text-ink-muted transition-colors duration-200 hover:text-ink"
-            aria-label="下一个月"
-            @click="month = shiftMonth(month, 1)"
-          >
-            →
-          </button>
-        </div>
+          <PeriodPicker v-model:month="month" :label="formatMonthLabel(month)" />
 
-        <input
-          v-model="keyword"
-          type="search"
-          placeholder="搜索备注"
-          class="mt-3 w-full rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
-        />
+          <input
+            v-model="keyword"
+            type="search"
+            placeholder="搜索备注"
+            class="min-w-0 flex-1 rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
+          />
+        </div>
 
         <!--
           筛选。

@@ -8,7 +8,7 @@ import {
   updateCategory,
   type UpdateCategoryInput,
 } from '../db/repo/categories.ts';
-import { asRecord, optionalBool, optionalInt, optionalString, pathParam, requireString } from '../lib/validate.ts';
+import { asRecord, optionalBool, optionalInt, optionalNullableString, optionalString, pathParam, requireString } from '../lib/validate.ts';
 import { currentAuth, requireAuth } from './guard.ts';
 
 /**
@@ -54,6 +54,15 @@ export async function categoryRoutes(app: FastifyInstance): Promise<void> {
     if (body['icon'] !== undefined) patch.icon = optionalString(body, 'icon', '');
     if (body['color'] !== undefined) patch.color = optionalString(body, 'color', '');
     if (body['sortOrder'] !== undefined) patch.sortOrder = optionalInt(body, 'sortOrder') ?? 0;
+
+    /*
+     * 移动分类。用 optionalNullableString 而不是 optionalString：
+     * 「没传 parentId」和「传 null 把二级提升为一级」必须是两件事，
+     * 后者要被明确拒绝（跨深度移动），而不是被当成"没传"悄悄放过。
+     * 中间那层校验在 updateCategory 里，这里只负责把三态原样传下去。
+     */
+    const movedParent = optionalNullableString(body, 'parentId');
+    if (movedParent !== undefined) patch.parentId = movedParent;
 
     if (body['isEnabled'] !== undefined) {
       const isEnabled = optionalBool(body, 'isEnabled', true);

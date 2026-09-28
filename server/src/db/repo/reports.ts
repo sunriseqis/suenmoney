@@ -23,6 +23,13 @@ export interface CategoryBucket {
   count: number;
   /** 占总额比例，0–1。总额为 0 时统一为 0 */
   ratio: number;
+  /** 上一个同口径期间的金额（分）。月报比上月、年报比去年；没有则为 0 */
+  previousCents: number;
+  /**
+   * 环比。上期为 0 时 null —— 「从 0 涨到 X」算不出有意义的百分比，
+   * 给成 100% 或 ∞ 都会误导。与 MonthlyReport.change.ratio 同一套口径。
+   */
+  changeRatio: number | null;
 }
 
 export interface PaymentBucket {
@@ -51,6 +58,27 @@ export interface PeriodTotals {
   count: number;
 }
 
+/**
+ * 单笔最高。
+ *
+ * 只给「最大的一笔」这一条，不做「Top N」—— 界面上它是一行提示，
+ * 用来回答「这个月最肉疼的是哪一笔」；要排前列的话，流水页按金额排序更合适。
+ */
+export interface LargestExpense {
+  expenseId: string;
+  /** 归并后的一级分类名（与报表其他部分同粒度） */
+  categoryName: string;
+  cents: number;
+  repaymentDate: string;
+}
+
+/** 同期对比（同比）。ratio 的 null 规则与环比一致 */
+export interface ComparedPeriod {
+  label: string;
+  totalCents: number;
+  change: { deltaCents: number; ratio: number | null };
+}
+
 export interface MonthlyReport {
   month: string;
   totalCents: number;
@@ -58,6 +86,10 @@ export interface MonthlyReport {
   previous: { month: string; totalCents: number };
   /** 环比。上期为 0 时 ratio 为 null —— 「从 0 涨到 X」算不出有意义的百分比 */
   change: { deltaCents: number; ratio: number | null };
+  /** 同比（去年同月）。月初的月份看环比没意义（上个月常常还是空的），同比才有参照 */
+  yearAgo: ComparedPeriod;
+  /** 本月金额最大的一笔；整月没有记录时为 null */
+  largest: LargestExpense | null;
   categories: CategoryBucket[];
   paymentMethods: PaymentBucket[];
   members: MemberBucket[];
@@ -69,6 +101,8 @@ export interface YearlyReport {
   count: number;
   /** 12 个月，没有数据的月份补 0，保证图表不会缺格 */
   months: Array<{ month: string; totalCents: number; count: number }>;
+  /** 同比（去年整年） */
+  yearAgo: ComparedPeriod;
   categories: CategoryBucket[];
   members: MemberBucket[];
 }
@@ -110,11 +144,16 @@ function totals(db: DatabaseSync, period: string, ownerId?: string): PeriodTotal
  * 二级分类的支出归并到它的一级父级下 —— 报表要回答的是「花在什么上面」，
  * 这个问题的粒度是一级分类；二级分类是记账时的精细度，不是分析的粒度。
  * `COALESCE(c.parent_id, c.id)` 同时覆盖了「记录直接挂在一级分类上」的情况。
+ *
+ * `previous` 是**环比用的上一期同口径金额**，按 root_id 索引。
+ * 做成必传参数而不是可选：漏传的表现只是「所有分类的环比都是 0 或 null」，
+ * 界面上看起来像是这个月每个分类都没变化 —— 不报错，只是安静地错。
  */
 function categoryBuckets(
   db: DatabaseSync,
   scope: PeriodScope,
   totalCents: number,
+  previous: Map<string, number>,
 ): CategoryBucket[] {
   const where = scopeClause(scope);
 
@@ -135,6 +174,7 @@ function categoryBuckets(
     const cents = Number(row['cents']);
     const rootId = String(row['root_id']);
     const meta = db.prepare('SELECT name, icon, color FROM categories WHERE id = ?').get(rootId);
+    const previousCents = previous.get(rootId) ?? 0;
 
     return {
       categoryId: rootId,
@@ -144,8 +184,83 @@ function categoryBuckets(
       cents,
       count: Number(row['cnt']),
       ratio: totalCents === 0 ? 0 : cents / totalCents,
+      previousCents,
+      changeRatio: previousCents === 0 ? null : (cents - previousCents) / previousCents,
     };
   });
+}
+
+/**
+ * 某一期里「每个一级分类各花了多少」，只用来喂环比。
+ *
+ * 单开一个查询而不是复用 `categoryBuckets`：后者要按 name/icon/color 逐条回查
+ * 分类表，而上期数据只需要两个数字，没必要为它多查 N 次元数据。
+ */
+function categoryCentsByRoot(db: DatabaseSync, scope: PeriodScope): Map<string, number> {
+  const where = scopeClause(scope);
+
+  const rows = db
+    .prepare(
+      `SELECT COALESCE(c.parent_id, c.id) AS root_id, SUM(e.amount_cents) AS cents
+         FROM expenses e
+         JOIN categories c ON c.id = e.category_id
+        WHERE ${where.sql}
+        GROUP BY root_id`,
+    )
+    .all(...where.params) as unknown as Array<Record<string, unknown>>;
+
+  const map = new Map<string, number>();
+  for (const row of rows) map.set(String(row['root_id']), Number(row['cents']));
+  return map;
+}
+
+/**
+ * 金额最大的一笔。
+ *
+ * 负数金额（退款）永远不会被选中 —— 它按 `amount_cents DESC` 排在最末尾，
+ * 而「本月最大的一笔」问的是花出去的钱。
+ * 平局时按 id 兜底，保证同一份数据每次返回同一条（否则界面上会出现
+ * 「刷新一下最大的一笔换了个分类」这种无从解释的现象）。
+ */
+function largestExpense(db: DatabaseSync, scope: PeriodScope): LargestExpense | null {
+  const where = scopeClause(scope);
+
+  const row = db
+    .prepare(
+      `SELECT e.id AS id,
+              e.amount_cents AS cents,
+              e.repayment_date AS repayment_date,
+              root.name AS root_name
+         FROM expenses e
+         JOIN categories c ON c.id = e.category_id
+    LEFT JOIN categories root ON root.id = COALESCE(c.parent_id, c.id)
+        WHERE ${where.sql}
+        ORDER BY e.amount_cents DESC, e.id
+        LIMIT 1`,
+    )
+    .get(...where.params) as Record<string, unknown> | undefined;
+
+  if (row === undefined) return null;
+
+  return {
+    expenseId: String(row['id']),
+    categoryName: row['root_name'] === null ? '未知分类' : String(row['root_name']),
+    cents: Number(row['cents']),
+    repaymentDate: String(row['repayment_date']),
+  };
+}
+
+/** 同期对比。ratio 的 null 规则与环比完全一致，两处不要各写一套 */
+function compare(label: string, currentCents: number, comparedCents: number): ComparedPeriod {
+  const deltaCents = currentCents - comparedCents;
+  return {
+    label,
+    totalCents: comparedCents,
+    change: {
+      deltaCents,
+      ratio: comparedCents === 0 ? null : deltaCents / comparedCents,
+    },
+  };
 }
 
 function paymentBuckets(db: DatabaseSync, scope: PeriodScope): PaymentBucket[] {
@@ -203,7 +318,14 @@ export function monthlyReport(db: DatabaseSync, month: string, ownerId?: string)
   const previousMonth = shiftMonthString(month, -1);
   const previous = totals(db, previousMonth, ownerId);
 
+  // 去年同月。用 shiftMonthString(-12) 而不是拼字符串 —— 跨年（1 月）时
+  // 手工拼年份是最容易错的一处，而这个函数已经有测试覆盖。
+  const yearAgoMonth = shiftMonthString(month, -12);
+  const yearAgoTotals = totals(db, yearAgoMonth, ownerId);
+
   const scope: PeriodScope = ownerId === undefined ? { prefix: month } : { prefix: month, ownerId };
+  const previousScope: PeriodScope =
+    ownerId === undefined ? { prefix: previousMonth } : { prefix: previousMonth, ownerId };
   const deltaCents = current.totalCents - previous.totalCents;
 
   return {
@@ -216,7 +338,14 @@ export function monthlyReport(db: DatabaseSync, month: string, ownerId?: string)
       // 上期为 0 时不给百分比：从 0 涨到 X 的「涨幅」是无穷大，显示成 100% 更误导
       ratio: previous.totalCents === 0 ? null : deltaCents / previous.totalCents,
     },
-    categories: categoryBuckets(db, scope, current.totalCents),
+    yearAgo: compare(month.slice(5), current.totalCents, yearAgoTotals.totalCents),
+    largest: largestExpense(db, scope),
+    categories: categoryBuckets(
+      db,
+      scope,
+      current.totalCents,
+      categoryCentsByRoot(db, previousScope),
+    ),
     paymentMethods: paymentBuckets(db, scope),
     members: memberBuckets(db, scope),
   };
@@ -253,12 +382,18 @@ export function yearlyReport(db: DatabaseSync, year: string, ownerId?: string): 
     return { month, totalCents: found.totalCents, count: found.count };
   });
 
+  const previousYear = String(Number(year) - 1);
+  const previousPrefix = `${previousYear}-`;
+  const previousScope: PeriodScope =
+    ownerId === undefined ? { prefix: previousPrefix } : { prefix: previousPrefix, ownerId };
+
   return {
     year,
     totalCents: current.totalCents,
     count: current.count,
     months,
-    categories: categoryBuckets(db, scope, current.totalCents),
+    yearAgo: compare('去年', current.totalCents, totals(db, previousPrefix, ownerId).totalCents),
+    categories: categoryBuckets(db, scope, current.totalCents, categoryCentsByRoot(db, previousScope)),
     members: memberBuckets(db, scope),
   };
 }

@@ -44,6 +44,11 @@ export const usePlansStore = defineStore('plans', () => {
       today,
       status: 'pending',
       remindBefore: today,
+      /**
+       * 已点过「确认」的期次不再占位置。
+       * 这是 `ack_at` 唯一的可见效果 —— 它不改任何业务状态（见 migration 003）。
+       */
+      hideAcked: true,
     });
 
     dueTodos.value = result.todos;
@@ -76,6 +81,29 @@ export const usePlansStore = defineStore('plans', () => {
     await refresh();
   }
 
+  /**
+   * 「我知道了」—— 只对 `willAutoPost === true` 的期次用。
+   *
+   * 它不产生任何账目，所以刷新之后那一条只是从列表里消失，
+   * 报表数字**不该变**。若发现报表跟着变了，说明调用点用错了接口。
+   */
+  async function ackTodo(todoId: string): Promise<void> {
+    await planTodosApi.ack(todoId);
+    await refresh();
+  }
+
+  /** 撤销一次确认：撤掉该期的入账（支出软删），待办回到待办列表。 */
+  async function revertTodo(todoId: string): Promise<void> {
+    await planTodosApi.revert(todoId);
+    await refresh();
+  }
+
+  /** 恢复一个被跳过的期次。 */
+  async function restoreTodo(todoId: string): Promise<void> {
+    await planTodosApi.restore(todoId);
+    await refresh();
+  }
+
   async function endPlan(planId: string): Promise<void> {
     await plansApi.end(planId);
     await refresh();
@@ -93,6 +121,9 @@ export const usePlansStore = defineStore('plans', () => {
     loadDueTodos,
     confirmTodo,
     skipTodo,
+    ackTodo,
+    revertTodo,
+    restoreTodo,
     endPlan,
   };
 });

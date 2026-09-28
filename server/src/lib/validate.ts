@@ -59,6 +59,30 @@ export function requireInt(body: Record<string, unknown>, field: string): number
   return value;
 }
 
+/**
+ * 取一个「可空字符串」，**保留 undefined 与 null 的区别**：
+ *
+ *   字段缺失      → `undefined`（这次请求不动它）
+ *   null 或 ''    → `null`（这次请求把它清空）
+ *   其它字符串    → 去空格后的值
+ *
+ * 与 `optionalString` 的区别就在这里。后者把 undefined 和 null 一起映射到
+ * 同一个 fallback，于是「把它清空」和「不动它」变成了同一件事 ——
+ * PATCH 接口一旦这么写，清空操作永远做不到，而且不会报错。
+ */
+export function optionalNullableString(
+  body: Record<string, unknown>,
+  field: string,
+): string | null | undefined {
+  const value = body[field];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') throw badRequest(`参数类型错误：${field}`);
+
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 export function optionalInt(
   body: Record<string, unknown>,
   field: string,
@@ -128,6 +152,22 @@ export function optionalEnumParam<T extends string>(
     throw badRequest(`查询参数取值非法：${field}（可选：${allowed.join(' / ')}）`);
   }
   return raw as T;
+}
+
+/**
+ * 从查询串里取可选的布尔值。
+ *
+ * 查询串里一切都是字符串，所以只认 `1` / `0` / `true` / `false` 这四种写法
+ * （`request()` 客户端就是按 `1` / `0` 序列化的）。
+ * **不认识的写法一律 400**，不做「非空即真」的宽松解析 ——
+ * 后者会让 `?hideAcked=0` 变成 true，界面上表现为「勾掉一项筛选却多筛掉了东西」。
+ */
+export function optionalBoolParam(value: unknown, field: string): boolean | undefined {
+  const raw = optionalStrParam(value, field);
+  if (raw === undefined) return undefined;
+  if (raw === '1' || raw === 'true') return true;
+  if (raw === '0' || raw === 'false') return false;
+  throw badRequest(`查询参数必须是布尔值（1 / 0）：${field}`);
 }
 
 /** 从路径参数里取值（`/api/expenses/:id`）。 */

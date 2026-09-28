@@ -56,6 +56,8 @@ describe('分类', () => {
 
   let parentId = '';
   let childId = '';
+  /** 第三轮的移动测试用它当目标父级 */
+  let trafficId = '';
 
   test('创建一级分类', async () => {
     const res = await app.inject({
@@ -191,6 +193,176 @@ describe('分类', () => {
       payload: { name: 'x' },
     });
     assert.equal(res.statusCode, 404);
+  });
+
+  /* ---- 第三轮新增：笔数口径 + 同深度移动 ------------------------------- */
+
+  test('一级分类的笔数**累计子分类**，二级只数自己', async () => {
+    const method = await app.inject({
+      method: 'POST',
+      url: '/api/payment-methods',
+      headers: auth(),
+      payload: { name: '口径测试用现金', type: 'cash' },
+    });
+    const paymentMethodId = method.json().paymentMethod.id;
+
+    const before = await app.inject({ method: 'GET', url: '/api/categories', headers: auth() });
+    const food = (before.json().categories as Array<Record<string, unknown>>).find(
+      (item) => item['id'] === parentId,
+    );
+    assert.ok(food !== undefined);
+    const childIds = (food['children'] as Array<Record<string, unknown>>).map((item) => item['id']);
+    assert.equal(childIds.length, 2, '「餐饮」下应有 2 个二级分类');
+
+    // 两个子分类各记一笔
+    for (const [index, categoryId] of childIds.entries()) {
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/expenses',
+        headers: auth(),
+        payload: {
+          amountCents: 100 + index,
+          categoryId,
+          paymentMethodId,
+          spendDate: '2026-09-12',
+        },
+      });
+      assert.equal(created.statusCode, 201);
+    }
+
+    const after = await app.inject({ method: 'GET', url: '/api/categories', headers: auth() });
+    const foodAfter = (after.json().categories as Array<Record<string, unknown>>).find(
+      (item) => item['id'] === parentId,
+    );
+    assert.ok(foodAfter !== undefined);
+
+    // 只往二级记账的家庭，一级分类不该显示 0 笔 —— 而它旁边就是「停用」按钮
+    assert.equal(foodAfter['expenseCount'], 2, '一级分类应累计子分类的笔数');
+
+    const children = foodAfter['children'] as Array<Record<string, unknown>>;
+    assert.deepEqual(
+      children.map((item) => item['expenseCount']),
+      [1, 1],
+      '二级分类只数直接挂在它下面的记录',
+    );
+  });
+
+  test('二级分类可以在两个一级分类之间移动（同深度）', async () => {
+    const traffic = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '交通' },
+    });
+    trafficId = traffic.json().category.id;
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${childId}`,
+      headers: auth(),
+      payload: { parentId: trafficId },
+    });
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().category.parentId, trafficId);
+    assert.equal(res.json().category.depth, 2, '同深度移动，depth 不变');
+
+    const tree = await app.inject({ method: 'GET', url: '/api/categories', headers: auth() });
+    const roots = tree.json().categories as Array<Record<string, unknown>>;
+    const moved = roots.find((item) => item['id'] === trafficId);
+    assert.equal((moved?.['children'] as unknown[]).length, 1, '移动后应挂在新的父级下');
+  });
+
+  test('移动到目标层级后撞上同名 → 409', async () => {
+    const tree = await app.inject({ method: 'GET', url: '/api/categories', headers: auth() });
+    const traffic = (tree.json().categories as Array<Record<string, unknown>>).find(
+      (item) => item['id'] === trafficId,
+    );
+    const movedName = ((traffic?.['children'] as Array<Record<string, unknown>>)[0] ?? {})['name'];
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: String(movedName), parentId },
+    });
+
+    // 把已移动的那条挪回「餐饮」：那边现在也有一条同名了
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${childId}`,
+      headers: auth(),
+      payload: { parentId },
+    });
+    assert.equal(res.statusCode, 409, '重名要按**目标**层级判定，不是原来那一层');
+    assert.match(res.json().error, /同名/);
+  });
+
+  test('一级分类不能跨深度移动 → 400', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${parentId}`,
+      headers: auth(),
+      payload: { parentId: trafficId },
+    });
+    assert.equal(res.statusCode, 400, '一级变二级会让它原本汇总的兄弟分类集体改归属');
+    assert.match(res.json().error, /跨深度/);
+  });
+
+  test('二级分类不能提升为一级 → 400', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${childId}`,
+      headers: auth(),
+      payload: { parentId: null },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.json().error, /必须挂在一个一级分类下/);
+  });
+
+  test('不能移动到二级分类下 → 400', async () => {
+    const anotherChild = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '另一个二级', parentId: trafficId },
+    });
+    assert.equal(anotherChild.statusCode, 201);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${childId}`,
+      headers: auth(),
+      payload: { parentId: anotherChild.json().category.id },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.json().error, /只能移动到一级分类下/);
+  });
+
+  test('不能移动到已停用的一级分类下 → 400', async () => {
+    const archived = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '归档' },
+    });
+    const archivedId = archived.json().category.id;
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${archivedId}`,
+      headers: auth(),
+      payload: { isEnabled: false },
+    });
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${childId}`,
+      headers: auth(),
+      payload: { parentId: archivedId },
+    });
+    assert.equal(res.statusCode, 400, '移进停用的一级会让这个二级整组从记账选择器里消失');
+    assert.match(res.json().error, /已停用/);
   });
 });
 

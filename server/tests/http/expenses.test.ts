@@ -735,6 +735,110 @@ describe('报表', () => {
     });
     assert.equal(filtered.json().report.totalCents, 777);
   });
+
+  /**
+   * 以下三条覆盖第三轮报表新增的三项指标。
+   *
+   * 刻意用 2026-09（此前没有任何测试用过）：报表是**聚合**，断言依赖整月数据。
+   * 直接借用一个已被别处写过的月份，等于把这条测试的成功与否挂在
+   * 另一个测试的执行顺序上 —— 那种耦合只会在某天重排测试时爆发。
+   * 上一期这里取 2026-08，它在「按记录人拆分」里已经被写成 1000 元，
+   * 于是「有上期」与「没上期」两种情况可以一次覆盖掉。
+   */
+  test('单笔最高：取金额最大的一笔，且归并到一级分类', async () => {
+    const jan = await app.inject({
+      method: 'GET',
+      url: '/api/reports/monthly?month=2026-01',
+      headers: auth(),
+    });
+    const largest = jan.json().report.largest;
+
+    assert.ok(largest !== null, '有记录的月份必须有单笔最高');
+    assert.equal(largest.cents, 15000);
+    assert.equal(largest.categoryName, '餐饮', '应归并到一级分类，与报表其余部分同粒度');
+    assert.equal(largest.repaymentDate, '2026-01-28');
+    assert.ok(largest.cents > 0, '退款的负数金额不该被当成「最大的一笔」');
+  });
+
+  test('没有记录的月份，单笔最高为 null（不是 0 元的一条假记录）', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/reports/monthly?month=2025-11',
+      headers: auth(),
+    });
+    assert.equal(res.json().report.largest, null);
+  });
+
+  test('分类环比：有上期给比例、没有上期给 null', async () => {
+    // 造一个第二个一级分类 —— 演示数据全挂在「餐饮」下，只有一个桶时
+    // 「环比」是不是按分类算的根本验不出来。
+    const traffic = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '交通' },
+    });
+    const taxi = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '打车', parentId: traffic.json().category.id },
+    });
+
+    await create({
+      amountCents: 1000,
+      categoryId: takeout,
+      paymentMethodId: cashId,
+      spendDate: '2026-09-05',
+    });
+    await create({
+      amountCents: 5000,
+      categoryId: taxi.json().category.id,
+      paymentMethodId: cashId,
+      spendDate: '2026-09-06',
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/reports/monthly?month=2026-09',
+      headers: auth(),
+    });
+    const report = res.json().report;
+    assert.equal(report.totalCents, 6000);
+
+    const buckets = report.categories as Array<Record<string, unknown>>;
+    const food = buckets.find((item) => item['name'] === '餐饮');
+    const transport = buckets.find((item) => item['name'] === '交通');
+
+    // 餐饮：上期（8 月）也是 1000，持平
+    assert.ok(food !== undefined);
+    assert.equal(food['previousCents'], 1000);
+    assert.equal(food['changeRatio'], 0, '持平是 0，不是 null');
+
+    // 交通：上期没有这个分类 —— 给 null 而不是「涨了 100%」
+    assert.ok(transport !== undefined);
+    assert.equal(transport['previousCents'], 0);
+    assert.equal(transport['changeRatio'], null);
+
+    // 同比：去年同月没有数据
+    assert.equal(report.yearAgo.label, '09');
+    assert.equal(report.yearAgo.totalCents, 0);
+    assert.equal(report.yearAgo.change.ratio, null);
+  });
+
+  test('年度报表：同比取去年整年', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/reports/yearly?year=2026',
+      headers: auth(),
+    });
+    const report = res.json().report;
+
+    assert.equal(report.yearAgo.label, '去年');
+    assert.equal(report.yearAgo.totalCents, 0, '2025 年没有任何记录');
+    assert.equal(report.yearAgo.change.ratio, null);
+    assert.equal(report.yearAgo.change.deltaCents, report.totalCents);
+  });
 });
 
 describe('分类转移', () => {

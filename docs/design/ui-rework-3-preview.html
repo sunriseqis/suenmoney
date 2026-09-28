@@ -1,0 +1,3849 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SuenMoney · 第四轮方案预览（信息架构重设）</title>
+
+<!--
+  这是「方案预览」，不是「成品页」。它要回答一个问题：
+    我把你的账本重新分工成这样，你认不认。
+
+  所以每一块原型旁边都有标注：这块为什么在这、它和谁不重复、它换了什么。
+
+  数据全是造的，口径按 docs/design/ui-rework-3.md 来。
+  与项目 tokens.css 同一套 Flat Design 令牌，不引外部依赖。
+-->
+
+<style>
+/* ==========================================================================
+   1. 令牌（照抄 web/src/styles/tokens.css，只取预览要用的）
+   ========================================================================== */
+:root {
+  --bg: #f3f4f6;
+  --bg-subtle: #ffffff;
+  --bg-sunken: #eef1f5;
+
+  --fg: #111827;
+  --fg-muted: #4b5563;
+  --fg-faint: #6b7280;
+
+  --border: #e5e7eb;
+
+  --primary: #3b82f6;
+  --primary-fill: #2563eb;
+  --primary-text: #1d4ed8;
+  --on-primary: #ffffff;
+
+  --secondary: #10b981;
+  --secondary-fill: #10b981;
+  --secondary-text: #047857;
+
+  --accent: #f59e0b;
+  --accent-fill: #f59e0b;
+  --accent-text: #b45309;
+  --on-accent: #111827;
+
+  --danger: #dc2626;
+  --danger-fill: #dc2626;
+  --danger-text: #b91c1c;
+  --on-danger: #ffffff;
+
+  --chart-1: #3b82f6;
+  --chart-2: #059669;
+  --chart-3: #b45309;
+  --chart-4: #8b5cf6;
+  --chart-5: #ec4899;
+  --chart-6: #0891b2;
+  --chart-7: #ef4444;
+  --chart-8: #6366f1;
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-pill: 999px;
+
+  --font-sans: 'Outfit Variable', 'MiSans VF', -apple-system, BlinkMacSystemFont,
+    'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* ==========================================================================
+   2. 预览页自身的排版
+   ========================================================================== */
+* { box-sizing: border-box; }
+
+/**
+ * 必须显式写这条。
+ *
+ * 浏览器 UA 样式表里的 [hidden] { display: none } 会被**作者样式**盖掉 ——
+ * 而这里的隐藏对象恰好都带着 display：.metrics 是 `display: grid`、
+ * 洞察那几组是 inline 的 `style="display:flex"`。
+ * 内联样式优先级高于 UA 表，所以不加 !important 的话「隐藏」根本不生效
+ * （第一遍就是这样：汇总档下三个档位的洞察句全堆在一起）。
+ */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+a { color: var(--primary-text); }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+/* ---- 顶栏 ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+}
+.topbar__inner {
+  max-width: 1180px; margin: 0 auto; padding: 12px 20px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.topbar__title { font-size: 17px; font-weight: 700; margin: 0; }
+.topbar__sub { font-size: 12px; color: var(--fg-muted); margin: 0; }
+.topbar__spacer { flex: 1 1 auto; }
+
+.topnav { display: flex; gap: 4px; flex-wrap: wrap; }
+.topnav a {
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  color: var(--fg-muted); padding: 5px 10px; border-radius: var(--r-sm);
+  transition: background 160ms, color 160ms;
+}
+.topnav a:hover { background: var(--bg-sunken); color: var(--fg); }
+
+/* 设备切换 */
+.device { display: flex; gap: 2px; background: var(--bg-sunken); padding: 3px; border-radius: var(--r-sm); }
+.device button {
+  font: inherit; font-size: 12px; font-weight: 600;
+  border: 0; background: transparent; color: var(--fg-muted);
+  padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+.device button[aria-pressed="true"] { background: var(--bg-subtle); color: var(--fg); }
+
+/* ---- 章节 ---- */
+section { padding: 40px 0 8px; scroll-margin-top: 88px; }
+section + section { border-top: 1px solid var(--border); }
+
+h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -.01em; }
+h2 { font-size: 22px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -.01em; }
+h3 { font-size: 16px; margin: 26px 0 8px; }
+h4 { font-size: 14px; margin: 18px 0 6px; }
+
+.lead { font-size: 15px; color: var(--fg-muted); margin: 0 0 20px; max-width: 78ch; }
+.kicker {
+  font-size: 12px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--primary-text); margin: 0 0 6px;
+}
+.note { font-size: 13px; color: var(--fg-muted); }
+.note strong { color: var(--fg); }
+
+/* ---- 分栏：左边原型、右边标注 ---- */
+.split {
+  display: grid; gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  align-items: start;
+}
+@media (max-width: 1080px) { .split { grid-template-columns: minmax(0, 1fr); } }
+
+.annots { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 78px; }
+@media (max-width: 1080px) { .annots { position: static; } }
+
+.annot {
+  background: var(--bg-subtle); border-left: 3px solid var(--primary);
+  padding: 10px 14px; border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.annot--warn { border-left-color: var(--accent); }
+.annot--new { border-left-color: var(--secondary); }
+.annot__t { font-size: 13px; font-weight: 700; margin: 0 0 3px; }
+.annot__d { font-size: 13px; color: var(--fg-muted); margin: 0; line-height: 1.55; }
+.annot__d code { font-size: 12px; }
+
+/* ==========================================================================
+   3. 原型框架（设备框 + 容器查询）
+   ========================================================================== */
+.mock {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  container-type: inline-size;
+  overflow: hidden;
+}
+/**
+ * 手机框必须给**确定宽度**，不能只给 max-width。
+ *
+ * .mock 上有 container-type: inline-size（尺寸抑制：算自己的宽度时不许看内容）。
+ * 而 margin: 0 auto 会让网格项走 fit-content 尺寸，fit-content 在尺寸抑制下 = 0，
+ * 于是 max-width 再大也没用 —— 框会塌成一条线（内容一个字一行）。
+ * 给死宽度就绕开了 fit-content。
+ */
+.mock--mobile { width: 412px; max-width: 100%; margin: 0 auto; }
+.mock--desktop { max-width: 100%; }
+
+.mock__cap {
+  font-size: 12px; font-weight: 700; color: var(--fg-faint);
+  letter-spacing: .04em; margin: 0 0 12px;
+}
+
+/* 应用画布：灰底、卡片白 —— 与 tokens.css 的底色约定一致 */
+.app {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+/* ---- 卡片 ---- */
+.card {
+  background: var(--bg-subtle);
+  border-radius: var(--r-md);
+  padding: 14px;
+}
+.card__head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0 0 12px;
+}
+.card__title { font-size: 14px; font-weight: 700; margin: 0; }
+.card__meta { font-size: 12px; color: var(--fg-faint); margin: 0; margin-left: auto; }
+.card__foot { font-size: 12px; color: var(--fg-faint); margin: 10px 0 0; }
+
+/* ---- 累计条 ----
+   它只有一行数，而且是四个互无结构的数（不像分类构成有占比、
+   不像热力图有 12 格），所以不给卡片、只给一条。
+   一行能说完的事用一整格去装就是浪费 —— 概况原先的毛病正是「格子太多、每格太薄」。 */
+.strip {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 11px 14px;
+  background: var(--bg-subtle);
+  border-radius: var(--r-md);
+  font-size: 12px; color: var(--fg-muted);
+}
+.strip__label {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  color: var(--fg-faint);
+  padding-right: 14px; border-right: 1px solid var(--border);
+}
+.strip__items { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.strip__items b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.strip__note { margin-left: auto; font-size: 11px; color: var(--fg-faint); }
+/* 窄屏：改成上下两块，四个数在里面自己折行 —— 不挤成一条，也不散成四行 */
+@container (max-width: 620px) {
+  .strip { display: block; }
+  .strip__label { display: block; border-right: 0; padding: 0 0 6px; }
+  .strip__items { gap: 8px 14px; }
+  /* 这句是给评审看的说明，真机形态里不必占一行 */
+  .strip__note { display: none; }
+}
+
+/* ---- 网格 ----
+ *
+ * `align-items: start` 不是可选的修饰，是这一版修掉「PC 端大空白」的那一刀。
+ *
+ * grid 默认 `align-items: stretch` —— 同一行的矮卡片会被拉到和最高的那张一样高，
+ * 多出来的空间**全部落在卡片底部**，看起来就是一块莫名其妙的空白。
+ * 实测（1440 宽、只量「最后一行内容到底边」的距离）：
+ *
+ *   危险区        89px   ← 被拉到和「备份与恢复」等高
+ *   按记录人      73px   ← 被拉到和「本期洞察」等高（年档 53px）
+ *   涨跌榜        52px   ← 被拉到和「还款节奏」等高
+ *
+ * 撑高只是把空白从「行内」搬到「卡内」—— 卡片自己凹进去一块，读起来更像坏了。
+ * 真正的做法是**让配对本身的高度接近**，撑高永远只是掩盖。
+ */
+.grid { display: grid; gap: 12px; align-items: start; }
+.grid--1 { grid-template-columns: minmax(0, 1fr); }
+.grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/**
+ * 报表页的「两栏对」专用。
+ *
+ * 用 auto-fit 而不是固定 2 列，是因为**档位会把其中一块藏掉**：
+ * 固定 2 列时，年档藏掉「还款节奏」之后「涨跌榜」会孤零零占半行、右边留一大片空，
+ * 看起来像坏了。auto-fit 下藏掉一块，剩下那块自动占满。
+ * （同一个手法 DashboardView.vue:300 的 `repeat(auto-fit,minmax(280px,1fr))` 用过。）
+ */
+.grid--auto { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+/* 窄屏退化：容器查询，模拟真机的响应式 */
+@container (max-width: 620px) {
+  .grid--2, .grid--3, .grid--4 { grid-template-columns: minmax(0, 1fr); }
+}
+/* 宽屏跨两列。
+   断点取 620 而不是 900：预览页把「原型 + 标注」并排，原型的容器实际只有 ~730px，
+   而真机是 ~350px —— 620 正好把两者分开，不必为了迁就预览去改真机的断点。 */
+@container (min-width: 620px) {
+  .span2 { grid-column: span 2; }
+}
+
+/* ---- 文字件 ---- */
+.big { font-size: 40px; font-weight: 800; line-height: 1.05; letter-spacing: -.02em; margin: 0; }
+.big--sm { font-size: 30px; }
+.mid { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+.sm { font-size: 13px; }
+.xs { font-size: 12px; }
+.muted { color: var(--fg-muted); }
+.faint { color: var(--fg-faint); }
+.mono { font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+
+.tone-up { color: var(--danger-text); }
+.tone-down { color: var(--secondary-text); }
+/* 紧急度**不用涨跌色** ——「明天到期」说的是时间紧，不是金额涨。
+   三档：临近＝琥珀、逾期＝红、还早＝灰。
+   红只留给逾期，与顶卡「红＝吸顶」、§6.5 六 的红 / 琥珀分级是同一套语言。 */
+.tone-warn { color: #b45309; }
+.tone-flat { color: var(--fg-faint); }
+
+/* ---- 三档 tab ---- */
+.tabs { display: inline-flex; gap: 2px; background: var(--bg-sunken); padding: 3px; border-radius: var(--r-sm); }
+.tabs button {
+  font: inherit; font-size: 12px; font-weight: 600;
+  border: 0; background: transparent; color: var(--fg-muted);
+  padding: 4px 12px; border-radius: 4px; cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+.tabs button[aria-pressed="true"] { background: var(--bg-subtle); color: var(--fg); }
+
+/* ---- 提醒条（hero 底部） ---- */
+/* ---- 提醒条（hero 底部）—— 容器不染色 ----
+ * 第六次修正先砍掉了它的琥珀底 / 红底，改成「一个颜色标记 + 一句话」；
+ * 第八次修正又把标记从**每条明细的行首**挪到**这一个展开箭头**上（见 .rchev）。
+ * 于是这条提醒在收起态是纯中性的：底色中性、文字中性，只有一个箭头的颜色
+ * 在回答「这叠里有没有要我动手的」；「还有多久」交给文字
+ * （明天到期 / 逾期 29 天 / 还有 12 天）。 */
+.chipbar {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 14px; padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--fg);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+}
+.chipbar--clean { background: var(--bg-sunken); box-shadow: none; color: var(--fg-muted); font-weight: 500; }
+.chipbar--late { background: var(--bg-subtle); }   /* 不再整条转红：红只落在标记上 */
+.chipbar__spacer { flex: 1 1 auto; }
+.chipbar__hint { font-size: 12px; font-weight: 500; color: var(--fg-faint); }
+
+/* ---- 紧急度：唯一染色点是**展开箭头**（第八次修正）----
+ * 前两版把标记挂在每条明细的行首（一个 8px 圆点）。用户改成挂在**展开箭头**上：
+ *   ・收起时，箭头一眼回答「这一叠里有没有需要我动手的」—— 这正是收起态唯一要答的问题；
+ *   而每行挂一个圆点，是在用**展开之后才会看到的东西**，去打扰还没展开的人。
+ *   ・展开后**不再重复标记**：每一条的紧急度由**文字本身的颜色**说（见 .prow__why--*）。
+ * 于是整个提醒块在收起态几乎纯中性，颜色只落在一个 10px 的字符上。
+ * 优先级：红（逾期）> 黄（需你手动确认）> 中性（自动入账，不用管）。 */
+.rchev { font-style: normal; font-weight: 700; line-height: 1; }
+.rchev--none   { color: var(--fg-faint); }      /* 自动入账 —— 不用你动手 */
+.rchev--manual { color: var(--accent-text); }   /* 需手动确认 */
+.rchev--late   { color: var(--danger-text); }   /* 逾期（优先于黄） */
+
+/* 一条明细 = **一行**（第八次修正）。
+ * 原来主行下面还挂一条副行（提醒日 · 还款日 · 状态 + 按钮）。用户砍掉了它：
+ * 「9月28日 提醒 · 9月30日 还款」属于**设置-计划**，主界面不重复它。
+ * 状态词并进主行，动作按钮也留在主行右端。
+ * 一行里能放下这么多东西，前提是**信息精简**：只说「是什么」，不说「为什么」——
+ * 例：不写「撤销过，不自动入账」，写「需手动入账」。 */
+.pitem + .pitem { border-top: 1px solid var(--border); }
+
+/* 状态词（自动入账 / 需手动）：11px。
+ * 第九次修正改了口径 —— 它**不再是最先被牺牲的**东西，而是**永不截断**：
+ * 截断一个 4 字的状态词，读者看到的是「自…」，比不显示更糟。
+ * 真正可以被牺牲的是**计划名**（见 .topcard__item-plan）：
+ * 少知道哪一期，不影响你决定按哪个按钮。 */
+.prow__state { flex: 0 0 auto; font-size: 11px; color: var(--fg-faint); white-space: nowrap; }
+.prow .topcard__acts { margin-left: auto; }
+
+.popover {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30;
+  width: min(480px, 100%);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 160ms, transform 160ms, visibility 160ms;
+}
+/* 桌面必须能「点」开 —— 纯悬停时鼠标移向按钮的途中会离开触发区、
+ * 面板先消失，按钮根本点不到（第六次修正：桌面展开区也要有动作按钮）。 */
+.chipbar:hover .popover,
+.chipbar:focus-within .popover,
+.chipbar[data-open="true"] .popover { opacity: 1; visibility: visible; transform: translateY(0); }
+
+.prow { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; color: var(--fg); }
+.prow + .prow { border-top: 1px solid var(--border); }
+.prow__amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+.prow__when { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-muted); }
+.prow__why { margin-left: auto; font-size: 12px; font-weight: 700; }
+.prow__why--late { color: var(--danger-text); }
+.prow__why--soon { color: var(--accent-text); }
+
+/* ---- 环图 ---- */
+.donut { position: relative; width: 132px; height: 132px; flex: 0 0 auto; }
+.donut svg { display: block; }
+.donut__center {
+  position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
+}
+.donut__center b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1 1 auto; }
+.legend__row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 13px; }
+.legend__dot { width: 10px; height: 10px; border-radius: 3px; }
+.legend__pct { color: var(--fg-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.legend__amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.donut-row { display: flex; gap: 18px; align-items: center; }
+/* 环图右侧的下钻列表：与图例一样可收缩 */
+.drill-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+/* 环图分段与列表行的对应色块 */
+.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+@container (max-width: 620px) { .donut-row { flex-direction: column; align-items: stretch; } .donut { margin: 0 auto; } }
+
+/* ---- 进度条 ---- */
+.bar { height: 8px; border-radius: var(--r-pill); background: var(--bg-sunken); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: var(--r-pill); background: var(--primary-fill); }
+.bar--warn > i { background: var(--accent-fill); }
+.bar--over > i { background: var(--danger-fill); }
+
+/* ---- 热力图 ---- */
+.heat { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 5px; }
+.heat__cell {
+  border-radius: var(--r-sm); padding: 9px 4px 8px;
+  text-align: center; position: relative;
+  background: var(--bg-sunken);
+  transition: transform 140ms;
+}
+.heat__cell:hover { transform: translateY(-2px); }
+.heat__m { font-size: 11px; font-weight: 600; display: block; }
+.heat__v { font-size: 11px; font-variant-numeric: tabular-nums; display: block; margin-top: 3px; opacity: .92; }
+.heat__cell--empty { color: var(--fg-faint); }
+.heat__cell--now { outline: 2px solid var(--fg); outline-offset: -2px; }
+
+/**
+ * 窄屏退化。
+ *
+ * ① **格数从 12×1 改成 6×2**：390px 的手机上卡片内只有 ~320px，
+ *    12 格平摊每格 22px ——「10月」都放不下，更别说金额。
+ *    改 6 列两行后每格 ~49px，月份与缩写都装得下。**这是真机才暴露的问题。**
+ * ② 金额换缩写（3.8k），装不下时换写法，而不是硬塞。
+ */
+.heat__v--short { display: none; }
+@container (max-width: 620px) {
+  .heat { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .heat__m { font-size: 10px; }
+  .heat__v--full { display: none; }
+  .heat__v--short { display: block; }
+}
+
+/* ---- 排行行 ---- */
+.rank { display: flex; flex-direction: column; gap: 9px; }
+.rank__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; font-size: 13px; }
+.rank__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank__amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rank__track { grid-column: 1 / -1; height: 5px; border-radius: var(--r-pill); background: var(--bg-sunken); overflow: hidden; }
+.rank__fill { display: block; height: 100%; border-radius: var(--r-pill); }
+.rank__sub { font-size: 12px; color: var(--fg-faint); font-weight: 400; }
+
+/* ---- 指标格 ---- */
+.metrics { display: grid; gap: 10px; }
+.metrics--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.metrics--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container (max-width: 620px) {
+  .metrics--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.metric__k { font-size: 12px; color: var(--fg-faint); margin: 0 0 2px; }
+.metric__v { font-size: 17px; font-weight: 700; margin: 0; font-variant-numeric: tabular-nums; }
+.metric__d { font-size: 12px; margin: 2px 0 0; }
+
+/* ---- 流水列表 ----
+ * 第八次修正：**组头设计整体移除**。用户的话是「避免不存在组头的问题」——
+ * 症结在于组头会**在不存在层级的档位里凭空长出一层**。月档正是这种情况：
+ * 一个月的所有笔都在同一个月，任何分组头都在复述期间选择器已经说过的话。
+ * 前几版给它留过一个「月档以内按分类分组」的口子，现在这个口子一起关掉。
+ * 一屏多的列表不需要骨架；需要骨架的是「哪几个月有东西」，
+ * 而那件事归日历管（见 .cal）—— **日历不是组头**。
+ */
+
+/* 月档没有组头 → 日期回到行内，且**只写「日」**（月份期间选择器已经说了）。
+ * 这正是原方案「日期提到组头才腾得出宽度给账期」那个前提消失的原因。
+ *
+ * ※ 第九次修正：截图里那条「多行」，根因不是文案太长，是**这条规则从来没生效过**。
+ *   它原来写在 `.trow` 前面，而两者特异性相同（都是 0,1,0）→ **源码顺序在后的
+ *   `.trow` 覆盖了它**。于是 4 个格子（日 / 图标 / 主体 / 金额）被塞进 3 列：
+ *   金额掉到第二行、日期列塌回 26px 让「28日」折成「28 / 日」。
+ *   修法：选择器提成 `.trow.trow--dated`（0,2,0）—— 让**特异性**决定胜负，
+ *   而不是让「谁写在后头」这种和语义无关的东西决定胜负。
+ *   日期列同时从固定 30px 换成 `max-content`：随字号自适应，且**永不折行**。
+ *
+ *   这条值得记住：**同一元素的多个类规则写在两处时，顺序就是隐藏的优先级。**
+ *   覆盖要靠特异性或就近书写，不能靠"我记得它在后面"。 */
+.trow.trow--dated { grid-template-columns: max-content 26px minmax(0, 1fr) auto; }
+.trow__day { font-size: 12px; color: var(--fg-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---- 日历（**流水页**年 / 全部两档的形态）----
+ * 第七次修正从报表页搬到这儿：按年或全部看流水时，它就是那个期间的「选择器」。
+ * 窄屏退化成「一格一个月 / 一格一年」：12 张迷你月历在 390 宽上每格只剩约 30px。
+ * 与热力图从 12 格改 6×2 是同一个手法 —— 装不下就换写法，不硬塞。 */
+.cal { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cal--years { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ---- 日历的「花销深浅」四档（第八次修正）----
+ * 用户：除提醒与标志需要表示紧急程度外，**其余颜色一律沿用强调色**；
+ * 用它的不同深浅帮用户快速定位花得最多与最少的月份。仅四档：
+ *   4 最多＝最深 / 3 稍多＝略深 / 2 均值上下＝普通 / 1 最少＝最浅
+ * 分档基准是**均值 m**（不是最大最小值）—— 因为「普通」这一档必须跨在均值两侧，
+ * 否则「平均的那个月」会被归进「稍多」或「最少」，与用户的原话对不上：
+ *   4: ≥ 1.5m  3: 1.15m~1.5m  2: 0.85m~1.15m  1: < 0.85m  0: 一笔都没有
+ * **0 单独一档**：没花钱和花得少不是一回事，把 0 涂成「最浅」会让人以为「那个月有花」。
+ * 值用 rgba 叠在卡片底上，深浅两个主题都自动成立；
+ * 最深一档（.42）配深字仍有约 9.8:1，够 AA。 */
+.cal__cell {
+  font: inherit; text-align: left; cursor: pointer;
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 9px;
+  transition: background 160ms;
+}
+.cal__cell:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
+.cal__cell[data-heat="4"] { background: rgba(59,130,246,.42); }
+.cal__cell[data-heat="3"] { background: rgba(59,130,246,.24); }
+.cal__cell[data-heat="2"] { background: rgba(59,130,246,.12); }
+.cal__cell[data-heat="1"] { background: rgba(59,130,246,.05); }
+.cal__cell[data-heat="0"] { background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-faint); }
+
+.cal__m { font-size: 12px; font-weight: 700; margin: 0; }
+.cal__v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 3px 0 0; }
+.cal__d { font-size: 10.5px; color: var(--fg-faint); margin: 2px 0 0; }
+
+/* 第七次修正：格子不是链接，是**期间选择器的当前值**（用户：点一下先看信息、
+ * 再点一次或按「进入」才走）。选中态用**描边**，不用填充 ——
+ * 一块填充色在本站的意思是「这块有事要动手」，选中的月没有这层意思。 */
+.cal__cell[aria-pressed="true"] {
+  border-color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px var(--accent-text);
+}
+
+/* 选中期间的信息卡 —— 挂在日历下方，回答「这个月花了多少、花在哪」。
+ * 它同时就是原来那句「每个日历页下方要有相对应的统计卡片」的落点：
+ * 未选中时这里显示**本档**（年 / 全部）的统计，选中后整组切到那一格。 */
+.calinfo { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.calinfo__head { display: flex; align-items: baseline; gap: 10px; }
+.calinfo__t { font-size: 13px; font-weight: 700; margin: 0; }
+.calinfo__m { font-size: 12px; color: var(--fg-muted); margin: 3px 0 0; font-variant-numeric: tabular-nums; }
+.calinfo__k { font-size: 11px; font-weight: 700; color: var(--fg-faint); margin: 10px 0 5px; }
+.calinfo__row {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px;
+  align-items: center; font-size: 12px; margin-top: 5px;
+}
+.calinfo__row .bar { height: 6px; }
+.calinfo__row b { font-variant-numeric: tabular-nums; }
+
+.trow {
+  display: grid; align-items: center; gap: 10px;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  padding: 8px 10px; border-radius: var(--r-sm);
+  transition: background 160ms;
+}
+.trow:hover { background: var(--bg-sunken); }
+.trow__icon {
+  width: 26px; height: 26px; border-radius: 7px;
+  display: grid; place-items: center; font-size: 13px;
+}
+/* 一行一项（第七次修正，用户指出）：主名与副信息排**同一行**，一条明细只占一行。
+ * 原来 .trow__mid 是块级、名字与副信息上下叠着，一笔要两行才对得齐 ——
+ * 年档 / 汇总档一屏只有十几行时最明显。装不下时**副信息先截断**（名字是识别项）。 */
+.trow__mid { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.trow__name {
+  flex: 0 0 auto; max-width: 62%;
+  font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.trow__sub {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 12px; color: var(--fg-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.trow__sub > span + span { margin-left: 6px; }
+.trow__sub > span + span::before { content: "· "; }
+/* 窄屏让位（第九次修正）：一行里塞不下「名称 + 支付方式 + 账期 + 金额」时，
+ * 先减信息、再谈挤 —— 减掉的是**账期**。
+ * 判据：支付方式回答「这笔钱从哪张卡出」，是**识别这一笔**的一部分，留下；
+ * 账期回答「这笔什么时候出账」，是**对账**细节，报表与对账页有完整呈现，让位。
+ * 桌面宽度够，账期照旧显示 —— 同一个组件、两种宽度、两种写法，不是两套组件。 */
+@container (max-width: 460px) {
+  .trow.trow--dated .trow__sub-x { display: none; }
+}
+.trow__amt { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tag {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 1px 6px; border-radius: var(--r-pill);
+  background: var(--bg-sunken); color: var(--fg-muted);
+}
+
+/* ---- 下钻 ---- */
+.drill__row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
+  align-items: center; width: 100%;
+  border: 0; background: transparent; font: inherit; font-size: 13px;
+  padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer; text-align: left;
+  transition: background 160ms;
+}
+.drill__row:hover { background: var(--bg-sunken); }
+.drill__toggle { font-size: 11px; color: var(--primary-text); font-weight: 700; }
+.drill__kids { padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+.drill__kid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; font-size: 12px; color: var(--fg-muted); padding: 5px 8px; }
+.drill__kid-amt { font-variant-numeric: tabular-nums; }
+.drill[data-open="false"] .drill__kids { display: none; }
+
+/* ---- 折线 ---- */
+.linechart { width: 100%; height: 132px; display: block; }
+
+/* ---- 底栏（只在「改前」对照里出现 —— 改后它被删掉了） ---- */
+.tabbar {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--bg-subtle); border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px; margin: 0 -14px -14px; padding: 8px 0 10px;
+}
+.tabbar__item { text-align: center; font-size: 11px; color: var(--fg-faint); }
+.tabbar__item b { display: block; font-size: 16px; font-weight: 400; line-height: 1.2; }
+.tabbar__item--on { color: var(--primary-text); font-weight: 700; }
+.tabbar__item--cta { color: var(--primary-text); }
+/* 「改前」那一版要让人一眼看出它被删了。
+   注意不要用整块蒙版盖住 —— 第一版盖了一层 82% 的白，
+   结果截图看起来像「渲染坏了」，而不是「这里被删掉了」。
+   改成降透明度 + 下面单独一行红字说明。 */
+.tabbar--dead { opacity: .38; filter: grayscale(1); }
+.tabbar__dead-note {
+  font-size: 11px; font-weight: 700; color: var(--danger-text);
+  text-align: center; margin: 6px 0 0;
+}
+
+/* ---- 入口行（搜索框下方） ----
+   刻意**不用**底栏的视觉语言。
+   底栏 = 等宽四格 + 图标在上 + 有选中态 → 那是「导航」，回答「你在哪一页」。
+   入口行 = 一行不定宽的次要链接 + 无选中态 + 随内容滚走 → 那是「入口」。
+   两者做成一样，就等于把底栏原样搬到搜索框下面（§6.6 二）。 */
+.entryrow {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.entryrow__label {
+  font-size: 10px; font-weight: 800; letter-spacing: .08em;
+  color: var(--fg-faint); margin-right: 6px;
+}
+.entryrow a {
+  font-size: 12.5px; font-weight: 600; text-decoration: none;
+  color: var(--fg-muted); padding: 3px 7px; border-radius: var(--r-sm);
+  transition: background 160ms, color 160ms;
+}
+.entryrow a:hover { background: var(--bg-sunken); color: var(--fg); }
+.entryrow__chev { font-size: 11px; color: var(--fg-faint); }
+
+/* 与期间选择器同处一行时：去掉它「自己占一行」时才需要的那条分隔线与上下间距 */
+.entryrow--inline { margin: 0; padding: 0; border-top: 0; flex-wrap: nowrap; margin-left: auto; }
+
+/* 控制行：左 = 期间选择器，右 = 三个入口。
+   一行里其实有两种语义（「限定下面这个列表」与「去别处」）——
+   靠**位置**把它们分开：控制一律靠左、跳转一律靠右。
+   上一版是把这一行拆成两行来回避问题，但那一拆又让三个链接孤零零占掉一整行。 */
+.ctlrow { display: flex; align-items: center; gap: 8px; }
+
+/* 搜索独占一行：它是这一条里唯一**需要宽度**的控件 ——
+   输入框窄了就没法用，而期间与筛选都是固定宽度的小按钮。 */
+.searchrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.searchrow .filterbar__search { flex: 1 1 auto; }
+
+/* 提醒框置顶时不要那 14px 的 margin */
+.chipbar--top { margin-top: 0; }
+
+/* ==========================================================================
+   移动端顶卡：本月支出 + 处理提醒 **同一行**
+   --------------------------------------------------------------------------
+   规则的形状是「有 / 无」两种，不是「大小」两种：
+     · 有未处理 → **两列**（各占一半，中间一条分隔线）
+     · 无未处理 → 本月支出**独占整列**（不是留个空格子，也不是塞个「无」占位）
+   处理提醒**默认收起**，点击后向下展开明细 —— 收起时它是「一行摘要」，
+   展开后它是「三行待办」，所以不能用固定高度的格子装它。
+   ========================================================================== */
+.topcard { background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
+.topcard__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* 无提醒时的形态：本月支出独占整列 */
+.topcard__row--solo { grid-template-columns: minmax(0, 1fr); }
+.topcard__cell { padding: 12px 14px; min-width: 0; text-align: left; }
+.topcard__cell + .topcard__cell { border-left: 1px solid var(--border); }
+/* 第六次修正：这一格**不再染色**。
+ * 原来是琥珀底（逾期红底），用整格背景表达紧急度；现在底色与「本月支出」一致，
+ * 紧急度落在**展开箭头**（见 .rchev）+ 一句话上，条目本身不再挂标记。 */
+.topcard__cell--chip {
+  font: inherit; border: 0; width: 100%; cursor: pointer;
+  background: var(--bg-subtle); color: var(--fg);
+}
+.topcard__k {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  color: var(--fg-faint); margin: 0;
+}
+.topcard__cell--chip .topcard__k { color: var(--fg-faint); }
+.topcard__v {
+  font-size: 21px; font-weight: 800; letter-spacing: -.01em;
+  margin: 2px 0 0; font-variant-numeric: tabular-nums;
+}
+.topcard__v--sm { font-size: 15px; }
+.topcard__d { font-size: 12px; color: var(--fg-faint); margin: 3px 0 0; }
+.topcard__cell--chip .topcard__d { color: var(--fg-faint); }
+.topcard__chev { display: inline-block; transition: transform 200ms; }
+.topcard[data-open="true"] .topcard__chev { transform: rotate(180deg); }
+/* 明细：默认收起，展开时向下推，不是浮层 —— 它要能把下面的列表顶下去 */
+.topcard__body { display: none; padding: 2px 14px 10px; background: var(--bg-subtle); }
+.topcard[data-open="true"] .topcard__body { display: block; }
+/* 一条提醒 = **一行**，且**必定不换行**（第九次修正：从「希望它一行」改成「它只能一行」）。
+ * 一行里放五件事：金额 → 是哪一期 → 多急 → 要不要你动手 → 现在做什么。
+ *
+ * 截图暴露两个问题，**两个都不是「文案太长」，是两个结构问题**：
+ *
+ * ① 计划名那格没写 `min-width:0`。flex 项的 min-width 默认是 `auto`，
+ *    意思是「不小于自己内容的宽度」，所以它**根本缩不动**；
+ *    而它恰好是这一行里唯一愿意被牺牲的一格。
+ *    缩不动 → 整行撑破卡片 → 最后进来的按钮只好压在状态词上（截图里的「显示不完全」）。
+ *    修法是把纪律写死，而不是继续抠字：
+ *      · 金额 / 紧急度 / 状态 / 按钮  `flex:0 0 auto` —— **永不截断**
+ *      · 只有计划名                `flex:0 1 auto; min-width:0` —— **唯一可牺牲的一格**
+ *    优先级因此被写进代码：宁可看不清是哪一期，也不能看不清多少钱、多急、按哪个键。
+ *    数学上也闭合：最坏情况（计划名缩到 0）仍短于最窄的 320px 机型，**不可能再溢出**。
+ *
+ * ② 文案还有水分，顺手挤掉（挤出来的宽度全留给**必须留下**的词）：
+ *      `第 3 期 · 房贷` → `3期 · 房贷`      旁边就是金额，不会读成别的
+ *      `逾期 29 天`     → `逾期29天`
+ *      `10月2日 到期`   → `10月2日到期`
+ *      `需手动入账`     → `需手动`          右边按钮就写着「入账」，两个槽拼起来是一句话
+ *    而 `自动入账` **不删**：它回答「我不点会怎样」，是这一行里唯一无法从别处推出来的信息。 */
+.topcard__item { display: flex; align-items: center; gap: 7px; padding: 9px 0; font-size: 13px; white-space: nowrap; }
+.topcard__item + .topcard__item { border-top: 1px solid var(--border); }
+.topcard__item-amt { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.topcard__item-plan {
+  flex: 0 1 auto; min-width: 0;
+  font-size: 12px; color: var(--fg-faint);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.topcard__item-why { flex: 0 0 auto; font-size: 12px; font-weight: 700; }
+.topcard__item-state { flex: 0 0 auto; font-size: 11px; color: var(--fg-faint); }
+/* 动作按钮靠右推：展开之后的每一条都得能「动手」，否则它只是通知，不是提醒。 */
+.topcard__acts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+
+/* ---- 筛选控制行：期间 + 搜索 + 筛选 **一条** ----
+ * 原先三行（期间 / 搜索 / 入口）压成两行：期间与搜索都是「作用在下面这个列表上」的控制器，
+ * 放一起语义一致；三个入口是「去别处」，另起一行，不插在控制器中间。
+ */
+.filterbar { display: flex; align-items: center; gap: 8px; }
+.filterbar__search {
+  flex: 1 1 auto; min-width: 0;
+  background: var(--bg-sunken); border-radius: var(--r-sm);
+  padding: 7px 10px; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- 二级页页头 ----
+   关闭控件**不单独占一行**，它就在标题那一行的行尾 —— 标题行本来就要有，
+   把关闭并进去等于白得一行。两种摆法（`× 设置` / `设置 ×`）见 ⑧ 五。 */
+.pagehead { display: flex; align-items: flex-start; gap: 10px; }
+.pagehead__title { font-size: 17px; font-weight: 800; margin: 0; }
+.pagehead__sub { font-size: 12px; color: var(--fg-faint); margin: 3px 0 0; }
+.pagehead__close {
+  margin-left: auto; flex: 0 0 auto;
+  width: 40px; height: 40px; margin-top: -9px; margin-right: -10px;
+  display: grid; place-items: center;
+  font: inherit; font-size: 19px; line-height: 1; color: var(--fg-muted);
+  background: transparent; border: 0; border-radius: var(--r-sm); cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+.pagehead__close:hover { background: var(--bg-sunken); color: var(--fg); }
+/* 另一种摆法，只用于本节对照：× 在标题前 */
+.pagehead--lead { align-items: center; }
+.pagehead--lead .pagehead__close { margin: 0; margin-right: -10px; order: -1; }
+
+/* ---- 下拉手势三态 ---- */
+.pulls { display: flex; gap: 14px; flex-wrap: wrap; align-items: stretch; margin-top: 16px; }
+.pull { flex: 1 1 220px; min-width: 200px; }
+.pull__cap {
+  font-size: 12px; font-weight: 700; color: var(--fg-faint);
+  margin: 0 0 8px; display: flex; align-items: baseline; gap: 6px;
+}
+.pull__cap b { color: var(--fg); }
+.pull__frame {
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); padding: 10px;
+  min-height: 236px; display: flex; flex-direction: column; gap: 8px;
+  position: relative; overflow: hidden;
+}
+.pull__frame--grab { border-style: dashed; border-color: var(--primary); }
+.pull__hintline {
+  margin-top: auto; text-align: center;
+  font-size: 11px; font-weight: 700; color: var(--primary-text);
+}
+.ghostsheet {
+  border: 1px solid var(--border); border-radius: 8px 8px 0 0;
+  background: var(--bg-subtle); padding: 10px;
+  margin: 0 -10px -10px; opacity: .95;
+}
+.ghostsheet__handle {
+  width: 36px; height: 4px; border-radius: var(--r-pill);
+  background: var(--border); margin: 0 auto 8px;
+}
+/* 「改前 / 改后」并排的双手机框 */
+.duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .duo { grid-template-columns: minmax(0, 1fr); } }
+.mock--narrow { width: 380px; max-width: 100%; margin: 0 auto; }
+/* 居中：两个 380 的框放进 562 的栏里，靠左的话中间会空出一大条，
+   两个框离得远，恰恰是最该并排比较的时候最难看。
+   注意这里 `margin: 0 auto` 是安全的 —— 宽度是 380px **确定值**，
+   不是 fit-content，所以踩不到「container-type + auto margin = 塌成 0」那个坑。 */
+
+/* ---- 「报表按档位」矩阵里的小色点 ---- */
+.scope-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 5px; vertical-align: middle;
+}
+
+/* ---- 设置页 tab 条 ---- */
+.settabs { display: flex; gap: 2px; background: var(--bg-sunken); padding: 3px; border-radius: var(--r-sm); overflow-x: auto; }
+.settabs button {
+  font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap;
+  border: 0; background: transparent; color: var(--fg-muted);
+  padding: 5px 12px; border-radius: 4px; cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+.settabs button[aria-pressed="true"] { background: var(--bg-subtle); color: var(--fg); }
+
+.setrow { display: flex; align-items: center; gap: 10px; padding: 10px 4px; font-size: 13px; }
+.setrow + .setrow { border-top: 1px solid var(--border); }
+.setrow__spacer { flex: 1 1 auto; }
+
+/* ---- 危险区：通栏一条，不是网格里的一格 ----
+ * 它原先和「备份与恢复」并排放在 `grid--2` 里，内容是「标题 + 一行说明 + 两个按钮」，
+ * 被撑到 222px 高，底部空出 89px —— 这一版最难看的一处空白。
+ * 修法不是给它塞内容，而是**承认它不该占一格**：
+ * 危险区天然排在所有操作的最后，通栏一条 + 按钮右对齐，比放在格子角上更醒目。
+ */
+.dangerband {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 1px solid var(--danger); border-radius: var(--r-md);
+  padding: 12px 14px;
+}
+.dangerband__main { flex: 1 1 260px; min-width: 0; }
+.dangerband__t { font-size: 13px; font-weight: 700; color: var(--danger-text); margin: 0; }
+.dangerband__acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn {
+  font: inherit; font-size: 12px; font-weight: 700; white-space: nowrap;
+  border: 0; border-radius: var(--r-sm); padding: 6px 12px; cursor: pointer;
+  background: var(--primary-fill); color: var(--on-primary);
+  transition: transform 120ms, opacity 160ms;
+}
+.btn:active { transform: scale(.97); }
+.btn--ghost { background: var(--bg-sunken); color: var(--fg); }
+.btn--danger { background: var(--danger-fill); color: var(--on-danger); }
+/* 明细行里的小按钮：要能一行放下两个，又要够拇指点（高度 30px 是下限）。
+   透明边框是为了让「有边框的次要按钮」和「没边框的主按钮」**一样高** ——
+   否则同一列上下两条会差 2px，看起来像没对齐。 */
+.btn--xs { font-size: 12px; padding: 5px 11px; border: 1px solid transparent; }
+.btn--plain { background: transparent; color: var(--fg-muted); border-color: var(--border); }
+
+/* ==========================================================================
+   4. 说明区组件
+   ========================================================================== */
+.table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--bg-subtle); border-radius: var(--r-md); overflow: hidden; }
+.table th, .table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.table thead th { font-size: 12px; color: var(--fg-faint); font-weight: 700; background: var(--bg-sunken); }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table code { font-size: 12px; background: var(--bg-sunken); padding: 1px 5px; border-radius: 4px; }
+
+.callout {
+  background: var(--bg-subtle); border-radius: var(--r-md);
+  padding: 14px 16px; margin: 14px 0; border-left: 3px solid var(--fg-faint);
+}
+.callout--key { border-left-color: var(--danger); }
+.callout--ok { border-left-color: var(--secondary); }
+.callout p { margin: 0; font-size: 14px; }
+.callout p + p { margin-top: 8px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.pill { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: var(--r-pill); background: var(--bg-subtle); color: var(--fg-muted); }
+.pill--del { text-decoration: line-through; color: var(--fg-faint); }
+.pill--new { background: var(--primary-text); color: #fff; }
+.pill--mv { background: var(--bg-sunken); color: var(--fg); border: 1px solid var(--border); }
+
+.decide { display: flex; flex-direction: column; gap: 10px; }
+.decide__item { background: var(--bg-subtle); border-radius: var(--r-md); padding: 12px 14px; display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 10px; }
+.decide__n { font-size: 13px; font-weight: 800; color: var(--primary-text); }
+.decide__q { font-size: 14px; font-weight: 600; margin: 0 0 3px; }
+.decide__a { font-size: 13px; color: var(--fg-muted); margin: 0; }
+.decide__a b { color: var(--fg); }
+
+footer { padding: 30px 0 60px; font-size: 13px; color: var(--fg-faint); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <div>
+      <h1 class="topbar__title">SuenMoney · 第四轮方案预览（第十版）</h1>
+      <p class="topbar__sub">
+        信息架构重设 —— 每页只回答一个别的页答不了的问题
+        <br>（第十版：<b>日历图例删掉</b>（那个数已经在汇总行）· <b>所有页面禁「说明式文字」</b> ·
+        <b>移动端提醒改左右滑</b>（左滑确认 / 入账，右滑忽略）。第九版的<b>一条明细一行</b>与
+        第八版的<b>移除组头 / 标记改挂箭头 / 禁 emoji / 日历花销深浅四档</b>全部保留）
+        <br><b>落地进度</b>：① <code>.card-grid</code> 版式基线 · ② 设置页「数据」tab · ③ 提醒动作层
+        <b>已全部落进代码</b>（不另出静态版）—— 下一步从 ④「概况一屏总览」开始。
+      </p>
+    </div>
+    <span class="topbar__spacer"></span>
+    <div class="device" role="group" aria-label="设备宽度">
+      <button type="button" data-device="desktop" aria-pressed="true">桌面</button>
+      <button type="button" data-device="mobile" aria-pressed="false">手机</button>
+    </div>
+  </div>
+  <div class="topbar__inner" style="padding-top:0;padding-bottom:10px">
+    <nav class="topnav">
+      <a href="#diag">① 诊断</a>
+      <a href="#map">② 分工</a>
+      <a href="#home">③ 概况</a>
+      <a href="#ledger">④ 流水</a>
+      <a href="#report">⑤ 报表</a>
+      <a href="#settings">⑥ 设置</a>
+      <a href="#remind">⑦ 计划提醒</a>
+      <a href="#mobile">⑧ 移动端</a>
+      <a href="#gaps">⑨ 版式体检</a>
+      <a href="#scope">⑩ 边界</a>
+      <a href="#decide">⑪ 待确认</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ==================================================================== -->
+<section id="diag">
+  <div class="wrap">
+    <p class="kicker">① 先说问题</p>
+    <h2>现在是「同一个数字换四种字体」，不是「四个不同的答案」</h2>
+    <p class="lead">
+      这条是核代码得到的，不是印象。每一条都写清了「出现几次、在哪几处」。
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:34%">数据</th><th style="width:44%">出现的位置</th><th>次数</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>本月支出总额</b></td><td>首页 hero 大数字 / 报表大数字 / 报表环图中心 / 流水页「合计」</td><td><b>4</b></td></tr>
+        <tr><td>「较上月」环比</td><td>首页 hero 第 1 格 / 报表概览第 1 格</td><td>2</td></tr>
+        <tr><td>「日均」</td><td>首页 hero 第 3 格 / 报表概览第 4 格</td><td>2</td></tr>
+        <tr><td>笔数</td><td>首页 hero 第 2 格 / 报表「共 N 笔」/ 流水页「已加载 N 笔」</td><td><b>3</b></td></tr>
+        <tr><td>还款日 + 紧急度</td><td>首页「本月待还」/ 报表「按支付方式」副标题</td><td>2</td></tr>
+        <tr><td>「占比条 + 笔数 + 金额」排名行</td><td>报表「按支付方式」/ 报表「按记录人」</td><td>2</td></tr>
+        <tr><td>分类的金额</td><td>报表有金额 / 设置页只有笔数（<b>且对不上</b>）</td><td>2</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--key">
+      <p><strong>第 3 条最能说明问题</strong>：首页与报表的「日均」走的是<strong>同一个
+      <code>elapsedDays()</code> 函数</strong>，两个数字逐位相同 —— 却被当成两个独立指标各占一格。</p>
+    </div>
+
+    <div class="callout">
+      <p><strong>根因</strong>：整站只有一个时间维度（「当前期间」），所以同一个数字没有别的地方可去，只能重复它自己。</p>
+      <p>参考项目的做法不是「减数字」，是<strong>让不同的时间维度各自占一块地方</strong> ——
+      维度不同，就不可能重复。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="map">
+  <div class="wrap">
+    <p class="kicker">② 新分工</p>
+    <h2>概况看量、报表看结构 —— 同一个数字只在一处出现</h2>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:16%">页面</th><th style="width:22%">回答</th><th>关键改动</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>概况</b><br><span class="xs faint">原「首页」</span></td>
+          <td><b>多少</b>（只看量，横跨月 / 年 / 总）</td>
+          <td>hero 三档 tab（本月 / 今年 / 汇总）+ <b>月度热力</b> + <b>累计条</b>；<b>不再放流水</b>；<b>不再放分类</b>；「待行动」压缩成 hero 底部一条（<b>仅桌面</b>，移动端在流水页顶部）</td>
+        </tr>
+        <tr>
+          <td><b>流水</b></td>
+          <td>那笔在哪</td>
+          <td><b>三种档位三种形态</b>：月＝流水列表（无组头，行内日期只写「日」+ 支付方式，<b>账期窄屏让位</b>）、年＝<b>12 个月格日历</b>、全部＝<b>一格一年日历</b>；日历<b>点一下选中看信息、再点（或按「进入」）才下钻</b>；<b>一行一项不换行</b>；补排序 / 金额区间；去掉还款日药丸。<b>移动端它还是唯一的「页」</b>：顶部加提醒框，控制行右端收纳三个入口</td>
+        </tr>
+        <tr>
+          <td><b>报表</b></td>
+          <td><b>构成是什么、跟谁比</b>（精度到年 / 月 / 天）</td>
+          <td><b>分类构成（从概况搬来）</b>、可下钻到二级；对照四格（含近 12 月均值）；期内节奏折线；<b>涨跌榜按变化额排</b>；还款节奏；洞察。<b>去掉</b>大数字与「共 N 笔」。<b>按档位显示不同块</b>：月 8 / 年 7 / 汇总 5</td>
+        </tr>
+        <tr>
+          <td><b>设置</b></td>
+          <td>我的东西在哪</td>
+          <td>5 个 tab（多出「数据」）；分类每行<b>补笔数</b>（不给金额）；顶部放数据元信息</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>这一版新加的一条：<b>档位决定哪些块上屏</b></h3>
+    <p class="note" style="max-width:78ch">
+      上一版的三档 tab 只换了 hero 的一个大数字 —— 也就是说<b>档位只值一个数字</b>。
+      这一版把它升格成<b>页面的组织方式</b>：换档 = 换掉一整组块。
+      判据不是「这个块能不能算出数」（三档都算得出），
+      而是「<b>这一档下它还在不在回答一个新问题</b>」。
+    </p>
+
+    <div class="chips">
+      <span class="pill pill--new">报表按档位组织块</span>
+      <span class="pill pill--new">移动端只留流水一页</span>
+      <span class="pill pill--new">下拉手势唤出记账</span>
+      <span class="pill pill--new">入口行收纳到搜索框下</span>
+      <span class="pill pill--new">新增「汇总」维度</span>
+      <span class="pill pill--new">新增月度热力</span>
+      <span class="pill pill--new">分类可下钻到二级</span>
+      <span class="pill pill--new">新增账期字段</span>
+      <span class="pill pill--mv">分类：概况 → 报表</span>
+      <span class="pill pill--mv">首页 → 「概况」</span>
+      <span class="pill pill--mv">累计：卡片 → 一行</span>
+      <span class="pill pill--del">去掉移动端底栏</span>
+      <span class="pill pill--del">去掉概况最近流水</span>
+      <span class="pill pill--del">去掉报表大数字</span>
+      <span class="pill pill--del">去掉还款日药丸</span>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="home">
+  <div class="wrap">
+    <p class="kicker">③ 页面原型</p>
+    <h2>概况 —— 一屏总览（只回答「多少」）</h2>
+    <p class="lead">
+      <b>这一页以前叫「首页」。</b>改名不是包装 —— 移动端的落地页换成流水页之后，
+      它就不再是「首页」了；留着旧名会让人以为打开 App 看到的还是它。
+      一个页面里，时间维度横跨 <b>月 / 年 / 总</b>。切换顶部三档只会换掉「当期口径」的卡片；
+      热力图与累计是跨维度的长期事实，固定不动。
+      <b>这里不再出现任何分类名</b> —— 分类的统计（构成 / 排行 / 占比 / 金额）整体归报表页。
+    </p>
+
+    <div class="split">
+      <div class="mock mock--desktop">
+        <p class="mock__cap">概况 · 桌面（hero 跨两列）· 底部提醒条只在桌面出现</p>
+        <div class="app">
+
+          <!-- ① hero -->
+          <div class="card">
+            <div class="card__head">
+              <h3 class="card__title" id="heroTitle">本月支出</h3>
+              <p class="card__meta" style="margin-left:auto">
+                <span class="tabs" id="heroTabs">
+                  <button type="button" data-scope="month" aria-pressed="true">本月</button>
+                  <button type="button" data-scope="year" aria-pressed="false">今年</button>
+                  <button type="button" data-scope="all" aria-pressed="false">汇总</button>
+                </span>
+              </p>
+            </div>
+
+            <p class="big mono" id="heroBig">¥4,286.50</p>
+            <p class="sm muted" style="margin:4px 0 0" id="heroSub">2026 年 9 月 · 较上月 <span class="tone-up">+18.4%</span></p>
+
+            <div class="metrics metrics--3" style="margin-top:16px" id="heroMetrics">
+              <!-- JS 填充 -->
+            </div>
+
+            <!-- 提醒条：唯一带「今天」语义的东西，压成一条，不占格 -->
+            <div class="chipbar" tabindex="0" id="chipbar">
+              <span id="chipText">3 期待处理 · ¥8,200</span>
+              <span class="chipbar__spacer"></span>
+              <!-- 第八次修正：颜色标记从「每行一个圆点」挪到**这一个箭头**上。
+                   收起态只回答一个问题「这叠里有没有要我动手的」，箭头就够了。 -->
+              <span class="chipbar__hint">点击查看详情 <i class="rchev rchev--late">▾</i></span>
+
+              <div class="popover">
+                <div class="card__head" style="margin-bottom:6px">
+                  <h4 style="margin:0;font-size:13px">待处理</h4>
+                  <p class="card__meta">3期 · 5期 · 6期</p>
+                </div>
+
+                <!-- 第六次修正：桌面展开区也要有动作按钮（原来只有移动端有） -->
+                <div class="pitem">
+                  <div class="prow">
+                    <span class="prow__amt">¥2,800</span>
+                    <span class="prow__when">3期 · 房贷</span>
+                    <span class="prow__why prow__why--soon">明天到期</span>
+                    <span class="prow__state">自动入账</span>
+                    <span class="topcard__acts"><button type="button" class="btn btn--ghost btn--xs">确认</button></span>
+                  </div>
+                </div>
+
+                <div class="pitem">
+                  <div class="prow">
+                    <span class="prow__amt">¥2,800</span>
+                    <span class="prow__when">5期 · 房贷</span>
+                    <span class="prow__why prow__why--late">逾期29天</span>
+                    <span class="prow__state">需手动</span>
+                    <span class="topcard__acts">
+                      <button type="button" class="btn btn--xs">入账</button>
+                      <button type="button" class="btn btn--plain btn--xs">忽略</button>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="pitem">
+                  <div class="prow">
+                    <span class="prow__amt">¥2,600</span>
+                    <span class="prow__when">6期 · 车贷</span>
+                    <span class="prow__why" style="color:var(--fg-muted)">10月2日到期</span>
+                    <span class="prow__state">自动入账</span>
+                    <span class="topcard__acts"><button type="button" class="btn btn--ghost btn--xs">确认</button></span>
+                  </div>
+                </div>
+
+                <p class="xs faint" style="margin:10px 0 0">
+                  <i class="rchev rchev--manual">▾</i> 需手动确认　
+                  <i class="rchev rchev--late">▾</i> 逾期　
+                  <i class="rchev rchev--none">▾</i> 自动入账（不用管）
+                  —— 颜色只落在箭头上；展开后不再重复标记，紧急度看文字
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 第二行 -->
+          <div class="grid grid--2">
+            <!-- ② 本月要还 -->
+            <div class="card">
+              <div class="card__head">
+                <h3 class="card__title">本月要还</h3>
+                <p class="card__meta">信用卡账单</p>
+              </div>
+              <p class="big big--sm mono" style="color:var(--accent-text)">¥3,240</p>
+              <p class="xs faint" style="margin:4px 0 0">招行 · 9月25日 · <b class="tone-warn">还有 3 天</b> · 已记 8 笔</p>
+              <div class="trow" style="padding:8px 0;grid-template-columns:minmax(0,1fr) auto">
+                <div class="trow__mid">
+                  <div class="trow__name" style="font-size:13px">工行 · 9月28日</div>
+                  <div class="trow__sub">已记 12 笔 · 当天到期</div>
+                </div>
+                <div class="trow__amt" style="font-size:14px">¥1,860</div>
+              </div>
+            </div>
+
+            <!-- ④ 进度对比卡 -->
+            <div class="card">
+              <div class="card__head">
+                <h3 class="card__title">这个月走到哪了</h3>
+                <p class="card__meta">对近 3 个月日均</p>
+              </div>
+              <p class="mid mono">¥238.14<span class="sm muted" style="font-weight:500"> / 天</span></p>
+              <p class="xs faint" style="margin:4px 0 12px">本月已过 18 天 · 已花 ¥4,286.50</p>
+              <div class="bar bar--warn"><i style="width:118%"></i></div>
+              <p class="xs faint" style="margin:6px 0 0">比近 3 个月日均高 <b class="tone-up">18%</b></p>
+              <p class="sm muted" style="margin:12px 0 0">预计月末 <b class="mono">¥7,120</b></p>
+            </div>
+          </div>
+
+          <!-- 第三行 -->
+          <div class="grid">
+            <!-- ④ 月度热力 -->
+            <div class="card">
+              <div class="card__head">
+                <h3 class="card__title">月度支出热力</h3>
+                <p class="card__meta">最近 12 个月 · 滚动</p>
+              </div>
+              <div class="heat" id="heat"></div>
+              <p class="card__foot">
+                颜色深浅 = 金额。没有记录的月份显示 <b>—</b> 而不是 0（<b>「没记」与「没花」是两件事</b>）。
+              </p>
+            </div>
+          </div>
+
+          <!-- 第四行：累计 —— 只有一行数，就只给它一行 -->
+          <div class="strip">
+            <span class="strip__label">累计</span>
+            <span class="strip__items">
+              <span>已记 <b>412</b> 天</span>
+              <span><b>1,342</b> 笔</span>
+              <span>平均 <b>3.2</b> 笔 / 天</span>
+              <span>首笔 <b>2024-03-12</b></span>
+            </span>
+            <span class="strip__note">不含金额 —— 那在「汇总」档</span>
+          </div>
+
+          <!-- 底栏已删（§⑧ 移动端）。这一版之后移动端没有任何常驻导航。 -->
+
+        </div>
+      </div>
+
+      <aside class="annots">
+        <div class="annot annot--new">
+          <p class="annot__t">三档 tab 只换「当期口径」的卡片</p>
+          <p class="annot__d">大数字、子指标、进度条跟着换；热力图与累计固定不动 —— 它们本身就站在一个维度上（最近 12 个月 / 全部时间），跟着切换会让人不知道自己在看什么。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">分类整体搬去报表页了</p>
+          <p class="annot__d">上一版是「一级留首页、二级去报表」—— 那要靠<b>精度</b>分边界，用户永远记不清该去哪页。现在按 <b>量 / 结构</b> 分：概况只看多少，构成 / 排行 / 占比 / 金额全在报表。<b>这条能用一条 grep 验收：概况的 DOM 里不该出现任何分类名。</b></p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">累计从卡片改成一行</p>
+          <p class="annot__d">它只有四个互无结构的数，用一整格去装是浪费。<b>而且它不含金额</b> —— 累计支出那个数在「汇总」档的 hero 上，同一页出现两次正是这一轮要消灭的东西。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">「汇总」是我们从没有过的维度</p>
+          <p class="annot__d">它是唯一能回答「我一共花了多少 / 记了多久」的档位。没有它，整站永远只有当期，也就永远只有那几个数可放。</p>
+        </div>
+        <div class="annot">
+          <p class="annot__t">子指标随档位变</p>
+          <p class="annot__d">本月 → 日均 · 笔数 · 预计月末<br>今年 → 月均 · 笔数 · 最高月<br>汇总 → 月均 · 每笔均 · 最高月<br>试试点上面的 tab。<b>三档都是 3 格</b> —— 之前多给了一格「单笔最高」，那和报表的对照撞了。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">热力图在手机上要改格数</p>
+          <p class="annot__d">390 手机上 12 格平摊每格只有 22px，连「10月」都放不下 —— 窄屏必须改成 <b>6×2</b>，金额也换成缩写（3.8k）。<b>这是真机才暴露的问题</b>，所以我把两种宽度都做出来了，切到「手机」看看。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">「预计月末」前 3 天不显示</p>
+          <p class="annot__d">月初第 1 天会算成「一天的金额 × 30」，误差可达十倍。所以每当前 3 天显示 <b>—</b> 并注明「数据太少」。<b>这个「不显示」是刻意的。</b></p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">提醒条「仅桌面」是这个版本加的限制</p>
+          <p class="annot__d">提醒条跟着<b>落地页</b>走：桌面落地页是概况 → 挂在 hero 底部；移动端落地页是流水页 → 挂在流水页顶部（§⑧）。<b>不是两处都放</b> —— 那才是重复。</p>
+        </div>
+        <div class="annot">
+          <p class="annot__t">不再放流水</p>
+          <p class="annot__d">之前首页挂 8 条「最近流水」，等于把首页做成了「流水页的截断版」。流水归流水页之后，概况才腾得出位置放热力图与累计条。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="ledger">
+  <div class="wrap">
+    <p class="kicker">④ 页面原型</p>
+    <h2>流水页 —— 唯一能看到「一笔一笔」的地方</h2>
+    <p class="lead">
+      概况不再放流水之后，它要同时承担「默认浏览」和「精确查找」。
+      <br><b>第七次修正：三种期间档位，三种形态</b> ——
+      <b>月＝流水列表</b>（没有组头）、<b>年＝12 个月格</b>、<b>全部＝一格一年</b>；
+      后两档都是<b>日历页</b>：点格先看信息，<b>再点一次（或按「进入」）才下钻</b>。
+      <br><b>而在移动端，它还是唯一的那一页</b>（见 ⑧）：落地就是它，
+      提醒框挂在它顶上，其他三页从它的搜索框下面进去。
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:13%">期间</th><th style="width:39%">形态</th><th>为什么是这个形态</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>月</b></td>
+          <td><b>流水列表 · 没有组头</b><br><span class="faint">日期回到行内，<b>只写「日」</b>（<code>28日</code>）</span></td>
+          <td>一个月只有一屏多，期间已知 —— 按天分组会长出 28~31 个组头，每个都在重复期间选择器说过的「9月」</td>
+        </tr>
+        <tr>
+          <td><b>年</b></td>
+          <td><b>日历页 · 一格一月</b>（12 格）<br><span class="faint">点格 → 下方卡切到该月；再点 / 按「进入」→ 月档</span></td>
+          <td>「哪几个月有东西」用一屏格子就说完了，而且<b>不展开就看得见深浅</b></td>
+        </tr>
+        <tr>
+          <td><b>全部</b></td>
+          <td><b>日历页 · 一格一年</b>（少量格）<br><span class="faint">点格 → 下方卡切到该年；再点 / 按「进入」→ 年档</span></td>
+          <td>年数少，一格放得下整年的量；再往下就是年档的 12 格</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>月档没有组头 —— 这条从第六次修正起没变过。</b>
+      原方案定的是一律<b>按天分组</b>，那样一个月会长出 28~31 个组头，
+      而<b>月档的期间是已知的</b>，每个组头都在重复「9月」。
+      <b>组头的职责是补出列表本身没有的层级，月档没有层级可补。</b>
+      <br><br>
+      连带解开一个死结：原方案说「日期从行内提到组头，腾出来的宽度才放得下 <code>账期</code>」。
+      月档无组头之后日期必须留在行内，但行内<b>只写「日」</b>（<code>28日</code>，两个字）——
+      月份由期间给。<b>列宽问题不是靠腾空间解决的，是靠不重复已经说过的信息。</b>
+      <br><br>
+      <b>年 / 全部两档的实现方式在第七次修正被换掉了</b>（原来定的是「年档按月折叠 /
+      全部档年→月两级折叠」）。见本节后半的<b>日历页</b> ——
+      <b>不是那条规则错了，是同一个问题后来有了更省事的答法。</b>
+    </p>
+
+    <div class="split">
+      <div class="mock mock--mobile">
+        <p class="mock__cap">月档 · 手机 390 —— 无组头，日期回到行内只写「日」</p>
+        <div class="app">
+
+          <div class="card" style="padding:12px">
+            <!-- 控制行（期间靠左 + 三个入口靠右）与搜索行 —— 详 ⑧ 二·补 -->
+            <div class="ctlrow">
+              <button class="btn btn--ghost nowrap">‹ 9月 ▾</button>
+              <div class="entryrow entryrow--inline">
+                <span class="entryrow__label">还有</span>
+                <a href="#home">概况 <span class="entryrow__chev">›</span></a>
+                <a href="#report">报表 <span class="entryrow__chev">›</span></a>
+                <a href="#settings">设置 <span class="entryrow__chev">›</span></a>
+              </div>
+            </div>
+            <div class="searchrow">
+              <div class="filterbar__search faint">搜索备注 / 分类…</div>
+              <button class="btn btn--ghost nowrap">筛选</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+              <span class="tag">最新优先 ▾</span>
+              <span class="tag">金额 ≥ 100</span>
+              <span class="tag">交通 ×</span>
+            </div>
+            <p class="xs faint" style="margin:10px 0 0">筛出 <b>6 笔</b> · 合计 <b class="mono">¥1,286</b></p>
+          </div>
+
+          <div class="card" style="padding:10px">
+            <div class="trow trow--dated">
+              <span class="trow__day">28日</span>
+              <div class="trow__icon" style="background:#dbeafe">食</div>
+              <div class="trow__mid">
+                <div class="trow__name">午餐 · 公司楼下</div>
+                <div class="trow__sub"><span>招行信用卡</span><span class="trow__sub-x">账期 16 天</span></div>
+              </div>
+              <div class="trow__amt">¥62</div>
+            </div>
+            <div class="trow trow--dated">
+              <span class="trow__day">28日</span>
+              <div class="trow__icon" style="background:#dcfce7">行</div>
+              <div class="trow__mid">
+                <div class="trow__name">地铁 · 通勤</div>
+                <div class="trow__sub"><span>交通卡</span><span class="trow__sub-x">账期 2 天</span></div>
+              </div>
+              <div class="trow__amt">¥12</div>
+            </div>
+            <div class="trow trow--dated">
+              <span class="trow__day">28日</span>
+              <div class="trow__icon" style="background:#fef3c7">购</div>
+              <div class="trow__mid">
+                <div class="trow__name">超市 · 日用</div>
+                <div class="trow__sub"><span>微信</span><span class="trow__sub-x">账期 0 天</span></div>
+              </div>
+              <div class="trow__amt">¥288</div>
+            </div>
+            <div class="trow trow--dated">
+              <span class="trow__day">27日</span>
+              <div class="trow__icon" style="background:#ede9fe">住</div>
+              <div class="trow__mid">
+                <div class="trow__name">房租 · 9 月</div>
+                <div class="trow__sub"><span>工行卡</span><span class="trow__sub-x">账期 0 天</span></div>
+              </div>
+              <div class="trow__amt">¥1,800</div>
+            </div>
+          </div>
+
+          <!--
+            底栏已删。这一节的手机框回答的是「列表本身怎么排」；
+            「移动端整页长什么样（提醒框 / 入口行 / 手势）」在 ⑧ 移动端那一节。
+          -->
+          <a href="#mobile" class="xs faint" style="text-decoration:none;text-align:center;padding:6px 0">
+            移动端整页的形态（提醒框置顶 · 入口行 · 下拉记账）→ 见 ⑧
+          </a>
+
+        </div>
+      </div>
+
+      <aside class="annots">
+        <div class="annot annot--warn">
+          <p class="annot__t">一行一项（第七次定的方向 · 第九次才真正做到）</p>
+          <p class="annot__d">一条明细<b>只占一行</b>：<code>28日 · 食 · 午餐 · 公司楼下 · 招行信用卡 · ¥62</code>。
+          原来主名与副信息是<b>上下叠着</b>的，一笔要两行才对得齐 ——
+          行数一多就变成「扫读时眼睛来回跳」。
+          <br><br>
+          <b>但第七次只定了方向，第九次才真正做到。</b>当时的
+          <code>.trow--dated</code> 写在 <code>.trow</code> <b>前面</b>、两者特异性相同，
+          被后者整条覆盖 —— 4 个格子塞进 3 列，金额掉到第二行、日期折成「28 / 日」。
+          <b>「写了规则」和「规则生效」是两件事</b>，中间隔着一个源码顺序。
+          现在改成 <code>.trow.trow--dated</code>（0,2,0），让特异性说话。
+          <br><br>
+          窄屏里<b>账期让位</b>（支付方式是「识别这一笔」，账期是「什么时候出账」，报表里有完整呈现），
+          桌面两者都在。<b>行高不变、不换行、不撑高</b> ——
+          好处不只是好看：<b>行高固定之后，一屏能装的行数是确定的</b>，
+          这也是 M9（一次加载多少）能算得出来的前提。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">月档为什么不要组头</p>
+          <p class="annot__d">组头的职责是<b>补出列表本身没有的层级</b>。月档里所有笔都在同一个月，
+          按天分组会长出 28~31 个组头，而每个组头都在重复期间选择器已经说过的「9月」。
+          <b>省下的是重复，换回的是行内那两个字的位置。</b></p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">账期 —— 我们独有、从没展示过的字段</p>
+          <p class="annot__d">显示「消费日 → 还款日」相差几天（这里简化成 <b>账期 16 天</b>）。它回答一个很实际的问题：<b>免息期用了多久</b>。库里三个日期字段都躺了两年没用过。</p>
+        </div>
+        <div class="annot">
+          <p class="annot__t">合计只在有筛选时才给数字</p>
+          <p class="annot__d">合计是「本月总额」的第 4 次出现。列表语境里它确实有用，所以不删 —— 但只在筛选时给。<b>无筛选时不显示</b>，因为那个数概况与报表都有。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">去掉还款日药丸</p>
+          <p class="annot__d">每行都挂一个灰色的「9月28日 还款」，大量行重复、是纯噪音。它的信息（紧急度）属于概况「本月要还」，不属于流水行。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">还剩一条没答：一次加载多少</p>
+          <p class="annot__d">「几千笔之后怎么办」还没定 —— 现在是「已加载 N 笔」无限往下加载。
+          这条列进待确认（<b>M9</b>）。
+          <b>注意日历把它简化了</b>：年 / 全部两档现在是日历（只有十几个格子），
+          真正需要担心长度的<b>只剩月档</b>，而月档是一屏多 ~ 几屏，量级完全不同。</p>
+        </div>
+      </aside>
+    </div>
+
+    <h3>年档 / 全部档：日历页 —— 不是折叠列表</h3>
+    <p class="note" style="max-width:78ch">
+      <b>第七次修正换掉了这两档的实现方式。</b> 第六次修正定的是「年档一级＝月组头、
+      全部档年→月两级、默认折叠」。那条规则本身没说错，但 ——
+      <b>折叠列表能回答的问题，日历回答得更好</b>：
+      折叠列表要<b>展开才知道</b>「哪几个月有东西」，日历<b>不展开就看得见</b>
+      （格子里的量就是深浅），而且格子上<b>直接能点</b>。
+      <br><br>
+      换句话说：<b>日历是分组列表的升级形态，不是另一个功能。</b>
+      分组列表用三行文字说的事，日历一屏格子说完，还多给了「点进去」。
+      所以这一条不是新增页面，是<b>把「按档位分组的列表」在年 / 全部两档换成日历</b>。
+      月档<b>不动</b> —— 一个月一屏多，列表就是它最合适的形态。
+    </p>
+
+    <div class="callout callout--key">
+      <p><strong>点一下 = 选中，再点一下（或按「进入」）= 走。</strong>
+      你的原话：<em>「点击日历的年份或月份可以查看该月的相关信息，如展示当年月的概况，
+      花费多少，分布等等，下方加入进入按钮或者再次点击进入下一层级，年进入月，
+      月进入正常流水页。」</em></p>
+      <p>所以格子上有<b>两个动作</b>，靠点几次分开：</p>
+      <ul style="margin:6px 0 8px;padding-left:20px">
+        <li><b>第一次点</b> → 选中该格，<b>下方那张卡切到这个期间</b>（花多少 / 几笔 / 分布）。
+          <b>不换页、不滚动、不出现返回栈。</b></li>
+        <li><b>再点同一格</b>，或点卡右上角的 <b>「进入 … →」</b> → 才真正下钻：
+          全部档点年 → 年档；年档点月 → 月档＝<b>正常流水</b>。</li>
+      </ul>
+      <p><b>为什么值得分两步</b>：一格上只有一个数，看不出「这个月花在哪」。
+      若一步就跳走，用户得跳过去、发现「不是这个月」、再跳回来 ——
+      <b>两步把「看看」和「进去」拆开了，翻月份的成本从两次跳转降到点一下。</b></p>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:12%">档位</th><th style="width:18%">一格是</th><th style="width:32%">点一下（＝选中）</th><th>再点 / 按「进入」</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>全部</b></td><td><b>一年</b></td>
+          <td>下方卡切到该年：全年合计 · 笔数 · 月均 · 分类分布</td>
+          <td><b>年 →</b> 进该年（＝年档的 12 格）</td>
+        </tr>
+        <tr>
+          <td><b>年</b></td><td><b>一月</b>（12 格）</td>
+          <td>下方卡切到该月：当月合计 · 笔数 · 日均 · 分类分布</td>
+          <td><b>月 →</b> 进该月＝<b>正常流水页</b>（月档）</td>
+        </tr>
+        <tr>
+          <td><b>月</b></td><td class="faint">—（没有日历）</td>
+          <td class="faint">—</td>
+          <td>月档<b>本身就是流水列表</b>，见上一节</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="duo">
+      <div class="mock mock--narrow">
+        <p class="mock__cap">年档 · 12 个月格 —— 深浅＝花得多少，选中 9 月</p>
+        <div class="app">
+          <div class="card" style="padding:12px">
+            <div class="card__head" style="margin-bottom:8px">
+              <h3 class="card__title" style="font-size:14px">2026 年</h3>
+              <p class="card__meta">共 312 笔 · ¥96,400</p>
+            </div>
+            <!-- 第八次修正：格子底色用**强调色（蓝）的深浅**表示花销大小，四档。
+                 色值只是示意；真实实现取 tokens.css 的 --primary（#3b82f6）叠不同透明度。 -->
+            <div class="cal">
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">1月</p><p class="cal__v">¥7,120</p><p class="cal__d">24 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="1">
+                <p class="cal__m">2月</p><p class="cal__v">¥4,180</p><p class="cal__d">18 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">3月</p><p class="cal__v">¥7,860</p><p class="cal__d">26 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">4月</p><p class="cal__v">¥8,240</p><p class="cal__d">27 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">5月</p><p class="cal__v">¥7,940</p><p class="cal__d">25 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">6月</p><p class="cal__v">¥8,360</p><p class="cal__d">28 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">7月</p><p class="cal__v">¥8,180</p><p class="cal__d">26 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="3">
+                <p class="cal__m">8月</p><p class="cal__v">¥10,420</p><p class="cal__d">29 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="4" aria-pressed="true">
+                <p class="cal__m">9月</p><p class="cal__v">¥13,860</p><p class="cal__d">38 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">10月</p><p class="cal__v">¥7,520</p><p class="cal__d">25 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="1">
+                <p class="cal__m">11月</p><p class="cal__v">¥6,940</p><p class="cal__d">24 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="1">
+                <p class="cal__m">12月</p><p class="cal__v">¥5,780</p><p class="cal__d">22 笔</p>
+              </button>
+            </div>
+
+            <div class="calinfo">
+              <div class="calinfo__head">
+                <div style="min-width:0">
+                  <p class="calinfo__t">9月 · 2026</p>
+                  <p class="calinfo__m">共 38 笔 · ¥13,860　日均 ¥364.7</p>
+                </div>
+                <span style="flex:1 1 auto"></span>
+                <button type="button" class="btn btn--ghost nowrap" style="font-size:12px">进入 9 月流水 →</button>
+              </div>
+              <p class="calinfo__k">分布</p>
+              <div class="calinfo__row"><span>住房</span><div class="bar"><i style="width:35%"></i></div><b>¥4,860</b></div>
+              <div class="calinfo__row"><span>餐饮</span><div class="bar"><i style="width:21%"></i></div><b>¥2,910</b></div>
+              <div class="calinfo__row"><span>交通</span><div class="bar"><i style="width:9%"></i></div><b>¥1,240</b></div>
+            </div>
+          </div>
+          <p class="xs faint" style="text-align:center;padding:8px 0;margin:0">
+            再点 9 月、或按「进入」→ <b>月档＝正常流水</b>（不改页面、不改路由）
+          </p>
+        </div>
+      </div>
+
+      <div class="mock mock--narrow">
+        <p class="mock__cap">全部档 · 一格一年 —— 深浅同样生效，选中 2026</p>
+        <div class="app">
+          <div class="card" style="padding:12px">
+            <div class="card__head" style="margin-bottom:8px">
+              <h3 class="card__title" style="font-size:14px">全部时间</h3>
+              <p class="card__meta">共 1,124 笔 · ¥319,400</p>
+            </div>
+            <div class="cal cal--years">
+              <button type="button" class="cal__cell" data-heat="2" aria-pressed="true">
+                <p class="cal__m">2026</p><p class="cal__v">¥96,400</p><p class="cal__d">312 笔 · 进行中</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="3">
+                <p class="cal__m">2025</p><p class="cal__v">¥124,800</p><p class="cal__d">428 笔</p>
+              </button>
+              <button type="button" class="cal__cell" data-heat="2">
+                <p class="cal__m">2024</p><p class="cal__v">¥98,200</p><p class="cal__d">384 笔</p>
+              </button>
+            </div>
+
+            <div class="calinfo">
+              <div class="calinfo__head">
+                <div style="min-width:0">
+                  <p class="calinfo__t">2026 年</p>
+                  <p class="calinfo__m">共 312 笔 · ¥96,400　月均 ¥8,033</p>
+                </div>
+                <span style="flex:1 1 auto"></span>
+                <button type="button" class="btn btn--ghost nowrap" style="font-size:12px">进入 2026 年 →</button>
+              </div>
+              <p class="calinfo__k">分布</p>
+              <div class="calinfo__row"><span>住房</span><div class="bar"><i style="width:41%"></i></div><b>¥39,524</b></div>
+              <div class="calinfo__row"><span>餐饮</span><div class="bar"><i style="width:26%"></i></div><b>¥25,064</b></div>
+              <div class="calinfo__row"><span>交通</span><div class="bar"><i style="width:11%"></i></div><b>¥10,604</b></div>
+            </div>
+          </div>
+          <p class="xs faint" style="text-align:center;padding:8px 0;margin:0">
+            再点 2026、或按「进入」→ <b>年档</b> → 再点月 → 月档流水
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout--key">
+      <p><strong>格子的深浅＝花销大小，而且只用强调色的四档。</strong>
+      你的话：<em>「除提醒与标志需表示紧急程度外，其余颜色一律沿用强调色」</em>。
+      所以这里<b>不引入第二个色相</b> —— 全部是主强调色（蓝 <code>#3b82f6</code>）叠四个透明度：</p>
+      <table class="table" style="margin:10px 0 0">
+        <thead>
+          <tr><th style="width:11%">档</th><th style="width:20%">含义</th><th style="width:22%">判据（m ＝ 本档均值）</th><th>底色（叠在卡片底上）</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><b>4</b></td><td><b>最多</b> · 最深</td><td>≥ 1.5 m</td><td><code>rgba(59,130,246,.42)</code></td></tr>
+          <tr><td><b>3</b></td><td><b>稍多</b> · 略深</td><td>1.15 m ~ 1.5 m</td><td><code>rgba(59,130,246,.24)</code></td></tr>
+          <tr><td><b>2</b></td><td><b>平均数上下</b> · 普通</td><td>0.85 m ~ 1.15 m</td><td><code>rgba(59,130,246,.12)</code></td></tr>
+          <tr><td><b>1</b></td><td><b>最少</b> · 最浅</td><td>&lt; 0.85 m</td><td><code>rgba(59,130,246,.05)</code></td></tr>
+          <tr><td><b>0</b></td><td class="faint">一笔都没有</td><td class="faint">合计 ＝ 0</td><td class="faint">透明 + 一圈描边</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:10px"><strong>为什么以「均值」为轴，而不是在最大 / 最小之间等分</strong>：
+      你说的是「<b>平均数上下＝普通</b>」—— 这句话要求「普通」这一档<b>跨在均值两侧</b>。
+      若按最大最小等分，「平均的那个月」会被归进「稍多」或「最少」，与你的原话对不上。
+      四档的语义就落成：<b>均值附近是普通，一倍半往上是最多，不到均值一半是最少。</b></p>
+      <p><strong>为什么「0」要单独一档</strong>：<b>没花钱和花得少不是一件事。</b>
+      把 0 涂成「最浅」，读起来是「那个月花得很少」；实际是「那个月一分没花」。
+      颜色越淡承担的信息越弱，而 0 是一个很强的信息（断供、换卡、没记账），
+      所以它用<b>描边（＝空）</b>，而不是最浅的填充（＝少）。</p>
+      <p><strong>深浅只用在日历上，不许扩散。</strong>
+      页面上现在有两套颜色语义，必须分清：<b>提醒</b>用<b>色相</b>（黄 / 红）说「要不要动手」，
+      <b>日历</b>用<b>明度</b>（蓝的深浅）说「花了多少」。
+      把日历的深蓝挪去别处用（比如给「本月支出」的大数字铺底），
+      就会把「花得多」误读成「要注意」—— 那正是第六次修正刚拆开的东西。</p>
+    </div>
+
+    <div class="callout callout--key">
+      <p><strong>日历只做骨架，不在格子里塞统计。</strong>
+      格子里只给「一个月 / 一年的量」，一眼看出<b>哪几格深</b>；
+      统计一律挂在下方那张卡里。往格子里塞环图、排名、涨跌，会做出一张
+      「什么都想说的日历」—— 而日历的价值恰恰是<b>一眼看出哪几格深</b>。</p>
+      <p><strong>「下方那张卡」就是你说的「统计卡片」。</strong>
+      未选中时它显示<b>本档</b>（年 / 全部）的统计；一旦选中某格，整组切到那一格。
+      所以「点一下看该月信息」和「日历下方挂统计卡」<b>是同一件事的两种说法</b> ——
+      日历在这儿的作用就是<b>一个期间选择器</b>，它驱动下面同一组卡。</p>
+      <p><strong>下钻改的是「期间」，不是「页面」</strong>：
+      从年档点进 9 月，是 <code>scope=year &amp; month=9</code> → <code>scope=month</code>，
+      组件树与滚动位置都不变。这条必须写死 —— 做成「跳转到另一个页面」就会多一层返回栈，
+      把 ⑧ 五 刚定干净的「二级页只有一个出口」破坏掉。</p>
+    </div>
+
+    <p class="note" style="max-width:78ch">
+      <b>窄屏的年档形态是个真约束</b>：一个月的月历是 7 列 × 5~6 行，每格约 44px，放得下；
+      但<b>12 张迷你月历在 390 宽上放不下</b>（每格只剩约 30px）。所以窄屏退化成
+      <b>3×4 的月格</b>（只写「9月 / ¥13,860 / 38 笔」），桌面才铺成 6×2 或 4×3。
+      <b>和热力图从 12 格改 6×2 是同一个手法：装不下就换写法，不硬塞。</b>
+      年历的价值在「哪几个月有东西」，不在看清每一天 ——
+      看每一天本来就有两个去处（报表折线、月档流水）。
+    </p>
+
+    <div class="callout">
+      <p><b>年度账单页（原 B 级第 2 条）是什么</b> —— 你问「是指年度报告还是什么」：
+      <b>是年度报告</b>。参考项目里那种「回顾叙事 + 成就徽章」
+      （年度总览 / 支出分析 / 月度趋势 / 特别时刻 / 成就），数据大头 <code>yearlyReport</code> 已经有了。
+      <br>它和上面这个日历<b>不重合</b>：<b>日历是「查」</b>（我想看某个月），
+      <b>年度报告是「读」</b>（一年过去了，看看发生了什么）。这一轮<b>不做</b>。</p>
+      <p><b>分享（原 B 级第 3 条）：完全不做</b>，已从清单里删掉。
+      能力上不难，但它会引出一串东西：图片模板、脱敏规则、生成时机、分享渠道 ——
+      与「重设四页版式」是两条线。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="report">
+  <div class="wrap">
+    <p class="kicker">⑤ 页面原型</p>
+    <h2>报表页 —— 统计（回答「构成是什么、跟谁比」）</h2>
+    <p class="lead">
+      概况只看量，这一页看 <b>结构</b> 与 <b>对照</b>，精度细化到年 / 月 / 天。
+      它是 <b>分类唯一的家</b> —— 一级构成、二级下钻、排行、涨跌榜全在这儿，
+      所以概况那张分类卡是<b>搬过来的</b>，不是删掉的。
+      <br><b>这一版的新东西：换档 = 换掉一整组块。</b>
+      下面那张表逐块写了「为什么在这一档没有它」，原型里<b>真的会跟着切</b>。
+    </p>
+
+    <h3>档位矩阵 —— 每个块只出现在回答得出新问题的档位</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:20%">块</th>
+          <th style="width:11%">月档</th>
+          <th style="width:11%">年档</th>
+          <th style="width:11%">汇总档</th>
+          <th>为什么</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>① 档位 + 期间</td><td>有</td><td>有</td><td>有</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>② <b>分类构成</b></td><td>本月</td><td>本年</td><td>全部</td>
+          <td>三档问的是三个不同的「构成是什么」</td>
+        </tr>
+        <tr>
+          <td>③ <b>期内节奏</b></td><td><b>按天</b></td><td><b>按月</b></td><td><b>按年</b></td>
+          <td><b>换的是形态，不是块</b> —— 三档都要「走到哪了」</td>
+        </tr>
+        <tr>
+          <td>④ <b>对照</b></td><td>上月 / 去年同月 / 近12月均 / 极值</td><td>去年 / 近3年均 / 最高月 / 极值</td>
+          <td class="faint" style="text-decoration:line-through">隐藏</td>
+          <td>汇总没有对照组</td>
+        </tr>
+        <tr>
+          <td>⑤ <b>涨跌榜</b></td><td>较上月</td><td>较去年</td>
+          <td class="faint" style="text-decoration:line-through">隐藏</td>
+          <td>涨跌必须先有「较谁」</td>
+        </tr>
+        <tr>
+          <td>⑥ <b>还款节奏</b></td><td>本月已刷 + <b>下月要还</b></td>
+          <td class="faint" style="text-decoration:line-through">隐藏</td>
+          <td class="faint" style="text-decoration:line-through">隐藏</td>
+          <td>「下月要还」只有月档成立；年档下它退化成「全年各方式占比」，<b>而那是 ② 已经答过的</b></td>
+        </tr>
+        <tr>
+          <td>⑦ <b>本期洞察</b></td><td>月 3 条</td><td>年 3 条</td><td>累计 2 条</td>
+          <td><b>换的是规则集，不是块</b> —— 档位下的「值得一提」不一样</td>
+        </tr>
+        <tr>
+          <td>⑧ 按记录人</td><td>有</td><td>有</td><td>有</td>
+          <td>—</td>
+        </tr>
+        <tr style="background:var(--bg-sunken)">
+          <td><b>落到的块数</b></td>
+          <td><b>8</b></td><td><b>6</b></td><td><b>5</b></td>
+          <td>少掉的每一块，都是<b>在那一档下答案已经重复</b>的块</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--key">
+      <p><strong>判据要写清，否则会做成「藏东西」</strong>：每个块在三档上<strong>都算得出数</strong>
+      （「较上期」永远能算），所以如果判据是「能不能算出来」，结果是一块都不减。
+      有效判据是「<strong>这一档下它还在不在回答一个新问题</strong>」。</p>
+      <p>→ <strong>「无关的不显示」的边界是「答案有没有重复」，不是「屏数够不够」。</strong></p>
+    </div>
+
+    <div class="split">
+      <div class="mock mock--desktop">
+        <p class="mock__cap">报表页 · 桌面 · <b>点档位，下面真的会换块</b></p>
+        <div class="app">
+
+          <div class="card" style="padding:12px" data-block="scope" data-scopes="month year all">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span class="tabs" id="reportScope">
+                <button type="button" data-scope="month" aria-pressed="true">月</button>
+                <button type="button" data-scope="year" aria-pressed="false">年</button>
+                <button type="button" data-scope="all" aria-pressed="false">汇总</button>
+              </span>
+              <b style="font-size:15px" id="reportPeriod">2026 年 9 月</b>
+              <span class="xs faint" id="reportHint">与概况同一套三档 · 当前 8 块</span>
+            </div>
+          </div>
+
+          <!-- ② 分类构成（从概况搬来 + 二级下钻） -->
+          <div class="grid">
+            <div class="card" data-block="composition" data-scopes="month year all">
+              <div class="card__head">
+                <h3 class="card__title">分类构成</h3>
+                <p class="card__meta" id="compositionMeta">本月 · 5 个分类 · 占比 &lt;1% 归「其他」</p>
+              </div>
+
+              <div class="donut-row">
+                <div class="donut">
+                  <svg viewBox="0 0 42 42" width="132" height="132" aria-hidden="true">
+                    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--bg-sunken)" stroke-width="6"></circle>
+                    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--chart-1)" stroke-width="6"
+                            stroke-dasharray="42 58" stroke-dashoffset="25"></circle>
+                    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--chart-2)" stroke-width="6"
+                            stroke-dasharray="30 70" stroke-dashoffset="83"></circle>
+                    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--chart-3)" stroke-width="6"
+                            stroke-dasharray="11.3 88.7" stroke-dashoffset="53"></circle>
+                    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--chart-4)" stroke-width="6"
+                            stroke-dasharray="9.7 90.3" stroke-dashoffset="41.7"></circle>
+                    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--chart-5)" stroke-width="6"
+                            stroke-dasharray="7 93" stroke-dashoffset="32"></circle>
+                  </svg>
+                  <div class="donut__center">
+                    <span class="xs faint">分类</span>
+                    <b class="mono" id="donutCount">5</b>
+                  </div>
+                </div>
+
+                <div class="drill-list">
+                  <div class="drill" data-open="true">
+                    <button type="button" class="drill__row" data-drill>
+                      <span class="rank__name"><i class="swatch" style="background:var(--chart-1)"></i>住房 <span class="rank__sub">2 笔 · 42.0%</span> <span class="drill__toggle">收起 ▾</span></span>
+                      <span class="rank__amt">¥1,800</span>
+                    </button>
+                    <div class="drill__kids">
+                      <div class="drill__kid"><span>房租</span><span class="drill__kid-amt">¥1,800</span></div>
+                    </div>
+                  </div>
+
+                  <div class="drill" data-open="false">
+                    <button type="button" class="drill__row" data-drill>
+                      <span class="rank__name"><i class="swatch" style="background:var(--chart-2)"></i>餐饮 <span class="rank__sub">24 笔 · 30.0%</span> <span class="drill__toggle">展开 ›</span></span>
+                      <span class="rank__amt">¥1,286</span>
+                    </button>
+                    <div class="drill__kids">
+                      <div class="drill__kid"><span>外卖</span><span class="drill__kid-amt">¥742</span></div>
+                      <div class="drill__kid"><span>堂食</span><span class="drill__kid-amt">¥386</span></div>
+                      <div class="drill__kid"><span>咖啡</span><span class="drill__kid-amt">¥158</span></div>
+                    </div>
+                  </div>
+
+                  <div class="drill" data-open="false">
+                    <button type="button" class="drill__row" data-drill>
+                      <span class="rank__name"><i class="swatch" style="background:var(--chart-3)"></i>交通 <span class="rank__sub">18 笔 · 11.3%</span> <span class="drill__toggle">展开 ›</span></span>
+                      <span class="rank__amt">¥486</span>
+                    </button>
+                    <div class="drill__kids">
+                      <div class="drill__kid"><span>地铁</span><span class="drill__kid-amt">¥312</span></div>
+                      <div class="drill__kid"><span>打车</span><span class="drill__kid-amt">¥174</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p class="card__foot">
+                环图中心<b>不显示合计</b> —— 那个数在概况 hero 上，这一页讲结构、不讲总量。
+                二级分类有数据、但一直没展示过（<code>categories.depth</code> 躺在库里）。
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid--auto">
+            <!-- ③ 期内节奏 -->
+            <div class="card" data-block="rhythm" data-scopes="month year all">
+              <div class="card__head">
+                <h3 class="card__title">期内节奏</h3>
+                <p class="card__meta" id="rhythmMeta">9月 1 – 28 日 · 逐日</p>
+              </div>
+              <svg class="linechart" viewBox="0 0 320 132" preserveAspectRatio="none" aria-hidden="true">
+                <line x1="0" y1="110" x2="320" y2="110" stroke="var(--border)" stroke-width="1"></line>
+                <polyline fill="none" stroke="var(--primary)" stroke-width="2"
+                  points="6,96 30,88 54,104 78,72 102,92 126,84 150,40 174,88 198,96 222,80 246,90 270,44 294,60 316,52"></polyline>
+                <circle cx="150" cy="40" r="3" fill="var(--primary)"></circle>
+                <circle cx="270" cy="44" r="3" fill="var(--primary)"></circle>
+                <!-- 逐点标数值的两处峰值：跟着档位换口径（月 = 某两天 / 年 = 某两月 / 汇总 = 某两年） -->
+                <text x="150" y="32" font-size="10" fill="var(--fg-muted)" text-anchor="middle" data-rhythm="month">1,800</text>
+                <text x="270" y="36" font-size="10" fill="var(--fg-muted)" text-anchor="middle" data-rhythm="month">1,240</text>
+                <text x="150" y="32" font-size="10" fill="var(--fg-muted)" text-anchor="middle" data-rhythm="year" hidden>6,120</text>
+                <text x="270" y="36" font-size="10" fill="var(--fg-muted)" text-anchor="middle" data-rhythm="year" hidden>4,980</text>
+                <text x="150" y="32" font-size="10" fill="var(--fg-muted)" text-anchor="middle" data-rhythm="all" hidden>¥38k</text>
+                <text x="270" y="36" font-size="10" fill="var(--fg-muted)" text-anchor="middle" data-rhythm="all" hidden>¥41k</text>
+              </svg>
+              <p class="card__foot" id="rhythmFoot">
+                逐点标数值，不用悬浮就能读。月档按天（<b>点某天 → 展开当天快照</b>）、年档按月、汇总档按年 ——
+                <b>现在月档完全没有图</b>。「天」不单独立档，就落在这条折线上。
+              </p>
+            </div>
+
+            <!-- ④ 对照（月 / 年两套口径，汇总档隐藏） -->
+            <div class="card" data-block="compare" data-scopes="month year">
+              <div class="card__head">
+                <h3 class="card__title">与谁比</h3>
+                <p class="card__meta" id="compareMeta">三格比 · 一格极值</p>
+              </div>
+
+              <div class="metrics metrics--4" data-for="month">
+                <div><p class="metric__k">较上月</p><p class="metric__v tone-up">+18.4%</p><p class="metric__d faint">+¥668</p></div>
+                <div><p class="metric__k">去年同月</p><p class="metric__v tone-down">−6.2%</p><p class="metric__d faint">−¥284</p></div>
+                <div><p class="metric__k">近 12 月均值</p><p class="metric__v tone-up">+2.1%</p><p class="metric__d faint">均值 ¥4,198</p></div>
+                <div><p class="metric__k">单笔最高</p><p class="metric__v">¥1,800</p><p class="metric__d faint">房租 · 9月27日</p></div>
+              </div>
+
+              <div class="metrics metrics--4" data-for="year" hidden>
+                <div><p class="metric__k">较去年</p><p class="metric__v tone-up">+12.6%</p><p class="metric__d faint">+¥4,298</p></div>
+                <div><p class="metric__k">近 3 年均值</p><p class="metric__v tone-down">−4.1%</p><p class="metric__d faint">均值 ¥40,064</p></div>
+                <div><p class="metric__k">最高月</p><p class="metric__v">¥6,120</p><p class="metric__d faint">8 月</p></div>
+                <div><p class="metric__k">单笔最高</p><p class="metric__v">¥4,800</p><p class="metric__d faint">家电 · 5月12日</p></div>
+              </div>
+
+              <p class="card__foot">
+                <b>去掉了「日均」</b> —— 那归概况。新增的「近 12 月均值」比环比稳：环比会被单月异常带偏，
+                而「这个月比过去一年平均高多少」更接近真正想问的「这个月算贵吗」。
+                <b>汇总档下这一整块隐藏</b>（确实没有对照组）。
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid--auto">
+            <!-- ⑤ 涨跌榜（月 / 年两套对照物，汇总档隐藏） -->
+            <div class="card" data-block="move" data-scopes="month year">
+              <div class="card__head">
+                <h3 class="card__title">涨跌榜</h3>
+                <p class="card__meta" id="moveMeta">按变化额排 · 较上月</p>
+              </div>
+              <div class="rank">
+                <div class="rank__row">
+                  <span class="rank__name">教育 <span class="rank__sub" data-move="month">本月独有</span><span class="rank__sub" data-move="year" hidden>今年独有</span></span>
+                  <span class="rank__amt tone-up" data-move="month">+¥2,400</span>
+                  <span class="rank__amt tone-up" data-move="year" hidden>+¥9,600</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:100%;background:var(--danger)"></i></span>
+                </div>
+                <div class="rank__row">
+                  <span class="rank__name">餐饮 <span class="rank__sub" data-move="month">比月均 1.4×</span><span class="rank__sub" data-move="year" hidden>比年均 1.2×</span></span>
+                  <span class="rank__amt tone-up" data-move="month">+¥486</span>
+                  <span class="rank__amt tone-up" data-move="year" hidden>+¥1,240</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:20%;background:var(--danger)"></i></span>
+                </div>
+                <div class="rank__row">
+                  <span class="rank__name">交通 <span class="rank__sub" data-move="month">与月均持平</span><span class="rank__sub" data-move="year" hidden>与年均持平</span></span>
+                  <span class="rank__amt tone-down" data-move="month">−¥124</span>
+                  <span class="rank__amt tone-down" data-move="year" hidden>−¥386</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:5%;background:var(--secondary)"></i></span>
+                </div>
+              </div>
+              <p class="card__foot">
+                <b>为什么按变化额而不按金额</b>：上面那张「分类构成」是按金额排的，
+                永远是住房 / 餐饮那几个大类常驻，<b>看不出变化</b>。
+                按变化额才能回答「这个月是什么让我多花了 800 块」。
+              </p>
+            </div>
+
+            <!-- ⑥ 还款节奏（只在月档 —— 年档下它退化成 ② 的一种切法） -->
+            <div class="card" data-block="repay" data-scopes="month">
+              <div class="card__head">
+                <h3 class="card__title">还款节奏</h3>
+                <p class="card__meta">本月已刷 · 下月要还 · <b>只在月档</b></p>
+              </div>
+              <div class="rank">
+                <div class="rank__row">
+                  <span class="rank__name">招行信用卡 <span class="rank__sub">本月 8 笔</span></span>
+                  <span class="rank__amt">¥2,140</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:100%;background:var(--chart-1)"></i></span>
+                </div>
+                <div class="rank__row">
+                  <span class="rank__name">工行卡 <span class="rank__sub">本月 12 笔</span></span>
+                  <span class="rank__amt">¥1,860</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:87%;background:var(--chart-6)"></i></span>
+                </div>
+              </div>
+              <div class="callout callout--ok" style="margin:12px 0 0;padding:10px 12px">
+                <p style="font-size:13px">下月要还 <b class="mono">¥3,240</b> · 10月25日</p>
+              </div>
+              <p class="card__foot">
+                口径改了：「本月各卡花了多少」是<b>已经发生、改不了</b>的事；
+                「下月要还多少」才是<b>能让人改变行为</b>的数字。这是我们独有的能力（参考项目没有 <code>repayment_date</code>）。
+                <br><b>年档没有它</b>：年度的「各方式占比」与 ② 分类构成是同一个问题的两种切法（一个按分类切、一个按卡切）。
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid--auto">
+            <!-- ⑦ 洞察（换的是规则集，不是块） -->
+            <div class="card" data-block="insight" data-scopes="month year all">
+              <div class="card__head">
+                <h3 class="card__title">本期洞察</h3>
+                <p class="card__meta" id="insightMeta">3 条规则生成 · 月度规则集</p>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px" data-for="month">
+                <div class="annot" style="border-left-color:var(--danger)">
+                  <p class="annot__d" style="color:var(--fg)">最大一笔是 <b>房租 ¥1,800</b>（9月27日），占本月 42%。</p>
+                </div>
+                <div class="annot" style="border-left-color:var(--danger)">
+                  <p class="annot__d" style="color:var(--fg)">教育本月独有，<b>¥2,400</b> —— 是本月超支的主因。</p>
+                </div>
+                <div class="annot">
+                  <p class="annot__d" style="color:var(--fg)">还款集中在月末 3 天，共 <b>¥3,240</b>。</p>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px" data-for="year" hidden>
+                <div class="annot" style="border-left-color:var(--danger)">
+                  <p class="annot__d" style="color:var(--fg)">最高月是 <b>8 月 ¥6,120</b>，比月均高 46%。</p>
+                </div>
+                <div class="annot" style="border-left-color:var(--danger)">
+                  <p class="annot__d" style="color:var(--fg)">今年新出现「教育」分类，累计 <b>¥9,600</b>。</p>
+                </div>
+                <div class="annot">
+                  <p class="annot__d" style="color:var(--fg)">9 个月里有 6 个月记满 30 笔以上，节奏很稳。</p>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px" data-for="all" hidden>
+                <div class="annot" style="border-left-color:var(--danger)">
+                  <p class="annot__d" style="color:var(--fg)">累计最高月是 <b>2026 年 8 月 ¥6,120</b>。</p>
+                </div>
+                <div class="annot">
+                  <p class="annot__d" style="color:var(--fg)">住房占了累计的 <b>34%</b>，是最大的一块。</p>
+                </div>
+              </div>
+              <p class="card__foot">
+                句式照参考项目的<b>归因写法</b>：不说「教育 2,400」，说「<b>教育 2,400（本月独有）</b>」。
+                <b>纯规则引擎就够，不需要 AI。</b>
+              </p>
+            </div>
+
+            <!-- ⑧ 按记录人（有 ≥2 个记录人才出现，三档都在） -->
+            <div class="card" data-block="person" data-scopes="month year all">
+              <div class="card__head">
+                <h3 class="card__title">按记录人</h3>
+                <p class="card__meta">≥2 个记录人才出现</p>
+              </div>
+              <div class="rank">
+                <div class="rank__row">
+                  <span class="rank__name"><i class="swatch" style="background:var(--chart-1)"></i>我 <span class="rank__sub">31 笔</span></span>
+                  <span class="rank__amt">¥3,286</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:77%;background:var(--chart-1)"></i></span>
+                </div>
+                <div class="rank__row">
+                  <span class="rank__name"><i class="swatch" style="background:var(--chart-4)"></i>爱人 <span class="rank__sub">7 笔</span></span>
+                  <span class="rank__amt">¥1,000</span>
+                  <span class="rank__track"><i class="rank__fill" style="width:23%;background:var(--chart-4)"></i></span>
+                </div>
+              </div>
+              <p class="card__foot">
+                与「分类构成」共用同一种排名行结构（`ReportView.vue:93` 的注释写明了这一点）。<b>三档都在</b> —— 它回答的是「谁在记」，与档位无关。
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <aside class="annots">
+        <div class="annot annot--new">
+          <p class="annot__t">概况那张分类卡搬到这儿了</p>
+          <p class="annot__d">不是删掉、是<b>换了个家</b>。而且搬来之后要<b>升级</b> —— 「精度」是这一页的职责，所以图例每行可展开二级、并带上占比；环图中心从「合计」改成「5 个分类」。<b>上一版是「删掉一级构成」，方向错了：删完之后两页都没有构成，用户想看「钱花在哪」就没地方去了。</b></p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">环图中心为什么不显示合计</p>
+          <p class="annot__d">那个数在概况 hero 上。同一页出现两次正是这一轮要消灭的东西；而且<b>报表讲结构、不讲总量</b>。去掉它之后，这一页的每个数字都是概况给不了的。</p>
+        </div>
+        <div class="annot">
+          <p class="annot__t">「汇总」档这里有了（上一版没有）</p>
+          <p class="annot__d">上一版不加它，理由是「汇总没有对照组」。现在报表多了一个身份 —— <b>它是分类的家</b> —— 于是「我一共花的钱花在哪了」成了真问题，且只有汇总档能答。<b>汇总档下隐藏「对照」那一块</b>，其余照常。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">「天」不单独立档</p>
+          <p class="annot__d">月档那条折线有 30 个点、逐日标数值，<b>这本身就是精度到天</b>。再单开一个「天档」，它和流水页的日期分组就是同一件事的两种画法 —— 又造一处重复。看某一天只在两处，各看各的：这里看<b>比率</b>（占本月 X%、是日均 N×），流水页看<b>明细</b>。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">这一版：按档位显示不同块</p>
+          <p class="annot__d">上一版是「这一页有 8 块、手机上约 6 屏，怎么组织要你定」。这一版定了：<b>换档 = 换掉一整组块</b>，月 8 / 年 7 / 汇总 5。<b>长不是靠折叠解决的，是靠不给无关的块上屏。</b>切上面的档位试试 —— 还款节奏只在月档、涨跌榜在汇总档消失。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">为什么年档也去掉「还款节奏」</p>
+          <p class="annot__d">直觉会说「年度也有还款啊」—— 但年度口径下的还款节奏<b>算出来就是各支付方式的全年金额占比</b>，与「分类构成」是同一个问题的两种切法（一个按分类切、一个按卡切）。<b>留一个能算出数的块，比留一个折叠起来的块更容易出错</b>：用户折叠不掉的是它自己的重复。</p>
+        </div>
+      </aside>
+    </div>
+
+    <p class="note" style="max-width:78ch">
+      <b>日历不在这一页 —— 它在 ⑥ 流水页的年 / 全部档。</b>
+      这两处特别容易混，所以写死一条分界：
+      <br>· 这一页的 <b>③ 期内节奏</b>回答「<b>走到哪了</b>」—— 月档按天折线、年档按月柱、全部按年柱，
+      是<b>读进度</b>的量图；
+      <br>· ⑥ 那张<b>日历</b>回答「<b>哪几个月有东西、点进去</b>」—— 是<b>找期间</b>的导航。
+      <br>前者是统计块，后者是期间选择器。日历的完整形态与下钻规则（点一下选中、再点才进）
+      见 ⑥ 流水页那一节。
+    </p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="settings">
+  <div class="wrap">
+    <p class="kicker">⑥ 页面原型</p>
+    <h2>设置页 —— 5 个 tab，「数据」按动作组织</h2>
+    <p class="lead">
+      保持 tab 式（学手机端 hub 页在 Web 上要多点两次，不划算）。新增的「数据」tab
+      按<strong>用户想干什么</strong>分块，而不是把接口平铺成一排按钮。
+    </p>
+
+    <div class="split">
+      <div class="mock mock--desktop">
+        <p class="mock__cap">设置页 · 桌面</p>
+        <div class="app">
+
+          <!-- 顶部：数据元信息，不是成就数字 -->
+          <div class="card">
+            <div class="card__head">
+              <h3 class="card__title">我的账本</h3>
+              <p class="card__meta">数据元信息</p>
+            </div>
+            <div class="metrics metrics--4">
+              <div><p class="metric__k">首笔日期</p><p class="metric__v">2024-03-12</p></div>
+              <div><p class="metric__k">数据库大小</p><p class="metric__v">1.8 MB</p></div>
+              <div><p class="metric__k">最后备份</p><p class="metric__v">昨天 21:30</p></div>
+              <div><p class="metric__k">记录人</p><p class="metric__v">2 人</p></div>
+            </div>
+            <p class="card__foot">
+              <b>这里不放「记录天数 / 总笔数」</b> —— 那两数在概况「累计」块，
+              再放一遍就是明知故犯。设置页该放的是「数据」这摊事的元信息。
+            </p>
+          </div>
+
+          <div class="setrow" style="padding:0">
+            <div style="display:flex;gap:2px;background:var(--bg-sunken);padding:3px;border-radius:6px" class="settabs">
+              <button type="button" aria-pressed="false">分类</button>
+              <button type="button" aria-pressed="false">支付方式</button>
+              <button type="button" aria-pressed="false">计划</button>
+              <button type="button" aria-pressed="true">数据</button>
+              <button type="button" aria-pressed="false">家庭与账号</button>
+            </div>
+          </div>
+
+          <div class="grid grid--2">
+            <!-- 导出 -->
+            <div class="card">
+              <div class="card__head">
+                <h3 class="card__title">导出</h3>
+                <p class="card__meta">两个按钮各司其职</p>
+              </div>
+              <div class="setrow" style="padding-top:0">
+                <div>
+                  <div style="font-weight:600">导出数据包 <span class="xs faint">JSON</span></div>
+                  <div class="xs faint">可再导入。含分类层级 / 计划 / 待办，round-trip 不丢结构</div>
+                </div>
+                <span class="setrow__spacer"></span>
+                <button class="btn">导出</button>
+              </div>
+              <div class="setrow">
+                <div>
+                  <div style="font-weight:600">导出对账表 <span class="xs faint">CSV</span></div>
+                  <div class="xs faint">流水扁平列，Excel 直接打开</div>
+                </div>
+                <span class="setrow__spacer"></span>
+                <button class="btn btn--ghost">导出</button>
+              </div>
+              <p class="card__foot">
+                范围可选：<b>全部 / 按年 / 按月</b>。期间包是<b>自包含</b>的
+                （期间支出 + 全量配置 + 该期间计划与待办）。
+              </p>
+            </div>
+
+            <!-- 导入 -->
+            <div class="card">
+              <div class="card__head">
+                <h3 class="card__title">导入</h3>
+                <p class="card__meta">合并去重，不是覆盖</p>
+              </div>
+              <div style="border:1px dashed var(--border);border-radius:8px;padding:20px;text-align:center" class="faint">
+                <div class="xs" style="margin-top:6px">把 JSON 数据包拖到这里，或点选文件</div>
+              </div>
+              <p class="card__foot">
+                导入走 <code>db/sync.ts</code> 落 <code>changes</code> 表 —— 否则其他设备永远看不到，且不报错。
+              </p>
+            </div>
+
+          </div>
+
+          <!-- 备份与恢复：从两列格里挪出来单独一行。
+               「导出 / 导入」是一进一出、天然成对；「备份与恢复」有两个动作加一段说明，
+               比它们高一截，硬凑成三张卡只会让某一张被撑高。 -->
+          <div class="grid">
+            <div class="card">
+              <div class="card__head">
+                <h3 class="card__title">备份与恢复</h3>
+                <p class="card__meta">备份始终全量</p>
+              </div>
+              <div class="setrow" style="padding-top:0">
+                <div>
+                  <div style="font-weight:600">立即备份</div>
+                  <div class="xs faint">快照存到服务器磁盘 · 上次：昨天 21:30</div>
+                </div>
+                <span class="setrow__spacer"></span>
+                <button class="btn btn--ghost">备份</button>
+              </div>
+              <div class="setrow">
+                <div>
+                  <div style="font-weight:600">从备份恢复</div>
+                  <div class="xs faint">恢复前会自动存一份「恢复前快照」</div>
+                </div>
+                <span class="setrow__spacer"></span>
+                <button class="btn btn--ghost">恢复</button>
+              </div>
+              <p class="card__foot">
+                <b>导出 ≠ 备份</b>：导出的期间包只是「那一段」，
+                拿它去恢复会静默丢掉其他月份。所以恢复只认全量备份。
+              </p>
+            </div>
+
+          </div>
+
+          <!-- 危险区：通栏一条，放最底 ——
+               它原先和「备份与恢复」并排在 grid--2 里，内容只有「标题 + 一行 + 两个按钮」，
+               被 stretch 撑到 222px 高，底部空出 89px，是这一版最难看的一处空白。
+               修法不是往里塞内容，是承认它本来就不该占一格：
+               危险区天然排在所有操作的最后，通栏 + 按钮右对齐反而更醒目。 -->
+          <div class="dangerband">
+            <div class="dangerband__main">
+              <p class="dangerband__t">危险区</p>
+              <p class="xs faint" style="margin:2px 0 0">
+                恢复功能上线之后，误操作的代价第一次变得不可逆 —— 所以这里要有出口。
+              </p>
+            </div>
+            <div class="dangerband__acts">
+              <button class="btn btn--danger">清空全部数据</button>
+              <button class="btn btn--ghost">重置演示数据</button>
+            </div>
+          </div>
+
+          <!-- 分类 tab 预览 -->
+          <div class="card">
+            <div class="card__head">
+              <h3 class="card__title">分类（tab 预览）</h3>
+              <p class="card__meta">每行补金额</p>
+            </div>
+            <div class="setrow" style="padding-top:0">
+              <span class="trow__icon" style="background:#dbeafe">食</span>
+              <div><div style="font-weight:600">餐饮</div><div class="xs faint">二级 3 个</div></div>
+              <span class="setrow__spacer"></span>
+              <span class="xs muted mono">24 笔</span>
+              <b class="mono">¥1,286</b>
+              <span class="xs faint mono">30.0%</span>
+            </div>
+            <div class="setrow">
+              <span class="trow__icon" style="background:#ede9fe">住</span>
+              <div><div style="font-weight:600">住房</div><div class="xs faint">二级 1 个</div></div>
+              <span class="setrow__spacer"></span>
+              <span class="xs muted mono">2 笔</span>
+              <b class="mono">¥1,800</b>
+              <span class="xs faint mono">42.0%</span>
+            </div>
+            <p class="card__foot">
+              现在设置页说「餐饮 24 笔」，报表说「餐饮 ¥1,286」，
+              <b>同一个分类在两个页面看到的东西对不上</b>。补上金额，两边就一致了。
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <aside class="annots">
+        <div class="annot annot--new">
+          <p class="annot__t">「数据」按动作分块</p>
+          <p class="annot__d">导出 / 导入 / 备份 / 恢复 / 危险区 —— 按<b>用户想干什么</b>分，不按接口分。平铺成一排按钮会让人不知道先点哪个。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">导出与备份是两个功能</p>
+          <p class="annot__d">只做一个入口加范围参数，用户会把「按月导出」当月度备份拿去恢复，<b>静默丢掉其他月份</b>。所以导出给范围、备份只给全量。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">补「危险区」</p>
+          <p class="annot__d">恢复上线后误操作第一次不可逆，而现在没有清空 / 重置的出口。这是<b>功能带来的义务</b>，不是可选项。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">危险区从「一格」改成「通栏一条」</p>
+          <p class="annot__d">它原先和「备份与恢复」并排在两列格里，内容只有「标题 + 一行 + 两个按钮」，被撑到 222px 高，底部空出 <b>89px</b> —— 全站最难看的一处空白。修法不是往里塞内容，是<b>承认它不该占一格</b>：通栏 + 说明在左、按钮右对齐，反而更像一道「闸门」。<b>同类问题全站排查见 ⑨。</b></p>
+        </div>
+        <div class="annot">
+          <p class="annot__t">不学「分类管理拆四张页面」</p>
+          <p class="annot__d">参考项目拆成 管理 / 编辑 / 迁移 / 图标选择 —— 那是手机端 native 导航的习惯，Web 上一页内联展开更快。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="remind">
+  <div class="wrap">
+    <p class="kicker">⑦ 一个专项</p>
+    <h2>计划提醒放哪里 —— 三层分置</h2>
+    <p class="lead">
+      参考项目<strong>压根没有「计划」这个实体</strong>（它的「还款」只是信用卡账户的两个字段），
+      所以它不用想这个问题。我们有真正的计划，金额与期数都确定 —— 所以提醒应该<strong>直接带金额</strong>。
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:14%">层</th><th style="width:34%">装什么</th><th style="width:30%">放哪</th><th>形态</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>行动层</b></td>
+          <td>已到提醒日 / 已逾期的待办</td>
+          <td><b>跟着落地页走</b>：桌面 → 概况 hero 底部；<b>移动端 → 流水页顶部</b>（见 ⑧）</td>
+          <td><code>3 期待处理 · ¥8,200</code> ＋展开箭头，<b>点击展开</b>；容器不染色，紧急度只落在<b>箭头</b>上</td>
+        </tr>
+        <tr>
+          <td><b>信息层</b></td>
+          <td>本月要还多少（信用类）</td>
+          <td>概况网格里的 ② 卡</td>
+          <td>不参与三档 tab</td>
+        </tr>
+        <tr>
+          <td><b>管理层</b></td>
+          <td>新建 / 结束 / 看期次 / 撤销入账</td>
+          <td><b>设置页 → 计划 tab</b></td>
+          <td><code>&lt;PlansPanel hide-todos /&gt;</code>（现状不变）</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--ok">
+      <p><strong>由此得到一条新规则</strong>：概况只放「已发生 + 累计」；
+      所有「待行动」严格集中在<strong>一条</strong>提醒条里 —— 而它<strong>的位置由平台决定</strong>。</p>
+      <p>「待行动」是唯一带「<strong>今天</strong>」语义的东西。给它一整块，就稀释了总览；
+      给它一条，它反而更醒目 —— <strong>在移动端更是如此：它现在待在整页的最顶上，那是移动端最贵的位置。</strong></p>
+    </div>
+
+    <div class="callout callout--key">
+      <p><strong>两个落点为什么不叫「重复」</strong>：判断标准是「<strong>同一个平台内出现几次</strong>」，
+      不是「全站一共出现几次」。桌面落地页是概况 → 挂在 hero 底部；
+      移动端落地页是流水页 → 挂在流水页顶部。
+      反过来说，<strong>移动端概况页的 hero 上不再留提醒条</strong> —— 那才是重复。</p>
+    </div>
+
+    <h3>两个我们独有、现在被浪费的点</h3>
+
+    <div class="split">
+      <div>
+        <div class="card" style="background:var(--bg-subtle);border-radius:8px;padding:14px">
+          <div class="card__head">
+            <h3 class="card__title">提醒条展开后的样子</h3>
+            <p class="card__meta">学参考项目的三层结构 · 第六版补上动作</p>
+          </div>
+
+          <div class="pitem">
+            <div class="prow">
+              <span class="prow__amt">¥2,800</span>
+              <span class="prow__when">3期 · 房贷</span>
+              <span class="prow__why prow__why--soon">明天到期</span>
+              <span class="prow__state">自动入账</span>
+              <span class="topcard__acts"><button type="button" class="btn btn--ghost btn--xs">确认</button></span>
+            </div>
+          </div>
+
+          <div class="pitem">
+            <div class="prow">
+              <span class="prow__amt">¥2,800</span>
+              <span class="prow__when">5期 · 房贷</span>
+              <span class="prow__why prow__why--late">逾期29天</span>
+              <span class="prow__state">需手动</span>
+              <span class="topcard__acts">
+                <button type="button" class="btn btn--xs">入账</button>
+                <button type="button" class="btn btn--plain btn--xs">忽略</button>
+              </span>
+            </div>
+          </div>
+
+          <p class="xs faint" style="margin:10px 0 0;border-top:1px solid var(--border);padding-top:8px">
+            <i class="rchev rchev--none">▾</i> <b>自动入账</b>（不用管）　
+            <i class="rchev rchev--manual">▾</i> <b>需手动确认</b>　
+            <i class="rchev rchev--late">▾</i> <b>逾期</b>（优先于黄）
+            —— 颜色只在展开箭头上，条目本身不再挂标记
+          </p>
+        </div>
+      </div>
+      <aside class="annots">
+        <div class="annot annot--new">
+          <p class="annot__t">两个日期都不上这一行 —— 但它们必须存在</p>
+          <p class="annot__d"><code>remind_date</code>（提前准备）与 <code>repayment_date</code>（还款）<b>是两个不同的日子</b>，
+          现在<b>都</b>不在这条提醒里渲染：它们属于<b>设置 → 计划</b>（那是配置、也是唯一能改它们的地方）。
+          这一行只留<b>结论</b> ——「明天到期」「逾期29天」。
+          但要守住<b>后端</b>那条：<code>dueTodos</code> 的口径是 <code>remind_date &lt;= today</code>，
+          <b>筛选用得上、渲染用不上，不代表它可以被删掉</b>。</p>
+        </div>
+        <div class="annot annot--warn">
+          <p class="annot__t">自动入账必须标出来</p>
+          <p class="annot__d"><code>plans.auto_post = 1</code> 的期次到期会自己入账。不标，用户会以为「我不点就没事」，然后在「我没确认过」和「怎么多了一笔」之间懵住。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">容器不染色，颜色只落在<b>展开箭头</b>上</p>
+          <p class="annot__d">第六次修正砍掉了整条琥珀底 / 红底；<b>第八次修正又把标记从行首挪到箭头上</b>。
+          现在收起态是纯中性的：箭头一色回答「<b>需不需要你动手</b>」（无 / 黄 / 红），
+          展开后<b>不再重复标记</b> —— 每一条的紧急度由<b>文字本身的颜色</b>说
+          （<code>明天到期</code> 琥珀 / <code>逾期29天</code> 红 / <code>10月2日到期</code> 灰）。
+          一条明细因此能同时说两件事：<b>不用你动手，但 3 天后还款</b>。</p>
+        </div>
+        <div class="annot annot--new">
+          <p class="annot__t">桌面展开区也要能动手</p>
+          <p class="annot__d">上一版只给移动端顶卡加了按钮，桌面这条仍是纯展示。现在两边一致：
+          自动入账 → <code>确认</code>；不会 → <code>入账</code> / <code>忽略</code>。
+          三个按钮都是两字、同一套尺寸 —— <b>文字长度一致＝视觉宽度一致</b>，不会出现主次按钮差 2px 的老问题。
+          连带把桌面从<b>纯悬停</b>改成<b>点击展开</b>（否则鼠标移向按钮时面板先消失）。</p>
+        </div>
+        <div class="annot">
+          <p class="annot__t">0 条时显示「没有待处理」</p>
+          <p class="annot__d">不是把整条藏掉 ——「没有待办」本身是信息（说明这个月不用管），比一片空白好。桌面留灰字、移动端整格消失（§6.6 三）。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="mobile">
+  <div class="wrap">
+    <p class="kicker">⑧ 这一次的主改动</p>
+    <h2>移动端 = 单页 —— 只保留流水页</h2>
+    <p class="lead">
+      你的原话是：<em>「移动端仅保留一页，即流水页。流水页顶部展示提醒框；
+      将首页、报表、设置入口统一收纳到搜索框下方；其中首页重命名为「概况」，
+      原因是这些页面在移动端不属于高频使用场景；移除页面下方的 tab 栏，
+      改为通过下拉手势直接唤出记账页面。」</em>
+      <br><br>这不是把四个页面改小，是<b>换了一种「什么是这一页」的定义</b>：
+      移动端只有流水页是「页」，另外三个是<b>从入口行进去的二级页</b>。
+    </p>
+
+    <p class="note" style="max-width:78ch">
+      <b>这一节按你的意见改过三轮</b>：
+      ① 三个入口并进期间行（<b>搜索独占一行</b>）—— 见二·补；
+      ② 展开之后<b>每条要能动手</b> —— 见三·补；
+      ③ 第六版又三条：<b>三个入口只存在于这一页顶部、不吸顶</b>（二·补二）、
+      <b>提醒改颜色标记、不染卡片</b>（三）、<b>下拉手势不留兜底</b>（四）。
+      还有一条也属于移动端，但不在这一节：<b>二级页的关闭收进标题行行尾</b>（见五）。
+    </p>
+
+    <h3>一、改前 → 改后</h3>
+
+    <div class="duo">
+      <!-- 改前 -->
+      <div class="mock mock--narrow">
+        <p class="mock__cap" style="color:var(--danger-text)">改前 · 四页平权，底栏四格</p>
+        <div class="app">
+          <div class="card" style="padding:12px">
+            <p class="xs faint nowrap" style="margin:0">
+              <b class="mono" style="font-size:20px">¥4,286.50</b> · 本月支出
+            </p>
+            <p class="xs faint" style="margin:6px 0 0">较上月 +18.4% · 笔数 38 · 日均 ¥238</p>
+          </div>
+          <div class="card" style="padding:12px">
+            <p class="xs faint" style="margin:0">该处理了（待办卡网格）</p>
+            <div class="xs faint" style="margin-top:6px;padding:8px;background:var(--bg-sunken);border-radius:6px">第 3 期 · 房贷 · ¥2,800</div>
+          </div>
+          <div class="card" style="padding:12px">
+            <p class="xs faint" style="margin:0">本月待还 · ¥3,240</p>
+          </div>
+          <div class="card" style="padding:12px">
+            <p class="xs faint" style="margin:0">最近流水 8 条…</p>
+          </div>
+          <!--
+            这一格是「改前」的底栏。它现在在 App.vue:113-169 里真实存在。
+            降透明度 + 下面一行红字，是为了让评审一眼看出改动的落点。
+          -->
+          <div style="margin:0 -14px -14px">
+            <div class="tabbar tabbar--dead" style="margin:0;border-radius:0">
+              <div class="tabbar__item tabbar__item--on">首页</div>
+              <div class="tabbar__item">流水</div>
+              <div class="tabbar__item">报表</div>
+              <div class="tabbar__item tabbar__item--cta">记一笔</div>
+            </div>
+            <p class="tabbar__dead-note">↑ 已移除 —— 记账改由下拉手势</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 改后 -->
+      <div class="mock mock--narrow">
+        <p class="mock__cap" style="color:var(--secondary-text)">改后 · 一页为主，三页降为入口</p>
+        <div class="app" style="padding:0;gap:0">
+          <!--
+            顶卡：本月支出 + 处理提醒 **同一行**。
+            有未处理 → 两列；无未处理 → 本月支出独占整列（见下面第二个手机框）。
+            处理提醒默认**收起**，点卡片向下展开明细 —— 收起时一行、展开时三行，
+            所以它不能用固定高度的格子装。
+          -->
+          <div class="topcard" data-open="false" data-topcard>
+            <div class="topcard__row">
+              <div class="topcard__cell">
+                <p class="topcard__k">本月支出</p>
+                <p class="topcard__v">¥4,286.50</p>
+                <p class="topcard__d">较上月 <b class="tone-up">+18.4%</b> · 38 笔</p>
+              </div>
+              <button type="button" class="topcard__cell topcard__cell--chip" data-topcard-toggle aria-expanded="false">
+                <p class="topcard__k">处理提醒 <i class="topcard__chev rchev rchev--late">▾</i></p>
+                <p class="topcard__v topcard__v--sm">3 期待处理</p>
+                <p class="topcard__d">¥8,200 · 点开看明细</p>
+              </button>
+            </div>
+            <div class="topcard__body">
+              <div class="topcard__item">
+                <b class="mono topcard__item-amt">¥2,800</b><span class="topcard__item-plan">3期 · 房贷</span>
+                <span class="topcard__item-why tone-warn">明天到期</span>
+                <span class="topcard__item-state">自动入账</span>
+                <span class="topcard__acts"><button type="button" class="btn btn--ghost btn--xs">确认</button></span>
+              </div>
+              <div class="topcard__item">
+                <b class="mono topcard__item-amt">¥2,800</b><span class="topcard__item-plan">5期 · 房贷</span>
+                <span class="topcard__item-why" style="color:var(--danger-text)">逾期29天</span>
+                <span class="topcard__item-state">需手动</span>
+                <span class="topcard__acts"><button type="button" class="btn btn--xs">入账</button><button type="button" class="btn btn--plain btn--xs">忽略</button></span>
+              </div>
+              <div class="topcard__item">
+                <b class="mono topcard__item-amt">¥2,600</b><span class="topcard__item-plan">6期 · 车贷</span>
+                <span class="topcard__item-why faint">10月2日到期</span>
+                <span class="topcard__item-state">自动入账</span>
+                <span class="topcard__acts"><button type="button" class="btn btn--ghost btn--xs">确认</button></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-subtle);padding:12px">
+            <!-- 控制行：期间在左、三个入口在右（同一行）；搜索独占下一行 -->
+            <div class="ctlrow">
+              <button class="btn btn--ghost nowrap">‹ 9月 ▾</button>
+              <div class="entryrow entryrow--inline">
+                <span class="entryrow__label">还有</span>
+                <a href="#home">概况 <span class="entryrow__chev">›</span></a>
+                <a href="#report">报表 <span class="entryrow__chev">›</span></a>
+                <a href="#settings">设置 <span class="entryrow__chev">›</span></a>
+              </div>
+            </div>
+            <div class="searchrow">
+              <div class="filterbar__search faint">搜索备注 / 分类…</div>
+              <button class="btn btn--ghost nowrap">筛选</button>
+            </div>
+          </div>
+          <div style="background:var(--bg-subtle);padding:0 10px 10px">
+            <!-- 月档：**没有组头**。日期回到行内，且**只写「日」**（月份由期间给）。
+                 第八次修正把组头设计整体去掉 —— 组头会在「不存在层级」的档位里
+                 凭空长出一层，而月档没有任何层级可补。 -->
+            <div class="trow trow--dated">
+              <span class="trow__day">28日</span>
+              <div class="trow__icon" style="background:#dbeafe">食</div>
+              <div class="trow__mid">
+                <div class="trow__name">午餐 · 公司楼下</div>
+                <div class="trow__sub"><span>招行信用卡</span><span class="trow__sub-x">账期 16 天</span></div>
+              </div>
+              <div class="trow__amt">¥62</div>
+            </div>
+            <div class="trow trow--dated">
+              <span class="trow__day">28日</span>
+              <div class="trow__icon" style="background:#dcfce7">行</div>
+              <div class="trow__mid">
+                <div class="trow__name">地铁 · 通勤</div>
+                <div class="trow__sub"><span>交通卡</span><span class="trow__sub-x">账期 2 天</span></div>
+              </div>
+              <div class="trow__amt">¥12</div>
+            </div>
+          </div>
+          <p class="xs faint" style="text-align:center;padding:10px 0 12px;margin:0">
+            没有底栏 —— 记账靠<span style="color:var(--primary-text);font-weight:700">下拉手势</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <h3>一·补 —— 顶卡只有两种形态：「有未处理」和「没有」</h3>
+    <p class="note" style="max-width:78ch">
+      顶卡把<b>本月支出</b>与<b>处理提醒</b>并排放在同一行。这不是「并排好看」，
+      是因为这两个数回答的是同一句话的两半：<b>「这个月花了多少」</b>和
+      <b>「这个月还有什么要动手」</b>。原来它们分居两屏（一个在概况 hero、
+      一个在流水页顶），用户要来回滚。
+      <br><br>
+      <b>提醒默认收起</b>，因为「有 3 期待处理」是一个<b>结论</b>，
+      而「哪 3 期、各多少、几号还」是<b>细节</b>。结论每天都看，细节一周看一次 ——
+      默认展开就是用每天都看的东西的代价，去赔一周才看一次的细节。
+      点一下展开、再点一下收起，它<b>把下面的列表顶下去</b>（不是浮层），
+      因为浮层会盖住「展开之后我想看的那些行在哪」。
+    </p>
+
+    <div class="duo">
+      <!-- 形态 A：有未处理 · 展开态（含折叠按钮的两种样子） -->
+      <div class="mock mock--narrow">
+        <p class="mock__cap">A · 有未处理 · 展开态（两列）</p>
+        <div class="app" style="padding:0;gap:0">
+          <div class="topcard" data-open="true">
+            <div class="topcard__row">
+              <div class="topcard__cell">
+                <p class="topcard__k">本月支出</p>
+                <p class="topcard__v">¥4,286.50</p>
+                <p class="topcard__d">较上月 <b class="tone-up">+18.4%</b> · 38 笔</p>
+              </div>
+              <button type="button" class="topcard__cell topcard__cell--chip" data-topcard-toggle aria-expanded="true">
+                <p class="topcard__k">处理提醒 <i class="topcard__chev rchev rchev--late">▾</i></p>
+                <p class="topcard__v topcard__v--sm">3 期待处理</p>
+                <p class="topcard__d">¥8,200 · 收起</p>
+              </button>
+            </div>
+            <div class="topcard__body">
+              <div class="topcard__item">
+                <b class="mono topcard__item-amt">¥2,800</b><span class="topcard__item-plan">3期 · 房贷</span>
+                <span class="topcard__item-why tone-warn">明天到期</span>
+                <span class="topcard__item-state">自动入账</span>
+                <span class="topcard__acts"><button type="button" class="btn btn--ghost btn--xs">确认</button></span>
+              </div>
+              <div class="topcard__item">
+                <b class="mono topcard__item-amt">¥2,800</b><span class="topcard__item-plan">5期 · 房贷</span>
+                <span class="topcard__item-why" style="color:var(--danger-text)">逾期29天</span>
+                <span class="topcard__item-state">需手动</span>
+                <span class="topcard__acts"><button type="button" class="btn btn--xs">入账</button><button type="button" class="btn btn--plain btn--xs">忽略</button></span>
+              </div>
+            </div>
+          </div>
+          <div style="background:var(--bg-subtle);padding:12px">
+            <!-- 控制行：期间在左、三个入口在右（同一行）；搜索独占下一行 -->
+            <div class="ctlrow">
+              <button class="btn btn--ghost nowrap">‹ 9月 ▾</button>
+              <div class="entryrow entryrow--inline">
+                <span class="entryrow__label">还有</span>
+                <a href="#home">概况 <span class="entryrow__chev">›</span></a>
+                <a href="#report">报表 <span class="entryrow__chev">›</span></a>
+                <a href="#settings">设置 <span class="entryrow__chev">›</span></a>
+              </div>
+            </div>
+            <div class="searchrow">
+              <div class="filterbar__search faint">搜索备注 / 分类…</div>
+              <button class="btn btn--ghost nowrap">筛选</button>
+            </div>
+          </div>
+          <p class="xs faint" style="text-align:center;padding:10px 0 12px;margin:0">
+            展开的明细<b>把列表顶下去</b>，不是盖住它
+          </p>
+        </div>
+      </div>
+
+      <!-- 形态 B：无未处理 · 本月支出独占整列 -->
+      <div class="mock mock--narrow">
+        <p class="mock__cap">B · 无未处理 · 本月支出独占整列</p>
+        <div class="app" style="padding:0;gap:0">
+          <div class="topcard" data-open="false">
+            <!-- 注意这里是 solo：整格归本月支出，不是留半格空白 -->
+            <div class="topcard__row topcard__row--solo">
+              <div class="topcard__cell">
+                <p class="topcard__k">本月支出</p>
+                <p class="topcard__v">¥4,286.50</p>
+                <p class="topcard__d">较上月 <b class="tone-up">+18.4%</b> · 38 笔</p>
+              </div>
+            </div>
+          </div>
+          <div style="background:var(--bg-subtle);padding:12px">
+            <!-- 控制行：期间在左、三个入口在右（同一行）；搜索独占下一行 -->
+            <div class="ctlrow">
+              <button class="btn btn--ghost nowrap">‹ 9月 ▾</button>
+              <div class="entryrow entryrow--inline">
+                <span class="entryrow__label">还有</span>
+                <a href="#home">概况 <span class="entryrow__chev">›</span></a>
+                <a href="#report">报表 <span class="entryrow__chev">›</span></a>
+                <a href="#settings">设置 <span class="entryrow__chev">›</span></a>
+              </div>
+            </div>
+            <div class="searchrow">
+              <div class="filterbar__search faint">搜索备注 / 分类…</div>
+              <button class="btn btn--ghost nowrap">筛选</button>
+            </div>
+          </div>
+          <p class="xs faint" style="text-align:center;padding:10px 0 12px;margin:0">
+            <b>不</b>显示「没有待处理」占位 —— 格子消失换来的宽度，直接给本月支出
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout--key">
+      <p><strong>为什么这么改能用一句话说清</strong>：底栏的作用是「把高频入口放在拇指够得到的地方」。
+      低频页占着底栏格子，就是<strong>用高频位置的租金养低频入口</strong>。
+      移动端真正高频的只有两件事 —— <strong>看流水</strong>与<strong>记一笔</strong>；
+      所以把「页」留给前者，把「手势」留给后者，其余三个降为入口。</p>
+    </div>
+
+    <h3>二、入口行放在搜索框下方 —— 怎么放才不叫「把底栏搬上来」</h3>
+    <p class="note" style="max-width:78ch">
+      这一步最容易走歪：<b>把三个入口做成等宽 + 图标 + 选中态的一行，就是把底栏原样搬到搜索框下面</b> ——
+      低频入口照样占着高频位置的租金，只是换了个方向。所以要靠视觉语言把它和底栏分开：
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:16%"></th><th style="width:42%">底栏（现状，删掉）</th><th>入口行（新）</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>形态</b></td><td>等宽四格</td><td><b>一行不定宽的次要链接</b>，左对齐</td></tr>
+        <tr><td><b>视觉</b></td><td>图标在上、文字在下；有选中态（`text-primary-text`）</td><td>纯文字 + 小 <code>›</code>；<b>没有选中态</b></td></tr>
+        <tr><td><b>语义</b></td><td>「你在哪一页」</td><td>「这里还有几个地方可以去」</td></tr>
+        <tr><td><b>位置</b></td><td>屏幕最下（拇指区、常驻）</td><td>搜索框下方（<b>随内容滚动</b>）</td></tr>
+        <tr><td><b>随滚动</b></td><td>固定不动</td><td><b>滚走就滚走</b></td></tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      最后一条是关键差别：<b>入口行跟着内容滚走，底栏不滚</b>。
+      这一个小差别就把「常驻导航」和「一次性入口」分开了 ——
+      而且滚走之后列表能占满整屏，这正是「只保留一页」想要的效果。
+      <br><b>为什么不塞进一个「更多 ▾」菜单</b>：那要多点一次，而且三个入口会「消失」，
+      用户会以为设置没了。一行放得下三个词，就不值得藏。
+    </p>
+
+    <h3>二·补 —— 行数账：首屏之上从 3 行压到 2 行（第四、五次修正）</h3>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:20%"></th><th style="width:34%">上一版（3 行）</th><th>这一版（2 行）</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>第 1 行</b></td>
+          <td>期间行：<code>‹ 9月 ▾</code> …… <code>38 笔</code></td>
+          <td><b>控制行</b>：<code>‹ 9月 ▾</code> 靠左 + <code>还有 概况 · 报表 · 设置</code> 靠右</td>
+        </tr>
+        <tr>
+          <td><b>第 2 行</b></td>
+          <td>搜索行：搜索框 + 筛选</td>
+          <td><b>搜索行</b>：搜索框<b>独占并撑满</b> + <code>筛选</code></td>
+        </tr>
+        <tr>
+          <td><b>第 3 行</b></td>
+          <td>入口行：还有 概况 · 报表 · 设置</td>
+          <td class="faint">（并入第 1 行）</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>为什么入口并进期间行、搜索却单独一行</b>：判据不只是语义，还有<b>宽度需求</b>。
+      这一条里唯一<b>需要撑开</b>的控件是搜索框 —— 输入框窄了就没法用；
+      期间选择器、筛选按钮、三个入口都是一行放得下的固定宽度小控件。
+      所以四个控件按「要不要宽度」自然分成两类：<b>要宽度的独占一行，不要宽度的并成一行。</b>
+      <br><br>
+      上一版把入口单独留一行，理由是「一行里两种语义会糊」。这条理由现在<b>让位给视觉重量</b>：
+      三个 12px 的链接占掉一整行时，行高由它们决定、横向却空着大半，看起来像一行被遗弃的东西。
+      语义问题改用<b>位置</b>解决 —— <b>控制一律靠左，跳转一律靠右</b>，中间那段留白本身就是分隔符。
+      <br><br>
+      顺带删掉了期间行末尾的 <code>38 笔</code> —— <b>顶卡已经写了「38 笔」</b>，
+      同一屏出现两次正是这一轮要消灭的东西。
+    </p>
+
+    <h3>二·补二 —— 三个入口到底「在不在顶部」（第六次修正，你追问的）</h3>
+    <p class="note" style="max-width:78ch">
+      你在裁决 M4 时追问了一句：<em>「这个功能需要明确入口是只在顶部，
+      还是这几个入口会跟随页面固定在顶部。」</em> 这条必须写死，否则实现时必走歪 ——
+      <b>「只在顶部」其实是两层意思，两层都要满足</b>：
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:26%">问题</th><th style="width:26%">答案</th><th>理由</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>放在哪</td>
+          <td><b>只在流水页顶部</b>，控制行右端</td>
+          <td>它是「这一页还有几个地方可以去」，属于流水页，不属于别的页</td>
+        </tr>
+        <tr>
+          <td><b>会不会吸顶</b></td>
+          <td><b>不吸顶，随内容滚走</b></td>
+          <td>① 与「删掉底栏＝不常驻导航」是同一条原则 —— 吸顶等于把底栏搬回顶部；② 它要占掉一整行，而首屏之上每一行都贵；③ 与 ⑧ 五「二级页标题行也不吸顶」一致</td>
+        </tr>
+        <tr>
+          <td>二级页里还有没有</td>
+          <td><b>没有，一个字都不重复</b></td>
+          <td>二级页有自己的标题行 + 行尾 <code>×</code>。再加一条入口行就是「页面之上又压一条工具条」</td>
+        </tr>
+        <tr>
+          <td>那怎么回流水页</td>
+          <td>行尾 <code>×</code>（见 ⑧ 五）</td>
+          <td>唯一的出口，也是唯一的返回语义</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--warn">
+      <p><strong>最容易只做到第一层。</strong> 也就是「不吸顶」做到了，但<b>二级页里又出现了一次</b> ——
+      那时用户从「报表」里还能看到 <code>还有 概况 · 报表 · 设置</code>，
+      其中「报表」还是当前页，<b>等于给了一个指向自己的链接</b>。</p>
+      <p><strong>为什么这条值得单独占一节</strong>：入口行的「不常驻」是这一节所有设计的价值来源
+      （删掉底栏换来的那一整行高度）。它一旦吸顶，<b>删底栏就白删了</b> ——
+      等于用新的一行常驻控件，换掉了旧的一行常驻控件，成本一分没省。</p>
+    </div>
+
+    <h3>三、提醒的三种状态 —— 顶卡的形态跟着「有没有事要动手」变（第四、五次修正）</h3>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:16%">状态</th><th style="width:20%">本月支出</th><th style="width:30%">处理提醒（收起态）</th><th>是否吸顶</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>有待处理<br><span class="xs faint">未逾期</span></td>
+          <td>半格</td>
+          <td>
+            <div class="topcard" style="border:0">
+              <div class="topcard__row">
+                <button type="button" class="topcard__cell topcard__cell--chip" style="padding:8px 10px">
+                  <p class="topcard__k" style="font-size:10px">处理提醒 <i class="topcard__chev rchev rchev--manual">▾</i></p>
+                  <p class="topcard__v topcard__v--sm">3 期待处理</p>
+                  <p class="topcard__d">¥8,200 · 点开看明细</p>
+                </button>
+              </div>
+            </div>
+          </td>
+          <td>不吸顶，滚走让路</td>
+        </tr>
+        <tr>
+          <td><b>有逾期</b></td>
+          <td>半格</td>
+          <td>
+            <div class="topcard" style="border:0">
+              <div class="topcard__row">
+                <button type="button" class="topcard__cell topcard__cell--chip" style="padding:8px 10px">
+                  <p class="topcard__k" style="font-size:10px">处理提醒 <i class="topcard__chev rchev rchev--late">▾</i></p>
+                  <p class="topcard__v topcard__v--sm">1 期已逾期</p>
+                  <p class="topcard__d">29 天 · ¥2,800</p>
+                </button>
+              </div>
+            </div>
+          </td>
+          <td><b>整张顶卡吸顶</b></td>
+        </tr>
+        <tr>
+          <td>无待处理</td>
+          <td><b>独占整列</b></td>
+          <td class="faint"><b>整格消失</b> —— 不是留半格空白，也不放「没有待处理」占位</td>
+          <td>不吸顶（没东西可吸）</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>为什么只有逾期才吸顶</b>：不吸顶的代价是「滚一下就不见了」，
+      而逾期恰恰是<b>不该被滚走</b>的那种状态。用一条规则同时表达「它重要」和「它占地方」。
+      <br><br>
+      <b>注意它与颜色已经解耦（第六次修正）</b>：原来写的是「红 = 吸顶」，
+      但这一版改成<b>卡片不染色</b>之后，「红」已经不在卡片上了 ——
+      它在明细行前的那个<b>标记</b>上。所以：
+      <b>吸顶说的是「位置」，标记说的是「要不要动手」</b>，两者都由「有没有逾期」推出，
+      但互不解释。<b>好处是顶卡不会被染成一片红，却仍然会在该吸顶的时候吸顶。</b>
+      <br><br>
+      <b>「无待处理时整格消失」推翻了旧稿的一条规则</b>：旧稿写「0 条时显示
+      <code>没有待处理</code>，空态本身是信息」。那条在<b>桌面 hero 的提醒条</b>上仍然成立
+      —— 那里是一行 12px 的灰字，成本几乎为零，而且桌面有横向空间。
+      但在移动端它是一个<b>半格</b>：格子消失能直接换来本月支出从半格变整格，
+      这是实打实的收益。<b>同一个信息，在两地的成本不同，处理就该不同。</b>
+      <br><br>
+      <b>第六次修正：这一格不再染色。</b> 原来是「琥珀底 / 逾期红底」，用整格背景表达紧急度。
+      现在<b>底色与「本月支出」那一格一致</b>，紧急度落在一个 8px 的<b>标记</b> + 一句话上：
+      <b>自动入账＝无标记 / 需手动确认＝黄 / 逾期＝红</b>。
+      收起的摘要行上挂的是<b>最急的那一条</b>的颜色 —— 所以一眼能看出「这一格里有事要动手」。
+    </p>
+
+    <h3>三·补 —— 展开之后必须能动手（第五、六次修正）</h3>
+
+    <div class="callout callout--key">
+      <p><strong>没有按钮的提醒只是通知。</strong>通知的责任是「让人知道」，
+      提醒的责任是「让人做完」。「3 期待处理」展开之后如果只有明细、没有动作，
+      用户看完还得自己跑去计划页找那一期 —— 那就等于把提醒降级成了一条横幅。</p>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:27%">这一期现在会不会自动入账</th><th style="width:26%">按钮</th><th>点了之后</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>会</b><br><span class="xs faint">计划开了 <code>auto_post</code>，且本期没被撤销过</span></td>
+          <td><button type="button" class="btn btn--ghost btn--xs">确认</button><br>
+            <span class="xs faint">只有一个按钮</span></td>
+          <td>这一条从列表消失、顶卡计数 −1，<b>不再提醒</b>；到还款日照旧<b>自动入账</b>。<br>
+          <span class="xs faint">用户只是表示「我知道了」，没有改任何业务状态</span></td>
+        </tr>
+        <tr>
+          <td><b>不会</b><br><span class="xs faint">计划没开自动入账，或这一期被撤销过（<code>hold_auto_post = 1</code>）</span></td>
+          <td><button type="button" class="btn btn--xs">入账</button> <button type="button" class="btn btn--plain btn--xs">忽略</button><br>
+            <span class="xs faint">两个按钮</span></td>
+          <td><b>入账</b>＝生成那笔支出（走现有 <code>confirmTodo</code>），流水顶部随即出现这一笔；<br>
+          <b>忽略</b>＝这一期不记了（走现有 <code>skipTodo</code>），并且它<b>不会再被自动入账</b></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>三个按钮都是两个字、同一套尺寸</b>：<code>确认</code> / <code>入账</code> / <code>忽略</code>。
+      你明确要求「文字长度与入账、忽略一致」—— 这条真正防的是<b>三种按钮各写一套尺寸</b>
+      （主按钮不带边框、次要按钮带边框，最经典的就是差 2px，第五版实测抓过这一处）。
+      <b>字符数相同不等于渲染宽度相同</b>，所以尺寸走同一个 class，不靠 padding 去凑。
+      <br><br>
+      另：原来的「跳过」按你的用词改叫<b>「忽略」</b> —— 两字，长度与「入账」「确认」一致。
+    </p>
+
+    <p class="note" style="max-width:78ch">
+      <b>判据不是「计划有没有开自动入账」，是「这一期现在还会不会自动入账」</b> ——
+      也就是 <code>plan.auto_post &amp;&amp; !todo.hold_auto_post</code>。
+      差别就在上面例子里的<b>5期 · 房贷</b>：房贷计划是开了自动入账的，
+      但这一期被用户<b>撤销过</b>（<code>hold_auto_post = 1</code>，见
+      <code>002_plan_todo_hold_auto_post.sql</code>），所以它<b>不会</b>自己入账 ——
+      它必须给「入账 / 忽略」，给「确认」就错了。
+      <br>
+      只看计划那一级，这一条会被判错，而且错得很隐蔽：界面显示「确认」，
+      用户点了以为没事，<b>那笔账却永远不入</b>，而且不报错。
+    </p>
+
+    <div class="callout">
+      <p><b>为什么「会」自动入账那一类不能复用「忽略」</b>：
+      <code>skipTodo</code> 会把这一期置成 <code>skipped</code>，而
+      <code>settleAutoPost</code> 只挑 <code>status = 'pending'</code> 的期次 ——
+      于是「忽略」用在自动入账的期次上，其实等于<b>偷偷把自动入账关掉</b>。
+      用户以为只是「别提醒我」，结果账单不再入账。
+      所以自动入账那一类只能给一个<b>纯知悉</b>的动作 —— 这需要一个新状态
+      （<code>plan_todos.ack_at</code>，<code>null</code> ＝未确认），不能借用现成的。
+      你已经拍板要做（<b>M7</b>），所以本轮会多一次迁移 <code>003</code> + 一个端点。
+      </p>
+      <p><b>那为什么最后还是叫「确认」而不是我建议的「知道了」</b>（M6，你拍的）：
+      因为<b>两类按钮互斥出现</b> —— 有「确认」的那一条旁边<b>永远没有「入账」按钮</b>，
+      所以「确认」不会被读成「确认入账」。<b>这是文案能省掉一个词的前提</b>，
+      也是我原来那版建议多虑的地方。</p>
+      <p><b>桌面展开区也要有这三个按钮</b>（你指出的漏项）：上一版只给移动端顶卡加了，
+      桌面 hero 那条提醒条仍是纯展示。<b>同一个提醒在两个平台上不能只修一种。</b>
+      连带改动：桌面 popover 从<b>纯悬停</b>改成<b>点击展开 / 点外部收起</b> ——
+      否则鼠标从 chip 移向按钮的途中会离开触发区、面板先消失，<b>按钮根本点不到</b>。
+      去 ③ 概况那一节点一下 hero 底部的提醒条就能看到效果。</p>
+    </div>
+
+    <p class="note" style="max-width:78ch">
+      <b>第六次修正：紧急度不再靠整片背景，改成「一个标记 + 一句话」</b>
+      （上面那两张原型里能看到）。
+      你原话是：<em>「提醒卡片无色，加入一个颜色标记，自动入账的没有，
+      需要手动确认的黄色，逾期的红色。展开后的提醒内容也通过文字来提醒用户
+      紧急程度，而不是做卡片背景的全部渲染。」</em>
+      <br><br>
+      <b>于是两件事被拆开了，这是这一改最值钱的地方</b>：
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:24%">表达</th><th style="width:30%">回答什么</th><th>取值</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>一个颜色标记</b><br><span class="xs faint">明细行前的 8px 圆点</span></td>
+          <td><b>这一条需不需要你动手</b></td>
+          <td>
+            <i class="rchev rchev--none">▾</i> <b>自动入账</b>（不用管）　
+            <i class="rchev rchev--manual">▾</i> <b>需手动确认</b>　
+            <i class="rchev rchev--late">▾</i> <b>逾期</b>（优先于黄）
+          </td>
+        </tr>
+        <tr>
+          <td><b>一句话</b><br><span class="xs faint">不染色，只给文字</span></td>
+          <td><b>还有多久 / 已经多久</b></td>
+          <td><b class="tone-warn">明天到期</b>（琥珀字）／ <b style="color:var(--danger-text)">逾期29天</b>（红字）／ <span class="faint">10月2日到期</span>（灰字）</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>这比我原来的方案准在哪</b>：我原来做的是<b>三档卡色</b>（临近琥珀 / 逾期整条转红），
+      让颜色回答「这事多急」。改成标记 + 文字之后 ——
+      <b>颜色回答「要不要动手」（一个稳定的三元属性），文字回答「多急」（一个连续变化的量）</b>。
+      染色面积从整片缩到一个点，<b>信息反而更细</b>：整片染色只能说三档急迫度，
+      标记 + 文字能同时说清「不用你动手，但 3 天后还款」。
+      <br><br>
+      <b>还顺手销掉一个老顾虑</b>：原来担心「提醒条与本月要还卡同时变红会抢注意力」。
+      现在整屏不会有任何一片红，<b>红只出现在某几条明细的标记上，数得出来</b>。
+      <br><br>
+      <b>不变的一条</b>：紧急度的颜色<b>仍然不借用涨跌色</b> ——
+      「明天到期」说的是时间紧，不是金额在涨。只是它现在只出现在<b>标记和文字</b>两个地方，
+      <b>不允许铺成背景</b>。
+    </p>
+
+    <p class="note" style="max-width:78ch">
+      <b>操作之后要闭环</b>：点任意一个 → 那一条就地消失、顶卡计数 −1；
+      <b>计数归零时顶卡自动变回单列</b>（本月支出独占整列，见上面 A / B 两种形态）。
+      这一点值得单独说：<b>顶卡的形态是数据的结果，不是用户的选择</b> ——
+      用户不需要去设置里关掉提醒，把待处理清空，它自己就收起来了。
+      <br>
+      点「入账」另有一条要求：<b>流水列表顶部要立刻出现这一笔</b>。
+      否则用户点完只看到卡片消失，不知道那笔账记到哪去了。
+    </p>
+
+    <h3>四、下拉唤出记账</h3>
+
+    <div class="callout callout--ok">
+      <p><strong>先说一块空地</strong>：核过 <code>web/src</code>，
+      <strong>全站零触摸手势</strong>（<code>grep touchstart|touchmove|pointerdown</code> 无结果），
+      <strong>也没有下拉刷新</strong>。所以「下拉」是一块<strong>没被占用的地皮</strong> ——
+      可以直接给记账用，不必和任何人抢。<em>将来若要下拉刷新，请改用期间行里的刷新按钮，不要来抢这个手势。</em></p>
+    </div>
+
+    <div class="pulls">
+      <div class="pull">
+        <p class="pull__cap"><b>① 静置</b><span class="faint">列表在顶部</span></p>
+        <div class="pull__frame">
+          <div class="topcard" style="border:0;border-radius:6px;overflow:hidden">
+            <div class="topcard__row">
+              <div class="topcard__cell" style="padding:6px 9px">
+                <p class="topcard__k" style="font-size:9px">本月支出</p>
+                <p class="topcard__v" style="font-size:14px">¥4,286</p>
+              </div>
+              <button type="button" class="topcard__cell topcard__cell--chip" style="padding:6px 9px">
+                <p class="topcard__k" style="font-size:9px">处理提醒 ▾</p>
+                <p class="topcard__v" style="font-size:12px">3 期</p>
+              </button>
+            </div>
+          </div>
+          <div class="ctlrow">
+            <button class="btn btn--ghost nowrap" style="padding:5px 8px">‹ 9月 ▾</button>
+            <div class="entryrow entryrow--inline" style="gap:0">
+              <a href="#home" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">概况</a>
+              <a href="#report" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">报表</a>
+              <a href="#settings" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">设置</a>
+            </div>
+          </div>
+          <div class="searchrow" style="margin-top:5px">
+            <div class="filterbar__search faint" style="padding:5px 8px;font-size:12px">搜索备注 / 分类…</div>
+          </div>
+          <!-- 月档无组头 —— 日期回到行内，只写「日」（月份期间选择器已经说了） -->
+          <div style="border-top:1px solid var(--border);padding:7px 2px;display:flex;gap:6px;font-size:12px">
+            <span class="faint" style="width:26px">28日</span><span style="flex:1">午餐</span><b class="mono">¥62</b>
+          </div>
+          <div style="border-top:1px solid var(--border);padding:7px 2px;display:flex;gap:6px;font-size:12px">
+            <span class="faint" style="width:26px">27日</span><span style="flex:1">房租 · 9 月</span><b class="mono">¥1,800</b>
+          </div>
+          <p class="pull__hintline">↓ 下拉记账</p>
+        </div>
+      </div>
+
+      <div class="pull">
+        <p class="pull__cap"><b>② 拖拽中</b><span class="faint">跟手 · ≥ 60px</span></p>
+        <div class="pull__frame pull__frame--grab">
+          <div style="border:1px dashed var(--primary);border-radius:6px;padding:10px;text-align:center;font-size:12px;font-weight:700;color:var(--primary-text)">
+            ↓ 松手记一笔
+          </div>
+          <div style="opacity:.45;display:flex;flex-direction:column;gap:8px">
+            <div class="topcard" style="border:0;border-radius:6px;overflow:hidden">
+              <div class="topcard__row">
+                <div class="topcard__cell" style="padding:6px 9px">
+                  <p class="topcard__k" style="font-size:9px">本月支出</p>
+                  <p class="topcard__v" style="font-size:14px">¥4,286</p>
+                </div>
+                <button type="button" class="topcard__cell topcard__cell--chip" style="padding:6px 9px">
+                  <p class="topcard__k" style="font-size:9px">处理提醒 ▾</p>
+                  <p class="topcard__v" style="font-size:12px">3 期</p>
+                </button>
+              </div>
+            </div>
+            <div class="ctlrow">
+              <button class="btn btn--ghost nowrap" style="padding:5px 8px">‹ 9月 ▾</button>
+              <div class="entryrow entryrow--inline" style="gap:0">
+                <a href="#home" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">概况</a>
+                <a href="#report" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">报表</a>
+                <a href="#settings" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">设置</a>
+              </div>
+            </div>
+            <div class="searchrow" style="margin-top:5px">
+              <div class="filterbar__search faint" style="padding:5px 8px;font-size:12px">搜索备注 / 分类…</div>
+            </div>
+            <div style="background:var(--bg-subtle);border-radius:6px;padding:8px 9px;font-size:12px" class="faint">9月28日 · 共 3 笔 · ¥362</div>
+          </div>
+          <p class="pull__hintline">没有跟手反馈，用户会以为下拉没反应</p>
+        </div>
+      </div>
+
+      <div class="pull">
+        <p class="pull__cap"><b>③ 松手</b><span class="faint">面板从底部升起</span></p>
+        <div class="pull__frame" style="justify-content:flex-end">
+          <div style="opacity:.28;display:flex;flex-direction:column;gap:8px">
+            <div class="ctlrow">
+              <button class="btn btn--ghost nowrap" style="padding:5px 8px">‹ 9月 ▾</button>
+              <div class="entryrow entryrow--inline" style="gap:0">
+                <a href="#home" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">概况</a>
+                <a href="#report" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">报表</a>
+                <a href="#settings" style="font-size:11px;padding:3px 5px;color:var(--fg-faint)">设置</a>
+              </div>
+            </div>
+            <div class="searchrow" style="margin-top:5px">
+              <div class="filterbar__search faint" style="padding:5px 8px;font-size:12px">搜索备注 / 分类…</div>
+            </div>
+          </div>
+          <div class="ghostsheet">
+            <div class="ghostsheet__handle"></div>
+            <p class="xs faint" style="margin:0">金额 <b class="mono" style="font-size:16px;color:var(--fg)">62.00</b> · 餐饮 / 午餐</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;font-size:12px;text-align:center" class="faint">
+              <span style="background:var(--bg-sunken);border-radius:4px;padding:5px">1</span>
+              <span style="background:var(--bg-sunken);border-radius:4px;padding:5px">2</span>
+              <span style="background:var(--bg-sunken);border-radius:4px;padding:5px">3</span>
+            </div>
+          </div>
+          <p class="pull__hintline" style="margin-top:6px">复用现有 ExpenseSheet，组件零改动</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="note" style="max-width:78ch;margin-top:14px">
+      <b>手势是触发器，面板仍从底部升起</b> —— 复用现有 <code>ExpenseSheet.vue</code>
+      （手机上是 <code>inset-x-0 bottom-0 top-[6vh]</code> 的底部抽屉），
+      <b>组件零改动</b>，只是在 <code>App.vue</code> 加一个手势监听去调 <code>ui.openCreate()</code>。
+      面板不放到顶部，是因为记账是最高频动作，<b>底部才是拇指够得到的地方</b>。
+      <br><b>只在列表处于顶部时生效</b>（<code>scrollTop === 0</code>），阈值 60px ——
+      主流程是「打开 App → 列表在顶部 → 下拉 → 记账 → 保存 → 新增那条出现在列表顶」。
+    </p>
+
+    <div class="callout callout--key">
+      <p><strong>两个必须一起做的前提，否则手势会变成「隐形按钮」</strong>：</p>
+      <p><b>① 首次引导</b> —— 第一次进流水页时提示一次「下拉可记账」，之后永不再现。手势是不可见的，没有引导就等于没有入口。</p>
+      <p><b>② 跟手反馈</b> —— 拖拽时面板边缘要跟着手指露出，松手才完全展开。</p>
+    </div>
+
+    <div class="callout callout--warn">
+      <p><b>注意：兜底出口已删（第六次修正，你的裁决）</b> —— 你明确说<b>不需要额外入口</b>，
+      所以我原方案里的两条兜底都不做：既不在列表滚到底时出现「+ 记一笔」，
+      也不在空态给按钮。</p>
+      <p><b>这让手势从「主入口」提成了「唯一入口」，风险随之上升</b>：
+      原来兜底是安全网（手势不灵还能在列表尾部找到入口），现在<b>手势失灵就没有任何记账入口</b>。
+      所以这一条的验收判据要升级 —— <b>不是「手势好不好用」，而是「在手势失败率为 0 之前不能算完」</b>。
+      真机上至少要覆盖：iOS Safari 的<b>橡皮筋滚动</b>、Android 的 <b>overscroll 接管</b>、
+      以及「列表不在顶部」时用户会不会误以为「下拉没反应」（这时必须有轻提示）。</p>
+      <p><b>你不留兜底也有它的道理</b>：多一个入口就多一处要维持的界面，
+      而且那两处入口会把注意力从手势上分走 ——
+      <b>在只有一个入口的系统里，那一个入口会被学得更牢。</b></p>
+    </div>
+
+    <h3>五、二级页的页头与关闭 —— 关闭收进标题行，不单独占一行（第五次修正）</h3>
+    <p class="note" style="max-width:78ch">
+      概况 / 报表 / 设置从入口行进去之后，<b>没有底栏可以回来</b>，所以必须有回流水的出口。
+      上一版把它做成<b>单独一行</b>（<code>‹ 流水</code> 一个返回字站在那里），
+      这一版改成<b>并进标题行</b>：标题行本来就要有，关闭并进去等于白得一行，
+      也不再有「页面之上又压了一条工具条」的感觉。
+      <br><br>
+      <b>两个位置都摆出来了</b>，用户倾向行尾，我同意 —— 三条理由：
+      ① 与「关闭在右上」的通用预期一致；
+      ② 标题与页面内容同为左对齐，不引入第二套基线；
+      ③ <code>×</code> 与标题之间隔着整行宽度，<b>误触率最低</b>。
+      放标题前（<code>× 设置</code>）的问题是<b>与左上角的「返回」撞语义</b> ——
+      我们这里要表达的是<b>关闭</b>（回流水页），不是<b>返回上一页</b>。
+    </p>
+
+    <div class="pulls" style="max-width:540px">
+      <div class="pull">
+        <p class="pull__cap"><b>采用</b><span class="faint">关闭在行尾</span></p>
+        <div class="pull__frame" style="min-height:132px">
+          <div class="pagehead">
+            <div>
+              <p class="pagehead__title">设置</p>
+              <p class="pagehead__sub">我的账本 · 5 个 tab</p>
+            </div>
+            <button type="button" class="pagehead__close" aria-label="关闭">×</button>
+          </div>
+          <div style="height:1px;background:var(--border)"></div>
+          <p class="xs faint" style="margin:0">导出 / 导入 / 备份与恢复的入口都在这里</p>
+        </div>
+      </div>
+
+      <div class="pull">
+        <p class="pull__cap"><b>对照</b><span class="faint">关闭在标题前（不采用）</span></p>
+        <div class="pull__frame" style="min-height:132px">
+          <div class="pagehead pagehead--lead">
+            <button type="button" class="pagehead__close" aria-label="关闭">×</button>
+            <div>
+              <p class="pagehead__title">设置</p>
+              <p class="pagehead__sub">我的账本 · 5 个 tab</p>
+            </div>
+          </div>
+          <div style="height:1px;background:var(--border)"></div>
+          <p class="xs faint" style="margin:0">与左上角「返回」撞语义，且标题被推右、与内容左边界错开</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout--key">
+      <p><strong>三件要写清的事</strong>：</p>
+      <p><b>① 只窄屏渲染</b> —— 桌面顶栏常驻、四页可直切，不需要关闭键。</p>
+      <p><b>② 触达面积 40×40</b>，字号 19px、默认 <code>--fg-muted</code> ——
+      它是页面里唯一的出口，不能做得比正文还轻。</p>
+      <p><b>③ 标题只在页头出现一次</b> —— 页面内容里不再重复一遍「设置」二字。</p>
+    </div>
+
+    <p class="note" style="max-width:78ch">
+      顺带要改一处：<b>概况 hero 里那个「设置」链接（<code>DashboardView.vue:202-207</code>，<code>lg:hidden</code>）要删掉</b>，
+      设置现在有唯一入口（流水页的控制行）。
+      <br>
+      <b>还有一个要观察的点</b>：标题行<b>不吸顶</b>，报表页内容长时向下滚，关闭键会滚出屏幕。
+      这一版先不吸顶（吸顶就等于一个 mini 顶栏，与「不常驻」相冲）；
+      但要在 390×844 上实测一次「滚到中段想出去」别不别扭 —— 列进待确认。
+    </p>
+
+    <h3>六、平台差异表（同一份内容，只换外壳）</h3>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:26%"></th><th style="width:34%">桌面（≥1024px）</th><th>移动端（&lt;1024px）</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>导航</b></td><td>顶栏：概况 · 流水 · 报表 · 设置 · 记一笔</td><td><b>无底栏、无顶栏</b>；入口行在流水页搜索框下</td></tr>
+        <tr><td><b>落地页</b></td><td><b>概况</b>（<code>/</code>）</td><td><b>流水页</b>（<code>/ledger</code>）</td></tr>
+        <tr><td><b>提醒形态</b></td><td>概况 hero <b>底部一条 chip</b>（<b>点击</b>展开，悬停可预览）</td><td>流水页顶部<b>顶卡右半格</b>（点击向下展开）</td></tr>
+        <tr><td>展开后的动作</td><td colspan="2" style="text-align:center">两端一致：<b>会自动入账 → 「确认」</b>；<b>不会自动入账 → 「入账 / 忽略」</b>（三按钮等宽）</td></tr>
+        <tr><td>提醒的紧急度</td><td colspan="2" style="text-align:center">两端一致：<b>容器不染色</b>，颜色只落在<b>展开箭头</b>上（无 / 黄 / 红），展开后不重复标记、紧急度走<b>文字颜色</b></td></tr>
+        <tr><td>「本月支出」在哪</td><td>概况 <b>hero 大数字</b></td><td>流水页<b>顶卡左半格</b>（与提醒同行）</td></tr>
+        <tr><td>概况 hero 的提醒条</td><td>显示</td><td><b>不显示</b>（提醒已归流水页顶卡，避免同平台两处）</td></tr>
+        <tr><td>期间 / 搜索 / 入口</td><td>期间一行、搜索一行，入口在顶栏（横向够，合并没有收益）</td><td><b>控制行</b>（期间靠左 + 三个入口靠右）+ <b>搜索行</b>（独占）</td></tr>
+        <tr><td><b>二级页出口</b></td><td>不适用（顶栏可切）</td><td><b>标题行行尾的 <code>×</code></b>（不单独占一行）</td></tr>
+        <tr><td><b>记一笔</b></td><td>顶栏右侧按钮</td><td><b>下拉手势（唯一入口，无兜底）</b></td></tr>
+        <tr><td>页面内容的块</td><td colspan="2" style="text-align:center"><b>完全一致 —— 不做两套内容</b></td></tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>落地页的实现要写清</b>（<code>web/src/router/index.ts</code>）：移动端 <code>/</code> 不走概况，
+      <b>重定向到 <code>/ledger</code></b>。断点沿用 1024px，与 <code>App.vue</code> 的 <code>lg:</code> 一致 ——
+      否则会出现「导航以为你是手机、路由以为你是桌面」。
+      代价写明：<b>JS 判定只在首次导航时做一次</b>，之后窗口从桌面拖到手机宽不会重定向（真机不会 resize，接受）。
+    </p>
+
+    <h3>七、代码影响面（估算，不含内容改动）</h3>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:30%">文件</th><th>改什么</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>web/src/App.vue</code></td><td><b>删掉手机底栏那一段</b>（<code>:113-169</code>）；桌面顶栏「首页」→「概况」；加下拉手势监听</td></tr>
+        <tr><td><code>web/src/styles/tokens.css</code></td><td>窄屏 <code>--bottom-bar-h: 60px</code> → <b>0</b>；各页 <code>pb-[calc(var(--bottom-bar-h)+…)]</code> 要跟着改成 <code>pb-[calc(var(--safe-bottom)+…)]</code></td></tr>
+        <tr><td><code>web/src/router/index.ts</code></td><td>窄屏 <code>/</code> → <code>/ledger</code>；路由名 <code>dashboard</code> 不变（只改标签）</td></tr>
+        <tr><td><code>web/src/views/LedgerView.vue</code></td><td>顶部加<b>顶卡</b>（本月支出 + 处理提醒，可折叠、明细内含动作按钮）+ <b>控制行</b>（期间 + 三个入口）+ <b>搜索行</b> + 手势；顶卡的「有 / 无提醒」两态要用<b>同一个组件</b>，别写成两套</td></tr>
+        <tr><td><code>web/src/views/DashboardView.vue</code></td><td>hero 底部的提醒条<b>只在桌面渲染</b>（<code>lg:</code> 以上）；<code>lg:hidden</code> 的设置链接删掉</td></tr>
+        <tr><td>提醒明细组件<br><span class="xs faint">（<code>PlanTodoCard</code> / <code>PlansPanel</code> 的待办行）</span></td><td>每条明细下面加一行动作：<b>会自动入账 → 「确认」；不会 → 「入账 / 忽略」</b>（三按钮等宽）。<b>桌面与移动端都要</b>；桌面 popover 的展开从<b>纯悬停</b>改成<b>点击展开 / 点外部收起</b> —— 否则鼠标移向按钮时面板会先消失</td></tr>
+        <tr><td><code>web/src/styles/tokens.css</code><br><span class="xs faint">（配色）</span></td><td>新增提醒的<b>标记色</b>（黄 / 红）；<b>删掉</b><code>.chipbar</code> 与顶卡那张格的<b>填充底色</b>（原来用 <code>--accent-fill</code> / <code>--danger-fill</code> 铺整片）。见 ⑧ 三·补</td></tr>
+        <tr><td><code>server/src/db/migrations/003_…</code></td><td><b>新增一列</b> <code>plan_todos.ack_at</code>（「确认」＝只抑制提醒、不改业务状态）+ 一个端点。见 ⑧ 三·补</td></tr>
+        <tr><td>概况 / 报表 / 设置三个二级页</td><td>标题行行尾加 <code>×</code>（仅窄屏）；页内不再重复标题。注意：<b>二级页里不要再放一次三个入口</b>（见 ⑧ 二·补二）</td></tr>
+        <tr><td><code>web/src/views/ReportView.vue</code></td><td><b>不动日历</b>（日历已搬到 LedgerView）。这一页的 <b>③ 期内节奏</b>保持原样：月档按天折线 / 年档按月柱 / 全部按年柱 —— 它回答「走到哪了」，不是「哪几个月有东西」</td></tr>
+        <tr><td><code>web/src/views/LedgerView.vue</code><br><span class="xs faint">（形态 + 行）</span></td><td>① <b>三种档位三种形态</b>：月＝列表（无组头）、年＝12 个月格日历、全部＝一格一年日历；日历<b>点一下只改选中、再点 / 「进入」才改 <code>scope</code> 与 <code>month</code></b>，<b>不新增路由</b>（见 ④ 日历页那一节）。<br>② 行改成<b>一行一项</b>：<code>.trow__mid</code> 由块级改同行 flex，装不下时副信息截断</td></tr>
+        <tr><td><code>web/src/components/ReportCalendar.vue</code><br><span class="xs faint">（新增）</span></td><td>日历组件：<code>mode="years" | "months"</code>、<code>selected</code>、<code>@pick</code>（只改选中）、<code>@enter</code>（下钻）。<b>只管格子的量，不带任何统计</b></td></tr>
+        <tr><td><code>web/src/components/ExpenseSheet.vue</code></td><td><b>不动</b></td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--key">
+      <p><strong>注意：<code>--bottom-bar-h</code> 那条最容易漏。</strong>
+      <code>tokens.css:123-124</code> 的注释里已经写明「把它归零，所有页面的底部留白会一起收掉，不必逐页加」——
+      归零是对的，但<strong>留白的来源必须换成 <code>--safe-bottom</code></strong>，
+      否则最后一行会贴着屏幕底边。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="gaps">
+  <div class="wrap">
+    <p class="kicker">⑨ 版式体检</p>
+    <h2>PC 端的大空白 —— 都是「为了对齐把卡片撑高」撑出来的</h2>
+    <p class="lead">
+      用来验收的不是眼睛，是一个数字：<b>卡片里最后一行内容，离卡片底边有多远</b>。
+      四页 × 三个档位全量了一遍，量出三处。
+    </p>
+
+    <table class="table">
+      <thead>
+        <tr><th style="width:24%">位置</th><th style="width:22%">卡内底部空白</th><th>为什么会这样</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>设置 · 危险区</b></td>
+          <td class="mono"><b>89px</b></td>
+          <td>它和「备份与恢复」并排在 <code>grid--2</code> 里，内容只有「标题 + 一行说明 + 两个按钮」，被拉到 222px 高</td>
+        </tr>
+        <tr>
+          <td>报表 · 按记录人</td>
+          <td class="mono">73px <span class="xs faint">年档 53px</span></td>
+          <td>和「本期洞察」并排，洞察有 3 条规则句，比它高一大截</td>
+        </tr>
+        <tr>
+          <td>报表 · 涨跌榜</td>
+          <td class="mono">52px</td>
+          <td>和「还款节奏」并排，还款节奏多一个「下月要还」的块</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout--key">
+      <p><strong>根因是一个 CSS 默认值</strong>：grid 的 <code>align-items</code> 默认是 <code>stretch</code>，
+      同一行的卡片一律拉到行高。<strong>撑高不会消灭空白，只是把空白从「卡片外」搬到「卡片内」</strong> ——
+      而卡片自己凹进去一块，比旁边空着更像坏了。</p>
+      <p><strong>两条修法，按这个顺序用</strong>：<br>
+      <b>① 结构性的</b> —— <code>.grid { align-items: start }</code>：卡片一律按内容高，不为对齐而撑；<br>
+      <b>② 配对性的</b> —— 高度差太大的两张，本来就不该并排：危险区因此改成<b>通栏一条</b>放最底。</p>
+    </div>
+
+    <h3>本轮的落点</h3>
+    <table class="table">
+      <thead>
+        <tr><th style="width:30%">改动</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>.grid</code> 加 <code>align-items: start</code></td>
+          <td>全站生效。矮卡片不再被撑高，三处 <b>89 / 73 / 52px</b> 的卡内空白一次消失</td>
+        </tr>
+        <tr>
+          <td>危险区 → <b>通栏一条</b></td>
+          <td>从 <code>grid--2</code> 挪到最底部：整行宽、说明在左、按钮右对齐。危险区天然是「所有操作之后」的一步，占半格反而像附赠品</td>
+        </tr>
+        <tr>
+          <td>备份与恢复 → 单独一行</td>
+          <td>它比「导出 / 导入」高一截（两个动作 + 一段说明）。导出与导入是一进一出、天然成对，保留并排</td>
+        </tr>
+        <tr>
+          <td>报表那两处在 <code>align-items: start</code> 之后收住</td>
+          <td>它们与邻卡的高度差变成<b>页面的留白</b>，而不再是<b>卡片里的凹陷</b> —— 前者不刺眼，因为读者知道那是行与行之间</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note" style="max-width:78ch">
+      <b>为什么不去做「让所有卡片等高」</b>：等高本身不是目标，「看起来整齐」才是。
+      当两张卡的内容量差一倍时，等高只能靠撑高实现，代价就是一块空白 ——
+      <b>整齐没换来，空白倒是实打实的</b>。
+      （同一类问题的另一种形态是「为了凑满一行，把最后一张卡拉宽」，
+      报表页的 <code>.grid--auto</code> 已经用 <code>auto-fit</code> 解掉了。）
+    </p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="scope">
+  <div class="wrap">
+    <p class="kicker">⑩ 边界</p>
+    <h2>这一轮不动的东西</h2>
+    <p class="lead">
+      核过 <code>001_init.sql</code>。有些东西是<strong>数据上就做不出来</strong>，
+      有些是<strong>刻意不做</strong>，两件事要分清。
+    </p>
+
+    <div class="grid grid--2">
+      <div class="card" style="background:var(--bg-subtle);border-radius:8px;padding:16px">
+        <h3 style="margin-top:0">数据上做不了</h3>
+        <ul class="note" style="margin:0;padding-left:18px">
+          <li><b>收入 / 结余</b> —— <code>expenses</code> 没有 <code>direction</code>，金额单向</li>
+          <li><b>预算</b> —— 没有 <code>budgets</code> 表</li>
+          <li>多账本（无账本表）、币种、标签、附件</li>
+        </ul>
+      </div>
+      <div class="card" style="background:var(--bg-subtle);border-radius:8px;padding:16px">
+        <h3 style="margin-top:0">做得了、但从没用过</h3>
+        <ul class="note" style="margin:0;padding-left:18px">
+          <li><code>spend_date</code> / <code>posting_date</code> —— 三个日期只用了 <code>repayment_date</code> 一个</li>
+          <li><code>created_at</code> —— 「记录天数 / 记账习惯」的基础</li>
+          <li><code>categories.depth</code> / <code>parent_id</code> —— 二级分类有数据，报表从不展示</li>
+          <li><code>settings</code> 表 —— 完全没用</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout callout--ok">
+      <p><strong>判断</strong>：这一轮的价值大头是<strong>把已有的三个日期、两级分类、
+      <code>created_at</code> 用透</strong>，而不是加表。</p>
+    </div>
+
+    <h3>明确不学参考项目的</h3>
+    <div class="chips">
+      <span class="pill">多账本 / 资产账户</span>
+      <span class="pill">标签 / 币种 / 附件</span>
+      <span class="pill">20 套头部皮肤</span>
+      <span class="pill">AI 记账 / OCR</span>
+      <span class="pill">分类管理拆四张页面</span>
+      <span class="pill">它的「收入 / 结余」三数</span>
+    </div>
+    <p class="note">
+      理由：这些会把项目从「支出记账工具」推向「通用记账应用」，
+      而通用记账的前提是<strong>每一页都要重新设计一次</strong> —— 等于把这一轮的问题再造一遍。
+    </p>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="decide">
+  <div class="wrap">
+    <p class="kicker">⑪ 待确认 → 已拍板</p>
+    <h2>这一轮的问题已经答完了 —— 两条否掉了我的建议，两条改了我给的判据</h2>
+    <p class="lead">
+      前面几版的待决项（移动端 M1~M8、版式 L1~L4、内容口径 1~8）<b>你已经逐条拍板</b>。
+      其中 <b>2 条否掉了我的建议</b>（下拉兜底、按钮文案），
+      <b>2 条改了我给的判据本身</b>（流水分组层级、提醒怎么表达紧急度）——
+      后两条比前两条更重要，因为它们改的是<b>做法</b>，不是选项。
+      <br><br>
+      下面把裁决结果摊平，方便你复查我说的是不是你的意思；
+      <b>末尾只剩三条要你点头</b>。
+    </p>
+
+    <h3>已定（你拍的）</h3>
+    <table class="table">
+      <thead>
+        <tr><th style="width:9%">#</th><th style="width:34%">事项</th><th>裁决</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>M1</b></td><td>移动端落地页怎么实现</td><td>采纳 —— <code>/</code> <b>重定向</b>到 <code>/ledger</code></td></tr>
+        <tr><td><b>M2</b></td><td>下拉手势要不要留兜底出口</td><td><b>不采纳</b> —— <b>不需要额外入口</b>，两条兜底都删（见 ⑧ 四）</td></tr>
+        <tr><td><b>M3</b></td><td>概况 / 报表是二级页还是抽屉</td><td>采纳 —— 二级页，出口＝标题行行尾的 <code>×</code></td></tr>
+        <tr><td><b>M4</b></td><td>二级页返回流水时，列表位置与筛选是否保留</td><td>采纳（<code>keep-alive</code> / 筛选放 store）<br>另外 <b>你追加了一问</b>：三个入口「只在顶部」还是「吸顶」→ 已定为<b>只在流水页顶部、随内容滚走、二级页里一个字都不重复</b>（见 ⑧ 二·补二）</td></tr>
+        <tr><td><b>M5</b></td><td>顶卡展开态要不要记住</td><td>采纳 —— 回到<b>默认收起</b></td></tr>
+        <tr><td><b>M6</b></td><td>自动入账那一类的按钮文案</td><td><b>不采纳我的「知道了」</b> —— 用<b>「确认」</b>；另一个按钮「跳过」按你的用词改叫<b>「忽略」</b>；三个<b>文字等长、同一套尺寸</b></td></tr>
+        <tr><td><b>M7</b></td><td>「确认」要不要落库</td><td>采纳 —— 加 <code>plan_todos.ack_at</code> + 迁移 <code>003</code>（本轮唯一动服务端的地方）</td></tr>
+        <tr><td><b>M8</b></td><td>二级页标题行要不要吸顶</td><td>采纳 —— <b>先不吸顶</b>，保留「实测别扭再补」的口子</td></tr>
+        <tr><td><b>L1</b></td><td><code>.grid</code> 不为对齐而撑高写进规范</td><td>采纳 —— <code>tokens.css</code> 注释 + <code>.grid</code> 基类</td></tr>
+        <tr><td><b>L2</b></td><td>卡内空白 &gt; 40px 做成机械检查</td><td>采纳</td></tr>
+        <tr><td><b>L3</b></td><td>顶卡要不要出现在桌面</td><td>采纳 —— <b>不出现</b></td></tr>
+        <tr><td><b>L4</b></td><td>「控制靠左、跳转靠右」写成规范</td><td>采纳</td></tr>
+        <tr><td><b>内容 1</b></td><td>汇总档藏「预计月末 / 进度条」</td><td>采纳 —— 直接隐藏，实现时写死</td></tr>
+        <tr><td><b>内容 2</b></td><td>涨跌榜变化额阈值</td><td>采纳 —— <b>±¥50 或 ±3% 取较高者</b></td></tr>
+        <tr><td><b>内容 3</b></td><td>洞察先做哪几条规则</td><td>采纳 —— 4 条：最大一笔 / 环比最大涨 / 还款集中 / 均价异常</td></tr>
+        <tr><td><b>内容 4</b></td><td>流水页数据量大之后怎么办</td><td>注意：<b>改判据</b> —— 先定<b>档位形态</b>：月无组头（列表）、<b>年 / 全部两档＝日历页</b>（见 ④ 日历页）。<b>改了之后 M9 的范围缩小了</b></td></tr>
+        <tr><td><b>内容 5</b></td><td>提醒的紧急度怎么表达</td><td>注意：<b>改判据</b> —— <b>卡片无色 + 颜色标记</b>（自动入账无 / 需手动确认黄 / 逾期红）+ <b>紧急度走文字</b>；<b>桌面展开区同步补动作按钮</b>（见 ⑧ 三·补）</td></tr>
+        <tr><td><b>内容 6</b></td><td>这一轮先做哪几页</td><td>采纳 —— 概况 + 报表（一起上线）→ 流水 → 设置 → 最后换移动端外壳</td></tr>
+        <tr><td><b>内容 7</b></td><td>桌面顶栏要不要保留「设置」</td><td>采纳 —— 保留</td></tr>
+        <tr><td><b>内容 8</b></td><td>日历页 / 年度账单页 / 分享</td><td>日历 → <b>是流水页年 / 全部两档的形态</b>（见 ④ 日历页那一节，<b>不新增页面与路由</b>，L5 已明确）；<br>年度账单页 → <b>就是「年度报告」</b>（回顾叙事 + 成就徽章），本轮不做；<br>分享 → <b>完全不做</b></td></tr>
+      </tbody>
+    </table>
+
+    <h3>第九次修正（本次）：一条明细必须真的是一行</h3>
+    <p class="note" style="max-width:78ch">
+      你的原话：<em>「如果文字确实必要无法精简，重新设计布局，起码保证视觉上应该是一行。」</em>
+      <br><br>
+      抠之前先说结论：<b>截图里那两处「多行 / 显示不完全」，主因不是文案太长。</b>
+      一处是<b>样式压根没生效</b>（优先级 bug），一处是<b>那格少了「允许被压缩」的声明</b>。
+      文案只是最后一根稻草。<b>先把结构修对，再谈精简</b> —— 否则下次文案一长，同样的毛病会原样回来。
+    </p>
+    <table class="table">
+      <thead>
+        <tr><th style="width:20%">你标的地方</th><th style="width:38%">真正的原因</th><th>修法（结构 → 文案）</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>流水行「多行」</b><br><span class="xs faint">（28日 / 午餐 · 公司楼下 / ¥62）</span></td>
+          <td><b>那条网格规则从来没生效过。</b><code>.trow--dated</code> 写在 <code>.trow</code>
+          <b>前面</b>，两者特异性相同 → 源码顺序在后的 <code>.trow</code> 覆盖了它。
+          于是 4 个格子被塞进 3 列：金额掉到第二行，日期列塌回 26px 让「28日」折成「28 / 日」。</td>
+          <td><b>① 结构</b>：选择器提成 <code>.trow.trow--dated</code>（0,2,0），
+          让<b>特异性</b>决定胜负而不是「谁写在后头」；日期列由固定 30px 改 <code>max-content</code>，永不折行。<br>
+          <b>② 文案</b>：窄屏里 <b>账期让位</b>（支付方式是「识别这一笔」，账期是「什么时候出账」，
+          后者报表里有完整呈现）。见 ④</td>
+        </tr>
+        <tr>
+          <td><b>提醒行「显示不完全」</b><br><span class="xs faint">（自动入账被按钮压住）</span></td>
+          <td><b>计划名那格缩不动。</b>flex 项的 <code>min-width</code> 默认是 <code>auto</code>
+          ＝「不小于自己内容的宽度」，而它偏偏是这一行唯一愿意被牺牲的一格。
+          缩不动 → 整行撑破卡片 → 按钮只好压在状态词上。</td>
+          <td><b>① 结构</b>：把纪律写进代码 ——
+          金额 / 紧急度 / 状态 / 按钮 <code>flex:0 0 auto</code>（<b>永不截断</b>），
+          只有计划名 <code>flex:0 1 auto; min-width:0</code>（<b>唯一可牺牲</b>）。
+          数学上闭合：最坏情况仍短于最窄的 320px 机型。<br>
+          <b>② 文案</b>：<code>第 3 期</code> → <code>3期</code>、<code>逾期 29 天</code> → <code>逾期29天</code>、
+          <code>需手动入账</code> → <code>需手动</code>（右边按钮就写着「入账」，两格拼起来是一句话）。
+          <b>「自动入账」不删</b> —— 它回答「我不点会怎样」，是这一行里唯一无法从别处推出来的信息。
+          见 ⑧ 三·补</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note" style="max-width:78ch">
+      <b>最终形态</b>：<code>¥2,800　3期 · 房贷　明天到期　自动入账　[确认]</code>
+      <br>
+      <code>¥2,800　5期 · 房贷　逾期29天　需手动　[入账] [忽略]</code>
+    </p>
+
+    <h3>第八次修正：六条界面调整</h3>
+    <table class="table">
+      <thead>
+        <tr><th style="width:16%">你的话</th><th style="width:34%">问题</th><th>裁决 → 落点</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>移除组头设计</b></td>
+          <td>组头会<b>在不存在层级的档位里凭空长出一层</b></td>
+          <td><b>整块移除、不留口子</b>：<code>.daygroup</code> 那套样式与它的折叠脚本一起删掉，
+          月档<b>直接就是明细</b>。前几版留过的「月档以内按分类分组」口子也一起关掉。见 ④</td>
+        </tr>
+        <tr>
+          <td><b>标记作用于箭头</b></td>
+          <td>颜色标记挂在每条明细的行首</td>
+          <td>改成挂在<b>展开箭头</b>上；<b>展开后不再重复标记</b> —— 每条的紧急度由
+          <b>文字本身的颜色</b>说（琥珀 / 红 / 灰）。见 ⑧ 三·补</td>
+        </tr>
+        <tr>
+          <td><b>移动端提醒一行</b></td>
+          <td>一条提醒占两行</td>
+          <td>压成一行：<code>¥2,800　3期 · 房贷　明天到期　自动入账　[确认]</code>；
+          <b>删掉「9月28日 提醒 · 9月30日 还款」副行</b>（那是<b>设置-计划</b>的内容，主界面不重复）。
+          本条只是<b>定了要一行</b>，真正<b>放得下</b>是第九次修结构之后（见上）。见 ⑧ 一·补</td>
+        </tr>
+        <tr>
+          <td><b>文字原则</b></td>
+          <td>——</td>
+          <td><b>能单行收纳则不换行</b>、信息精简有效 —— 只说「是什么」，不说「为什么」；
+          同时<b>全局禁用 emoji</b>（分类图标改首字，状态用文字，箭头是唯一符号）。</td>
+        </tr>
+        <tr>
+          <td><b>日历加深浅</b></td>
+          <td>日历只有骨架，看不出花得多少</td>
+          <td><b>用强调色的四档深浅表示花销大小</b>（最多 / 稍多 / 均值上下 / 最少），
+          基准是<b>均值</b>；<b>除提醒与标记外，其余颜色一律沿用强调色</b>。见 ④ 日历</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>第七次修正：你又定了两条</h3>
+    <table class="table">
+      <thead>
+        <tr><th style="width:11%">编号</th><th style="width:32%">问题</th><th>你的裁决 → 落点</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>L5</b></td>
+          <td>「日历可以无缝融入到前面的 <b>L4</b>」—— 指哪一条？</td>
+          <td><b>已明确：是流水页</b>。按月 ＝ <b>正常显示流水</b>；按年 / 全部 ＝ <b>进入日历页</b>。
+          点日历里的<b>年份或月份</b>先看该期间的<b>相关信息</b>（概况 / 花费多少 / 分布）；
+          <b>下方给「进入」按钮、或再点一次</b>才进下一层：<b>年 → 月，月 → 正常流水页</b>。
+          见 ④ 「日历页」那一节（原先我按「融进报表档位」落稿，<b>理解偏了，已改</b>）</td>
+        </tr>
+        <tr>
+          <td><b>新增</b></td>
+          <td>流水行的<b>一项占多行</b>问题</td>
+          <td><b>改一行一项、不换行</b> —— 主名与副信息排同一行；装不下时<b>副信息先截断</b>，
+          行高不变。见 ④ 「一行一项」那条注解</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>待你点头 —— 现在只剩两条</h3>
+    <div class="decide">
+      <div class="decide__item">
+        <span class="decide__n">M9</span>
+        <div>
+          <p class="decide__q">流水页一次加载多少？（现在是无脑往下加载，几千笔会失效）</p>
+          <p class="decide__a">建议：<b>月档用「加载更多」按钮、每段 100 笔</b>。
+          理由：<b>这个问题被日历缩小了</b> —— 年 / 全部两档现在是日历（十几个格子），
+          真正需要担心长度的<b>只剩月档</b>，而月档是一屏多 ~ 几屏，量级完全不同。
+          所以<b>虚拟滚动在这一轮属于过度设计</b>；做成「加载更多」就够，
+          也与 ⑧ 的下拉记账手势不冲突。（原建议是虚拟滚动 + 段标记，<b>现在撤回</b>。）</p>
+        </div>
+      </div>
+
+      <div class="decide__item">
+        <span class="decide__n">M10</span>
+        <div>
+          <p class="decide__q">日历在窄屏的年档形态：12 张迷你月历在 390 宽上放不下（每格只剩约 30px），
+          退化成 <b>3×4 的月格</b>（只写「9月 / ¥8,420 / 38 笔」）可以吗？</p>
+          <p class="decide__a">建议：<b>退化</b>。和热力图从 12 格改 6×2 是同一个手法 ——
+          <b>装不下就换写法，不硬塞</b>。年历的价值在「哪几个月有东西」，不在看清每一天。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:22px">
+      <p><b>动工顺序</b>（第十版）：① <code>.card-grid</code> 版式基线 → ② <code>#11</code> 收口 →
+      ③ <b>计划提醒的动作层</b>（<code>003</code> 迁移 + <code>ack</code> 端点 + <b>一条一行</b> +
+      染色展开箭头 + <b>窄屏左右滑</b> + 8 秒撤销）<b>—— ①②③ 均已落地</b> →
+      ④ 概况 → ⑤ 报表 → <b>⑥ 流水</b>（<b>一行一项 + 三档三形态 + 日历 + 花销深浅</b>）→
+      ⑦ 设置 → ⑧ 移动端外壳。<b>同批还落了 M9</b>（流水页每段 100 笔）；
+      <b>② 顺带把危险区两个动作连服务端一起落了</b>。</p>
+      <p><b>①落地时改了写法</b>：原定 <code>.grid { align-items: start }</code>，
+      但数字键盘与期间选择器靠 <code>stretch</code> 撑满格子，全局覆盖会把盘面塌成半截 ——
+      故改落成<b>新类 <code>.card-grid</code></b>，只给卡片网格用。</p>
+      <p><b>日历并入 ⑥ 之后，「报表日历下钻」这个独立步骤取消了</b> ——
+      它不再是报表页的一个增量，而是流水页档位形态的一部分，跟着 ⑥ 一起做。</p>
+      <p><b>写死两条约束</b>：<b>④⑤ 必须一起上线</b>（分类是从概况摘下再装到报表的，
+      中间那一版会没有任何地方能看构成）；<b>⑧ 必须在真机上验</b> ——
+      兜底已经删掉，手势是唯一入口，<b>失败率必须是 0</b>。</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    SuenMoney · 第四轮方案预览（<b>第十版</b>：删图例 · 禁说明式文字 · 移动端提醒左右滑）·
+    <b>落地顺序 ①②③ 已落进代码</b> · 数据为示意，版式与口径以
+    <code>docs/design/ui-rework-3.md</code>（§〇.5 / §〇.7 / §〇.8 / §〇.9 / §〇.10 / §五 第 5·14·16 条 / §6.2 / §6.3.3 / §6.4 / §6.5 / §6.6 / §6.7 · §十一）为准
+  </div>
+</footer>
+
+</main>
+
+<script>
+/* ==========================================================================
+   交互（纯原生，无依赖）
+   ========================================================================== */
+
+/* ---- 1. 设备宽度切换 ---- */
+document.querySelectorAll('[data-device]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var mode = btn.getAttribute('data-device');
+    document.querySelectorAll('[data-device]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b === btn));
+    });
+    document.querySelectorAll('.mock').forEach(function (m) {
+      m.classList.toggle('mock--mobile', mode === 'mobile');
+      m.classList.toggle('mock--desktop', mode === 'desktop');
+    });
+  });
+});
+
+/* ---- 2. 概况 hero 三档 tab ---- */
+var HERO = {
+  month: {
+    title: '本月支出',
+    big: '¥4,286.50',
+    sub: '2026 年 9 月 · 较上月 <span class="tone-up">+18.4%</span>',
+    metrics: [
+      { k: '日均', v: '¥238.14', d: '已过 18 天' },
+      { k: '笔数', v: '38', d: '笔' },
+      { k: '预计月末', v: '¥7,120', d: '按当前速度', up: true }
+    ]
+  },
+  year: {
+    title: '今年支出',
+    big: '¥38,420',
+    sub: '2026 年 1 – 9 月 · 与去年全年 <span class="tone-up">+12.6%</span>',
+    metrics: [
+      { k: '月均', v: '¥4,269', d: '9 个月' },
+      { k: '笔数', v: '412', d: '笔' },
+      { k: '最高月', v: '¥6,120', d: '8 月', up: true }
+    ]
+  },
+  all: {
+    title: '累计支出',
+    big: '¥126,480',
+    sub: '跨度 2 年半 · 30 个记账月',
+    metrics: [
+      { k: '月均', v: '¥4,215', d: '30 个月' },
+      { k: '每笔均', v: '¥94', d: '累计 ÷ 笔数' },
+      { k: '最高月', v: '¥6,120', d: '2026 年 8 月', up: true }
+    ]
+  }
+};
+
+function renderHero(scope) {
+  var cfg = HERO[scope];
+  document.getElementById('heroTitle').textContent = cfg.title;
+  document.getElementById('heroBig').textContent = cfg.big;
+  document.getElementById('heroSub').innerHTML = cfg.sub;
+
+  var html = '';
+  for (var i = 0; i < cfg.metrics.length; i++) {
+    var m = cfg.metrics[i];
+    html += '<div><p class="metric__k">' + m.k + '</p>' +
+            '<p class="metric__v' + (m.up ? ' tone-up' : '') + '">' + m.v + '</p>' +
+            '<p class="metric__d faint">' + m.d + '</p></div>';
+  }
+  document.getElementById('heroMetrics').innerHTML = html;
+}
+
+document.querySelectorAll('#heroTabs button').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('#heroTabs button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b === btn));
+    });
+    renderHero(btn.getAttribute('data-scope'));
+  });
+});
+renderHero('month');
+
+/* ---- 3. 月度热力图（最近 12 个月滚动） ---- */
+var HEAT = [
+  { m: '25-10', v: 3820 },
+  { m: '25-11', v: 4140 },
+  { m: '25-12', v: 5260 },
+  { m: '26-01', v: 4980 },
+  { m: '26-02', v: 3410 },
+  { m: '26-03', v: 2860 },
+  { m: '26-04', v: 4020 },
+  { m: '26-05', v: null },   /* 没有记录 —— 显示「—」而不是 0 */
+  { m: '26-06', v: 4460 },
+  { m: '26-07', v: 3980 },
+  { m: '26-08', v: 6120 },
+  { m: '26-09', v: 4286 }    /* 当月 */
+];
+
+(function renderHeat() {
+  var host = document.getElementById('heat');
+  if (!host) return;
+
+  var values = HEAT.filter(function (x) { return x.v != null; }).map(function (x) { return x.v; });
+  var max = Math.max.apply(null, values);
+  var min = Math.min.apply(null, values);
+
+  var html = '';
+  for (var i = 0; i < HEAT.length; i++) {
+    var c = HEAT[i];
+    var cls = 'heat__cell';
+    var style = '';
+
+    if (c.v == null) {
+      cls += ' heat__cell--empty';
+      style = '';
+    } else {
+      /* 单色深浅：透明度在 0.14 – 0.92 之间线性映射，深浅只编码金额 */
+      var t = (c.v - min) / (max - min || 1);
+      var alpha = (0.14 + t * 0.78).toFixed(2);
+      style = 'background: rgb(37 99 235 / ' + alpha + '); color: #fff;';
+    }
+
+    if (i === HEAT.length - 1) cls += ' heat__cell--now';
+
+    var full = c.v == null ? '—' : c.v.toLocaleString('en-US');
+    var short = c.v == null ? '—' : (c.v >= 1000 ? (c.v / 1000).toFixed(1) + 'k' : String(c.v));
+    var val = '<span class="heat__v heat__v--full">' + full + '</span>' +
+              '<span class="heat__v heat__v--short">' + short + '</span>';
+
+    html += '<div class="' + cls + '" style="' + style + '" title="' +
+            c.m + (c.v == null ? ' · 没有记录' : ' · ¥' + c.v.toLocaleString('en-US')) + '">' +
+            '<span class="heat__m">' + c.m.slice(3) + '月</span>' +
+            val +
+            '</div>';
+  }
+  host.innerHTML = html;
+})();
+
+/* ---- 4. 报表：按档位显示不同块（§五 第 9 条） ----
+ *
+ * 三道过滤，从粗到细：
+ *   ① 块级   [data-block][data-scopes]  —— data-scopes 里没有当前档 → 整块不显示
+ *   ② 变体   [data-for] / [data-move]   —— 同一块里的不同口径（对照四格 / 涨跌额）
+ *   ③ 副标题 卡片右侧那行小字
+ *
+ * 只查 #report 里的 —— 别处也有 [data-for]，全局查会误伤。
+ */
+var REPORT = {
+  month: {
+    period: '2026 年 9 月',
+    note: '',
+    compositionMeta: '本月 · 5 个分类 · 占比 <1% 归「其他」',
+    rhythmMeta: '9月 1 – 28 日 · 逐日',
+    compareMeta: '三格比 · 一格极值',
+    moveMeta: '按变化额排 · 较上月',
+    insightMeta: '3 条规则生成 · 月度规则集',
+    donut: '5'
+  },
+  year: {
+    period: '2026 年 1 – 9 月',
+    note: '（还款节奏不在这档）',
+    compositionMeta: '本年 · 7 个分类 · 占比 <1% 归「其他」',
+    rhythmMeta: '1 – 9 月 · 逐月',
+    compareMeta: '三格比 · 一格极值',
+    moveMeta: '按变化额排 · 较去年',
+    insightMeta: '3 条规则生成 · 年度规则集',
+    donut: '7'
+  },
+  all: {
+    period: '全部 · 2024-03 ~ 2026-09',
+    note: '（没有对照与涨跌榜，这两块必须有「较谁」）',
+    compositionMeta: '累计 · 11 个分类 · 占比 <1% 归「其他」',
+    rhythmMeta: '2024 – 2026 · 逐年',
+    compareMeta: '',
+    moveMeta: '',
+    insightMeta: '2 条规则生成 · 累计规则集',
+    donut: '11'
+  }
+};
+
+function renderReportScope(scope) {
+  var root = document.getElementById('report');
+  var cfg = REPORT[scope];
+  if (!root || !cfg) return;
+
+  /* ① 块级：data-scopes 里没有当前档 → 整块不显示
+     （`scope` 那张档位卡也在其中，所以「当前 N 块」的口径里含它 —— 与矩阵表一致） */
+  var shown = 0;
+  root.querySelectorAll('[data-block]').forEach(function (el) {
+    var scopes = (el.getAttribute('data-scopes') || '').split(/\s+/);
+    var vis = scopes.indexOf(scope) !== -1;
+    el.hidden = !vis;
+    if (vis) shown += 1;
+  });
+
+  /* ② 变体：同一块里的不同口径 */
+  root.querySelectorAll('[data-for]').forEach(function (el) {
+    el.hidden = el.getAttribute('data-for') !== scope;
+  });
+  root.querySelectorAll('[data-move]').forEach(function (el) {
+    el.hidden = el.getAttribute('data-move') !== scope;
+  });
+  root.querySelectorAll('[data-rhythm]').forEach(function (el) {
+    el.hidden = el.getAttribute('data-rhythm') !== scope;
+  });
+
+  /* ③ 文字：档位、块数、各卡副标题、环图中心 */
+  document.getElementById('reportPeriod').textContent = cfg.period;
+  document.getElementById('reportHint').textContent =
+    '与概况同一套三档 · 当前 ' + shown + ' 块 ' + cfg.note;
+
+  [
+    ['compositionMeta', cfg.compositionMeta],
+    ['rhythmMeta', cfg.rhythmMeta],
+    ['compareMeta', cfg.compareMeta],
+    ['moveMeta', cfg.moveMeta],
+    ['insightMeta', cfg.insightMeta],
+    ['donutCount', cfg.donut]
+  ].forEach(function (pair) {
+    var el = document.getElementById(pair[0]);
+    if (el) el.textContent = pair[1];
+  });
+}
+
+var reportTabs = document.querySelectorAll('#reportScope button');
+reportTabs.forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    reportTabs.forEach(function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+    renderReportScope(btn.getAttribute('data-scope'));
+  });
+});
+renderReportScope('month');
+
+/* ---- 5a. 桌面提醒条：点击展开 / 点外部收起 ----
+ *
+ * 第六次修正：桌面展开区里也有动作按钮了，所以**不能再靠纯悬停** ——
+ * 鼠标从 chip 移向按钮的途中会离开触发区、面板先消失，按钮根本点不到。
+ * 悬停仍保留（只用于预览），点击才是正式展开方式。
+ */
+(function () {
+  var bar = document.getElementById('chipbar');
+  if (!bar) return;
+  bar.addEventListener('click', function () {
+    var open = bar.getAttribute('data-open') === 'true';
+    bar.setAttribute('data-open', open ? 'false' : 'true');
+  });
+  document.addEventListener('click', function (e) {
+    if (!bar.contains(e.target)) bar.setAttribute('data-open', 'false');
+  });
+  // 面板内部点的按钮：点完就收起（真实实现里这一条会消失、计数 −1）
+  bar.querySelectorAll('.popover .btn').forEach(function (b) {
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var item = b.closest('.pitem');
+      if (item) item.style.display = 'none';
+      var left = bar.querySelectorAll('.popover .pitem:not([style*="none"])').length;
+      var t = document.getElementById('chipText');
+      if (t) t.textContent = left ? left + ' 期待处理 · ¥5,400' : '没有待处理';
+      if (!left) bar.setAttribute('data-open', 'false');
+    });
+  });
+})();
+
+/* ---- 5b. 移动端顶卡：处理提醒的折叠（默认收起） ----
+ *
+ * 默认收起写在 HTML 的 data-open="false" 上，不在 JS 里初始化 ——
+ * 这样即使脚本没跑（或跑得慢），看到的也是收起态，而不是「先展开再收起」跳一下。
+ */
+document.querySelectorAll('[data-topcard-toggle]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var card = btn.closest('.topcard');
+    var open = card.getAttribute('data-open') === 'true';
+    card.setAttribute('data-open', open ? 'false' : 'true');
+    btn.setAttribute('aria-expanded', String(!open));
+  });
+});
+
+/* ---- 6. 报表：分类构成（环图 + 二级下钻） ---- */
+document.querySelectorAll('[data-drill]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var d = btn.closest('.drill');
+    var open = d.getAttribute('data-open') === 'true';
+    d.setAttribute('data-open', open ? 'false' : 'true');
+    var t = btn.querySelector('.drill__toggle');
+    if (t) t.textContent = open ? '展开 ›' : '收起 ▾';
+  });
+});
+
+/* ---- 7. 设置页 tab（只做视觉切换，不换内容，免得做出半成品） ---- */
+document.querySelectorAll('.settabs button').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.settabs button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b === btn));
+    });
+  });
+});
+
+/* ---- 8. 锚点平滑滚动 ---- */
+document.querySelectorAll('.topnav a').forEach(function (a) {
+  a.addEventListener('click', function (e) {
+    var id = a.getAttribute('href');
+    var el = document.querySelector(id);
+    if (!el) return;
+    e.preventDefault();
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    history.replaceState(null, '', id);
+  });
+});
+</script>
+
+</body>
+</html>

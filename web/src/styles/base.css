@@ -206,6 +206,201 @@
     letter-spacing: 0.08em;
     color: var(--fg-muted);
   }
+
+  /* ==========================================================================
+     一条提醒 / 提醒条（§6.5 三·补 · §〇.8 · §6.2.二）
+     --------------------------------------------------------------------------
+     这里的三组类各自解决一个**具体的**毛病，不是通用的「卡片样式」：
+
+       .reminder-row       —— 让「一条明细就是一行」成为结构事实，而不是一个愿望
+       .reminder-acts      —— 让动作在窄屏上退出排版、但不退出无障碍树
+       .reminder-swipe     —— 左右滑的舞台（左滑＝主操作、右滑＝忽略）
+
+     宽度纪律（`A29`）：金额 / 紧急度 / 状态 / 动作一律 `flex: 0 0 auto`
+     ——**永不截断**；唯一 `flex: 0 1 auto` 的是计划名。
+     为什么这么排：少知道「是哪一期」不影响你决定按哪个键，
+     但截断一个四字状态词会出现「自…」，比不显示更糟（§〇.8 第 2 处）。
+     ========================================================================== */
+
+  .reminder-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg-subtle);
+    /* 一条就是一行：折行会让行高不定，一屏装多少条也就无从计算 */
+    white-space: nowrap;
+    /* 竖向滚动留给浏览器（否则列表滚不动），横向留给手势 */
+    touch-action: pan-y;
+  }
+
+  .reminder-row__amt {
+    flex: 0 0 auto;
+    font-weight: var(--fw-bold);
+  }
+
+  /* 唯一允许被压缩、被截断的一格 */
+  .reminder-row__plan {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .reminder-row__when {
+    flex: 0 0 auto;
+    font-size: var(--fs-xs);
+  }
+
+  .reminder-row__state {
+    flex: 0 0 auto;
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
+  }
+
+  .reminder-acts {
+    flex: 0 0 auto;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /**
+   * 窄屏上动作按钮**不参与排版** —— 手指用左右滑，按钮只会把文字挤走
+   * （这正是第九次修正之前那个「显示不完全」的成因）。
+   *
+   * 但**不能直接 `display: none`**：那会让键盘用户与读屏用户彻底够不到
+   * 这三个动作，而滑动是鼠标/触屏专属的交互。所以把它留在无障碍树里，
+   * 只有里面某个按钮拿到焦点时才浮出来 —— 键盘 Tab 过来就能看见、就能按。
+   */
+  @media (max-width: 1023px) {
+    .reminder-acts {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .reminder-acts:focus-within {
+      position: static;
+      width: auto;
+      height: auto;
+      margin: 0 0 0 auto;
+      overflow: visible;
+      clip: auto;
+    }
+  }
+
+  /* ==========================================================================
+     卡片网格（A22 · §6.7）
+     --------------------------------------------------------------------------
+     **卡片按内容高，绝不为「看起来整齐」而拉高。**
+
+     `grid` 的 `align-items` 初值是 `normal`，在网格里表现为 `stretch` ——
+     它把同一行的卡片一律拉到行高，矮的那张多出来的空间全落在卡片底部，
+     于是卡片自己凹进去一块。项目里没有任何人「决定」要这么做，
+     所以修法也不是逐页调样式，而是在这里关掉它一次。
+
+     判据是能量出来的：**卡片里最后一行内容离底边 > 40px 就是错。**
+
+     ⚠️ 为什么**不是**改 Tailwind 的 `.grid`：
+     数字键盘的 `⌫ / ＋` 与跨两行的「保存」、期间选择器的三格，
+     都靠 `stretch` 撑满各自的格子 —— 把 `.grid` 一律改成 `start`，
+     它们的键会缩成内容高，键盘看起来就散架了。
+     「网格不该撑高」只对**卡片**成立，所以它是一条新的类，不是一条全局覆盖。
+     ========================================================================== */
+
+  .card-grid {
+    display: grid;
+    align-items: start;
+    gap: 12px;
+  }
+
+  /* ---- 左右滑 ---- */
+
+  .reminder-swipe {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--r-sm);
+    touch-action: pan-y;
+  }
+
+  /**
+   * 底层露出的动作提示。
+   * `pointer-events: none`：它**只是反馈**，不是可点的目标 ——
+   * 手势本身已经完成了动作，若它还接受点击，手指抬起的那一下会再触发一次。
+   */
+  .reminder-swipe__behind {
+    position: absolute;
+    inset-block: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-inline: 12px;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0.6;
+  }
+
+  /* 越过阈值：把提示点亮，用户就知道松手会发生什么 */
+  .reminder-swipe__behind[data-armed='true'] {
+    opacity: 1;
+  }
+
+  .reminder-swipe__behind--ignore {
+    left: 0;
+    background: var(--bg-sunken);
+    color: var(--fg-muted);
+  }
+
+  .reminder-swipe__behind--primary {
+    right: 0;
+    background: var(--primary-fill);
+    color: var(--on-primary);
+  }
+
+  .reminder-swipe__surface {
+    position: relative;
+    touch-action: pan-y;
+    /* 跟手期间不要过渡，否则位移会追上不手指；松手回弹时才加 */
+    will-change: transform;
+  }
+
+  .reminder-swipe__surface[data-settling='true'] {
+    transition: transform var(--dur) var(--ease-spring);
+  }
+
+  /* ---- 提醒条的标题行：计数 + 一个染色的展开箭头 ---- */
+
+  .reminder-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+  }
+
+  .reminder-head__chev {
+    font-style: normal;
+    font-weight: var(--fw-bold);
+    line-height: 1;
+    transition: transform var(--dur) var(--ease);
+  }
+
+  /* 收起时把 ▾ 转成 ▴：一个符号两种状态，不引入第二个字形 */
+  .reminder-head__chev--collapsed {
+    transform: rotate(180deg);
+  }
 }
 
 /* ==========================================================================
@@ -267,7 +462,7 @@
     background-image: linear-gradient(
       90deg,
       var(--bg-sunken) 25%,
-      var(--bg-surface) 50%,
+      var(--bg-subtle) 50%,
       var(--bg-sunken) 75%
     );
     background-size: 200% 100%;

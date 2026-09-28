@@ -9,19 +9,35 @@
  * 全部在内存库上跑，不碰真实的 data/suenmoney.sqlite。
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, test } from 'node:test';
 
 import { migrate } from '../src/db/index.ts';
 
-const MIGRATION = join(import.meta.dirname, '..', 'src', 'db', 'migrations', '001_init.sql');
+const MIGRATIONS_DIR = join(import.meta.dirname, '..', 'src', 'db', 'migrations');
 
+/** 目录下的迁移文件，按文件名前缀的字典序 —— 与执行器的调度顺序一致。 */
+function migrationFiles(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name.endsWith('.sql'))
+    .sort((a, b) => a.localeCompare(b, 'en'));
+}
+
+/**
+ * 一个跑过**全部**迁移的内存库（不是只跑 001）。
+ *
+ * 之前这里只 `exec` 了 `001_init.sql`：002 之后这个库就不是真实 schema 了，
+ * 而下面所有「约束」用例都跑在它上面 —— 会出现「测试全绿、线上 schema 已经不一样」
+ * 的裂缝。改成按目录顺序全量应用，加迁移就不必回来改这里。
+ */
 function freshDatabase(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
-  db.exec(readFileSync(MIGRATION, 'utf8'));
+  for (const file of migrationFiles()) {
+    db.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
+  }
   return db;
 }
 
@@ -61,14 +77,54 @@ function seed(): void {
 describe('迁移执行器', () => {
   const runner = new DatabaseSync(':memory:');
 
-  test('首次执行应用 001 并记录版本', () => {
-    assert.deepEqual(migrate(runner), ['001_init.sql']);
+  test('首次执行应用全部迁移文件并记录版本', () => {
+    const expected = migrationFiles();
+    assert.ok(expected.length >= 1, '至少要有一个迁移文件');
+
+    assert.deepEqual(migrate(runner), expected);
 
     const versions = runner
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all()
       .map((row) => Number(row['version']));
-    assert.deepEqual(versions, [1]);
+    // 版本号取自文件名前缀，必须与文件列表一一对应（001 → 1、002 → 2 …）
+    assert.deepEqual(
+      versions,
+      expected.map((name) => Number(/^(\d+)_/.exec(name)![1])),
+    );
+  });
+
+  test('002 给 plan_todos 加了「本期不再自动入账」标记，且默认不改变存量行为', () => {
+    const columns = runner
+      .prepare('PRAGMA table_info(plan_todos)')
+      .all()
+      .map((row) => String(row['name']));
+    assert.ok(
+      columns.includes('hold_auto_post'),
+      '少了这一列，撤销确认与恢复跳过在有自动入账的计划上会静默失效',
+    );
+
+    const info = runner
+      .prepare(
+        "SELECT dflt_value AS d, \"notnull\" AS nn FROM pragma_table_info('plan_todos') WHERE name = 'hold_auto_post'",
+      )
+      .get() as unknown as Record<string, unknown>;
+    // 默认 0 = 照旧自动入账：升级不能把存量计划悄悄变成手动
+    assert.equal(String(info['d']), '0');
+    assert.equal(Number(info['nn']), 1, '不允许为 NULL，否则 WHERE hold_auto_post = 0 会漏掉存量行');
+  });
+
+  test('003 给 plan_todos 加了「我知道了」标记，且不改变存量行', () => {
+    const info = runner
+      .prepare(
+        "SELECT dflt_value AS d, \"notnull\" AS nn FROM pragma_table_info('plan_todos') WHERE name = 'ack_at'",
+      )
+      .get() as unknown as Record<string, unknown>;
+
+    assert.ok(info !== undefined, '少了 ack_at，「确认」只能做成前端隐藏，换设备又会冒出来');
+    // 可空且无默认值：存量待办全部落在「未确认」，行为与加这一列之前一致
+    assert.equal(info['d'], null);
+    assert.equal(Number(info['nn']), 0, '必须可空 —— NOT NULL 会让存量行无法满足约束');
   });
 
   test('重复执行是幂等的，不会重放迁移', () => {
@@ -96,7 +152,7 @@ describe('迁移执行器', () => {
   });
 
   test('迁移文件本身不建 schema_migrations（那是执行器的职责）', () => {
-    // db 只应用过 001_init.sql，没走过执行器
+    // db 直接跑过全部迁移文件，但没走过 migrate() 执行器
     assert.equal(
       tableNames(db).includes('schema_migrations'),
       false,

@@ -5,11 +5,15 @@
  * 「某个接口在哪个文件」就成了需要翻找的问题，收益不抵成本。
  * 真正需要拆的是类型（`types.ts`），因为它的体积会随功能持续增长。
  */
-import { request } from './client';
+import { downloadFile, request } from './client';
 import type {
   Category,
+  DataOverview,
+  DemoResetReport,
   Expense,
   ExpensePage,
+  ExportScopeKind,
+  LedgerWipeReport,
   MonthlyReport,
   PaymentMethod,
   PaymentMethodType,
@@ -17,6 +21,7 @@ import type {
   PlanSource,
   PlanTodo,
   PlanTodoStatus,
+  TransferResult,
   User,
   UserRole,
   YearlyReport,
@@ -83,7 +88,15 @@ export const categories = {
 
   update: (
     id: string,
-    input: { name?: string; icon?: string; color?: string; sortOrder?: number; isEnabled?: boolean },
+    input: {
+      name?: string;
+      /** 移动分类。只允许**同深度**（二级在一级之间平移）；传 null 会被服务端拒绝 */
+      parentId?: string | null;
+      icon?: string;
+      color?: string;
+      sortOrder?: number;
+      isEnabled?: boolean;
+    },
   ) => request<{ category: Category }>(`/api/categories/${id}`, { method: 'PATCH', body: input }),
 };
 
@@ -233,6 +246,13 @@ export interface PlanTodoQuery {
   remindBefore?: string;
   from?: string;
   to?: string;
+  /**
+   * 排除已点过「确认」的期次。
+   *
+   * 「该处理了」列表传 true；计划详情**不要传** ——
+   * 那里那一期仍然是 `pending`，用户得看得见自己确认过什么。
+   */
+  hideAcked?: boolean;
   limit?: number;
 }
 
@@ -249,6 +269,35 @@ export const planTodos = {
 
   skip: (id: string) =>
     request<{ todo: PlanTodo }>(`/api/plan-todos/${id}/skip`, { method: 'POST', body: {} }),
+
+  /**
+   * 「我知道了」—— 确认一条**会自动入账**的提醒。
+   *
+   * 与 `confirm` 不是同义词，别混用：
+   *   · `confirm` 生成那笔支出（`pending → confirmed`）；
+   *   · `ack` **什么业务状态都不改**，只让这条从「该处理了」里消失，
+   *     到还款日照旧自动入账。
+   *
+   * 用错了不会报错 —— 只会让账目静默地少一笔（误用 ack 当成入账）
+   * 或提前一笔（误用 confirm 当成知悉）。判据是 `todo.willAutoPost`。
+   */
+  ack: (id: string) =>
+    request<{ todo: PlanTodo }>(`/api/plan-todos/${id}/ack`, { method: 'POST', body: {} }),
+
+  /**
+   * 撤销一次确认：该期生成的支出被软删，待办回到 `pending` 且不再自动入账。
+   *
+   * 返回被撤掉的那条支出 id，调用方可以用它做提示（「已撤销 ¥X 的入账」）。
+   */
+  revert: (id: string) =>
+    request<{ todo: PlanTodo; expenseId: string }>(`/api/plan-todos/${id}/revert`, {
+      method: 'POST',
+      body: {},
+    }),
+
+  /** 恢复一个被跳过的期次（`skipped → pending`）。 */
+  restore: (id: string) =>
+    request<{ todo: PlanTodo }>(`/api/plan-todos/${id}/restore`, { method: 'POST', body: {} }),
 };
 
 export const reports = {
@@ -263,4 +312,57 @@ export const reports = {
 
   yearly: (year: string, ownerId?: string) =>
     request<{ report: YearlyReport }>('/api/reports/yearly', { query: { year, ownerId } }),
+};
+
+// ---- 数据 -----------------------------------------------------------------
+
+/** 导出 / 备份的范围。`period` 在 `all` 时**不要传** —— 服务端会明确拒绝它。 */
+export interface DataScopeQuery {
+  scope: ExportScopeKind;
+  period?: string;
+}
+
+export const data = {
+  /** 概览：现在库里有什么、存档在哪、重置演示数据能不能按 */
+  overview: () => request<{ overview: DataOverview }>('/api/data/overview'),
+
+  /**
+   * 导出数据包（JSON，**能再导回来**）。
+   *
+   * 与 `exportCsv` 是同一份数据的两种投影，不是两个功能：
+   * JSON 负责往返，CSV 负责「人能看懂、能核对」。
+   */
+  exportPackage: (query: DataScopeQuery) => downloadFile('/api/export', { ...query }),
+
+  /** 导出对账表（CSV，Excel 直接打开）。 */
+  exportCsv: (query: DataScopeQuery) => downloadFile('/api/export/expenses.csv', { ...query }),
+
+  /** 备份**始终全量**，没有范围参数 —— 它只服务「一键恢复」。 */
+  backup: () => downloadFile('/api/backup'),
+
+  /** 导入 = 合并去重，不覆盖。同一份文件按两次也不会多出记录。 */
+  import: (pkg: unknown) => request<TransferResult>('/api/import', { method: 'POST', body: pkg }),
+
+  /** 恢复 = 文件覆盖本地，且**不删除**本地多出来的记录。只接受 backup 信封。 */
+  restore: (pkg: unknown) =>
+    request<TransferResult>('/api/backup/restore', { method: 'POST', body: pkg }),
+
+  /**
+   * 清空全部**账目**（支出 / 计划 / 待办），保留分类 / 支付方式 / 账号。
+   *
+   * `confirm` 是字面量而不是布尔：服务端要求调用方把动作名写出来，
+   * 免得一个手滑的请求就把全家的账清掉。
+   */
+  wipe: () =>
+    request<{ report: LedgerWipeReport }>('/api/data/wipe', {
+      method: 'POST',
+      body: { confirm: 'wipe' },
+    }),
+
+  /** 重置演示数据。日期相对 `today` 现算，所以「今天」必须由客户端给。 */
+  resetDemo: (today: string) =>
+    request<{ report: DemoResetReport }>('/api/data/reset-demo', {
+      method: 'POST',
+      body: { confirm: 'reset-demo', today },
+    }),
 };

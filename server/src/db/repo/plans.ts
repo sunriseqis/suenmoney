@@ -25,7 +25,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../lib/http-error.
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange } from '../sync.ts';
 import { requireUsableCategory } from './categories.ts';
-import { insertPlanExpense, type ExpenseRow } from './expenses.ts';
+import { insertPlanExpense, findExpenseRow, toSyncExpense, type ExpenseRow } from './expenses.ts';
 import { requireUsablePaymentMethod, toPaymentCycle } from './payment-methods.ts';
 
 export type PlanSource = 'manual' | 'installment';
@@ -67,6 +67,16 @@ export interface PlanTodoRow {
   confirmed_by: string | null;
   confirmed_at: string | null;
   expense_id: string | null;
+  /**
+   * 「本期不再自动入账」。见 `002_plan_todo_hold_auto_post.sql`。
+   * 1 表示这一期被用户显式摘出自动入账，只能手动确认。
+   */
+  hold_auto_post: number;
+  /**
+   * 「我知道了」的时间戳。见 `003_plan_todo_ack.sql`。
+   * 非空 = 用户已确认过这条提醒；**不改 `status`**，只把这条从「该处理了」里摘掉。
+   */
+  ack_at: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -123,6 +133,21 @@ export interface PlanTodoApi {
   confirmedBy: string | null;
   confirmedAt: string | null;
   expenseId: string | null;
+  /** 是否已从自动入账中摘出（撤销 / 恢复跳过后为 true，见 migration 002） */
+  holdAutoPost: boolean;
+  /**
+   * 这一期现在**还会不会**自动入账。
+   *
+   * 判据不是「计划有没有开自动入账」，而是两者的合取 ——
+   * `plans.auto_post = 1 AND plan_todos.hold_auto_post = 0`。
+   * 只看计划那一级会判错，而且错得很隐蔽：界面会给一个「确认」按钮，
+   * 用户点了以为没事，那笔账却永远不入，且不报错。
+   *
+   * 由服务端算好下发，不在前端拼 —— 否则这个合取条件会在每处界面各写一遍。
+   */
+  willAutoPost: boolean;
+  /** 已确认过这条提醒的时间；非 null 表示用户已经「知道了」（见 migration 003） */
+  ackAt: string | null;
 }
 
 const PLAN_COLUMNS = `id, owner_id, name, category_id, payment_method_id, amount_cents,
@@ -131,7 +156,7 @@ const PLAN_COLUMNS = `id, owner_id, name, category_id, payment_method_id, amount
 
 const TODO_COLUMNS = `id, plan_id, period_seq, amount_cents, posting_date, repayment_date,
                       remind_date, status, posted_date, confirmed_by, confirmed_at, expense_id,
-                      created_at, updated_at, deleted_at, rev, device_id`;
+                      hold_auto_post, ack_at, created_at, updated_at, deleted_at, rev, device_id`;
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -171,6 +196,8 @@ export function toSyncTodo(row: PlanTodoRow): Record<string, unknown> {
     confirmed_by: row.confirmed_by,
     confirmed_at: row.confirmed_at,
     expense_id: row.expense_id,
+    hold_auto_post: row.hold_auto_post,
+    ack_at: row.ack_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
     rev: row.rev,
@@ -194,6 +221,9 @@ function toTodoApi(row: PlanTodoRow, plan: PlanRow): PlanTodoApi {
     confirmedBy: row.confirmed_by,
     confirmedAt: row.confirmed_at,
     expenseId: row.expense_id,
+    holdAutoPost: row.hold_auto_post === 1,
+    willAutoPost: plan.auto_post === 1 && row.hold_auto_post === 0,
+    ackAt: row.ack_at,
   };
 }
 
@@ -285,6 +315,13 @@ export interface TodoFilter {
   /** 只看某个还款日区间 */
   from?: string | undefined;
   to?: string | undefined;
+  /**
+   * 排除已被「我知道了」摘掉的期次。
+   *
+   * **默认 false**（照样返回）：「该处理了」列表要传 true，而计划详情不能传 ——
+   * 详情里那一期仍然是 `pending`、也仍然要显示，用户得能看见自己确认过什么。
+   */
+  hideAcked?: boolean | undefined;
   limit?: number | undefined;
 }
 
@@ -311,6 +348,9 @@ export function listTodos(db: DatabaseSync, filter: TodoFilter = {}): PlanTodoAp
   if (filter.to !== undefined) {
     where.push('repayment_date <= ?');
     params.push(filter.to);
+  }
+  if (filter.hideAcked === true) {
+    where.push('ack_at IS NULL');
   }
 
   const limit = Math.min(Math.max(filter.limit ?? 200, 1), 500);
@@ -395,6 +435,10 @@ function generateTodos(
       confirmed_by: null,
       confirmed_at: null,
       expense_id: null,
+      // 新建的期待办一律参与自动入账；摘出是用户显式动作
+      hold_auto_post: 0,
+      // 新建的期待办一律「未确认」—— 它还没被摆到用户面前过
+      ack_at: null,
       created_at: timestamp,
       updated_at: timestamp,
       deleted_at: null,
@@ -954,6 +998,240 @@ export function skipTodo(db: DatabaseSync, todoId: string, actorId: string): Pla
 }
 
 /**
+ * 「我知道了」：确认一条**会自动入账**的提醒。
+ *
+ * 它是三类动作里唯一**不改业务状态**的一个 —— 只把 `ack_at` 写上，
+ * 让这一条从「该处理了」里消失，同时保持 `status = 'pending'`，
+ * 到还款日 `settleAutoPost` 照旧把它入账。
+ *
+ * 为什么必须有它（而不是让用户按「入账」）：这类期次的账**本来就会自动生成**，
+ * 让用户提前手动入账只会让支出日期与计划不符；而按「忽略」又会走 `skipTodo`，
+ * 把这一期从自动入账的范围里摘掉 —— 那是**偷偷关掉自动入账**。
+ * 用户要的只是「别提醒我」，不是「别记账」。
+ *
+ * 幂等：`ack_at IS NULL` 是条件的一部分，重复点不会推进任何东西，
+ * 也不会把第一次的时间戳覆盖掉（「什么时候看到的」不该被第二次点击改写）。
+ * 已经确认过再点不报错，直接返回当前状态 —— 两个人各自点一次是常见情形。
+ */
+export function ackTodo(db: DatabaseSync, todoId: string, actorId: string): PlanTodoApi {
+  const todo = findTodoRow(db, todoId);
+  if (todo === null) throw notFound(`待办不存在：${todoId}`);
+
+  const plan = findPlanRow(db, todo.plan_id);
+  if (plan === null) throw notFound('待办所属的计划已被删除');
+
+  if (todo.status !== 'pending') throw conflict(`这一期不是待确认状态（${todo.status}）`);
+
+  // 已经确认过：直接返回，不覆盖第一次的时间戳
+  if (todo.ack_at !== null) return toTodoApi(todo, plan);
+
+  const timestamp = nowIso();
+  const updated: PlanTodoRow = { ...todo, ack_at: timestamp, updated_at: timestamp, rev: todo.rev + 1 };
+
+  inTransaction(db, () => {
+    const info = db
+      .prepare(
+        `UPDATE plan_todos SET ack_at = ?, updated_at = ?, rev = rev + 1
+          WHERE id = ? AND status = 'pending' AND ack_at IS NULL AND deleted_at IS NULL`,
+      )
+      .run(timestamp, timestamp, todoId);
+
+    // 没命中说明并发里已经有人确认过了 —— 与上面那个提前返回等价，不算失败
+    if (Number(info.changes) !== 1) return;
+
+    recordChange(db, {
+      entityType: 'plan_todo',
+      entityId: todoId,
+      op: 'upsert',
+      actorId,
+      payload: toSyncTodo(updated),
+      deviceId: null,
+    });
+  });
+
+  return toTodoApi(findTodoRow(db, todoId) ?? updated, plan);
+}
+
+/**
+ * 恢复一个被跳过的期次（`skipped → pending`）。
+ *
+ * 跳过同样要可逆：用户可能手滑跳过了这一期，或者「这个月免了」后来又发现要付。
+ *
+ * **必须置 `hold_auto_post = 1`**：被跳过的期次通常已经到期甚至过期，
+ * 恢复成 `pending` 的那个瞬间它就满足 `repayment_date <= today`，
+ * 若还在自动入账计划里，会被 `settleAutoPost` 当场入账 ——
+ * 用户看到的是「一按恢复，它直接变成已付」，又一次「按了没用」。
+ * 恢复的语义是「把它放回待办列表等我处理」，不是「立刻替我付款」。
+ *
+ * **并且要清掉 `ack_at`**：被恢复的期次是「要用户做决定」的那一类，
+ * 它必须重新出现在「该处理了」里。不清的话，一度被确认过的期次
+ * 在恢复后**再也不会提醒** —— 看起来就像「恢复按钮没反应」。
+ */
+export function restoreSkippedTodo(db: DatabaseSync, todoId: string, actorId: string): PlanTodoApi {
+  const todo = findTodoRow(db, todoId);
+  if (todo === null) throw notFound(`待办不存在：${todoId}`);
+
+  const plan = findPlanRow(db, todo.plan_id);
+  if (plan === null) throw notFound('待办所属的计划已被删除');
+
+  if (todo.status !== 'skipped') throw conflict(`这一期不是已跳过状态（${todo.status}），无法恢复`);
+
+  const timestamp = nowIso();
+  let updated: PlanTodoRow | null = null;
+
+  inTransaction(db, () => {
+    const info = db
+      .prepare(
+        `UPDATE plan_todos
+            SET status = 'pending', hold_auto_post = 1, ack_at = NULL,
+                updated_at = ?, rev = rev + 1
+          WHERE id = ? AND status = 'skipped' AND deleted_at IS NULL`,
+      )
+      .run(timestamp, todoId);
+
+    if (Number(info.changes) !== 1) throw conflict('这一期刚被处理过，请刷新后重试');
+
+    updated = {
+      ...todo,
+      status: 'pending',
+      hold_auto_post: 1,
+      ack_at: null,
+      updated_at: timestamp,
+      rev: todo.rev + 1,
+    };
+
+    recordChange(db, {
+      entityType: 'plan_todo',
+      entityId: todoId,
+      op: 'upsert',
+      actorId,
+      payload: toSyncTodo(updated),
+      deviceId: null,
+    });
+  });
+
+  if (updated === null) throw new Error('恢复后读取失败，数据库状态异常');
+  return toTodoApi(updated, plan);
+}
+
+export interface RevertTodoResult {
+  todo: PlanTodoApi;
+  /** 被撤销的那条支出记录 id（已软删）。 */
+  expenseId: string;
+}
+
+/**
+ * 撤销一次确认（`confirmed → pending`）。
+ *
+ * 现状是确认入账后**没有任何反悔路径**：点错了日期、点错了一期、
+ * 或者自动入账在前一天把还没付的房贷算进去了，用户只能去删那条支出 ——
+ * 而 `softDeleteExpense` 会当场拒绝（「这条记录由计划生成」），
+ * 于是用户被卡在一个既不能改也不能删的状态里。
+ *
+ * 三件事必须在**同一个事务**里完成，否则会留下「支出没了但待办还显示已付」
+ * 或反过来「待办回待办了但支出还挂在报表里」的半截状态：
+ *   1. 给生成的支出打墓碑（软删 + `op: 'delete'` 变更），而不是物理删除 ——
+ *      同步层靠变更日志做增量，物理删除会让其他设备永远不知道它没了。
+ *   2. 待办回 `pending`，清空 `posted_date / confirmed_by / confirmed_at / expense_id`。
+ *   3. 置 `hold_auto_post = 1`：**没有这一步，撤销在自动入账的计划上是假的** ——
+ *      回到 pending 的下一瞬间就会被 `settleAutoPost` 重新入账。
+ *
+ * 不做物理删除待办、也不留期序空洞（见 `docs/decision.md`）：
+ * 进度是相对计划整体算的，删掉一期会让「已还 N 期 / 剩余 M 期 / 预计结清」全部错位。
+ * 回 `pending` 保留位置，只是把它压住，用户可以再确认回来。
+ *
+ * 权限与「确认」对称：确认是家庭共同事务，两人都能做；撤销是它的逆操作，
+ * 也两人都能做。这不是放松 —— 撤销本身可逆（再确认一次就回来了），
+ * 而它唯一的破坏性动作（软删支出）留下的墓碑同样可以通过重新确认覆盖。
+ */
+export function revertTodoConfirm(db: DatabaseSync, todoId: string, actorId: string): RevertTodoResult {
+  const todo = findTodoRow(db, todoId);
+  if (todo === null) throw notFound(`待办不存在：${todoId}`);
+
+  const plan = findPlanRow(db, todo.plan_id);
+  if (plan === null) throw notFound('待办所属的计划已被删除');
+
+  if (todo.status !== 'confirmed') {
+    throw conflict(`这一期不是已确认状态（${todo.status}），无法撤销`);
+  }
+  if (todo.expense_id === null) {
+    // schema 的 `status = 'confirmed' → expense_id NOT NULL` 保证不该发生，
+    // 走到这里只可能是数据被外部改过；给一条能自查的错误，而不是静默成功
+    throw conflict('这一期没有关联的支出记录，无法撤销');
+  }
+
+  const expenseId = todo.expense_id;
+  // 支出可能已被别处软删（并发撤销、或恢复导入覆盖）；那时只需把待办拉回 pending
+  const expense = findExpenseRow(db, expenseId);
+  const timestamp = nowIso();
+  let updated: PlanTodoRow | null = null;
+
+  inTransaction(db, () => {
+    if (expense !== null) {
+      const tombstone: ExpenseRow = {
+        ...expense,
+        deleted_at: timestamp,
+        updated_at: timestamp,
+        rev: expense.rev + 1,
+      };
+
+      db.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ?, rev = ? WHERE id = ?').run(
+        timestamp,
+        timestamp,
+        tombstone.rev,
+        expenseId,
+      );
+
+      recordChange(db, {
+        entityType: 'expense',
+        entityId: expenseId,
+        op: 'delete',
+        actorId,
+        payload: toSyncExpense(tombstone),
+        deviceId: expense.device_id,
+      });
+    }
+
+    const info = db
+      .prepare(
+        `UPDATE plan_todos
+            SET status = 'pending', posted_date = NULL, confirmed_by = NULL, confirmed_at = NULL,
+                expense_id = NULL, hold_auto_post = 1, ack_at = NULL,
+                updated_at = ?, rev = rev + 1
+          WHERE id = ? AND status = 'confirmed' AND deleted_at IS NULL`,
+      )
+      .run(timestamp, todoId);
+
+    if (Number(info.changes) !== 1) throw conflict('这一期刚被处理过，请刷新后重试');
+
+    updated = {
+      ...todo,
+      status: 'pending',
+      posted_date: null,
+      confirmed_by: null,
+      confirmed_at: null,
+      expense_id: null,
+      hold_auto_post: 1,
+      ack_at: null,
+      updated_at: timestamp,
+      rev: todo.rev + 1,
+    };
+
+    recordChange(db, {
+      entityType: 'plan_todo',
+      entityId: todoId,
+      op: 'upsert',
+      actorId,
+      payload: toSyncTodo(updated),
+      deviceId: null,
+    });
+  });
+
+  if (updated === null) throw new Error('撤销后读取失败，数据库状态异常');
+  return { todo: toTodoApi(updated, plan), expenseId };
+}
+
+/**
  * 结算到期的自动入账待办。
  *
  * 在客户端打开仪表盘时触发（`today` 由客户端按本地时区传入）。
@@ -961,6 +1239,11 @@ export function skipTodo(db: DatabaseSync, todoId: string, actorId: string): Pla
  * 时区、以及「跑了两遍」的幂等 —— 而幂等已经由待办的状态机天然保证了。
  *
  * 自动入账没有「操作人」，所以记录人取计划的所有者。
+ *
+ * `hold_auto_post = 0` 这个条件是**撤销与恢复跳过的前提**，不是可选过滤：
+ * 被撤销的期次会回到 `pending`，它在自动入账的计划里到期即满足其余所有条件，
+ * 少了这一条就会在用户下次打开首页时被立刻重新入账 —— 表现为「撤销按了没用」，
+ * 且不报错。同理，恢复跳过的期次几乎总是已到期的，恢复的那一刻就会被当场入账。
  */
 export function settleAutoPost(db: DatabaseSync, today: string): number {
   parseDate(today);
@@ -969,7 +1252,7 @@ export function settleAutoPost(db: DatabaseSync, today: string): number {
     .prepare(
       `SELECT t.id AS id, p.owner_id AS owner_id
          FROM plan_todos t JOIN plans p ON p.id = t.plan_id
-        WHERE t.status = 'pending' AND t.deleted_at IS NULL
+        WHERE t.status = 'pending' AND t.deleted_at IS NULL AND t.hold_auto_post = 0
           AND p.deleted_at IS NULL AND p.state = 'active' AND p.auto_post = 1
           AND t.repayment_date <= ?
         ORDER BY t.repayment_date, t.period_seq`,

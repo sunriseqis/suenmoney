@@ -76,14 +76,33 @@ export function toSyncCategory(row: CategoryRow): Record<string, unknown> {
 
 /**
  * 列出全部分类（含已停用的 —— 历史记录还要靠它显示分类名，界面只是不放进
- * 新记账的选择列表）。expense_count 用相关子查询一次带出，避免前端 N+1。
+ * 新记账的选择列表）。
+ *
+ * `expense_count` 的算法分两层，这是第三轮明确下来的口径：
+ *
+ *   一级分类 —— **累计其子分类**。原先只数直接挂在一级上的记录，于是
+ *               「只往二级记账」的家庭会看到所有一级分类都写着 0 笔。
+ *               字段本身没说谎，但它就印在「停用」按钮旁边，
+ *               会被读成「这是个空分类，可以安全停用」。
+ *   **显示口径必须服务它旁边的动作。**
+ *
+ *   二级分类 —— 只数自己的（`c2.parent_id = categories.id` 对二级恒为空）。
+ *
+ * `IN (子查询)` 而不是 JOIN：同一条记录只会命中一次，不需要 DISTINCT 去重
+ * （JOIN 两个层级时会把记录数翻倍，而那个错误表现为「笔数正好是两倍」，
+ * 在没有对照数据时很难看出来）。
  */
 export function listCategoryRows(db: DatabaseSync): CategoryRow[] {
   const rows = db
     .prepare(
       `SELECT ${COLUMNS},
               (SELECT COUNT(*) FROM expenses e
-                WHERE e.category_id = categories.id AND e.deleted_at IS NULL) AS expense_count
+                WHERE e.deleted_at IS NULL
+                  AND e.category_id IN (
+                    SELECT c2.id FROM categories c2
+                     WHERE c2.deleted_at IS NULL
+                       AND (c2.id = categories.id OR c2.parent_id = categories.id)
+                  )) AS expense_count
          FROM categories
         WHERE deleted_at IS NULL
         -- created_at / rowid 参与排序的理由同 listPaymentMethods：name 的字节序没有语义
@@ -248,6 +267,11 @@ export function createCategory(db: DatabaseSync, input: CreateCategoryInput): Ca
 
 export interface UpdateCategoryInput {
   name?: string | undefined;
+  /**
+   * 移动分类。`undefined` = 不动，`null` = 移到根（仅对一级有意义，
+   * 对二级传 null 会被拒）。三种状态必须能区分，所以类型里带上 null。
+   */
+  parentId?: string | null | undefined;
   icon?: string | undefined;
   color?: string | undefined;
   sortOrder?: number | undefined;
@@ -257,11 +281,60 @@ export interface UpdateCategoryInput {
 }
 
 /**
+ * 判断一次移动是否合法，并把结果 depth 返回（移动前后必然相同）。
+ *
+ * ## 为什么允许移动、但又只允许**同深度**移动
+ *
+ * 原先这里写着「刻意不支持改 parentId」，理由是会连带改变子分类的 depth 与归属。
+ * 那个理由是成立的，但它推导出的结论太重了：默认分类树是给所有人用的模板，
+ * 必然对不上每一家，而「二级分类挂错了组」恰恰是最常见的一种不对 ——
+ * 把「外卖」从「餐饮」挪到「日常」这种操作，用户一天可能就想做一次，
+ * 却只能停用重建（连带丢掉历史归属）。
+ *
+ * 真正的风险只在**跨深度**那一种：一级变二级会让它原本汇总的所有兄弟分类
+ * 集体改归属，已有记录的分析粒度跟着变，且不可预期。
+ * 二级在一级之间平移则只改一个分组标签，depth 不变、子分类结构不变
+ * （二级不可能有子分类，见 MAX_CATEGORY_DEPTH）。
+ *
+ * 所以规则收敛成一句：**移动后 depth 必须不变。**
+ */
+function resolveMoveParent(
+  db: DatabaseSync,
+  existing: CategoryRow,
+  nextParentId: string | null,
+): void {
+  if (existing.depth === 1) {
+    // 一级分类的 parentId 只能是 null；传具体的父级等于把它降成二级
+    throw badRequest(
+      `「${existing.name}」是一级分类，只能移动二级分类。一级与二级之间的跨深度移动会让已有记录的分析粒度发生不可预期的变化`,
+    );
+  }
+
+  if (nextParentId === null) {
+    throw badRequest(`「${existing.name}」是二级分类，必须挂在一个一级分类下`);
+  }
+
+  if (nextParentId === existing.id) {
+    throw badRequest('不能把分类移动到它自己下面');
+  }
+
+  const parent = findCategory(db, nextParentId);
+  if (parent === null) throw badRequest(`目标分类不存在：${nextParentId}`);
+  if (parent.depth !== 1) {
+    throw badRequest(`只能移动到一级分类下，但「${parent.name}」不是一级分类`);
+  }
+  if (parent.is_enabled !== 1) {
+    // 让移动成功但结果「看不见」（停用的一级会整组从记账选择器里消失）
+    // 比直接拒绝更像一个 bug，所以拒绝。
+    throw badRequest(`「${parent.name}」已停用，不能作为移动目标`);
+  }
+}
+
+/**
  * 更新分类。
  *
- * 刻意**不支持改 parentId**：移动分类会连带改变其子分类的 depth 与
- * 归属，而分类树同时被历史记录、报表分组、权限展示引用着。这个功能
- * 的收益（换个分组）远小于它可能造成的错乱，需要时手动停用旧的、建新的。
+ * 名字 / 图标 / 颜色随时可改（它们只是显示层，不动任何记录）；
+ * 移动只允许**同深度**，理由见 `resolveMoveParent`。
  */
 export function updateCategory(
   db: DatabaseSync,
@@ -275,8 +348,11 @@ export function updateCategory(
   if (name === '') throw badRequest('分类名不能为空');
   if (name.length > 20) throw badRequest('分类名不能超过 20 个字');
 
+  const nextParentId = input.parentId === undefined ? existing.parent_id : input.parentId;
+
   const next: CategoryRow = {
     ...existing,
+    parent_id: nextParentId,
     name,
     icon: input.icon ?? existing.icon,
     color: input.color ?? existing.color,
@@ -289,14 +365,19 @@ export function updateCategory(
 
   try {
     inTransaction(db, () => {
+      if (nextParentId !== existing.parent_id) resolveMoveParent(db, existing, nextParentId);
+
+      // 重名检查必须按**目标层级**做：从「餐饮 · 外卖」挪到「日常」时，
+      // 要撞的是「日常」下的同名，而不是「餐饮」下的
       assertNoSiblingName(db, next.parent_id, name, next.id);
 
       db.prepare(
         `UPDATE categories
-            SET name = ?, icon = ?, color = ?, sort_order = ?, is_enabled = ?,
+            SET parent_id = ?, name = ?, icon = ?, color = ?, sort_order = ?, is_enabled = ?,
                 updated_at = ?, rev = ?, device_id = ?
           WHERE id = ?`,
       ).run(
+        next.parent_id,
         next.name,
         next.icon,
         next.color,

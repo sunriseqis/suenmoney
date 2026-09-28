@@ -8,18 +8,24 @@
  *
  * 传 name 而不是 categoryId，是因为它要能用在「聚合结果」上 ——
  * 报表返回的是分类桶，那里只有 name，没有完整的 Category 对象。
+ *
+ * 反过来，手里**已经有 categoryId** 时（计划、待办这类只带 id 的地方）
+ * 直接传 `categoryId` 更省事也更安全：图标取自己的、颜色取一级的规则
+ * 由字典 store 的 `visualOf` 统一给出，调用处不必再复述一遍。
+ * 两套入参二选一，同时给时以 name/icon/color 为准。
  */
 import { computed } from 'vue';
 
+import { useDictionariesStore } from '@/stores/dictionaries';
 import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors';
 import { resolveCategoryIcon } from '@/utils/icons';
 
 const props = withDefaults(
   defineProps<{
     /** 分类名，用于 icon/color 为空时兜底推断 */
-    name: string;
+    name?: string;
     /** 显式存储的图标名；空字符串表示没设过 */
-    icon: string;
+    icon?: string;
     /** 显式存储的色号（'1'–'8'）；空字符串表示没设过，按分类名推导 */
     color?: string;
     /**
@@ -31,13 +37,26 @@ const props = withDefaults(
      * （图标仍由 `name` 决定 —— 二级有自己的图标，只有颜色跟一级走。）
      */
     colorName?: string;
+    /** 有分类 id 时优先走它，图标与颜色的解析交给字典 store */
+    categoryId?: string | null;
     size?: number;
     strokeWidth?: number;
   }>(),
-  { size: 18, strokeWidth: 2, color: '', colorName: '' },
+  { name: '', icon: '', color: '', colorName: '', categoryId: null, size: 18, strokeWidth: 2 },
 );
 
-const component = computed(() => resolveCategoryIcon({ name: props.name, icon: props.icon }));
+const dict = useDictionariesStore();
+
+const fromId = computed(() => (props.categoryId === null ? null : dict.visualOf(props.categoryId)));
+
+const displayName = computed(() => fromId.value?.name ?? props.name ?? '');
+const displayIcon = computed(() => fromId.value?.icon ?? props.icon ?? '');
+const displayColor = computed(() => fromId.value?.color ?? props.color ?? '');
+const colorName = computed(() => fromId.value?.colorName ?? props.colorName ?? displayName.value);
+
+const component = computed(() =>
+  resolveCategoryIcon({ name: displayName.value, icon: displayIcon.value }),
+);
 
 /**
  * 图标颜色 = 分类颜色。
@@ -48,9 +67,7 @@ const component = computed(() => resolveCategoryIcon({ name: props.name, icon: p
  * 灰色类也会被覆盖 —— 那种类现在是死代码，应从调用处删掉。
  */
 const colorStyle = computed(() => ({
-  color: categoryColorVar(
-    resolveCategoryColor(props.colorName || props.name, props.color),
-  ),
+  color: categoryColorVar(resolveCategoryColor(colorName.value, displayColor.value)),
 }));
 </script>
 

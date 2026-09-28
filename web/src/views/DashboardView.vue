@@ -4,13 +4,18 @@
  *
  * 三块内容，按「你最想先看到什么」排序：
  *   1. 本月支出总额 —— 这是整个应用存在的理由，必须一眼可见
- *   2. 待还 —— 信用卡的还款日快到了是要**行动**的事，不能埋在报表里
- *   3. 支出构成 + 最近流水 —— 回答「花在什么上面」
+ *   2. 处理提醒 —— 计划待办里提醒日已到的那几条；折成**一条可展开的提醒条**，
+ *      收起态只占一行，展开后一条一行、能直接动手（`ReminderList`）
+ *   3. 本月待还 + 最近流水 —— 前者是「还要还多少」这个**数字**，
+ *      后者回答「刚刚记的到账了没」
+ *
+ * 原先还有一块「支出构成」。第三轮把它删掉了：它与报表页的分类构成环图
+ * 是同一份数据的两种画法，而首页这块还更弱（堆叠条 + 图例，没有金额排名）。
+ * **同一份数据在一个应用里出现两次，才是「这一页信息太少」的真正原因** ——
+ * 删掉重复的那块之后，想看构成就直接去报表页，两边都不会再各自摊薄。
  */
 import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
-
-import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors';
 
 import {
   ApiError,
@@ -20,16 +25,16 @@ import {
   type MonthlyReport,
 } from '@/api';
 import CategoryIcon from '@/components/CategoryIcon.vue';
-import PlanTodoCard from '@/components/PlanTodoCard.vue';
+import ReminderList from '@/components/ReminderList.vue';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
 import {
   currentMonth,
+  elapsedDays,
   formatDayLabel,
   formatMonthDay,
   formatMonthLabel,
   shiftMonth,
-  todayLocal,
 } from '@/utils/dates';
 import { formatCompact, formatYuan } from '@/utils/money';
 import {
@@ -66,7 +71,12 @@ async function load(): Promise<void> {
     const settled = await plansStore.loadDueTodos();
     settleNotice.value = settled > 0 ? `已自动入账 ${settled} 笔到期的支出` : null;
 
-    const [monthResult, listResult] = await Promise.all([
+    /**
+     * 顺带把计划本身也取回来：待办卡上「已还 N / M 期」那排刻度读的是
+     * Plan 上的 progress，待办接口不带这个字段。与报表并行发出，不多等一轮。
+     */
+    const [, monthResult, listResult] = await Promise.all([
+      plansStore.loadPlans(),
       reportsApi.monthly(month.value),
       expensesApi.list({ month: month.value, limit: 8 }),
     ]);
@@ -137,16 +147,13 @@ const dueTotalCents = computed(() =>
 );
 
 /**
- * 日均。用「本月已过天数」而不是整月天数 —— 月初看日均没有意义，
- * 月末它才逼近真实水平。这是口径问题不是 bug，但要写清楚。
+ * 日均。分母用 `elapsedDays`（本月只算已过的天数）而不是整月天数 ——
+ * 月初拿整月去除会把日均压得很低，看起来像「这个月花得很少」。
+ * 这个口径与报表页共用同一个函数，两处不会各算一套。
  */
-const dailyAverageCents = computed(() => {
-  const year = Number(month.value.slice(0, 4));
-  const mon = Number(month.value.slice(5, 7));
-  const daysInMonth = new Date(Date.UTC(year, mon, 0)).getUTCDate();
-  const elapsed = isCurrentMonth.value ? Number(todayLocal().slice(8, 10)) : daysInMonth;
-  return Math.round(totalCents.value / Math.max(1, elapsed));
-});
+const dailyAverageCents = computed(() =>
+  Math.round(totalCents.value / Math.max(1, elapsedDays(month.value))),
+);
 </script>
 
 <template>
@@ -262,43 +269,28 @@ const dailyAverageCents = computed(() => {
 
         上一版是固定的 grid-cols-2：左栏（该处理了 / 本月待还）两个区块都有 v-if，
         待办清空之后左栏就成了空壳，内容孤零零贴在右侧 —— 待办清空恰恰是常态。
-        现在宽度在**区块内部**用（构成图例两栏、待办卡自动换行），
+        现在宽度在**区块内部**用（待办卡自动换行、流水行），
         空态就是整块不出现，不会留洞。
+
+        第三轮删掉了「支出构成」这一块（与报表页重复），于是这里只剩三块：
+        该处理了 / 本月待还 / 最近流水。空态的洞反而更少了。
       -->
       <div>
-          <!-- 该处理了：需要用户**行动**，排在所有信息性内容之前 -->
-          <section
-            v-if="plansStore.dueTodos.length > 0"
-            class="mt-8"
-            aria-label="该处理了"
-          >
-        <div class="flex items-baseline justify-between">
-          <h2 class="label-cn">该处理了</h2>
-                  </div>
+          <!--
+            处理提醒：需要用户**行动**，排在所有信息性内容之前。
 
-        <!--
-          列数由**内容最小宽**决定，不写死 sm:2 / xl:3。
+            形状从「一叠卡片」改成了**一条可折叠的提醒条**（`A20` / `A23` / `A25`）：
+              · 收起态只有一行 —— 「处理提醒 N ▾」，箭头一色答「要不要我动手」；
+              · 展开后一条一行，窄屏左右滑完成动作、桌面用按钮；
+              · 动作按 `willAutoPost` 分流：会自动入账给「确认」，不会的给「入账 / 忽略」。
 
-          写死列数的问题：1 条待办时卡片只占 1/3，右侧空出 2/3 ——
-          而这一区块是「要动手的事」，空着的大片区域会让人怀疑是不是没加载完。
-          auto-fit(minmax(280px,1fr)) 下：
-            1 条 → 整行；2 条 → 各半；3 条 → 三等分；
-            4 条起 → 每 3 个一行，末行靠左、有多少占多少。
-          280px 是卡片能舒服放下「标题 + 金额 + 两个按钮」的下限：
-            手机 358px 容器 → 1 列；平板 600px → 2 列；桌面 1120px → 3 列。
-          与 sm/xl 断点方案在这三档的结果一致，但 1/2/4/5 条时不再留洞。
-        -->
-        <div
-          class="mt-3 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3"
-        >
-          <PlanTodoCard
-            v-for="todo in plansStore.dueTodos"
-            :key="todo.id"
-            :todo="todo"
-            @changed="onTodoChanged"
-          />
-        </div>
-      </section>
+            为什么不再是卡片网格：卡片是**并排**的，而提醒是**一叠**。
+            并排五张卡会让人以为要挑一张处理；一叠的语义是「逐条清掉，清完就没了」——
+            而且清空的瞬间整条自己收起来，不需要谁去设置里关掉它。
+          -->
+          <section v-if="plansStore.dueTodos.length > 0" class="mt-8">
+            <ReminderList :todos="plansStore.dueTodos" @changed="onTodoChanged" />
+          </section>
 
       <!--
         本月待还。
@@ -338,56 +330,6 @@ const dailyAverageCents = computed(() => {
           </div>
         </div>
           </section>
-          <!-- 支出构成 -->
-          <section
-            v-if="(report?.categories.length ?? 0) > 0"
-            class="mt-8 lg:mt-0"
-            aria-label="支出构成"
-          >
-            <h2 class="label-cn">支出构成</h2>
-
-        <!--
-          一条**整体的**堆叠条放最上面：各分类占多上一眼可见。
-          之前是每行一条各自独立的横条 —— 它们互相不可比（都占满自己那一行），
-          「构成」这件事反而看不出来。
-        -->
-        <div class="flex h-2.5 overflow-hidden rounded-full bg-surface">
-          <span
-            v-for="item in report?.categories"
-            :key="item.categoryId"
-            :style="{
-              width: `${item.ratio * 100}%`,
-              background: categoryColorVar(resolveCategoryColor(item.name, item.color)),
-            }"
-          />
-        </div>
-
-        <!-- 图例两栏：把卡片里的横向空间用掉，而不是让每行拖得很长 -->
-        <ul class="mt-4 grid gap-x-10 gap-y-1 sm:grid-cols-2">
-          <li
-            v-for="item in report?.categories"
-            :key="item.categoryId"
-            class="flex items-center gap-2.5 py-1.5"
-          >
-            <span
-              class="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-              :style="{ background: categoryColorVar(resolveCategoryColor(item.name, item.color)) }"
-              aria-hidden="true"
-            />
-            <CategoryIcon
-              :name="item.name"
-              :icon="item.icon"
-              :color="item.color"
-              :size="18"
-            />
-            <span class="min-w-0 flex-1 truncate text-sm">{{ item.name }}</span>
-            <span class="shrink-0 text-xs text-ink-muted">
-              {{ (item.ratio * 100).toFixed(0) }}%
-            </span>
-            <span class="shrink-0 text-sm font-semibold">{{ formatYuan(item.cents) }}</span>
-          </li>
-        </ul>
-      </section>
 
           <!-- 最近流水 -->
           <section class="mt-8 lg:mt-0" aria-label="最近流水">
@@ -402,7 +344,7 @@ const dailyAverageCents = computed(() => {
         </div>
 
         <p v-if="!loading && recent.length === 0" class="mt-3 text-sm text-ink-muted">
-          这个月还没有记录。点下方「记一笔」开始。
+          这个月还没有记录
         </p>
 
         <ul class="mt-2">

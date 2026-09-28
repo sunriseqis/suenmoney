@@ -32,9 +32,20 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
 <template>
   <!--
-    4×4 宫格。保存键显式占住第 4 列的第 3–4 行（col-start-4 row-span-2）——
-    CSS Grid 会先安置显式定位的元素再自动排布其余的，所以自动排布的数字
-    会自动避开它，不必手工指定每个键的位置。
+    4×4 宫格。**除数字键外的每一个键都必须显式定位。**
+
+    原先只有「保存」显式定位，注释里写着「Grid 会先安置显式定位的元素再自动排布其余的，
+    所以自动排布的数字会自动避开它，不必手工指定每个键的位置」—— 前半句是对的，
+    后半个推论是错的：自动排布确实会避开「保存」占的格子，但**游标只往前推进**。
+    ＋ 在文档里排在数字键之后，轮到它时游标已经走到第 2 行第 1 列，于是它落在最左边，
+    把 . 0 00 全挤到第 2 行；第 3、4 行只剩「保存」孤零零一格。
+    表现就是「键盘布局错乱」，但每个键本身都没写错。
+
+    正确的排布：
+        7 8 9 ⌫
+        4 5 6 ＋
+        1 2 3 保存
+        . 0 00 保存(跨两行)
   -->
   <div class="grid grid-cols-4 grid-rows-4 gap-2 p-2">
     <button
@@ -49,7 +60,7 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
     <button
       type="button"
-      class="rounded-md bg-surface py-3.5 text-lg font-semibold text-ink-muted transition-transform duration-200 active:scale-95"
+      class="col-start-4 row-start-1 rounded-md bg-surface py-3.5 text-lg font-semibold text-ink-muted transition-transform duration-200 active:scale-95"
       aria-label="退格"
       @click="emit('press', 'back')"
     >
@@ -58,7 +69,7 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
     <button
       type="button"
-      class="rounded-md bg-surface py-3.5 text-lg font-semibold text-primary-text transition-transform duration-200 active:scale-95"
+      class="col-start-4 row-start-2 rounded-md bg-surface py-3.5 text-lg font-semibold text-primary-text transition-transform duration-200 active:scale-95"
       aria-label="加上一笔"
       @click="emit('press', 'plus')"
     >

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 待办卡片：确认入账 / 跳过。
+ * 待办卡片：确认入账 / 更多（跳过）。
  *
  * 仪表盘与计划页都要用，所以抽成组件 —— 两处各写一遍的话，
  * 「逾期时要先选实际付款日」这种细节迟早只在一边生效。
@@ -10,13 +10,31 @@
  *
  * 配色由 utils/urgency.ts 统一决定，本组件不自己挑颜色 ——
  * 否则「本月待还」与这里很快就会出现两套紧急度口径。
+ *
+ * ## 这一版补的是「身份物」与「动作收敛」
+ *
+ * **身份物**：分类图标 + 期次 + 分期进度刻度 + 下次还款日。
+ * 之前卡片上只有「名字 + 第几期 + 金额」，而同一屏的流水行有分类图标、
+ * 有日期有备注 —— 待办卡看起来像另一个产品塞进来的组件。
+ *
+ * **动作**：「主按钮 + 更多菜单」，不再平铺两个同权重的按钮。
+ * 「跳过」是低频动作，而且它改的是「这一期怎么算」，不是「今天要付多少」——
+ * 语义不同权重，平铺等于把误触的代价做得和正常操作一样低。
+ *
+ * > 注：第三轮返工后「跳过」**已经可以恢复**（计划详情里点「恢复」，
+ * > 见 PlansPanel 的期次行）。所以这里收敛动作的理由是「低频 + 语义不同权重」，
+ * > **不再是「不可逆」** —— 旧注释写的是「不可逆（跳过的期次不会回到待办列表）」，
+ * > 那句从这一轮起不成立了，留着会让人以为恢复功能不存在。
  */
-import { computed, ref } from 'vue';
+import { MoreHorizontal } from '@lucide/vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { ApiError, type PlanTodo } from '@/api';
+import CategoryIcon from '@/components/CategoryIcon.vue';
+import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { formatMonthDay } from '@/utils/dates';
-import { formatYuan } from '@/utils/money';
+import { formatCompact, formatYuan } from '@/utils/money';
 import {
   URGENCY_ACTION,
   URGENCY_BAR,
@@ -30,6 +48,7 @@ const props = defineProps<{ todo: PlanTodo }>();
 const emit = defineEmits<{ changed: [] }>();
 
 const plansStore = usePlansStore();
+const dict = useDictionariesStore();
 
 const busy = ref(false);
 const errorMessage = ref<string | null>(null);
@@ -39,6 +58,77 @@ const chosenDate = ref('');
 const urgency = computed(() => urgencyOf(props.todo.repaymentDate));
 const overdue = computed(() => urgency.value === 'overdue');
 const dueLabel = computed(() => urgencyLabel(props.todo.repaymentDate));
+
+const plan = computed(
+  () => plansStore.plans.find((item) => item.id === props.todo.planId) ?? null,
+);
+
+/**
+ * 进度刻度最多画 12 段。
+ *
+ * 段数本身就是信息（12 期一眼看得出还剩几格），但 30 年的房贷有 360 期，
+ * 逐期画出来只会变成一片灰点。超过 12 期时压缩成 12 格、按比例取整填充，
+ * **精确数字始终由右边那行文字给出**，刻度只负责「一眼看出进度」。
+ */
+const TICK_LIMIT = 12;
+
+const meter = computed(() => {
+  const current = plan.value;
+  if (current === null) return null;
+
+  const { progress } = current;
+  const total = progress.paidCount + progress.pendingCount;
+  if (total <= 0) return null;
+
+  const ticks = Math.min(total, TICK_LIMIT);
+  const filled =
+    ticks === total ? progress.paidCount : Math.round((progress.paidCount / total) * ticks);
+
+  return {
+    ticks,
+    filled,
+    text:
+      current.source === 'installment'
+        ? `已付 ${progress.paidCount} / ${total} 期 · 原价 ${formatCompact(
+            current.totalAmountCents ?? 0,
+          )}`
+        : `已还 ${progress.paidCount} / ${total} 期 · 剩余 ${formatCompact(progress.pendingCents)}`,
+  };
+});
+
+/* ---- 「更多」菜单 ------------------------------------------------------ */
+
+const menuOpen = ref(false);
+const menuRef = ref<HTMLElement | null>(null);
+
+/**
+ * 点卡片外面就收起菜单。
+ *
+ * 用 pointerdown 而不是 click：click 要等手指抬起，期间菜单还是开着的，
+ * 落在别的卡片上的那一下会先被当成「点卡片」。监听挂在 document 上而不是
+ * 用一个全屏透明层 —— 卡片自己有 hover 位移（transform），那会让 fixed
+ * 元素改成相对卡片定位并被裁掉。
+ */
+function onDocumentPointerDown(event: PointerEvent): void {
+  const el = menuRef.value;
+  if (el !== null && event.target instanceof Node && !el.contains(event.target)) {
+    menuOpen.value = false;
+  }
+}
+
+watch(menuOpen, (open) => {
+  if (open) document.addEventListener('pointerdown', onDocumentPointerDown);
+  else document.removeEventListener('pointerdown', onDocumentPointerDown);
+});
+
+onUnmounted(() => document.removeEventListener('pointerdown', onDocumentPointerDown));
+
+onMounted(() => {
+  // 分类图标是卡片的身份物，但字典可能还没被任何页面拉过 —— 首页本身不需要它
+  // （流水行的图标由接口直接给出）。load() 内部有 loaded 标记，不会重复请求。
+  // 失败时静默退回「其他」的兜底图标，不该因为一个图标让整页报错。
+  void dict.load().catch(() => undefined);
+});
 
 function report(error: unknown, fallback: string): void {
   errorMessage.value = error instanceof ApiError ? error.message : fallback;
@@ -88,32 +178,59 @@ async function skip(): Promise<void> {
     busy.value = false;
   }
 }
+
+async function skipFromMenu(): Promise<void> {
+  menuOpen.value = false;
+  await skip();
+}
 </script>
 
 <template>
+  <!--
+    卡片**不能** overflow-hidden：左侧色条靠它裁圆角，但「更多」菜单也会被它裁掉。
+    所以圆角改由色条自己带（rounded-l-md），菜单得以溢出卡片显示。
+  -->
   <div
-    class="pop-in @container relative overflow-hidden rounded-md px-3.5 py-3 transition-transform duration-200 lg:hover:-translate-y-0.5"
+    class="pop-in relative rounded-md bg-surface py-3 pr-3.5 pl-[18px] transition-transform duration-200 lg:hover:-translate-y-0.5"
     :class="URGENCY_CARD[urgency]"
   >
-    <!--
-      紧急度唯一的着色位置。纯装饰：紧急程度已经由下面的「已逾期 N 天」文字
-      表达，所以对读屏器隐藏，避免重复播报。
-    -->
-    <span class="absolute inset-y-0 left-0 w-1" :class="URGENCY_BAR[urgency]" aria-hidden="true" />
+    <!-- 紧急度唯一的着色位置。纯装饰：紧急程度已由下面的文字表达，避免读屏重复播报 -->
+    <span
+      class="absolute inset-y-0 left-0 w-1 rounded-l-md"
+      :class="URGENCY_BAR[urgency]"
+      aria-hidden="true"
+    />
 
-    <div class="flex flex-col @min-[420px]:flex-row @min-[420px]:items-center @min-[420px]:gap-6">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-baseline gap-3">
-      <span class="min-w-0 flex-1">
-        <span class="block truncate text-sm font-bold">
-          {{ todo.planName }}
-          <span class="font-normal">第 {{ todo.periodSeq }} 期</span>
-        </span>
-        <span class="block truncate text-xs" :class="URGENCY_META[urgency]">
-          {{ formatMonthDay(todo.repaymentDate) }} 还款 · {{ dueLabel }}
-        </span>
+    <!-- 身份物：分类图标 + 计划名 + 期次 + 还款日 -->
+    <div class="flex items-start gap-2.5">
+      <span class="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-sm bg-canvas">
+        <CategoryIcon :category-id="todo.categoryId" :size="17" />
       </span>
-      <span class="shrink-0 text-lg font-bold">{{ formatYuan(todo.amountCents) }}</span>
+
+      <div class="min-w-0 flex-1">
+        <p class="flex items-baseline gap-1.5">
+          <span class="min-w-0 truncate text-sm font-bold">{{ todo.planName }}</span>
+          <span class="shrink-0 text-xs font-normal text-ink-muted">
+            第 {{ todo.periodSeq }} 期
+          </span>
+        </p>
+        <p class="mt-0.5 truncate text-xs" :class="URGENCY_META[urgency]">
+          {{ formatMonthDay(todo.repaymentDate) }} 还款 · {{ dueLabel }}
+        </p>
+      </div>
+    </div>
+
+    <!-- 分期进度刻度：段数本身就是信息，所以宁可画格子也不画一根条 -->
+    <div v-if="meter !== null" class="mt-2.5 flex items-center gap-2">
+      <span class="flex shrink-0 gap-[3px]" aria-hidden="true">
+        <span
+          v-for="n in meter.ticks"
+          :key="n"
+          class="h-2.5 w-1 rounded-[2px]"
+          :class="n <= meter.filled ? 'bg-primary' : 'bg-line'"
+        />
+      </span>
+      <span class="min-w-0 truncate text-xs text-ink-muted">{{ meter.text }}</span>
     </div>
 
     <p v-if="errorMessage !== null" class="mt-2 text-xs font-semibold text-danger-text">
@@ -121,7 +238,7 @@ async function skip(): Promise<void> {
     </p>
 
     <!-- 逾期：先选实际付款日 -->
-    <div v-if="choosingDate" class="mt-2.5 rounded-sm bg-canvas p-3">
+    <div v-if="choosingDate" class="mt-3 rounded-sm bg-canvas p-3">
       <label class="label-cn" :for="`posted-${todo.id}`">实际付款日</label>
       <input
         :id="`posted-${todo.id}`"
@@ -129,11 +246,6 @@ async function skip(): Promise<void> {
         type="date"
         class="mt-1 w-full rounded-sm bg-sunken px-3 py-2 text-sm text-ink"
       />
-      <p class="mt-1 text-xs leading-relaxed text-ink-muted">
-        只记录「哪天实际付的」。这笔账仍算在
-        {{ formatMonthDay(todo.repaymentDate) }} 所属的月份 ——
-        补点确认不该挪动已经过去的报表。
-      </p>
       <div class="mt-2.5 flex gap-2">
         <button
           type="button"
@@ -153,44 +265,50 @@ async function skip(): Promise<void> {
       </div>
     </div>
 
-          </div>
+    <div v-else class="mt-3 flex items-center gap-2">
+      <span class="shrink-0 text-base font-bold">{{ formatYuan(todo.amountCents) }}</span>
 
-      <!--
-        操作行限宽（max-w-sm = 384px ≈ 手机卡片的自然宽度）：
-        只有 1 条待办时卡片是整行 ~1100px，不限宽的话 flex-1 的主按钮
-        会变成 1000px 宽的怪东西。
-        布局按**容器宽度**切换（@container + @min-[420px]），不能按视口（lg）：
-        同一屏会同时存在两种卡宽 —— 3 张并排时每张只有 349px，
-        1 张时是整行 1072px。用 lg 判断的话 3 张并排的窄卡会被塞进
-        一行布局，标题和按钮全部挤断（实测踩过）。
-        卡片 ≥420px：信息在左、操作在右；<420px：操作竖排在下 ——
-        手机卡片和窄卡都走这条，而下方正是拇指的位置。
-        注意不能让操作行自由伸缩：flex-1 在内容自适应的容器里会塌缩成 0，
-        所以容器定宽 max-w-sm，让 flex-1 在这 384px 里拉伸。
-      -->
-      <div
-        v-if="!choosingDate"
-        class="mt-2.5 flex max-w-sm gap-2 @min-[420px]:mt-0 @min-[420px]:shrink-0"
-      >
-      <button
-        type="button"
-        :disabled="busy"
-        class="flex-1 rounded-sm py-2 text-sm font-bold transition-transform duration-200 active:scale-95 disabled:opacity-40"
-        :class="URGENCY_ACTION.primary"
-        @click="start"
-      >
-        确认入账
-      </button>
-      <button
-        type="button"
-        :disabled="busy"
-        class="rounded-sm px-3.5 py-2 text-sm font-semibold transition-colors duration-200 disabled:opacity-40"
-        :class="URGENCY_ACTION.ghost"
-        @click="skip"
-      >
-        跳过
-      </button>
-      </div>
+      <span class="ml-auto flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          :disabled="busy"
+          class="rounded-sm px-3.5 py-2 text-sm font-bold transition-transform duration-200 active:scale-95 disabled:opacity-40"
+          :class="URGENCY_ACTION.primary"
+          @click="start"
+        >
+          确认入账
+        </button>
+
+        <!-- 「更多」：跳过这类低频动作收在这里；它不再是不可逆的，所以顺带说明可恢复 -->
+        <div ref="menuRef" class="relative">
+          <button
+            type="button"
+            class="grid h-8 w-8 place-items-center rounded-sm text-ink-muted transition-colors duration-200 hover:bg-canvas hover:text-ink"
+            aria-haspopup="menu"
+            :aria-expanded="menuOpen"
+            :aria-label="`「${todo.planName}」第 ${todo.periodSeq} 期更多操作`"
+            @click="menuOpen = !menuOpen"
+          >
+            <MoreHorizontal :size="18" aria-hidden="true" />
+          </button>
+
+          <div
+            v-if="menuOpen"
+            role="menu"
+            class="absolute right-0 top-full z-[var(--z-sticky)] mt-1 w-48 overflow-hidden rounded-md border border-line bg-surface py-1"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              :disabled="busy"
+              class="block w-full px-3 py-2 text-left text-sm text-ink-muted transition-colors duration-200 hover:bg-canvas hover:text-ink disabled:opacity-40"
+              @click="skipFromMenu"
+            >
+              跳过这一期
+            </button>
+          </div>
+        </div>
+      </span>
     </div>
   </div>
 </template>

@@ -699,3 +699,458 @@ describe('待办列表筛选', () => {
     assert.equal(res.statusCode, 400);
   });
 });
+
+describe('撤销确认与恢复跳过', () => {
+  /** 把一个计划的全部期待办读出来（按 period_seq 升序）。 */
+  const todoRows = async (planId: string) =>
+    (await todosOf(planId)).json().todos as Array<Record<string, unknown>>;
+
+  test('撤销：支出打成墓碑、该期回待办、且不会被自动入账重新捡回来', async () => {
+    /**
+     * 特意用 2027-02/03：这两个月没有任何其他用例写过账，
+     * 所以月度报表的断言是「这个库里的全部」，不会因为用例执行顺序而红。
+     */
+    const created = await createPlan({
+      name: '撤销用例',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 123_400,
+      periods: 2,
+      firstDueDate: '2027-02-05',
+      autoPost: true,
+    });
+    const planId = created.json().plan.id as string;
+
+    // 2027-03-01：第 1 期（02-05）已到期，被自动入账
+    const settled = await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?today=2027-03-01&planId=${planId}`,
+      headers: auth(),
+    });
+    const before = settled.json().todos as Array<Record<string, unknown>>;
+    assert.equal(before[0]!['status'], 'confirmed', '到期且开了自动入账，应已入账');
+    assert.equal(before[0]!['holdAutoPost'], false, '新建的期待办不该带「摘出自动入账」标记');
+
+    const todoId = String(before[0]!['id']);
+    const expenseId = String(before[0]!['expenseId']);
+    assert.ok(expenseId.length > 0, '确认后应当有关联支出');
+
+    const reportBefore = await app.inject({
+      method: 'GET',
+      url: '/api/reports/monthly?month=2027-02',
+      headers: auth(),
+    });
+    assert.equal(reportBefore.json().report.totalCents, 123_400);
+
+    const reverted = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/revert`,
+      headers: auth(),
+    });
+    assert.equal(reverted.statusCode, 200);
+    assert.equal(reverted.json().expenseId, expenseId, '要告诉客户端撤掉的是哪一笔');
+    assert.equal(reverted.json().todo.status, 'pending');
+    assert.equal(reverted.json().todo.expenseId, null);
+    assert.equal(reverted.json().todo.postedDate, null);
+    assert.equal(reverted.json().todo.confirmedBy, null);
+    assert.equal(
+      reverted.json().todo.holdAutoPost,
+      true,
+      '撤销必须把该期摘出自动入账，否则下次打开首页它自己就回来了',
+    );
+
+    // 支出是**软删（墓碑）**而不是物理删除 —— 物理删除会让其他设备永远不知道它没了
+    const expenseRow = db
+      .prepare('SELECT deleted_at AS deleted_at FROM expenses WHERE id = ?')
+      .get(expenseId) as unknown as Record<string, unknown>;
+    assert.ok(expenseRow['deleted_at'] !== null, '被撤销的支出应留下墓碑');
+
+    const alive = db
+      .prepare('SELECT COUNT(*) AS n FROM expenses WHERE plan_id = ? AND deleted_at IS NULL')
+      .get(planId) as unknown as Record<string, unknown>;
+    assert.equal(Number(alive['n']), 0, '撤销后这个计划不应还留有活着的账目');
+
+    const tombstone = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM changes
+          WHERE entity_type = 'expense' AND entity_id = ? AND op = 'delete'`,
+      )
+      .get(expenseId) as unknown as Record<string, unknown>;
+    assert.equal(Number(tombstone['n']), 1, '必须有 expense 的 delete 变更记录，否则同步会漏');
+
+    const reportAfter = await app.inject({
+      method: 'GET',
+      url: '/api/reports/monthly?month=2027-02',
+      headers: auth(),
+    });
+    assert.equal(reportAfter.json().report.totalCents, 0, '报表应随撤销一起回落');
+
+    /**
+     * ★ 这条是整个分支存在的理由。
+     *
+     * 先「预热」一次把库里其他已到期的自动入账一次结清（`settled` 是全局计数，
+     * 不复用别的用例留下的到期待办就没法断言它归零）；再结算第二次。
+     * 若 `settleAutoPost` 少了 `hold_auto_post = 0` 这个条件，
+     * 预热那次就会把这一期重新入账，下面的 pending 断言会红。
+     */
+    await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?today=2027-04-01&planId=${planId}`,
+      headers: auth(),
+    });
+    const resettled = await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?today=2027-04-01&planId=${planId}`,
+      headers: auth(),
+    });
+    assert.equal(resettled.json().settled, 0, '同一批到期待办不该被结算两次');
+
+    const after = resettled.json().todos as Array<Record<string, unknown>>;
+    const first = after.find((row) => row['id'] === todoId)!;
+    assert.equal(first['status'], 'pending', '撤销过的期次不该被自动入账重新捡回来');
+
+    // 撤销之后仍然可以手动确认回来 —— 撤销本身是可逆的
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/confirm`,
+      headers: auth(),
+    });
+    assert.equal(again.statusCode, 200);
+    assert.equal(again.json().todo.status, 'confirmed');
+    assert.notEqual(again.json().expenseId, expenseId, '重新确认要生成一条新的支出，不是复活墓碑');
+  });
+
+  test('对未确认的期次撤销 → 409', async () => {
+    const created = await createPlan({
+      name: '没确认过',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 5_000,
+      periods: 1,
+      firstDueDate: '2027-05-05',
+    });
+    const planId = created.json().plan.id as string;
+    const rows = await todoRows(planId);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${String(rows[0]!['id'])}/revert`,
+      headers: auth(),
+    });
+    assert.equal(res.statusCode, 409);
+  });
+
+  test('重复撤销 → 409（第二次时它已经不是已确认状态）', async () => {
+    const created = await createPlan({
+      name: '重复撤销',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 6_000,
+      periods: 1,
+      firstDueDate: '2027-05-15',
+    });
+    const planId = created.json().plan.id as string;
+    const rows = await todoRows(planId);
+    const todoId = String(rows[0]!['id']);
+
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/confirm`, headers: auth() });
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/revert`,
+      headers: auth(),
+    });
+    assert.equal(first.statusCode, 200);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/revert`,
+      headers: auth(),
+    });
+    assert.equal(second.statusCode, 409);
+
+    // 幂等失败不该留下第二笔活着的账目
+    const alive = db
+      .prepare('SELECT COUNT(*) AS n FROM expenses WHERE plan_id = ? AND deleted_at IS NULL')
+      .get(planId) as unknown as Record<string, unknown>;
+    assert.equal(Number(alive['n']), 0);
+  });
+
+  test('恢复跳过：回到待办，且不会在恢复的瞬间被自动入账', async () => {
+    const created = await createPlan({
+      name: '跳过后恢复',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 33_000,
+      periods: 1,
+      firstDueDate: '2027-06-05',
+      autoPost: true,
+    });
+    const planId = created.json().plan.id as string;
+    const rows = await todoRows(planId);
+    const todoId = String(rows[0]!['id']);
+
+    const skipped = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/skip`,
+      headers: auth(),
+    });
+    assert.equal(skipped.json().todo.status, 'skipped');
+
+    const restored = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/restore`,
+      headers: auth(),
+    });
+    assert.equal(restored.statusCode, 200);
+    assert.equal(restored.json().todo.status, 'pending');
+    assert.equal(
+      restored.json().todo.holdAutoPost,
+      true,
+      '恢复时若不摘出自动入账，恢复的那一刻它就到期了，会被当场入账',
+    );
+
+    // 预热一次结清库里其他到期待办，再结算第二次
+    await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?today=2027-08-01&planId=${planId}`,
+      headers: auth(),
+    });
+    const resettled = await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?today=2027-08-01&planId=${planId}`,
+      headers: auth(),
+    });
+    assert.equal(resettled.json().settled, 0);
+
+    const after = resettled.json().todos as Array<Record<string, unknown>>;
+    assert.equal(after.find((row) => row['id'] === todoId)!['status'], 'pending');
+
+    const alive = db
+      .prepare('SELECT COUNT(*) AS n FROM expenses WHERE plan_id = ? AND deleted_at IS NULL')
+      .get(planId) as unknown as Record<string, unknown>;
+    assert.equal(Number(alive['n']), 0, '恢复跳过不该凭空生成账目');
+  });
+
+  test('对未跳过的期次恢复 → 409', async () => {
+    const created = await createPlan({
+      name: '没跳过',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 7_000,
+      periods: 1,
+      firstDueDate: '2027-09-05',
+    });
+    const planId = created.json().plan.id as string;
+    const rows = await todoRows(planId);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${String(rows[0]!['id'])}/restore`,
+      headers: auth(),
+    });
+    assert.equal(res.statusCode, 409);
+  });
+
+  test('家人也能撤销：与「确认」的权限对称', async () => {
+    const created = await createPlan({
+      name: '家人撤销',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 11_000,
+      periods: 1,
+      firstDueDate: '2027-10-05',
+    });
+    const planId = created.json().plan.id as string;
+    const rows = await todoRows(planId);
+    const todoId = String(rows[0]!['id']);
+
+    // 本人确认，家人撤销 —— 确认两人都能做，撤销是它的逆操作，也两人都能做
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/confirm`, headers: auth() });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/revert`,
+      headers: auth(partnerToken),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().todo.status, 'pending');
+  });
+});
+
+/**
+ * 「我知道了」（ack）。
+ *
+ * 这一组守的是一个**静默**的错：ack 与 confirm 都能让一条提醒「消失」，
+ * 但只有 confirm 会生成账目。用错了不报错 —— 报表少一笔或多一笔，
+ * 而且看不出是哪一天少的。
+ */
+describe('「我知道了」（ack）', () => {
+  /**
+   * 用一个**别的用例都不碰**的月份，月度报表的断言才是「整个库的全部」，
+   * 不会因为用例执行顺序而红。
+   */
+  const MONTH = '2028-05';
+
+  const createAckedPlan = async (name: string) => {
+    const created = await createPlan({
+      name,
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 280_000,
+      periods: 2,
+      firstDueDate: `${MONTH}-05`,
+      autoPost: true,
+      remindDaysBefore: 3,
+    });
+    const planId = created.json().plan.id as string;
+    const rows = (await todosOf(planId)).json().todos as Array<Record<string, unknown>>;
+    return { planId, rows };
+  };
+
+  const monthlyTotal = async (month: string) => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/reports/monthly?month=${month}`,
+      headers: auth(),
+    });
+    const report = res.json().report as Record<string, unknown>;
+    return { totalCents: Number(report['totalCents']), count: Number(report['count']) };
+  };
+
+  test('ack 只记「看过了」：状态仍是 pending，且不产生任何账目', async () => {
+    const { rows } = await createAckedPlan('确认用例');
+    const todoId = String(rows[0]!['id']);
+
+    // 计划开了自动入账、这一期没被撤销过 → 现在会自己入账
+    assert.equal(rows[0]!['willAutoPost'], true);
+    assert.equal(rows[0]!['ackAt'], null);
+
+    const before = await monthlyTotal(MONTH);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/ack`,
+      headers: auth(),
+    });
+    assert.equal(res.statusCode, 200);
+
+    const todo = res.json().todo as Record<string, unknown>;
+    assert.equal(todo['status'], 'pending', 'ack 不是确认入账，状态必须留在 pending');
+    assert.ok(typeof todo['ackAt'] === 'string' && todo['ackAt'] !== '', 'ackAt 应被写上');
+    assert.equal(todo['expenseId'], null, 'ack 不该生成支出');
+
+    const after = await monthlyTotal(MONTH);
+    assert.deepEqual(after, before, 'ack 不产生账目，报表必须一字不变');
+  });
+
+  test('hideAcked=1 把它排除；不带这个参数仍然返回（计划详情要看得到）', async () => {
+    const { planId, rows } = await createAckedPlan('过滤用例');
+    const todoId = String(rows[0]!['id']);
+
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/ack`, headers: auth() });
+
+    const hidden = await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?status=pending&planId=${planId}&hideAcked=1`,
+      headers: auth(),
+    });
+    const hiddenIds = (hidden.json().todos as Array<Record<string, unknown>>).map((t) => String(t['id']));
+    assert.ok(!hiddenIds.includes(todoId), '确认过的期次不该再占「该处理了」的位置');
+
+    const shown = await app.inject({
+      method: 'GET',
+      url: `/api/plan-todos?status=pending&planId=${planId}`,
+      headers: auth(),
+    });
+    const shownIds = (shown.json().todos as Array<Record<string, unknown>>).map((t) => String(t['id']));
+    assert.ok(shownIds.includes(todoId), '默认不过滤 —— 计划详情里那一期仍然是 pending');
+  });
+
+  test('重复 ack 不覆盖第一次的时间戳（「什么时候看到的」不该被第二次点击改写）', async () => {
+    const { rows } = await createAckedPlan('幂等用例');
+    const todoId = String(rows[0]!['id']);
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/ack`,
+      headers: auth(),
+    });
+    const stamp = first.json().todo.ackAt as string;
+
+    // 家人再点一次：不该报错，也不该改写时间戳
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/ack`,
+      headers: auth(partnerToken),
+    });
+    assert.equal(second.statusCode, 200);
+    assert.equal(second.json().todo.ackAt, stamp);
+  });
+
+  test('撤销确认会清掉 ack：那一期重新回到「要处理」里', async () => {
+    const { rows } = await createAckedPlan('撤销清 ack');
+    const todoId = String(rows[0]!['id']);
+
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/ack`, headers: auth() });
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/confirm`, headers: auth() });
+    const reverted = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/revert`,
+      headers: auth(),
+    });
+
+    const todo = reverted.json().todo as Record<string, unknown>;
+    assert.equal(todo['ackAt'], null, '不清的话，撤销后的期次再也不会提醒，看起来像撤销失败');
+    assert.equal(todo['willAutoPost'], false, '撤销会置 hold_auto_post，因此这一期不再自动入账');
+  });
+
+  test('恢复跳过同样清 ack', async () => {
+    const { rows } = await createAckedPlan('恢复清 ack');
+    const todoId = String(rows[0]!['id']);
+
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/ack`, headers: auth() });
+    await app.inject({ method: 'POST', url: `/api/plan-todos/${todoId}/skip`, headers: auth() });
+    const restored = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todoId}/restore`,
+      headers: auth(),
+    });
+
+    assert.equal((restored.json().todo as Record<string, unknown>)['ackAt'], null);
+  });
+
+  test('willAutoPost 是「计划开了自动入账」与「本期没被摘出」的合取', async () => {
+    const created = await createPlan({
+      name: '合取判据',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 50_000,
+      periods: 1,
+      firstDueDate: '2028-09-05',
+      // 计划**没有**开自动入账
+      autoPost: false,
+    });
+    const planId = created.json().plan.id as string;
+    const rows = (await todosOf(planId)).json().todos as Array<Record<string, unknown>>;
+
+    // 只看计划那一级会判成「会」，于是界面给一个「确认」，
+    // 用户点了以为没事 —— 那笔账却永远不入。所以这里必须是 false。
+    assert.equal(rows[0]!['willAutoPost'], false);
+  });
+
+  test('hideAcked 取值非法 → 400（而不是被当成 true 静默多筛掉东西）', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/plan-todos?hideAcked=maybe',
+      headers: auth(),
+    });
+    assert.equal(res.statusCode, 400);
+  });
+});

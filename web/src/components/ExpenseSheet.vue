@@ -10,10 +10,10 @@
  */
 import { computed, ref, watch } from 'vue';
 
-import { ApiError, expenses as expensesApi, type Expense } from '@/api';
+import { ApiError, expenses as expensesApi, reports as reportsApi, type Expense } from '@/api';
 import { useDictionariesStore } from '@/stores/dictionaries';
-import { formatMonthDay, formatMonthLabel, todayLocal } from '@/utils/dates';
-import { centsToInput, formatYuan, parseYuanToCents } from '@/utils/money';
+import { currentMonth, formatMonthDay, formatMonthLabel, todayLocal } from '@/utils/dates';
+import { centsToInput, formatCompact, formatYuan, parseYuanToCents } from '@/utils/money';
 
 import ChipButton from './ChipButton.vue';
 import NumericKeypad from './NumericKeypad.vue';
@@ -91,6 +91,25 @@ async function refreshPreview(): Promise<void> {
 }
 
 /**
+ * 键盘上方常驻的「本月已支出」。
+ *
+ * 记账的时候最想知道的就是「这个月已经花了多少」，可抽屉一弹出来整屏都被盖住，
+ * 那个数字恰好是唯一看不到的 —— 于是要么凭记忆记，要么关掉抽屉再去看一眼。
+ * 这里补一份，成本只有一次聚合查询。
+ *
+ * 拿不到就显示占位符，绝不阻塞记账：它是背景信息，不是记账流程的一环。
+ */
+const monthSpentCents = ref<number | null>(null);
+
+async function refreshMonthSpent(): Promise<void> {
+  try {
+    monthSpentCents.value = (await reportsApi.monthly(currentMonth())).report.totalCents;
+  } catch {
+    monthSpentCents.value = null;
+  }
+}
+
+/**
  * 这笔会记在哪个月。
  *
  * 这是界面上最容易被忽略、却最容易造成误解的一条信息：信用卡的还款日
@@ -111,6 +130,65 @@ const landingHint = computed(() => {
         text: `这笔会记在 ${formatMonthLabel(repaymentMonth)}（还款日 ${formatMonthDay(dates.repaymentDate)}）`,
       };
 });
+
+/* ---- 键盘上方的常驻摘要 -------------------------------------------------
+ *
+ * 解决的是「重要选择被分屏」：窄屏上抽屉的可滚动区只有 400 多像素，
+ * 而金额块 + 分类 + 支付方式 + 日期 + 备注加起来刚好超一点 ——
+ * 于是「支付方式 / 日期 / 备注」永远差一点才露出来，每次都要下滑才能核对。
+ *
+ * 修法不是把它们全搬到首屏（那样首屏会挤成一团），而是**把结果露出来**：
+ * 用户这一步要确认的是「我选对了没」，不是「我要改」。
+ * 所以键盘上方常驻一行摘要，点其中任意一段会把对应的字段滚进视野 ——
+ * 要改的时候也只有一次点击，不用手动滑。
+ *
+ * 跨月提示也搬到了这里。它原先在「消费日期」字段下面，同样会在折叠线之下 ——
+ * 而「这笔会记在下个月」恰恰是记账时最不能漏看的一句话
+ * （项目早期就因为这个被误导过一次，见 decisions.md）。
+ */
+type FieldKey = 'category' | 'payment' | 'date' | 'note';
+
+const categoryField = ref<HTMLElement | null>(null);
+const paymentField = ref<HTMLElement | null>(null);
+const dateField = ref<HTMLElement | null>(null);
+const noteField = ref<HTMLElement | null>(null);
+
+interface SummarySegment {
+  key: FieldKey;
+  label: string;
+  /** 还没选 / 还是空的 —— 视觉上退一档，让「待补充」自己冒出来 */
+  pending: boolean;
+}
+
+const categoryLabel = computed(() => {
+  const category = categoryId.value === null ? null : dict.findCategory(categoryId.value);
+  if (category === null) return '选分类';
+
+  const parent = category.parentId === null ? null : dict.findCategory(category.parentId);
+  return parent === null ? category.name : `${parent.name} · ${category.name}`;
+});
+
+const paymentLabel = computed(() => {
+  const method =
+    paymentMethodId.value === null ? null : dict.findPaymentMethod(paymentMethodId.value);
+  return method?.name ?? '选支付方式';
+});
+
+const summarySegments = computed<SummarySegment[]>(() => [
+  { key: 'category', label: categoryLabel.value, pending: categoryId.value === null },
+  { key: 'payment', label: paymentLabel.value, pending: paymentMethodId.value === null },
+  { key: 'date', label: formatMonthDay(spendDate.value), pending: false },
+  { key: 'note', label: note.value === '' ? '备注' : note.value, pending: note.value === '' },
+]);
+
+function reveal(key: FieldKey): void {
+  const target = { category: categoryField, payment: paymentField, date: dateField, note: noteField }[
+    key
+  ].value;
+
+  // block:'nearest' —— 已经在视野里就不动，避免点一下整块跳一下
+  target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
 
 /**
  * 「上次用的是哪个分类 / 支付方式」的记忆。
@@ -223,6 +301,8 @@ watch(
     if (props.expense === null) resetForm();
     else fillFrom(props.expense);
 
+    // 不 await：它只是背景信息，慢一点都不该让抽屉晚开一帧
+    void refreshMonthSpent();
     await refreshPreview();
   },
   { immediate: true },
@@ -377,13 +457,21 @@ function close(): void {
       @click="close"
     />
 
+    <!--
+      一份逻辑、两种容器：
+        窄屏（<1024px）—— 底部抽屉，贴底、只有上圆角。
+        桌面（≥1024px）—— 右侧定宽面板（500px），贴右边、整高、无圆角。
+      之前是 `inset-x-0` 通栏且没有 max-width：1440px 的屏幕上它就是一个
+      1440×846 的贴底大抽屉，输入框横跨整屏 —— 长得跟手机上不是一回事，
+      只是被拉宽了。断点跟 tokens.css 的 --content-max 一致，都是 1024px。
+    -->
     <section
-      class="absolute inset-x-0 bottom-0 top-[6vh] flex flex-col rounded-t-md bg-surface shadow-none"
+      class="absolute inset-x-0 bottom-0 top-[6vh] flex flex-col rounded-t-md bg-surface lg:left-auto lg:right-0 lg:top-0 lg:w-[500px] lg:rounded-none"
       role="dialog"
       aria-modal="true"
       @keydown.esc="close"
     >
-      <header class="flex items-center gap-2 px-4 pt-4 pb-2">
+      <header class="flex items-center gap-2 px-4 pt-4 pb-2 lg:px-6 lg:pt-6">
         <h2 class="flex-1 text-lg font-bold">{{ expense === null ? '记一笔' : '编辑' }}</h2>
 
         <button
@@ -406,7 +494,7 @@ function close(): void {
         </button>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 lg:px-6">
         <!-- 金额 -->
         <div class="mt-2 text-center">
           <p class="text-xs text-ink-muted">
@@ -436,8 +524,12 @@ function close(): void {
           这条记录由计划生成，金额与日期请在计划里修改；此处只能改备注。
         </p>
 
-        <!-- 分类：一级一行、二级一行。有子项时以子项为准 -->
-        <fieldset :disabled="!coreEditable" class="mt-5">
+        <!--
+          分类：一级一行、二级一行。有子项时以子项为准。
+          它紧跟在金额下面（不折进任何抽屉），所以在窄屏上也**不必下滑就能选** ——
+          记账流程里真正必需的只有「金额 + 分类」，这两样都在首屏。
+        -->
+        <fieldset ref="categoryField" :disabled="!coreEditable" class="mt-5">
           <legend class="label-cn">分类</legend>
 
           <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -464,7 +556,7 @@ function close(): void {
         </fieldset>
 
         <!-- 支付方式 -->
-        <fieldset :disabled="!coreEditable" class="mt-5">
+        <fieldset ref="paymentField" :disabled="!coreEditable" class="mt-5">
           <legend class="label-cn">支付方式</legend>
           <div class="mt-2 flex flex-wrap gap-2">
             <ChipButton
@@ -485,7 +577,7 @@ function close(): void {
         </fieldset>
 
         <!-- 日期 + 备注 -->
-        <fieldset :disabled="!coreEditable" class="mt-5">
+        <fieldset ref="dateField" :disabled="!coreEditable" class="mt-5">
           <legend class="label-cn">消费日期</legend>
           <div class="mt-2 flex items-center gap-2">
             <input
@@ -511,7 +603,7 @@ function close(): void {
           </p>
         </fieldset>
 
-        <div class="mt-5">
+        <div ref="noteField" class="mt-5">
           <label class="label-cn" for="expense-note">备注</label>
           <input
             id="expense-note"
@@ -528,24 +620,71 @@ function close(): void {
         </p>
       </div>
 
-      <!-- 键盘吸底：编辑计划生成的记录时不需要金额输入，直接给保存 -->
-      <div v-if="coreEditable" class="border-t border-line">
-        <NumericKeypad
-          :can-save="canSave"
-          :saving="saving"
-          :save-label="expense === null ? '保存' : '更新'"
-          @press="onKey"
-        />
-      </div>
-      <div v-else class="border-t border-line p-4">
-        <button
-          type="button"
-          :disabled="saving"
-          class="w-full rounded-md bg-primary-fill py-3.5 text-base font-bold text-on-primary transition-transform duration-200 active:scale-95"
-          @click="save"
+      <!--
+        键盘吸底：编辑计划生成的记录时不需要金额输入，直接给保存。
+        两者共用一条上边框，所以下面几行常驻信息都放在它里面 ——
+        否则切到计划记录时会出现两条挨着的分割线。
+      -->
+      <div class="border-t border-line">
+        <!--
+          常驻摘要行：已选的分类 / 支付方式 / 日期 / 备注。
+          窄屏可滚动区只有 400 多像素，这四项刚好在折叠线之下 ——
+          每次都要下滑核对一次。点任意一段会把对应字段滚进视野，
+          所以「核对」和「要改」都只花一次点击，不用手动滑。
+        -->
+        <div class="flex gap-1.5 overflow-x-auto px-4 pt-2.5 lg:px-6">
+          <button
+            v-for="segment in summarySegments"
+            :key="segment.key"
+            type="button"
+            class="shrink-0 rounded-sm px-2 py-1 text-xs font-semibold transition-colors duration-200"
+            :class="segment.pending ? 'bg-sunken text-ink-muted' : 'bg-sunken text-ink'"
+            @click="reveal(segment.key)"
+          >
+            {{ segment.label }}
+          </button>
+        </div>
+
+        <!--
+          跨月提示常驻在这里。
+          它原先在「消费日期」字段下面，同样在折叠线之下 —— 而「这笔会记在下个月」
+          恰恰是记账时最不能漏看的一句（项目早期就因为这个被误导过一次）。
+        -->
+        <p
+          v-if="landingHint !== null && landingHint.shifted"
+          class="px-4 pt-1.5 text-xs font-semibold text-accent-text lg:px-6"
         >
-          {{ saving ? '保存中…' : '保存备注' }}
-        </button>
+          {{ landingHint.text }}
+        </p>
+
+        <!-- 键盘上方常驻「本月已支出」：记账时最该看见的数字，正好是抽屉盖住整屏后唯一看不见的那个 -->
+        <p class="flex items-baseline justify-between px-4 pt-1.5 text-xs lg:px-6">
+          <span class="text-ink-muted">本月已支出</span>
+          <span class="font-semibold text-ink">
+            {{ monthSpentCents === null ? '—' : formatCompact(monthSpentCents) }}
+          </span>
+        </p>
+
+        <!-- 桌面上键盘不该铺满 500px：按键会变成一排扁长的色块，反而不好按 -->
+        <div v-if="coreEditable" class="lg:mx-auto lg:max-w-[340px]">
+          <NumericKeypad
+            :can-save="canSave"
+            :saving="saving"
+            :save-label="expense === null ? '保存' : '更新'"
+            @press="onKey"
+          />
+        </div>
+
+        <div v-else class="p-4">
+          <button
+            type="button"
+            :disabled="saving"
+            class="w-full rounded-md bg-primary-fill py-3.5 text-base font-bold text-on-primary transition-transform duration-200 active:scale-95"
+            @click="save"
+          >
+            {{ saving ? '保存中…' : '保存备注' }}
+          </button>
+        </div>
       </div>
     </section>
   </div>

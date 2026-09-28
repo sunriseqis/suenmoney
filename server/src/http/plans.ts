@@ -2,12 +2,15 @@ import type { FastifyInstance } from 'fastify';
 
 import { getDatabase } from '../db/index.ts';
 import {
+  ackTodo,
   confirmTodo,
   createPlan,
   endPlan,
   findPlan,
   listPlans,
   listTodos,
+  restoreSkippedTodo,
+  revertTodoConfirm,
   settleAutoPost,
   skipTodo,
   updatePlan,
@@ -19,6 +22,7 @@ import { notFound } from '../lib/http-error.ts';
 import {
   asRecord,
   optionalBool,
+  optionalBoolParam,
   optionalDateParam,
   optionalEnumParam,
   optionalInt,
@@ -151,6 +155,11 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
         remindBefore: optionalDateParam(query['remindBefore'], 'remindBefore'),
         from: optionalDateParam(query['from'], 'from'),
         to: optionalDateParam(query['to'], 'to'),
+        /**
+         * 「该处理了」列表传 `hideAcked=1`：已经点过「确认」的期次不该再占位置。
+         * 默认 false —— 计划详情要看得见它们（那一期仍然是 `pending`）。
+         */
+        hideAcked: optionalBoolParam(query['hideAcked'], 'hideAcked'),
         limit: optionalIntParam(query['limit'], 'limit'),
       }),
     };
@@ -182,5 +191,46 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/plan-todos/:id/skip', { preHandler: requireAuth }, async (request) => {
     const auth = currentAuth(request);
     return { todo: skipTodo(getDatabase(), pathParam(request.params, 'id'), auth.user.id) };
+  });
+
+  /**
+   * 「我知道了」—— 确认一条**会自动入账**的提醒。
+   *
+   * 与 `/confirm` 的区别是本质性的，别合并：
+   *   · `/confirm` 生成那笔支出（业务状态从 `pending` 变成 `confirmed`）；
+   *   · `/ack` **什么业务状态都不改**，只记下「用户看过了」，
+   *     让这条从「该处理了」里消失，到还款日照旧自动入账。
+   *
+   * 两者还必须落在**互斥的两类期次**上（会 / 不会自动入账，见 repo 的
+   * `willAutoPost`）。用错了不会报错，只会让账目静默地少一笔或多一笔。
+   */
+  app.post('/api/plan-todos/:id/ack', { preHandler: requireAuth }, async (request) => {
+    const auth = currentAuth(request);
+    return { todo: ackTodo(getDatabase(), pathParam(request.params, 'id'), auth.user.id) };
+  });
+
+  /**
+   * 恢复一个被跳过的期次（撤销「跳过」）。
+   *
+   * 与下面的 `revert` 分开是刻意的：两者前端入口相邻、都叫「撤销」，
+   * 但一个是把已入账的支出撤回来，一个只是把跳过标记去掉。
+   * 合并成一个 `pending` 路由会让「撤销一笔已花的钱」和「取消一个没花的标记」
+   * 走同一条路径，将来任何一处加校验都会误伤另一边。
+   */
+  app.post('/api/plan-todos/:id/restore', { preHandler: requireAuth }, async (request) => {
+    const auth = currentAuth(request);
+    return { todo: restoreSkippedTodo(getDatabase(), pathParam(request.params, 'id'), auth.user.id) };
+  });
+
+  /**
+   * 撤销一次确认 → 把该期生成的支出软删，待办回到 `pending`。
+   *
+   * 返回被撤销的 `expenseId`，客户端据此提示「已撤销 ¥X 的入账」，
+   * 并可在需要时回读该支出确认它已是墓碑状态。
+   */
+  app.post('/api/plan-todos/:id/revert', { preHandler: requireAuth }, async (request) => {
+    const auth = currentAuth(request);
+    const result = revertTodoConfirm(getDatabase(), pathParam(request.params, 'id'), auth.user.id);
+    return { todo: result.todo, expenseId: result.expenseId };
   });
 }

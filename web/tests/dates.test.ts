@@ -11,7 +11,9 @@ import { describe, test } from 'node:test';
 
 import {
   currentMonth,
+  daysInMonth,
   daysUntil,
+  elapsedDays,
   formatDayLabel,
   formatMonthDay,
   formatMonthLabel,
@@ -104,5 +106,33 @@ describe('daysUntil', () => {
 
   test('✱ 提醒日跨月的典型场景：还款日 3 日、提前 5 天 → 上月月末', () => {
     assert.equal(daysUntil('2026-03-03', '2026-02-26'), 5);
+  });
+});
+
+describe('daysInMonth / elapsedDays', () => {
+  test('月份天数，含闰年二月', () => {
+    assert.equal(daysInMonth('2026-01'), 31);
+    assert.equal(daysInMonth('2026-02'), 28);
+    assert.equal(daysInMonth('2028-02'), 29, '2028 是闰年');
+    assert.equal(daysInMonth('2026-04'), 30);
+    assert.equal(daysInMonth('2026-12'), 31);
+  });
+
+  test('格式不对时退到 30，不抛错', () => {
+    assert.equal(daysInMonth('乱七八糟'), 30);
+  });
+
+  test('当月按「今天」的日号算，历史与未来月份按整月算', () => {
+    assert.equal(elapsedDays('2026-09', '2026-09-05'), 5, '当月只算已过的天数');
+    assert.equal(elapsedDays('2026-08', '2026-09-05'), 31, '历史月份已经过完了');
+    assert.equal(elapsedDays('2026-10', '2026-09-05'), 31, '未来月份按整月，反正没有数据');
+  });
+
+  test('✱ 分母永远不小于 1，月初不会除出 Infinity', () => {
+    // 「今天是 1 号」时 elapsedDays 若返回 0，日均就会是 Infinity，
+    // 而 Infinity 在界面上会显示成一个诡异的数字而不是报错。
+    for (const day of ['01', '15', '31']) {
+      assert.ok(elapsedDays('2026-09', `2026-09-${day}`) >= 1);
+    }
   });
 });

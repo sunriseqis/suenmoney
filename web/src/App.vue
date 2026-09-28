@@ -117,62 +117,54 @@ function onSaved(): void {
       <div
         class="mx-auto flex h-[var(--bottom-bar-h)] w-full max-w-[var(--content-max)] items-center gap-1 px-3"
       >
-        <!--
-          「记一笔」是普通 tab，不是特殊按钮。
-          之前它是夹在三个 tab 之间的一个填充胶囊：字号、图标尺寸、排列方向、
-          激活态逻辑全都和邻居不同 —— 看起来像被塞进导航栏的陌生控件。
-          Actual Budget 的做法同样是把「记一笔」当普通 tab，没有一家做成
-          "挤在 tab 之间的填充按钮"。图标用加号本身已经说明了它是主操作。
-        -->
-        <template v-for="item in NAV.slice(0, 2)" :key="item.name">
-          <RouterLink
-            :to="{ name: item.name }"
-            class="flex flex-1 flex-col items-center justify-center rounded-md text-xs font-semibold transition-colors duration-200"
-            :class="
-              route.name === item.name ? 'text-primary-text' : 'text-ink-muted hover:text-ink'
-            "
-          >
-            <!--
-              选中项用更粗的描边（2 → 2.5）而不是换色或加背景：
-              Flat 没有阴影可用，颜色又已经承担了语义，粗细是这里唯一干净的手段。
-            -->
-            <component
-              :is="item.icon"
-              :size="20"
-              :stroke-width="route.name === item.name ? 2.5 : 2"
-              aria-hidden="true"
-            />
-            <span class="mt-0.5">{{ item.label }}</span>
-          </RouterLink>
-        </template>
+      <!--
+        「记一笔」在最右，且**不是**普通 tab。
 
-        <button
-          type="button"
-          class="flex flex-1 flex-col items-center justify-center rounded-md text-xs font-semibold text-ink-muted transition-colors duration-200 hover:text-ink"
-          aria-label="记一笔"
-          @click="ui.openCreate()"
+        （上一轮的注释在这里写着「记一笔是普通 tab，不是特殊按钮」，那句在当时是对的，
+        现在不对了 —— 位置与底衬都特殊化了，所以这段注释必须跟着改，
+        否则下一个人会照旧注释把它改回去。）
+
+        位置：从中间第 3 格移到最右第 4 格。夹在「流水」与「报表」之间时，
+        它是三个 tab 中间的一个洞 —— 想切到报表得绕过它，而它本身又不是页面。
+
+        样式：**软色底衬**（32px 圆角色块）而不是实心主色。
+        它常驻不高亮（点开就进抽屉，没有「选中」这个状态），但需要比另外三个
+        tab 醒目。软底衬正好表达「同一组里的特殊项」，又不会像实心主色那样
+        与三个 tab 的激活态打架。
+        桌面顶栏那枚（见上）用的是实心主色，这个差异是**刻意的**：它在顶栏右侧
+        独立成块、不与任何 tab 同组；底栏这枚与三个 tab 同组，才必须区分层级。
+      -->
+      <template v-for="item in NAV" :key="item.name">
+        <RouterLink
+          :to="{ name: item.name }"
+          class="flex flex-1 flex-col items-center justify-center rounded-md text-xs font-semibold transition-colors duration-200"
+          :class="route.name === item.name ? 'text-primary-text' : 'text-ink-muted hover:text-ink'"
         >
-          <Plus :size="20" :stroke-width="2" aria-hidden="true" />
-          <span class="mt-0.5">记一笔</span>
-        </button>
+          <!--
+            选中项用更粗的描边（2 → 2.5）而不是换色或加背景：
+            Flat 没有阴影可用，颜色又已经承担了语义，粗细是这里唯一干净的手段。
+          -->
+          <component
+            :is="item.icon"
+            :size="20"
+            :stroke-width="route.name === item.name ? 2.5 : 2"
+            aria-hidden="true"
+          />
+          <span class="mt-0.5">{{ item.label }}</span>
+        </RouterLink>
+      </template>
 
-        <template v-for="item in NAV.slice(2)" :key="item.name">
-          <RouterLink
-            :to="{ name: item.name }"
-            class="flex flex-1 flex-col items-center justify-center rounded-md text-xs font-semibold transition-colors duration-200"
-            :class="
-              route.name === item.name ? 'text-primary-text' : 'text-ink-muted hover:text-ink'
-            "
-          >
-            <component
-              :is="item.icon"
-              :size="20"
-              :stroke-width="route.name === item.name ? 2.5 : 2"
-              aria-hidden="true"
-            />
-            <span class="mt-0.5">{{ item.label }}</span>
-          </RouterLink>
-        </template>
+      <button
+        type="button"
+        class="flex flex-1 flex-col items-center justify-center rounded-md text-xs font-semibold text-primary-text transition-transform duration-200 active:scale-95"
+        aria-label="记一笔"
+        @click="ui.openCreate()"
+      >
+        <span class="grid h-8 w-8 place-items-center rounded-sm bg-primary-fill/12">
+          <Plus :size="20" :stroke-width="2.5" aria-hidden="true" />
+        </span>
+        <span class="mt-0.5">记一笔</span>
+      </button>
       </div>
     </nav>
 
