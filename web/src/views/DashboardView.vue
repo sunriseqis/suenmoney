@@ -200,7 +200,7 @@ function heatCellStyle(val: number | null): Record<string, string> {
 }
 
 function onHeatCellClick(targetMonth: string): void {
-  router.push({ name: 'reports', query: { month: targetMonth } });
+  router.push({ name: 'report', query: { month: targetMonth } });
 }
 
 // ---------------------------------------------------------------------------

@@ -619,11 +619,12 @@ const memberRows = computed(() => {
 
           <div class="mt-4 flex flex-col items-center gap-6 lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:items-start lg:gap-8">
             <!-- 环图 -->
-            <div class="relative shrink-0">
+            <div class="relative flex h-[140px] w-[140px] shrink-0 items-center justify-center justify-self-center">
               <svg
                 width="140"
                 height="140"
                 viewBox="0 0 42 42"
+                class="block"
                 role="img"
                 :aria-label="`支出构成，共 ${categories.length} 个分类`"
               >
@@ -650,11 +651,11 @@ const memberRows = computed(() => {
               </svg>
 
               <!-- 中心只显示分类数，不显示合计金额 -->
-              <div class="absolute inset-0 grid place-content-center text-center">
-                <b class="block text-base font-bold tracking-tight text-ink">
+              <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                <b class="block text-sm font-bold tracking-tight text-ink leading-tight">
                   {{ categories.length }} 个分类
                 </b>
-                <span class="text-[11px] text-ink-muted">
+                <span class="mt-0.5 text-[11px] text-ink-muted">
                   {{ scope === 'month' ? '本月' : scope === 'year' ? '全年' : '历史' }}
                 </span>
               </div>

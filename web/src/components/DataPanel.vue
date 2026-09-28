@@ -251,23 +251,22 @@ async function runDangerous(kind: 'wipe' | 'reset-demo'): Promise<void> {
       {{ notice }}
     </p>
 
-    <!-- 导出 | 导入：一进一出，天然成对 -->
-    <div class="card-grid lg:grid-cols-2">
-      <section aria-label="导出" class="rounded-md bg-surface p-4">
-        <div class="flex items-baseline justify-between gap-3">
-          <h2 class="label-cn">导出</h2>
-          <span class="text-xs text-ink-muted">可按范围</span>
+    <!-- 导出与导入：并入一张通栏卡片并平铺对齐，消除高度不均 -->
+    <section aria-label="导出与导入" class="rounded-md bg-surface p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <h2 class="label-cn">导出与导入</h2>
+          <span class="text-xs text-ink-muted">数据包 JSON 互通 · 流水 CSV 对账 · 导入只补缺</span>
         </div>
 
-        <!-- 范围：三档 chip + 年 / 月下拉。
-             不用 `<input type="month">` —— Firefox 桌面版没有实现它，
-             会退化成一个自由文本框，用户敲进去的东西服务端一律拒。 -->
-        <div class="mt-3 flex flex-wrap items-center gap-2">
+        <!-- 导出范围：三档 chip + 年 / 月下拉 -->
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs text-ink-muted">导出范围：</span>
           <button
             v-for="tab in SCOPE_TABS"
             :key="tab.id"
             type="button"
-            class="rounded-sm px-3 py-1.5 text-xs font-semibold transition-colors duration-200"
+            class="rounded-sm px-2.5 py-1 text-xs font-semibold transition-colors duration-200"
             :class="scopeKind === tab.id ? 'bg-primary-fill text-on-primary' : 'bg-canvas text-ink-muted hover:text-ink'"
             :aria-pressed="scopeKind === tab.id"
             @click="scopeKind = tab.id"
@@ -278,7 +277,7 @@ async function runDangerous(kind: 'wipe' | 'reset-demo'): Promise<void> {
           <select
             v-if="scopeKind !== 'all'"
             v-model.number="pickedYear"
-            class="rounded-sm bg-canvas px-2 py-1.5 text-xs text-ink"
+            class="rounded-sm bg-canvas px-2 py-1 text-xs text-ink"
             aria-label="导出年份"
           >
             <option v-for="year in years" :key="year" :value="year">{{ year }} 年</option>
@@ -287,73 +286,87 @@ async function runDangerous(kind: 'wipe' | 'reset-demo'): Promise<void> {
           <select
             v-if="scopeKind === 'month'"
             v-model.number="pickedMonth"
-            class="rounded-sm bg-canvas px-2 py-1.5 text-xs text-ink"
+            class="rounded-sm bg-canvas px-2 py-1 text-xs text-ink"
             aria-label="导出月份"
           >
             <option v-for="month in 12" :key="month" :value="month">{{ month }} 月</option>
           </select>
         </div>
+      </div>
 
-        <div class="mt-3 space-y-2">
-          <div class="flex items-center gap-3 rounded-sm bg-canvas px-3 py-2.5">
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold">数据包 · JSON</span>
-              <span class="block text-xs text-ink-muted">可再导入，带有分类层级与计划</span>
-            </span>
-            <button
-              type="button"
-              :disabled="busy"
-              class="shrink-0 rounded-sm bg-primary-fill px-3 py-2 text-xs font-bold text-on-primary disabled:opacity-40"
-              @click="download('package')"
-            >
-              导出
-            </button>
+      <!-- 平铺三栏动作区 -->
+      <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <!-- ① JSON 数据包导出 -->
+        <div class="flex flex-col justify-between rounded-sm bg-canvas p-3.5">
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold text-ink">数据包 · JSON</span>
+              <span class="rounded-xs bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">导出</span>
+            </div>
+            <p class="mt-1 text-xs text-ink-muted leading-relaxed">
+              可再导入，带有分类层级、支付方式与计划全量结构
+            </p>
           </div>
-
-          <div class="flex items-center gap-3 rounded-sm bg-canvas px-3 py-2.5">
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold">对账表 · CSV</span>
-              <span class="block text-xs text-ink-muted">流水扁平列，Excel 直接打开</span>
-            </span>
-            <button
-              type="button"
-              :disabled="busy"
-              class="shrink-0 rounded-sm px-3 py-2 text-xs font-semibold text-ink-muted transition-colors duration-200 hover:text-ink disabled:opacity-40"
-              @click="download('csv')"
-            >
-              导出
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section aria-label="导入" class="rounded-md bg-surface p-4">
-        <div class="flex items-baseline justify-between gap-3">
-          <h2 class="label-cn">导入</h2>
-          <span class="text-xs text-ink-muted">只补缺，不覆盖</span>
+          <button
+            type="button"
+            :disabled="busy"
+            class="mt-3 w-full rounded-sm bg-primary-fill py-2 text-xs font-bold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-40"
+            @click="download('package')"
+          >
+            导出数据包
+          </button>
         </div>
 
-        <button
-          type="button"
-          :disabled="busy"
-          class="mt-3 w-full rounded-sm border border-dashed border-line px-4 py-6 text-xs font-semibold text-ink-muted transition-colors duration-200 hover:text-ink disabled:opacity-40"
-          @click="packageInput?.click()"
-        >
-          选择一个 JSON 数据包
-        </button>
-        <input
-          ref="packageInput"
-          type="file"
-          accept="application/json,.json"
-          class="sr-only"
-          @change="onImportFile"
-        />
+        <!-- ② CSV 对账表导出 -->
+        <div class="flex flex-col justify-between rounded-sm bg-canvas p-3.5">
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold text-ink">对账表 · CSV</span>
+              <span class="rounded-xs bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">导出</span>
+            </div>
+            <p class="mt-1 text-xs text-ink-muted leading-relaxed">
+              流水扁平明细列，方便使用 Excel / Numbers 等查账
+            </p>
+          </div>
+          <button
+            type="button"
+            :disabled="busy"
+            class="mt-3 w-full rounded-sm border border-line py-2 text-xs font-semibold text-ink-muted transition-colors hover:border-ink-muted hover:text-ink disabled:opacity-40"
+            @click="download('csv')"
+          >
+            导出对账表
+          </button>
+        </div>
 
-        <p class="mt-3 text-xs text-ink-muted">
-          同一份文件按两次也不会多出记录 —— 它按主键去重。
-        </p>
-      </section>
-    </div>
+        <!-- ③ JSON 数据包导入 -->
+        <div class="flex flex-col justify-between rounded-sm bg-canvas p-3.5">
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold text-ink">数据包导入</span>
+              <span class="rounded-xs bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">导入</span>
+            </div>
+            <p class="mt-1 text-xs text-ink-muted leading-relaxed">
+              只补缺按主键去重，不覆盖现有记录，重复执行安全
+            </p>
+          </div>
+          <button
+            type="button"
+            :disabled="busy"
+            class="mt-3 w-full rounded-sm border border-dashed border-primary/50 bg-primary/5 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:opacity-40"
+            @click="packageInput?.click()"
+          >
+            选择 JSON 数据包导入
+          </button>
+          <input
+            ref="packageInput"
+            type="file"
+            accept="application/json,.json"
+            class="sr-only"
+            @change="onImportFile"
+          />
+        </div>
+      </div>
+    </section>
 
     <!-- 备份与恢复：两个动作 + 一段说明，比上面两张高一截，所以通栏 -->
     <section aria-label="备份与恢复" class="rounded-md bg-surface p-4">
