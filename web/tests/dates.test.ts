@@ -15,8 +15,10 @@ import {
   daysUntil,
   elapsedDays,
   formatDayLabel,
+  formatLedgerDate,
   formatMonthDay,
   formatMonthLabel,
+  fullWeekdayOf,
   shiftMonth,
   todayLocal,
   weekdayOf,
@@ -81,6 +83,93 @@ describe('weekdayOf', () => {
     const days = ['2026-03-01', '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07'];
     const labels = days.map(weekdayOf);
     assert.equal(new Set(labels).size, 7, `七天应互不相同，实际 ${labels.join(',')}`);
+  });
+});
+
+describe('fullWeekdayOf', () => {
+  test('全称星期锚点', () => {
+    assert.equal(fullWeekdayOf('1970-01-01'), '星期四');
+    assert.equal(fullWeekdayOf('2000-01-01'), '星期六');
+  });
+
+  test('连续七天恰好覆盖全称一周', () => {
+    const days = ['2026-03-01', '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07'];
+    const labels = days.map(fullWeekdayOf);
+    assert.deepEqual(labels, [
+      '星期日',
+      '星期一',
+      '星期二',
+      '星期三',
+      '星期四',
+      '星期五',
+      '星期六',
+    ]);
+  });
+});
+
+describe('formatLedgerDate（最远支持到 2 天简化显示）', () => {
+  const mockToday = '2026-09-28'; // 星期一
+
+  test('今日：今日星期一', () => {
+    const res = formatLedgerDate('2026-09-28', mockToday);
+    assert.equal(res.dayText, '今日');
+    assert.equal(res.weekdayText, '星期一');
+    assert.equal(res.full, '今日星期一');
+    assert.equal(res.isRecent, true);
+  });
+
+  test('昨日：昨日星期日', () => {
+    const res = formatLedgerDate('2026-09-27', mockToday);
+    assert.equal(res.dayText, '昨日');
+    assert.equal(res.weekdayText, '星期日');
+    assert.equal(res.full, '昨日星期日');
+    assert.equal(res.isRecent, true);
+  });
+
+  test('2天前及更早：26日星期六、25日星期五、1日星期二', () => {
+    const d26 = formatLedgerDate('2026-09-26', mockToday);
+    assert.equal(d26.dayText, '26日');
+    assert.equal(d26.weekdayText, '星期六');
+    assert.equal(d26.full, '26日星期六');
+    assert.equal(d26.isRecent, false);
+
+    const d25 = formatLedgerDate('2026-09-25', mockToday);
+    assert.equal(d25.dayText, '25日');
+    assert.equal(d25.weekdayText, '星期五');
+    assert.equal(d25.full, '25日星期五');
+    assert.equal(d25.isRecent, false);
+
+    const d01 = formatLedgerDate('2026-09-01', mockToday);
+    assert.equal(d01.dayText, '1日');
+    assert.equal(d01.weekdayText, '星期二');
+    assert.equal(d01.full, '1日星期二');
+    assert.equal(d01.isRecent, false);
+  });
+
+  test('月初跨月场景：今天如果是 1 号，昨天就是上个月末日', () => {
+    const monthFirst = '2026-09-01'; // 星期二
+    const todayRes = formatLedgerDate('2026-09-01', monthFirst);
+    assert.equal(todayRes.dayText, '今日');
+    assert.equal(todayRes.weekdayText, '星期二');
+    assert.equal(todayRes.full, '今日星期二');
+
+    const yesterdayRes = formatLedgerDate('2026-08-31', monthFirst);
+    assert.equal(yesterdayRes.dayText, '昨日');
+    assert.equal(yesterdayRes.weekdayText, '星期一');
+    assert.equal(yesterdayRes.full, '昨日星期一');
+
+    const twoDaysAgoRes = formatLedgerDate('2026-08-30', monthFirst);
+    assert.equal(twoDaysAgoRes.dayText, '30日');
+    assert.equal(twoDaysAgoRes.weekdayText, '星期日');
+    assert.equal(twoDaysAgoRes.full, '30日星期日');
+  });
+
+  test('非法格式安全降级', () => {
+    const res = formatLedgerDate('invalid-date', mockToday);
+    assert.equal(res.dayText, 'invalid-date');
+    assert.equal(res.weekdayText, '');
+    assert.equal(res.full, 'invalid-date');
+    assert.equal(res.isRecent, false);
   });
 });
 

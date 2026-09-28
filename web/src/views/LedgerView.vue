@@ -12,7 +12,7 @@
  *      - 年档：12 个月格日历（一格一月，4 档深浅）
  *      - 全部档：一格一年日历（一格一年，4 档深浅）
  *   3. 日历两个动作：点一下选中切换下方概况卡，再点或按「进入」才下钻（年→月，月→流水）。
- *   4. 流水行「一行一项」：主名与副信息同行，单行不折行；窄屏账期让位；行内日期只写「日」（28日）。
+ *   4. 流水行「一行一项」：主名与副信息同行，单行不折行；窄屏账期让位；行内日期支持最远到 2 天简化显示（今日星期一 / 昨日星期日 / 26日星期六）。
  *   5. 合计仅在有筛选或搜索时展示金额，无筛选时仅展示笔数。
  */
 import { computed, onMounted, ref, watch } from 'vue';
@@ -40,10 +40,10 @@ import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors'
 import {
   currentMonth,
   daysInMonth,
+  formatLedgerDate,
   formatMonthDay,
   formatMonthLabel,
   todayLocal,
-  weekdayOf,
 } from '@/utils/dates';
 import { formatYuan } from '@/utils/money';
 import {
@@ -346,13 +346,8 @@ function onCalendarDrill(key: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// 格式化与账期计算（A13 · A27）
+// 账期计算（A13 · A27）
 // ---------------------------------------------------------------------------
-
-function formatDayOnly(date: string): string {
-  const parts = date.split('-');
-  return parts.length === 3 ? `${Number(parts[2])}日` : date;
-}
 
 function billingGraceDays(spendDate: string, repaymentDate: string): number {
   const [y1, m1, d1] = spendDate.split('-').map(Number);
@@ -735,10 +730,15 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 class="cursor-pointer border-b border-line/50 transition-colors duration-150 hover:bg-sunken"
                 @click="ui.openEdit(row)"
               >
-                <td class="whitespace-nowrap py-2.5 pr-3 align-middle">
-                  <span class="block text-sm font-semibold text-ink">{{ formatDayOnly(row.spendDate) }}</span>
+                <td
+                  class="whitespace-nowrap py-2.5 pr-3 align-middle"
+                  :title="`${row.spendDate} · ${formatLedgerDate(row.spendDate, today).full}`"
+                >
+                  <span class="block text-sm font-semibold text-ink">
+                    {{ formatLedgerDate(row.spendDate, today).dayText }}
+                  </span>
                   <span class="block text-[11px] text-ink-muted">
-                    {{ row.spendDate === today ? '今天' : weekdayOf(row.spendDate) }}
+                    {{ formatLedgerDate(row.spendDate, today).weekdayText }}
                   </span>
                 </td>
 
@@ -798,9 +798,17 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 class="flex w-full items-center gap-2.5 py-2.5 px-1 text-left transition-colors duration-150 active:bg-sunken"
                 @click="ui.openEdit(row)"
               >
-                <!-- 日期格：仅「日」（例如 28日）固定不折行 -->
-                <span class="w-8 shrink-0 text-center text-xs font-bold text-ink-muted whitespace-nowrap">
-                  {{ formatDayOnly(row.spendDate) }}
+                <!-- 日期格：最远支持 2 天简化显示（今日星期一 / 昨日星期日 / 26日星期六） -->
+                <span
+                  class="w-11 shrink-0 text-center leading-tight whitespace-nowrap"
+                  :title="`${row.spendDate} · ${formatLedgerDate(row.spendDate, today).full}`"
+                >
+                  <span class="block text-xs font-bold text-ink">
+                    {{ formatLedgerDate(row.spendDate, today).dayText }}
+                  </span>
+                  <span class="block text-[10px] text-ink-muted">
+                    {{ formatLedgerDate(row.spendDate, today).weekdayText }}
+                  </span>
                 </span>
 
                 <!-- 图标 -->

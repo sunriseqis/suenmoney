@@ -78,13 +78,81 @@ export function elapsedDays(month: string, today: string = todayLocal()): number
 }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const;
+const FULL_WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'] as const;
 
-/** '2026-09-24' → '周四'。同样走 UTC，避免时区把日期挤到前后一天。 */
+/** '2026-09-24' → '周四'。走 UTC，避免时区把日期挤到前后一天。 */
 export function weekdayOf(date: string): string {
   const [year, month, day] = date.split('-').map(Number);
   if (year === undefined || month === undefined || day === undefined) return '';
   const index = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
   return WEEKDAYS[index] ?? '';
+}
+
+/** '2026-09-24' → '星期四'。走 UTC。 */
+export function fullWeekdayOf(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) return '';
+  const index = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return FULL_WEEKDAYS[index] ?? '';
+}
+
+export interface LedgerDateInfo {
+  /** 日期主文本：今日 / 昨日 / 26日 */
+  dayText: string;
+  /** 星期副文本：星期一 / 星期日 / 星期六 */
+  weekdayText: string;
+  /** 完整拼接文本：今日星期一 / 昨日星期日 / 26日星期六 */
+  full: string;
+  /** 是否为近两天（今日或昨日） */
+  isRecent: boolean;
+}
+
+/**
+ * 流水日期简化显示（最远支持到 2 天简化显示）：
+ * - 今天：今日 + 星期X，例如「今日星期一」
+ * - 昨天：昨日 + 星期X，例如「昨日星期日」
+ * - 2天前及更早：N日 + 星期X，例如「26日星期六」
+ */
+export function formatLedgerDate(date: string, today: string = todayLocal()): LedgerDateInfo {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return {
+      dayText: date,
+      weekdayText: '',
+      full: date,
+      isRecent: false,
+    };
+  }
+
+  const weekday = fullWeekdayOf(date);
+  const diff = daysUntil(date, today);
+
+  if (diff === 0) {
+    return {
+      dayText: '今日',
+      weekdayText: weekday,
+      full: `今日${weekday}`,
+      isRecent: true,
+    };
+  }
+
+  if (diff === -1) {
+    return {
+      dayText: '昨日',
+      weekdayText: weekday,
+      full: `昨日${weekday}`,
+      isRecent: true,
+    };
+  }
+
+  const dayNum = Number(date.slice(8, 10));
+  const dayText = `${dayNum}日`;
+
+  return {
+    dayText,
+    weekdayText: weekday,
+    full: `${dayText}${weekday}`,
+    isRecent: false,
+  };
 }
 
 /**

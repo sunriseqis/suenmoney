@@ -290,9 +290,8 @@ export function listExpenses(
   if (filter.cursor !== undefined) {
     const [cursorDate, cursorId] = filter.cursor.split('|');
     if (cursorDate !== undefined && cursorId !== undefined) {
-      // 不要用 SQLite 的行值比较 (a,b) < (c,d)：语义虽对，但写法在跨版本时
-      // 容易踩到解析差异。展开成等价的显式条件，行为一目了然。
-      where.push('(e.repayment_date < ? OR (e.repayment_date = ? AND e.id < ?))');
+      // 键集分页：按消费发生日 (spend_date) 倒序排列，日期相同时按 id 倒序
+      where.push('(e.spend_date < ? OR (e.spend_date = ? AND e.id < ?))');
       params.push(cursorDate, cursorDate, cursorId);
     }
   }
@@ -300,12 +299,13 @@ export function listExpenses(
   const limit = Math.min(Math.max(filter.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
 
   // 多取一条用来判断还有没有下一页，比再发一次 COUNT 查询便宜
+  // 按实际消费日 (spend_date) 倒序展示流水，避免有账期的信用卡按还款日被错误置顶
   const rows = db
     .prepare(
       `SELECT ${DISPLAY_COLUMNS}
          FROM expenses e ${JOINS}
         WHERE ${where.join(' AND ')}
-        ORDER BY e.repayment_date DESC, e.id DESC
+        ORDER BY e.spend_date DESC, e.id DESC
         LIMIT ?`,
     )
     .all(...params, limit + 1) as unknown as ExpenseRowJoined[];
@@ -316,7 +316,7 @@ export function listExpenses(
 
   return {
     items: page.map(toApi),
-    nextCursor: hasMore && last !== undefined ? `${last.repayment_date}|${last.id}` : null,
+    nextCursor: hasMore && last !== undefined ? `${last.spend_date}|${last.id}` : null,
     hasMore,
   };
 }
