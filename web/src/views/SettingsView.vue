@@ -364,17 +364,18 @@ function formatTimestamp(iso: string): string {
 <template>
   <div class="pb-[calc(var(--bottom-bar-h)+var(--safe-bottom)+32px)]">
     <header
-      class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-[calc(var(--safe-top)+20px)] lg:px-6 lg:pt-8"
+      class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-[calc(var(--safe-top)+16px)] lg:px-6 lg:pt-8"
     >
-      <div class="flex items-center gap-3">
-        <!-- 桌面上顶部导航已经有「首页」，这个返回链接就是重复的 -->
+      <div class="flex items-center justify-between">
+        <h1 class="text-xl font-extrabold text-ink">设置</h1>
+        <!-- 窄屏标题行行尾关闭按键（A24），返回流水落地页 -->
         <RouterLink
-          :to="{ name: 'dashboard' }"
-          class="rounded-sm px-2 py-1 text-sm font-semibold text-ink-muted transition-colors duration-200 hover:text-ink lg:hidden"
+          :to="{ name: 'ledger' }"
+          class="grid h-9 w-9 place-items-center rounded-sm text-base font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink lg:hidden"
+          aria-label="关闭设置，返回流水"
         >
-          ← 首页
+          ✕
         </RouterLink>
-        <h1 class="text-xl font-extrabold">设置</h1>
       </div>
     </header>
 
@@ -697,6 +698,7 @@ function formatTimestamp(iso: string): string {
                     ? `信用卡 · 账单日 ${method.billingDay} · 还款日 ${method.repaymentDay}`
                     : '现金 / 储蓄卡'
                 }}
+                · {{ method.expenseCount }} 笔
               </span>
             </span>
             <button

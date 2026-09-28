@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-import { shiftMonthString } from '../../domain/billing-cycle.ts';
+import { daysInMonth, shiftMonthString } from '../../domain/billing-cycle.ts';
 
 /**
  * 报表聚合。
@@ -12,6 +12,16 @@ import { shiftMonthString } from '../../domain/billing-cycle.ts';
  * 每月/每年都**由查询参数显式传入**，服务端从不自己推算「今天是几号」：
  * 服务端的时区不可信，而客户端的本地日期才是用户认知里的「今天」。
  */
+
+export interface SubCategoryBucket {
+  categoryId: string;
+  name: string;
+  icon: string;
+  color: string;
+  cents: number;
+  count: number;
+  ratio: number;
+}
 
 export interface CategoryBucket {
   categoryId: string;
@@ -30,6 +40,8 @@ export interface CategoryBucket {
    * 给成 100% 或 ∞ 都会误导。与 MonthlyReport.change.ratio 同一套口径。
    */
   changeRatio: number | null;
+  /** 二级子分类明细，按金额倒序 */
+  children: SubCategoryBucket[];
 }
 
 export interface PaymentBucket {
@@ -79,6 +91,13 @@ export interface ComparedPeriod {
   change: { deltaCents: number; ratio: number | null };
 }
 
+export interface DailyRhythmPoint {
+  date: string;
+  day: number;
+  cents: number;
+  count: number;
+}
+
 export interface MonthlyReport {
   month: string;
   totalCents: number;
@@ -93,6 +112,16 @@ export interface MonthlyReport {
   categories: CategoryBucket[];
   paymentMethods: PaymentBucket[];
   members: MemberBucket[];
+  /** 逐日节奏 */
+  daily: DailyRhythmPoint[];
+  /** 滚动 12 个月（含本月及过去 11 个月），供热力图与 12 月均值 */
+  rolling12Months: Array<{ month: string; totalCents: number | null; count: number }>;
+  average12MonthsCents: number;
+  /** 过去 3 个月日均消费（分），供进度对比卡 */
+  rolling3MonthsDailyAverageCents: number;
+  /** 下月要还（信用类） */
+  nextMonthRepayments: PaymentBucket[];
+  nextMonthDueTotalCents: number;
 }
 
 export interface YearlyReport {
@@ -103,19 +132,43 @@ export interface YearlyReport {
   months: Array<{ month: string; totalCents: number; count: number }>;
   /** 同比（去年整年） */
   yearAgo: ComparedPeriod;
+  largest: LargestExpense | null;
+  categories: CategoryBucket[];
+  members: MemberBucket[];
+  /** 近 3 年年均消费（分） */
+  average3YearsCents: number;
+  /** 本年支出最高月份 */
+  peakMonth: { month: string; totalCents: number } | null;
+}
+
+export interface SummaryReport {
+  totalCents: number;
+  count: number;
+  firstRepaymentDate: string | null;
+  lastRepaymentDate: string | null;
+  recordedDays: number;
+  monthlyAverageCents: number;
+  dailyAverageCents: number;
+  perExpenseAverageCents: number;
+  peakMonth: { month: string; totalCents: number } | null;
+  years: Array<{ year: string; totalCents: number; count: number }>;
   categories: CategoryBucket[];
   members: MemberBucket[];
 }
 
 interface PeriodScope {
-  /** 'YYYY-MM' 或 'YYYY-'，用作 repayment_date 的前缀 */
+  /** 'YYYY-MM' 或 'YYYY-'，用作 repayment_date 的前缀；空字符串表示全量 */
   prefix: string;
   ownerId?: string | undefined;
 }
 
 function scopeClause(scope: PeriodScope): { sql: string; params: string[] } {
-  const sql = ['e.deleted_at IS NULL', "e.repayment_date LIKE ? || '%'"];
-  const params = [scope.prefix];
+  const sql = ['e.deleted_at IS NULL'];
+  const params: string[] = [];
+  if (scope.prefix !== '') {
+    sql.push("e.repayment_date LIKE ? || '%'");
+    params.push(scope.prefix);
+  }
   if (scope.ownerId !== undefined) {
     sql.push('e.owner_id = ?');
     params.push(scope.ownerId);
@@ -149,6 +202,40 @@ function totals(db: DatabaseSync, period: string, ownerId?: string): PeriodTotal
  * 做成必传参数而不是可选：漏传的表现只是「所有分类的环比都是 0 或 null」，
  * 界面上看起来像是这个月每个分类都没变化 —— 不报错，只是安静地错。
  */
+function subCategoryBuckets(
+  db: DatabaseSync,
+  scope: PeriodScope,
+  rootId: string,
+  rootTotalCents: number,
+): SubCategoryBucket[] {
+  const where = scopeClause(scope);
+  const rows = db
+    .prepare(
+      `SELECT c.id AS sub_id, c.name AS sub_name, c.icon AS sub_icon, c.color AS sub_color,
+              SUM(e.amount_cents) AS cents, COUNT(*) AS cnt
+         FROM expenses e
+         JOIN categories c ON c.id = e.category_id
+        WHERE ${where.sql}
+          AND COALESCE(c.parent_id, c.id) = ?
+        GROUP BY c.id
+        ORDER BY cents DESC`,
+    )
+    .all(...where.params, rootId) as unknown as Array<Record<string, unknown>>;
+
+  return rows.map((row) => {
+    const cents = Number(row['cents']);
+    return {
+      categoryId: String(row['sub_id']),
+      name: String(row['sub_name']),
+      icon: String(row['sub_icon'] ?? ''),
+      color: String(row['sub_color'] ?? ''),
+      cents,
+      count: Number(row['cnt']),
+      ratio: rootTotalCents === 0 ? 0 : cents / rootTotalCents,
+    };
+  });
+}
+
 function categoryBuckets(
   db: DatabaseSync,
   scope: PeriodScope,
@@ -186,6 +273,7 @@ function categoryBuckets(
       ratio: totalCents === 0 ? 0 : cents / totalCents,
       previousCents,
       changeRatio: previousCents === 0 ? null : (cents - previousCents) / previousCents,
+      children: subCategoryBuckets(db, scope, rootId, cents),
     };
   });
 }
@@ -313,6 +401,137 @@ function memberBuckets(db: DatabaseSync, scope: PeriodScope): MemberBucket[] {
   }));
 }
 
+function dailyRhythm(db: DatabaseSync, scope: PeriodScope, month: string): DailyRhythmPoint[] {
+  const [y = 1970, m = 1] = month.split('-').map(Number);
+  const totalDays = daysInMonth(y, m);
+  const where = scopeClause(scope);
+
+  const rows = db
+    .prepare(
+      `SELECT e.repayment_date AS d, SUM(e.amount_cents) AS cents, COUNT(*) AS cnt
+         FROM expenses e
+        WHERE ${where.sql}
+        GROUP BY e.repayment_date`,
+    )
+    .all(...where.params) as unknown as Array<Record<string, unknown>>;
+
+  const map = new Map<string, { cents: number; count: number }>();
+  for (const row of rows) {
+    map.set(String(row['d']), {
+      cents: Number(row['cents']),
+      count: Number(row['cnt']),
+    });
+  }
+
+  const result: DailyRhythmPoint[] = [];
+  for (let day = 1; day <= totalDays; day++) {
+    const dayStr = String(day).padStart(2, '0');
+    const date = `${month}-${dayStr}`;
+    const found = map.get(date) ?? { cents: 0, count: 0 };
+    result.push({
+      date,
+      day,
+      cents: found.cents,
+      count: found.count,
+    });
+  }
+  return result;
+}
+
+function rolling12(
+  db: DatabaseSync,
+  month: string,
+  ownerId?: string,
+): {
+  rolling12Months: Array<{ month: string; totalCents: number | null; count: number }>;
+  average12MonthsCents: number;
+} {
+  const startMonth = shiftMonthString(month, -11);
+  const nextMonth = shiftMonthString(month, 1);
+  const startDate = `${startMonth}-01`;
+  const endDate = `${nextMonth}-01`;
+
+  const sql = ['e.deleted_at IS NULL', 'e.repayment_date >= ?', 'e.repayment_date < ?'];
+  const params: string[] = [startDate, endDate];
+  if (ownerId !== undefined) {
+    sql.push('e.owner_id = ?');
+    params.push(ownerId);
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT substr(e.repayment_date, 1, 7) AS ym,
+              SUM(e.amount_cents) AS cents, COUNT(*) AS cnt
+         FROM expenses e
+        WHERE ${sql.join(' AND ')}
+        GROUP BY ym`,
+    )
+    .all(...params) as unknown as Array<Record<string, unknown>>;
+
+  const map = new Map<string, { cents: number; count: number }>();
+  for (const row of rows) {
+    map.set(String(row['ym']), {
+      cents: Number(row['cents']),
+      count: Number(row['cnt']),
+    });
+  }
+
+  let totalSum = 0;
+  const list: Array<{ month: string; totalCents: number | null; count: number }> = [];
+  for (let i = -11; i <= 0; i++) {
+    const ym = shiftMonthString(month, i);
+    const found = map.get(ym);
+    if (found !== undefined) {
+      list.push({ month: ym, totalCents: found.cents, count: found.count });
+      totalSum += found.cents;
+    } else {
+      list.push({ month: ym, totalCents: null, count: 0 });
+    }
+  }
+
+  return {
+    rolling12Months: list,
+    average12MonthsCents: Math.round(totalSum / 12),
+  };
+}
+
+function rolling3MonthsDailyAvg(db: DatabaseSync, month: string, ownerId?: string): number {
+  let totalCents = 0;
+  let totalDays = 0;
+  for (let i = -3; i <= -1; i++) {
+    const ym = shiftMonthString(month, i);
+    const [y = 1970, m = 1] = ym.split('-').map(Number);
+    totalDays += daysInMonth(y, m);
+    const t = totals(db, ym, ownerId);
+    totalCents += t.totalCents;
+  }
+  return totalDays === 0 ? 0 : Math.round(totalCents / totalDays);
+}
+
+function nextMonthCreditBuckets(
+  db: DatabaseSync,
+  month: string,
+  ownerId?: string,
+): {
+  items: PaymentBucket[];
+  totalCents: number;
+} {
+  const nextMonth = shiftMonthString(month, 1);
+  const scope: PeriodScope = ownerId === undefined ? { prefix: nextMonth } : { prefix: nextMonth, ownerId };
+  const allBuckets = paymentBuckets(db, scope);
+  const credits = allBuckets.filter((item) => item.type === 'credit');
+  const sum = credits.reduce((acc, c) => acc + c.cents, 0);
+  return { items: credits, totalCents: sum };
+}
+
+function daysBetween(startStr: string, endStr: string): number {
+  const [y1 = 1970, m1 = 1, d1 = 1] = startStr.split('-').map(Number);
+  const [y2 = 1970, m2 = 1, d2 = 1] = endStr.split('-').map(Number);
+  const utc1 = Date.UTC(y1, m1 - 1, d1);
+  const utc2 = Date.UTC(y2, m2 - 1, d2);
+  return Math.max(1, Math.round(Math.abs(utc2 - utc1) / (24 * 60 * 60 * 1000)) + 1);
+}
+
 export function monthlyReport(db: DatabaseSync, month: string, ownerId?: string): MonthlyReport {
   const current = totals(db, month, ownerId);
   const previousMonth = shiftMonthString(month, -1);
@@ -327,6 +546,10 @@ export function monthlyReport(db: DatabaseSync, month: string, ownerId?: string)
   const previousScope: PeriodScope =
     ownerId === undefined ? { prefix: previousMonth } : { prefix: previousMonth, ownerId };
   const deltaCents = current.totalCents - previous.totalCents;
+
+  const rolling = rolling12(db, month, ownerId);
+  const rolling3Daily = rolling3MonthsDailyAvg(db, month, ownerId);
+  const nextMonthCredit = nextMonthCreditBuckets(db, month, ownerId);
 
   return {
     month,
@@ -348,6 +571,12 @@ export function monthlyReport(db: DatabaseSync, month: string, ownerId?: string)
     ),
     paymentMethods: paymentBuckets(db, scope),
     members: memberBuckets(db, scope),
+    daily: dailyRhythm(db, scope, month),
+    rolling12Months: rolling.rolling12Months,
+    average12MonthsCents: rolling.average12MonthsCents,
+    rolling3MonthsDailyAverageCents: rolling3Daily,
+    nextMonthRepayments: nextMonthCredit.items,
+    nextMonthDueTotalCents: nextMonthCredit.totalCents,
   };
 }
 
@@ -387,13 +616,100 @@ export function yearlyReport(db: DatabaseSync, year: string, ownerId?: string): 
   const previousScope: PeriodScope =
     ownerId === undefined ? { prefix: previousPrefix } : { prefix: previousPrefix, ownerId };
 
+  let sum3 = 0;
+  for (let i = -2; i <= 0; i++) {
+    const y = String(Number(year) + i);
+    sum3 += totals(db, `${y}-`, ownerId).totalCents;
+  }
+  const average3YearsCents = Math.round(sum3 / 3);
+
+  const peak = months.reduce(
+    (best, m) => (m.totalCents > best.totalCents ? m : best),
+    months[0] ?? { month: `${year}-01`, totalCents: 0, count: 0 },
+  );
+  const peakMonth =
+    peak && peak.totalCents > 0 ? { month: peak.month, totalCents: peak.totalCents } : null;
+
   return {
     year,
     totalCents: current.totalCents,
     count: current.count,
     months,
     yearAgo: compare('去年', current.totalCents, totals(db, previousPrefix, ownerId).totalCents),
+    largest: largestExpense(db, scope),
     categories: categoryBuckets(db, scope, current.totalCents, categoryCentsByRoot(db, previousScope)),
+    members: memberBuckets(db, scope),
+    average3YearsCents,
+    peakMonth,
+  };
+}
+
+export function summaryReport(db: DatabaseSync, ownerId?: string): SummaryReport {
+  const scope: PeriodScope = { prefix: '', ownerId };
+  const current = totals(db, '', ownerId);
+  const where = scopeClause(scope);
+
+  const datesRow = db
+    .prepare(
+      `SELECT MIN(e.repayment_date) AS min_d,
+              MAX(e.repayment_date) AS max_d,
+              COUNT(DISTINCT substr(e.repayment_date, 1, 7)) AS m_cnt
+         FROM expenses e
+        WHERE ${where.sql}`,
+    )
+    .get(...where.params) as Record<string, unknown> | undefined;
+
+  const minD = datesRow?.min_d ? String(datesRow.min_d) : null;
+  const maxD = datesRow?.max_d ? String(datesRow.max_d) : null;
+  const monthCount = Number(datesRow?.m_cnt ?? 0);
+  const recordedDays = minD && maxD ? daysBetween(minD, maxD) : 0;
+
+  const rawYears = db
+    .prepare(
+      `SELECT substr(e.repayment_date, 1, 4) AS y,
+              SUM(e.amount_cents) AS cents, COUNT(*) AS cnt
+         FROM expenses e
+        WHERE ${where.sql}
+        GROUP BY y
+        ORDER BY y ASC`,
+    )
+    .all(...where.params) as unknown as Array<Record<string, unknown>>;
+
+  const years = rawYears.map((row) => ({
+    year: String(row['y']),
+    totalCents: Number(row['cents']),
+    count: Number(row['cnt']),
+  }));
+
+  const peakRow = db
+    .prepare(
+      `SELECT substr(e.repayment_date, 1, 7) AS ym,
+              SUM(e.amount_cents) AS cents
+         FROM expenses e
+        WHERE ${where.sql}
+        GROUP BY ym
+        ORDER BY cents DESC
+        LIMIT 1`,
+    )
+    .get(...where.params) as Record<string, unknown> | undefined;
+
+  const peakMonth =
+    peakRow && Number(peakRow.cents) > 0
+      ? { month: String(peakRow.ym), totalCents: Number(peakRow.cents) }
+      : null;
+
+  return {
+    totalCents: current.totalCents,
+    count: current.count,
+    firstRepaymentDate: minD,
+    lastRepaymentDate: maxD,
+    recordedDays,
+    monthlyAverageCents: monthCount === 0 ? 0 : Math.round(current.totalCents / monthCount),
+    dailyAverageCents: recordedDays === 0 ? 0 : Math.round(current.totalCents / recordedDays),
+    perExpenseAverageCents: current.count === 0 ? 0 : Math.round(current.totalCents / current.count),
+    peakMonth,
+    years,
+    categories: categoryBuckets(db, scope, current.totalCents, new Map()),
     members: memberBuckets(db, scope),
   };
 }

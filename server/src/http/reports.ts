@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { getDatabase } from '../db/index.ts';
-import { monthlyReport, yearlyReport } from '../db/repo/reports.ts';
+import { monthlyReport, summaryReport, yearlyReport } from '../db/repo/reports.ts';
 import { badRequest } from '../lib/http-error.ts';
 import { asRecord, optionalStrParam } from '../lib/validate.ts';
 import { requireAuth } from './guard.ts';
@@ -44,6 +44,13 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
 
     return {
       report: yearlyReport(getDatabase(), year, optionalStrParam(query['ownerId'], 'ownerId')),
+    };
+  });
+
+  app.get('/api/reports/summary', { preHandler: requireAuth }, async (request) => {
+    const query = asRecord(request.query);
+    return {
+      report: summaryReport(getDatabase(), optionalStrParam(query['ownerId'], 'ownerId')),
     };
   });
 }

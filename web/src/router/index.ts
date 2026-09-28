@@ -47,7 +47,13 @@ router.beforeEach(async (to) => {
   }
 
   if (to.name === 'login' && authStore.isAuthenticated) {
-    return { name: 'dashboard' };
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+    return isMobile ? { name: 'ledger' } : { name: 'dashboard' };
+  }
+
+  // 移动端单页化：首屏落地页为流水页（§6.6 四）
+  if (to.path === '/' && typeof window !== 'undefined' && window.innerWidth < 1024) {
+    return { name: 'ledger' };
   }
 
   return true;

@@ -22,6 +22,7 @@ import type {
   PlanTodo,
   PlanTodoStatus,
   TransferResult,
+  SummaryReport,
   User,
   UserRole,
   YearlyReport,
@@ -312,6 +313,9 @@ export const reports = {
 
   yearly: (year: string, ownerId?: string) =>
     request<{ report: YearlyReport }>('/api/reports/yearly', { query: { year, ownerId } }),
+
+  summary: (ownerId?: string) =>
+    request<{ report: SummaryReport }>('/api/reports/summary', { query: { ownerId } }),
 };
 
 // ---- 数据 -----------------------------------------------------------------

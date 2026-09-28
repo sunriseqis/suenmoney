@@ -322,6 +322,225 @@
     gap: 12px;
   }
 
+  /* ---- 累计条：只有一行数，压成通栏细条 ---- */
+  .strip {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 11px 14px;
+    background: var(--bg-subtle);
+    border-radius: var(--r-md);
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  .strip__label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--fg-faint);
+    padding-right: 14px;
+    border-right: 1px solid var(--border);
+  }
+
+  .strip__items {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .strip__items b {
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .strip__note {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--fg-faint);
+  }
+
+  @media (max-width: 640px) {
+    .strip {
+      display: block;
+    }
+    .strip__label {
+      display: block;
+      border-right: 0;
+      padding: 0 0 6px;
+    }
+    .strip__items {
+      gap: 8px 14px;
+    }
+    .strip__note {
+      display: none;
+    }
+  }
+
+  /* ---- 桌面 Hero 底部提醒条 ---- */
+  .chipbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 8px 12px;
+    border-radius: var(--r-sm);
+    background: var(--bg-subtle);
+    box-shadow: inset 0 0 0 1px var(--border);
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .chipbar--clean {
+    background: var(--bg-sunken);
+    box-shadow: none;
+    color: var(--fg-muted);
+    font-weight: 500;
+  }
+
+  .chipbar__spacer {
+    flex: 1 1 auto;
+  }
+
+  .chipbar__hint {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-faint);
+  }
+
+  .chipbar .popover {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    z-index: 30;
+    width: min(480px, 100%);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 160ms, transform 160ms, visibility 160ms;
+  }
+
+  .chipbar:hover .popover,
+  .chipbar:focus-within .popover,
+  .chipbar[data-open='true'] .popover {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+
+  /* ---- 月度支出热力图 ---- */
+  .heat {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .heat__cell {
+    border-radius: var(--r-sm);
+    padding: 9px 4px 8px;
+    text-align: center;
+    position: relative;
+    background: var(--bg-sunken);
+    transition: transform 140ms;
+    cursor: pointer;
+  }
+
+  .heat__cell:hover {
+    transform: translateY(-2px);
+  }
+
+  .heat__m {
+    font-size: 11px;
+    font-weight: 600;
+    display: block;
+  }
+
+  .heat__v {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    margin-top: 3px;
+    opacity: 0.92;
+  }
+
+  .heat__cell--empty {
+    color: var(--fg-faint);
+  }
+
+  .heat__cell--now {
+    outline: 2px solid var(--fg);
+    outline-offset: -2px;
+  }
+
+  .heat__v--short {
+    display: none;
+  }
+
+  @media (max-width: 640px) {
+    .heat {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .heat__m {
+      font-size: 10px;
+    }
+    .heat__v--full {
+      display: none;
+    }
+    .heat__v--short {
+      display: block;
+    }
+  }
+
+  /* ---- 语义色辅助类 ---- */
+  .tone-up {
+    color: var(--danger-text);
+  }
+  .tone-down {
+    color: var(--secondary-text);
+  }
+  .tone-warn {
+    color: var(--accent-text);
+  }
+  .tone-flat {
+    color: var(--fg-faint);
+  }
+
+  /* ---- 三档 Pill Tabs ---- */
+  .pill-tabs {
+    display: inline-flex;
+    gap: 2px;
+    background: var(--bg-sunken);
+    padding: 3px;
+    border-radius: var(--r-sm);
+  }
+
+  .pill-tabs button {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 160ms, color 160ms;
+  }
+
+  .pill-tabs button[aria-pressed='true'] {
+    background: var(--bg-subtle);
+    color: var(--fg);
+  }
+
   /* ---- 左右滑 ---- */
 
   .reminder-swipe {

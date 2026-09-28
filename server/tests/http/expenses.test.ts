@@ -839,6 +839,22 @@ describe('报表', () => {
     assert.equal(report.yearAgo.change.ratio, null);
     assert.equal(report.yearAgo.change.deltaCents, report.totalCents);
   });
+
+  test('汇总报表：全量统计指标与年度拆分', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/reports/summary',
+      headers: auth(),
+    });
+    assert.equal(res.statusCode, 200);
+    const report = res.json().report;
+    assert.ok(report.totalCents > 0);
+    assert.ok(report.count > 0);
+    assert.ok(Array.isArray(report.years));
+    assert.ok(Array.isArray(report.categories));
+    assert.ok(Array.isArray(report.members));
+    assert.ok(report.recordedDays >= 1);
+  });
 });
 
 describe('分类转移', () => {

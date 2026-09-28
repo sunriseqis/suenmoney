@@ -76,6 +76,16 @@ export interface ExpensePage {
   hasMore: boolean;
 }
 
+export interface SubCategoryBucket {
+  categoryId: string;
+  name: string;
+  icon: string;
+  color: string;
+  cents: number;
+  count: number;
+  ratio: number;
+}
+
 export interface CategoryBucket {
   categoryId: string;
   name: string;
@@ -90,6 +100,8 @@ export interface CategoryBucket {
   previousCents: number;
   /** 环比。上期为 0 时为 null —— 与 report.change.ratio 同一套口径，不要各写一套 */
   changeRatio: number | null;
+  /** 二级子分类明细，按金额倒序 */
+  children?: SubCategoryBucket[];
 }
 
 export interface PaymentBucket {
@@ -125,6 +137,13 @@ export interface ComparedPeriod {
   change: { deltaCents: number; ratio: number | null };
 }
 
+export interface DailyRhythmPoint {
+  date: string;
+  day: number;
+  cents: number;
+  count: number;
+}
+
 export interface MonthlyReport {
   month: string;
   totalCents: number;
@@ -138,6 +157,12 @@ export interface MonthlyReport {
   categories: CategoryBucket[];
   paymentMethods: PaymentBucket[];
   members: MemberBucket[];
+  daily?: DailyRhythmPoint[];
+  rolling12Months?: Array<{ month: string; totalCents: number | null; count: number }>;
+  average12MonthsCents?: number;
+  rolling3MonthsDailyAverageCents?: number;
+  nextMonthRepayments?: PaymentBucket[];
+  nextMonthDueTotalCents?: number;
 }
 
 // ---- 计划与待办 -----------------------------------------------------------
@@ -231,6 +256,24 @@ export interface YearlyReport {
   months: Array<{ month: string; totalCents: number; count: number }>;
   /** 同比（去年整年） */
   yearAgo: ComparedPeriod;
+  largest?: LargestExpense | null;
+  categories: CategoryBucket[];
+  members: MemberBucket[];
+  average3YearsCents?: number;
+  peakMonth?: { month: string; totalCents: number } | null;
+}
+
+export interface SummaryReport {
+  totalCents: number;
+  count: number;
+  firstRepaymentDate: string | null;
+  lastRepaymentDate: string | null;
+  recordedDays: number;
+  monthlyAverageCents: number;
+  dailyAverageCents: number;
+  perExpenseAverageCents: number;
+  peakMonth: { month: string; totalCents: number } | null;
+  years: Array<{ year: string; totalCents: number; count: number }>;
   categories: CategoryBucket[];
   members: MemberBucket[];
 }
