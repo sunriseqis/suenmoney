@@ -323,6 +323,7 @@ export interface TodoFilter {
    */
   hideAcked?: boolean | undefined;
   limit?: number | undefined;
+  orderBy?: 'repayment_date' | 'period_seq' | undefined;
 }
 
 export function listTodos(db: DatabaseSync, filter: TodoFilter = {}): PlanTodoApi[] {
@@ -354,12 +355,16 @@ export function listTodos(db: DatabaseSync, filter: TodoFilter = {}): PlanTodoAp
   }
 
   const limit = Math.min(Math.max(filter.limit ?? 200, 1), 500);
+  const orderClause =
+    filter.orderBy === 'period_seq' || filter.planId !== undefined
+      ? 'period_seq ASC'
+      : 'repayment_date, period_seq';
 
   const todos = db
     .prepare(
       `SELECT ${TODO_COLUMNS} FROM plan_todos
         WHERE ${where.join(' AND ')}
-        ORDER BY repayment_date, period_seq
+        ORDER BY ${orderClause}
         LIMIT ?`,
     )
     .all(...params, limit) as unknown as PlanTodoRow[];
@@ -534,6 +539,9 @@ export interface CreatePlanInput {
   autoPost?: boolean | undefined;
   note?: string | undefined;
   ownerId: string;
+  /** 是否在创建后立即确认第一期（用于记账抽屉顺手分期：创建计划同时首期直接入账） */
+  confirmFirst?: boolean | undefined;
+  confirmSpendDate?: string | undefined;
 }
 
 export function createPlan(db: DatabaseSync, input: CreatePlanInput): PlanApi {
@@ -633,6 +641,23 @@ export function createPlan(db: DatabaseSync, input: CreatePlanInput): PlanApi {
     });
 
     generateTodos(db, plan, cycle, 1, amounts, input.ownerId);
+
+    if (input.confirmFirst) {
+      const firstTodo = db
+        .prepare(
+          `SELECT id FROM plan_todos
+            WHERE plan_id = ? AND period_seq = 1 AND deleted_at IS NULL`,
+        )
+        .get(plan.id) as { id: string } | undefined;
+      if (firstTodo !== undefined) {
+        confirmTodo(
+          db,
+          firstTodo.id,
+          input.ownerId,
+          input.confirmSpendDate ?? purchaseDate ?? input.firstDueDate,
+        );
+      }
+    }
   });
 
   return toPlanApi(db, plan);
@@ -839,6 +864,75 @@ export function endPlan(db: DatabaseSync, id: string, actorId: string): PlanApi 
   });
 
   return toPlanApi(db, next);
+}
+
+/**
+ * 删除计划：
+ * 1. 清除未执行的待办（pending / skipped）；
+ * 2. 软删除其余已确认的待办（记录墓碑变更）；
+ * 3. 软删除计划本身（记录墓碑变更）；
+ * 4. 历史已生成的支出保持不变。
+ */
+export function deletePlan(db: DatabaseSync, id: string, actorId: string): void {
+  const existing = requireOwnPlan(db, id, actorId);
+  const timestamp = nowIso();
+
+  inTransaction(db, () => {
+    // 1. 删除未执行的待办
+    deletePendingTodos(db, id, actorId);
+
+    // 2. 软删除已确认的待办
+    const remainingTodos = db
+      .prepare(`SELECT ${TODO_COLUMNS} FROM plan_todos WHERE plan_id = ? AND deleted_at IS NULL`)
+      .all(id) as unknown as PlanTodoRow[];
+
+    for (const todo of remainingTodos) {
+      const nextTodo: PlanTodoRow = {
+        ...todo,
+        deleted_at: timestamp,
+        updated_at: timestamp,
+        rev: todo.rev + 1,
+      };
+      db.prepare('UPDATE plan_todos SET deleted_at = ?, updated_at = ?, rev = ? WHERE id = ?').run(
+        nextTodo.deleted_at,
+        nextTodo.updated_at,
+        nextTodo.rev,
+        todo.id,
+      );
+      recordChange(db, {
+        entityType: 'plan_todo',
+        entityId: todo.id,
+        op: 'delete',
+        actorId,
+        payload: { ...toSyncTodo(nextTodo), deleted_at: timestamp },
+        deviceId: nextTodo.device_id,
+      });
+    }
+
+    // 3. 软删除计划本身
+    const nextPlan: PlanRow = {
+      ...existing,
+      deleted_at: timestamp,
+      updated_at: timestamp,
+      rev: existing.rev + 1,
+    };
+
+    db.prepare('UPDATE plans SET deleted_at = ?, updated_at = ?, rev = ? WHERE id = ?').run(
+      nextPlan.deleted_at,
+      nextPlan.updated_at,
+      nextPlan.rev,
+      id,
+    );
+
+    recordChange(db, {
+      entityType: 'plan',
+      entityId: id,
+      op: 'delete',
+      actorId,
+      payload: { ...toSyncPlan(nextPlan), deleted_at: timestamp },
+      deviceId: nextPlan.device_id,
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

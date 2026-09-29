@@ -13,7 +13,10 @@ import { Check } from '@lucide/vue';
 
 import { CATEGORY_COLORS } from '@/utils/category-colors';
 
-defineProps<{ modelValue: string }>();
+defineProps<{
+  modelValue: string;
+  autoColor?: number;
+}>();
 const emit = defineEmits<{ 'update:modelValue': [string] }>();
 </script>
 
@@ -23,7 +26,7 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>();
       <!-- 自动 = 清空，回到按分类名推导 -->
       <button
         type="button"
-        class="h-8 rounded-sm px-2.5 text-xs font-semibold transition-all duration-200"
+        class="flex h-8 items-center gap-1.5 rounded-sm px-2.5 text-xs font-semibold transition-all duration-200"
         :class="
           modelValue === ''
             ? 'bg-primary-fill text-on-primary'
@@ -31,7 +34,13 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>();
         "
         @click="emit('update:modelValue', '')"
       >
-        自动
+        <span
+          v-if="autoColor"
+          class="h-2.5 w-2.5 rounded-full ring-1 ring-white/40"
+          :style="{ background: `var(--chart-${autoColor})` }"
+          aria-hidden="true"
+        />
+        <span>自动</span>
       </button>
 
       <span class="mx-1 h-5 w-px bg-line" aria-hidden="true" />
@@ -40,8 +49,11 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>();
         v-for="c in CATEGORY_COLORS"
         :key="c.index"
         type="button"
-        class="grid h-8 w-8 place-items-center rounded-sm transition-transform duration-200 hover:scale-110"
-        :class="modelValue === String(c.index) ? 'ring-2 ring-ink ring-offset-2 ring-offset-sunken' : ''"
+        class="relative grid h-8 w-8 place-items-center rounded-sm transition-all duration-200 hover:scale-110"
+        :class="[
+          modelValue === String(c.index) ? 'ring-2 ring-ink ring-offset-2 ring-offset-sunken scale-105' : '',
+          modelValue === '' && autoColor === c.index ? 'ring-2 ring-primary ring-offset-2 ring-offset-sunken ring-dashed' : '',
+        ]"
         :style="{ background: `var(${c.varName})` }"
         :aria-label="`颜色 ${c.index}`"
         :aria-pressed="modelValue === String(c.index)"
@@ -54,11 +66,12 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>();
           class="text-white"
           aria-hidden="true"
         />
+        <span
+          v-else-if="modelValue === '' && autoColor === c.index"
+          class="h-2 w-2 rounded-full bg-white shadow-xs"
+          title="自动分配"
+        />
       </button>
     </div>
-
-    <p class="mt-2 text-xs text-ink-muted">
-      不选（自动）时，会按分类名固定分配一个颜色 —— 同一个分类在任何设备上都是同一个颜色。
-    </p>
   </div>
 </template>

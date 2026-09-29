@@ -361,3 +361,26 @@ export interface DataOverview {
   resetDemoBlockers: string[];
   preRestoreDir: string;
 }
+
+export interface SnapshotInfo {
+  filename: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface WebdavConfig {
+  url: string;
+  username: string;
+  password?: string;
+  hasPassword?: boolean;
+  path: string;
+  isEnabled: boolean;
+}
+
+export interface WebdavStatus {
+  lastBackupAt: string | null;
+  lastBackupStatus: 'success' | 'error' | null;
+  lastBackupMessage: string | null;
+  lastBackupFilename: string | null;
+}
+

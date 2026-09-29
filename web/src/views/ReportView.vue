@@ -10,6 +10,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
+import { Sparkles } from '@lucide/vue';
 
 import {
   ApiError,
@@ -22,14 +23,16 @@ import {
 } from '@/api';
 import PaymentIcon from '@/components/PaymentIcon.vue';
 import PeriodPicker from '@/components/PeriodPicker.vue';
+import { useDictionariesStore } from '@/stores/dictionaries';
 import { useUiStore } from '@/stores/ui';
-import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors';
+import { categoryColorVar } from '@/utils/category-colors';
 import { currentMonth, elapsedDays, formatMonthDay, formatMonthLabel } from '@/utils/dates';
 import { buildDonutArcs, DONUT_RADIUS } from '@/utils/donut';
 import { formatCompact, formatYuan } from '@/utils/money';
 
 const route = useRoute();
 const ui = useUiStore();
+const dict = useDictionariesStore();
 
 type Scope = 'month' | 'year' | 'all';
 
@@ -84,7 +87,10 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  dict.load();
+  load();
+});
 watch([scope, month, year], load);
 watch(() => ui.dataVersion, load);
 
@@ -130,7 +136,7 @@ const donutArcs = computed(() =>
     categories.value.map((item) => ({
       id: item.categoryId,
       ratio: item.ratio,
-      color: categoryColorVar(resolveCategoryColor(item.name, item.color)),
+      color: categoryColorVar(dict.colorOf(item.categoryId, item.name, item.color)),
     })),
   ),
 );
@@ -584,6 +590,19 @@ const memberRows = computed(() => {
       </div>
 
       <template v-else>
+        <!-- 年度报告横幅入口 (仅在 year 档显示) -->
+        <RouterLink
+          v-if="scope === 'year'"
+          :to="{ name: 'annual-summary', query: { year } }"
+          class="flex items-center justify-between rounded-md bg-gradient-to-r from-primary/10 via-subtle to-subtle p-4 border border-primary/20 hover:border-primary/50 transition-colors"
+        >
+          <div class="flex items-center gap-2.5">
+            <Sparkles class="h-4 w-4 text-primary" />
+            <span class="text-xs font-bold text-ink">查看 {{ year }} 年度生活与财务总结报告</span>
+          </div>
+          <span class="text-xs font-semibold text-primary">进入报告 →</span>
+        </RouterLink>
+
         <!-- ④ 对照（Comparison）：月档 / 年档显示，汇总档隐藏 -->
         <section
           v-if="scope !== 'all' && comparisonMetrics.length > 0"
@@ -681,7 +700,7 @@ const memberRows = computed(() => {
                     <span
                       class="h-2.5 w-2.5 shrink-0 rounded-[3px]"
                       :style="{
-                        background: categoryColorVar(resolveCategoryColor(item.name, item.color)),
+                        background: categoryColorVar(dict.colorOf(item.categoryId, item.name, item.color)),
                       }"
                       aria-hidden="true"
                     />
@@ -907,7 +926,7 @@ const memberRows = computed(() => {
                     <span
                       class="h-2 w-2 shrink-0 rounded-full"
                       :style="{
-                        background: categoryColorVar(resolveCategoryColor(item.name, item.color)),
+                        background: categoryColorVar(dict.colorOf(item.categoryId, item.name, item.color)),
                       }"
                       aria-hidden="true"
                     />
@@ -1018,7 +1037,7 @@ const memberRows = computed(() => {
                   <span
                     class="h-2 w-2 shrink-0 rounded-full"
                     :style="{
-                      background: categoryColorVar(resolveCategoryColor(item.name, item.color)),
+                      background: categoryColorVar(dict.colorOf(item.categoryId, item.name, item.color)),
                     }"
                     aria-hidden="true"
                   />

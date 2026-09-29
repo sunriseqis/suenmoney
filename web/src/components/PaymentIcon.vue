@@ -62,6 +62,7 @@ const style = computed(() => ({
     fill="currentColor"
     class="shrink-0 inline-block align-middle"
     aria-hidden="true"
+  >
     <path v-if="SVG_PATHS.card?.[0]" :d="SVG_PATHS.card[0]" />
   </svg>
 </template>

@@ -11,6 +11,21 @@ Android / iOS 复用同一份前端代码。
 
 ## 快速开始
 
+### 方式一：Docker Compose（推荐，自托管生产环境）
+
+```bash
+# 启动并在后台运行
+docker compose up -d --build
+
+# （可选）若未在环境变量预设管理员，可在容器内手动添加首个管理员：
+docker compose exec server npm run user:add -- --username admin --name 管理员 --admin
+```
+打开 `http://127.0.0.1:5310` 即可开始使用。详细运维与备份请阅读 [部署与运维指南](docs/deploy.md)。
+
+---
+
+### 方式二：本地开发调试
+
 需要 **Node ≥ 22.9**。
 
 ```bash
@@ -87,6 +102,7 @@ suenmoney/
 
 | 文件 | 内容 |
 |---|---|
+| [`docs/deploy.md`](docs/deploy.md) | **部署与运维指南** —— Docker Compose 一键部署、环境变量与物理快照容灾 |
 | [`docs/decisions.md`](docs/decisions.md) | **设计决定与理由** —— 改设计前先读这份 |
 | [`docs/plan.md`](docs/plan.md) | 路线图、当前进度、待决事项 |
 | [`docs/api.md`](docs/api.md) | 接口清单 |

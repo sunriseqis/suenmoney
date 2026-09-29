@@ -2,28 +2,50 @@
 /**
  * 记账抽屉 —— 记一笔 / 编辑已有的账。
  *
- * 设计目标：**3 次点击内完成一笔记账**。打开时分类、支付方式、日期都已
- * 预选好（上次用的或第一项），正常情况下只需要「敲金额 → 保存」。
- *
- * 编辑与新建共用同一个组件：字段、校验、保存路径完全一致，
- * 分成两个组件迟早会在其中一边漏掉某个规则。
+ * 全新紧凑移动端架构：
+ * 1. 顶部：金额大字 + 收支切换；
+ * 2. 中间：紧凑单行信息卡片（分类行、支付方式行、消费日期行、分期行、备注行）；
+ * 3. 弹层解耦：分类与支付方式采用独立 Sheet 面板，选完即走，彻底移除横向滚动条；
+ * 4. 底部：去除横向摘要滑块，紧凑状态条 + 固定数字键盘。
  */
 import { computed, ref, watch } from 'vue';
+import {
+  Calendar,
+  ChevronRight,
+  CreditCard,
+  FileText,
+} from '@lucide/vue';
 
-import { ApiError, expenses as expensesApi, reports as reportsApi, type Expense } from '@/api';
+import {
+  ApiError,
+  expenses as expensesApi,
+  plans as plansApi,
+  reports as reportsApi,
+  type Category,
+  type Expense,
+  type PaymentMethod,
+} from '@/api';
+import CategoryIcon from '@/components/CategoryIcon.vue';
+import CategoryPickerSheet from '@/components/CategoryPickerSheet.vue';
+import ChipButton from '@/components/ChipButton.vue';
+import NumericKeypad from '@/components/NumericKeypad.vue';
+import PaymentIcon from '@/components/PaymentIcon.vue';
+import PaymentMethodPickerSheet from '@/components/PaymentMethodPickerSheet.vue';
+import type { KeypadKey } from '@/components/keypad';
 import { useDictionariesStore } from '@/stores/dictionaries';
+import { usePlansStore } from '@/stores/plans';
 import { currentMonth, formatMonthDay, formatMonthLabel, todayLocal } from '@/utils/dates';
-import { centsToInput, formatCompact, formatYuan, parseYuanToCents } from '@/utils/money';
-
-import ChipButton from './ChipButton.vue';
-import NumericKeypad from './NumericKeypad.vue';
-import PaymentIcon from './PaymentIcon.vue';
-import type { KeypadKey } from './keypad';
+import {
+  centsToInput,
+  formatCompact,
+  formatYuan,
+  parseYuanToCents,
+  splitInstallment,
+} from '@/utils/money';
 
 const props = withDefaults(
   defineProps<{
     open: boolean;
-    /** 传了就是编辑模式，不传是新建 */
     expense?: Expense | null;
   }>(),
   { expense: null },
@@ -32,15 +54,19 @@ const props = withDefaults(
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const dict = useDictionariesStore();
+const plansStore = usePlansStore();
+
+// 弹层控制
+const categoryPickerOpen = ref(false);
+const paymentPickerOpen = ref(false);
 
 /** 已用「＋」确认过的金额（分） */
 const parts = ref<number[]>([]);
 /** 当前正在输入的「元」文本 */
 const input = ref('');
-/** 退款 / 冲销：金额取负。用显式开关而不是让用户敲负号 —— 键盘上放不下负号键 */
+/** 退款 / 冲销 */
 const isRefund = ref(false);
 
-const activeRootId = ref<string | null>(null);
 const categoryId = ref<string | null>(null);
 const paymentMethodId = ref<string | null>(null);
 const spendDate = ref(todayLocal());
@@ -55,23 +81,96 @@ const inputCents = computed(() => parseYuanToCents(input.value));
 const totalCents = computed(() => partsTotal.value + inputCents.value);
 const canSave = computed(() => totalCents.value > 0);
 
-/**
- * 计划生成的记录只允许改备注。
- *
- * 服务端已经强制了这条规则，这里同步做界面降级 —— 让用户看到「为什么改不了」，
- * 而不是敲完金额点保存才被 403 拒绝。
- */
+/** 计划生成的记录只允许改备注 */
 const coreEditable = computed(() => props.expense === null || props.expense.source === 'manual');
 
-const activeRoot = computed(
-  () => dict.rootCategories.find((item) => item.id === activeRootId.value) ?? null,
+/** 当前选中的分类对象及面包屑展示名 */
+const selectedCategory = computed(() => dict.findCategory(categoryId.value));
+const categoryLabel = computed(() => {
+  const cat = selectedCategory.value;
+  if (!cat) return '选择分类';
+  if (cat.parentId) {
+    const parent = dict.findCategory(cat.parentId);
+    return parent ? `${parent.name} · ${cat.name}` : cat.name;
+  }
+  return cat.name;
+});
+
+/** 当前选中的支付方式对象及展示名 */
+const selectedPaymentMethod = computed(() => dict.findPaymentMethod(paymentMethodId.value));
+const paymentLabel = computed(() => {
+  return selectedPaymentMethod.value?.name ?? '选择支付方式';
+});
+
+/** 是否为信用卡类型 */
+const isCreditCard = computed(() => selectedPaymentMethod.value?.type === 'credit');
+
+/** 仅当支付方式为信用卡类型、可核心编辑、且非退款时才允许分期（记账和修改共用） */
+const canInstallment = computed(
+  () => coreEditable.value && isCreditCard.value && !isRefund.value,
 );
 
-const childOptions = computed(() =>
-  activeRoot.value === null ? [] : dict.selectableChildren(activeRoot.value),
-);
+// 分期相关状态（仅信用卡非退款有效）
+const isInstallment = ref(false);
+const installmentPeriods = ref(12);
+const customPeriods = ref(false);
+const customPeriodsInput = ref('');
 
-/** 服务端算出的入账日与还款日（预览，不落库） */
+function selectPeriods(p: number): void {
+  installmentPeriods.value = p;
+  customPeriods.value = false;
+}
+
+function enableCustomPeriods(): void {
+  customPeriods.value = true;
+  if (!customPeriodsInput.value) {
+    customPeriodsInput.value = String(installmentPeriods.value || 12);
+  }
+}
+
+watch(canInstallment, (can) => {
+  if (!can) isInstallment.value = false;
+});
+
+const effectivePeriods = computed(() => {
+  if (customPeriods.value) {
+    const val = parseInt(customPeriodsInput.value, 10);
+    return Number.isFinite(val) && val >= 2 && val <= 600 ? val : 12;
+  }
+  return installmentPeriods.value;
+});
+
+const installmentAmounts = computed(() => {
+  if (!canInstallment.value || !isInstallment.value || totalCents.value <= 0) return [];
+  return splitInstallment(totalCents.value, effectivePeriods.value);
+});
+
+const perPeriodCents = computed(() => installmentAmounts.value[0] ?? 0);
+const installmentPerPeriodText = computed(() => formatYuan(perPeriodCents.value));
+
+const desktopAmountInputRef = ref<HTMLInputElement | null>(null);
+
+function handleDesktopAmountInput(e: Event): void {
+  const target = e.target as HTMLInputElement;
+  let val = target.value.replace(/[^\d.]/g, '');
+  const dots = val.split('.');
+  if (dots.length > 2) {
+    val = `${dots[0]}.${dots.slice(1).join('')}`;
+  }
+  if (dots[1] && dots[1].length > 2) {
+    val = `${dots[0]}.${dots[1].slice(0, 2)}`;
+  }
+  input.value = val;
+}
+
+const saveLabel = computed(() => {
+  if (canInstallment.value && isInstallment.value) {
+    return props.expense === null ? '创建分期' : '转为分期';
+  }
+  return props.expense === null ? '保存' : '更新';
+});
+
+/** 账单日与还款日服务端预览（预览，不落库） */
 const previewDates = ref<{ postingDate: string; repaymentDate: string } | null>(null);
 
 async function refreshPreview(): Promise<void> {
@@ -86,37 +185,254 @@ async function refreshPreview(): Promise<void> {
       paymentMethodId: paymentMethodId.value,
     });
   } catch {
-    // 预览失败不该阻塞记账 —— 它只是个提示，拿不到就不显示
     previewDates.value = null;
   }
 }
 
-/**
- * 键盘上方常驻的「本月已支出」。
- *
- * 记账的时候最想知道的就是「这个月已经花了多少」，可抽屉一弹出来整屏都被盖住，
- * 那个数字恰好是唯一看不到的 —— 于是要么凭记忆记，要么关掉抽屉再去看一眼。
- * 这里补一份，成本只有一次聚合查询。
- *
- * 拿不到就显示占位符，绝不阻塞记账：它是背景信息，不是记账流程的一环。
- */
+/** 键盘上方常驻的「本月已支出」 */
 const monthSpentCents = ref<number | null>(null);
+
+/** 常用度统计（本地记录 + 当月服务端统计） */
+const USAGE_COUNTS_KEY = 'suenmoney:usage-counts';
+
+interface UsageCounts {
+  categories: Record<string, number>;
+  paymentMethods: Record<string, number>;
+}
+
+function getStoredUsageCounts(): UsageCounts {
+  try {
+    const raw = localStorage.getItem(USAGE_COUNTS_KEY);
+    if (!raw) return { categories: {}, paymentMethods: {} };
+    const parsed = JSON.parse(raw) as Partial<UsageCounts>;
+    return {
+      categories:
+        parsed.categories && typeof parsed.categories === 'object' ? parsed.categories : {},
+      paymentMethods:
+        parsed.paymentMethods && typeof parsed.paymentMethods === 'object'
+          ? parsed.paymentMethods
+          : {},
+    };
+  } catch {
+    return { categories: {}, paymentMethods: {} };
+  }
+}
+
+const usageCounts = ref<UsageCounts>(getStoredUsageCounts());
+const serverUsageCounts = ref<{
+  categories: Record<string, number>;
+  paymentMethods: Record<string, number>;
+}>({ categories: {}, paymentMethods: {} });
+
+function recordUsage(catId: string | null, methodId: string | null): void {
+  if (!catId && !methodId) return;
+  try {
+    const counts = getStoredUsageCounts();
+    if (catId) counts.categories[catId] = (counts.categories[catId] ?? 0) + 1;
+    if (methodId) counts.paymentMethods[methodId] = (counts.paymentMethods[methodId] ?? 0) + 1;
+    localStorage.setItem(USAGE_COUNTS_KEY, JSON.stringify(counts));
+    usageCounts.value = counts;
+  } catch {
+    // 忽略写入失败
+  }
+}
 
 async function refreshMonthSpent(): Promise<void> {
   try {
-    monthSpentCents.value = (await reportsApi.monthly(currentMonth())).report.totalCents;
+    const reportData = (await reportsApi.monthly(currentMonth())).report;
+    monthSpentCents.value = reportData.totalCents;
+
+    const catCounts: Record<string, number> = {};
+    for (const cat of reportData.categories) {
+      if (cat.children && cat.children.length > 0) {
+        for (const child of cat.children) {
+          catCounts[child.categoryId] = (catCounts[child.categoryId] ?? 0) + child.count;
+        }
+      } else {
+        catCounts[cat.categoryId] = (catCounts[cat.categoryId] ?? 0) + cat.count;
+      }
+    }
+
+    const pmCounts: Record<string, number> = {};
+    for (const pm of reportData.paymentMethods ?? []) {
+      pmCounts[pm.paymentMethodId] = (pmCounts[pm.paymentMethodId] ?? 0) + pm.count;
+    }
+
+    serverUsageCounts.value = { categories: catCounts, paymentMethods: pmCounts };
   } catch {
     monthSpentCents.value = null;
   }
 }
 
-/**
- * 这笔会记在哪个月。
- *
- * 这是界面上最容易被忽略、却最容易造成误解的一条信息：信用卡的还款日
- * 很可能落在下个月，于是用户记完一笔回到首页，发现「本月还是 0」，
- * 以为没保存成功（我自己在验证时就被骗了一次）。把结果直接说出来，误解就消失了。
- */
+/** 所有可选的叶子分类（按一级分类原顺序展开） */
+const allSelectableCategories = computed<Category[]>(() => {
+  const list: Category[] = [];
+  for (const root of dict.rootCategories) {
+    for (const child of dict.selectableChildren(root)) {
+      list.push(child);
+    }
+  }
+  return list;
+});
+
+/** 快捷方式第一行：最常用的几个分类（展示开头两个字符） */
+const quickCategories = computed<Category[]>(() => {
+  const scored = allSelectableCategories.value.map((cat, originalIndex) => {
+    const localScore = usageCounts.value.categories[cat.id] ?? 0;
+    const serverScore = serverUsageCounts.value.categories[cat.id] ?? 0;
+    const totalScore = localScore * 5 + serverScore;
+    return { cat, totalScore, originalIndex };
+  });
+
+  scored.sort((a, b) => {
+    if (b.totalScore !== a.totalScore) {
+      return b.totalScore - a.totalScore;
+    }
+    return a.originalIndex - b.originalIndex;
+  });
+
+  return scored.slice(0, 6).map((item) => item.cat);
+});
+
+interface PaymentSlot {
+  key: string;
+  type: 'method' | 'more' | 'empty';
+  label: string;
+  title: string;
+  rowSpan?: number;
+  method?: PaymentMethod;
+}
+
+/** 智能精炼支付方式展示名称（避免「支付宝」截成「支付」，统一为 2~3 个自然字） */
+function getShortPaymentName(name: string): string {
+  if (name.startsWith('支付宝')) return '支付宝';
+  if (name.startsWith('微信')) return '微信';
+  if (name.includes('招商')) return '招商';
+  if (name.includes('工行') || name.includes('工商')) return '工行';
+  if (name.includes('建行') || name.includes('建设')) return '建行';
+  if (name.includes('农行') || name.includes('农业')) return '农行';
+  if (name.includes('中行') || name.includes('中国银行')) return '中行';
+  if (name.includes('广发')) return '广发';
+  if (name.includes('中信')) return '中信';
+  if (name.includes('交通')) return '交行';
+  if (name.includes('浦发')) return '浦发';
+  if (name.includes('民生')) return '民生';
+  if (name.includes('兴业')) return '兴业';
+  if (name.includes('光大')) return '光大';
+  if (name.includes('平安')) return '平安';
+  if (name.includes('京东')) return '京东';
+  if (name.includes('美团')) return '美团';
+  if (name.includes('花呗')) return '花呗';
+  if (name.includes('白条')) return '白条';
+  if (name.includes('现金')) return '现金';
+  return name.length <= 3 ? name : name.slice(0, 2);
+}
+
+/** 键盘左侧第 1 列：常用支付方式（高度与右侧数字键 1:1 对齐） */
+const leftPaymentSlots = computed<PaymentSlot[]>(() => {
+  const allUsable = dict.usablePaymentMethods;
+  const scored = allUsable.map((pm, originalIndex) => {
+    const localScore = usageCounts.value.paymentMethods[pm.id] ?? 0;
+    const serverScore = serverUsageCounts.value.paymentMethods[pm.id] ?? 0;
+    const totalScore = localScore * 5 + serverScore;
+    return { pm, totalScore, originalIndex };
+  });
+
+  scored.sort((a, b) => {
+    if (b.totalScore !== a.totalScore) {
+      return b.totalScore - a.totalScore;
+    }
+    return a.originalIndex - b.originalIndex;
+  });
+
+  const topMethods = scored.map((item) => item.pm);
+
+  // 若当前已选支付方式不在 Top 4 内，替换至第 4 位保证始终可见高亮
+  const activeMethod = dict.findPaymentMethod(paymentMethodId.value);
+  let pickedMethods: PaymentMethod[] = [];
+
+  if (topMethods.length <= 4) {
+    pickedMethods = [...topMethods];
+  } else {
+    const inTop4 = topMethods.slice(0, 4).some((pm) => pm.id === paymentMethodId.value);
+    if (inTop4 || !activeMethod || !activeMethod.isEnabled) {
+      pickedMethods = topMethods.slice(0, 4);
+    } else {
+      pickedMethods = [...topMethods.slice(0, 3), activeMethod];
+    }
+  }
+
+  // 场景 A：刚好仅有 2 个支付方式，平分 4 行（各占 2 行大触控区）
+  if (pickedMethods.length === 2 && allUsable.length === 2) {
+    return pickedMethods.map((pm) => ({
+      key: pm.id,
+      type: 'method',
+      label: getShortPaymentName(pm.name),
+      title: pm.name,
+      rowSpan: 2,
+      method: pm,
+    }));
+  }
+
+  // 场景 B：仅有 1 个支付方式，独占 4 行
+  const onlyOne = pickedMethods[0];
+  if (pickedMethods.length === 1 && allUsable.length === 1 && onlyOne) {
+    return [
+      {
+        key: onlyOne.id,
+        type: 'method',
+        label: getShortPaymentName(onlyOne.name),
+        title: onlyOne.name,
+        rowSpan: 4,
+        method: onlyOne,
+      },
+    ];
+  }
+
+  // 场景 C：3 个或更多
+  const slots: PaymentSlot[] = [];
+  for (const pm of pickedMethods) {
+    slots.push({
+      key: pm.id,
+      type: 'method',
+      label: getShortPaymentName(pm.name),
+      title: pm.name,
+      method: pm,
+    });
+  }
+
+  // 若不足 4 个且系统还有其他支付方式，补充「更多」入口
+  if (slots.length < 4 && allUsable.length > slots.length) {
+    slots.push({
+      key: '__more__',
+      type: 'more',
+      label: '更多',
+      title: '选择其他支付方式',
+    });
+  }
+
+  // 占位补齐至 4 个确保 Grid 绝对稳固
+  while (slots.length < 4) {
+    slots.push({
+      key: `__empty_${slots.length}__`,
+      type: 'empty',
+      label: '',
+      title: '',
+    });
+  }
+
+  return slots;
+});
+
+function handleLeftSlotClick(slot: PaymentSlot): void {
+  if (slot.type === 'method' && slot.method) {
+    paymentMethodId.value = slot.method.id;
+  } else if (slot.type === 'more') {
+    paymentPickerOpen.value = true;
+  }
+}
+
+/** 这笔支出落在哪个月的提示 */
 const landingHint = computed(() => {
   const dates = previewDates.value;
   if (dates === null) return null;
@@ -128,75 +444,11 @@ const landingHint = computed(() => {
     ? { shifted: false, text: `还款日 ${formatMonthDay(dates.repaymentDate)}` }
     : {
         shifted: true,
-        text: `这笔会记在 ${formatMonthLabel(repaymentMonth)}（还款日 ${formatMonthDay(dates.repaymentDate)}）`,
+        text: `还款落入 ${formatMonthLabel(repaymentMonth)}（${formatMonthDay(dates.repaymentDate)} 到期）`,
       };
 });
 
-/* ---- 键盘上方的常驻摘要 -------------------------------------------------
- *
- * 解决的是「重要选择被分屏」：窄屏上抽屉的可滚动区只有 400 多像素，
- * 而金额块 + 分类 + 支付方式 + 日期 + 备注加起来刚好超一点 ——
- * 于是「支付方式 / 日期 / 备注」永远差一点才露出来，每次都要下滑才能核对。
- *
- * 修法不是把它们全搬到首屏（那样首屏会挤成一团），而是**把结果露出来**：
- * 用户这一步要确认的是「我选对了没」，不是「我要改」。
- * 所以键盘上方常驻一行摘要，点其中任意一段会把对应的字段滚进视野 ——
- * 要改的时候也只有一次点击，不用手动滑。
- *
- * 跨月提示也搬到了这里。它原先在「消费日期」字段下面，同样会在折叠线之下 ——
- * 而「这笔会记在下个月」恰恰是记账时最不能漏看的一句话
- * （项目早期就因为这个被误导过一次，见 decisions.md）。
- */
-type FieldKey = 'category' | 'payment' | 'date' | 'note';
-
-const categoryField = ref<HTMLElement | null>(null);
-const paymentField = ref<HTMLElement | null>(null);
-const dateField = ref<HTMLElement | null>(null);
-const noteField = ref<HTMLElement | null>(null);
-
-interface SummarySegment {
-  key: FieldKey;
-  label: string;
-  /** 还没选 / 还是空的 —— 视觉上退一档，让「待补充」自己冒出来 */
-  pending: boolean;
-}
-
-const categoryLabel = computed(() => {
-  const category = categoryId.value === null ? null : dict.findCategory(categoryId.value);
-  if (category === null) return '选分类';
-
-  const parent = category.parentId === null ? null : dict.findCategory(category.parentId);
-  return parent === null ? category.name : `${parent.name} · ${category.name}`;
-});
-
-const paymentLabel = computed(() => {
-  const method =
-    paymentMethodId.value === null ? null : dict.findPaymentMethod(paymentMethodId.value);
-  return method?.name ?? '选支付方式';
-});
-
-const summarySegments = computed<SummarySegment[]>(() => [
-  { key: 'category', label: categoryLabel.value, pending: categoryId.value === null },
-  { key: 'payment', label: paymentLabel.value, pending: paymentMethodId.value === null },
-  { key: 'date', label: formatMonthDay(spendDate.value), pending: false },
-  { key: 'note', label: note.value === '' ? '备注' : note.value, pending: note.value === '' },
-]);
-
-function reveal(key: FieldKey): void {
-  const target = { category: categoryField, payment: paymentField, date: dateField, note: noteField }[
-    key
-  ].value;
-
-  // block:'nearest' —— 已经在视野里就不动，避免点一下整块跳一下
-  target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-}
-
-/**
- * 「上次用的是哪个分类 / 支付方式」的记忆。
- *
- * 记账是高频动作，绝大多数时候重复的是同一组选择。每次都从第一项重新选，
- * 相当于每天都要多做两次点击 —— 而这两个点击没有任何信息量。
- */
+/** 上次选择的分类与支付方式记忆 */
 const LAST_CHOICE_KEY = 'suenmoney:last-choice';
 
 interface LastChoice {
@@ -208,14 +460,12 @@ function readLastChoice(): LastChoice | null {
   try {
     const raw = localStorage.getItem(LAST_CHOICE_KEY);
     if (raw === null) return null;
-
     const parsed = JSON.parse(raw) as Partial<LastChoice>;
     if (typeof parsed.categoryId !== 'string' || typeof parsed.paymentMethodId !== 'string') {
       return null;
     }
     return { categoryId: parsed.categoryId, paymentMethodId: parsed.paymentMethodId };
   } catch {
-    // 隐私模式下 localStorage 不可用，或存的内容被改坏了 —— 退回默认选择即可
     return null;
   }
 }
@@ -224,13 +474,12 @@ function writeLastChoice(choice: LastChoice): void {
   try {
     localStorage.setItem(LAST_CHOICE_KEY, JSON.stringify(choice));
   } catch {
-    /* 同上，失败不影响记账 */
+    // 忽略写入失败
   }
 }
 
 function applyDefaultChoice(): void {
   const root = dict.rootCategories[0] ?? null;
-  activeRootId.value = root?.id ?? null;
   categoryId.value = root === null ? null : (dict.selectableChildren(root)[0]?.id ?? null);
 }
 
@@ -238,13 +487,15 @@ function resetForm(): void {
   parts.value = [];
   input.value = '';
   isRefund.value = false;
+  isInstallment.value = false;
+  installmentPeriods.value = 12;
+  customPeriods.value = false;
+  customPeriodsInput.value = '';
   note.value = '';
   spendDate.value = todayLocal();
   confirmingDelete.value = false;
 
   const last = readLastChoice();
-
-  // 分类：优先沿用上次的选择，但它必须**现在仍然可选**（可能已被停用或删除）
   const remembered = last === null ? null : dict.findCategory(last.categoryId);
   const usable = remembered !== null && remembered.isEnabled ? remembered : null;
 
@@ -252,15 +503,6 @@ function resetForm(): void {
     applyDefaultChoice();
   } else {
     categoryId.value = usable.id;
-    const parent = usable.parentId === null ? null : dict.findCategory(usable.parentId);
-    const rootId = parent !== null ? parent.id : usable.id;
-
-    if (dict.rootCategories.some((item) => item.id === rootId)) {
-      activeRootId.value = rootId;
-    } else {
-      // 父级已被停用，记忆失效
-      applyDefaultChoice();
-    }
   }
 
   const rememberedMethod = last === null ? null : dict.findPaymentMethod(last.paymentMethodId);
@@ -274,11 +516,11 @@ function fillFrom(expense: Expense): void {
   parts.value = [];
   input.value = centsToInput(expense.amountCents);
   isRefund.value = expense.amountCents < 0;
+  isInstallment.value = false;
+  installmentPeriods.value = 12;
+  customPeriods.value = false;
+  customPeriodsInput.value = '';
   categoryId.value = expense.categoryId;
-
-  const parent = dict.findCategory(expense.categoryId);
-  activeRootId.value = parent === null ? null : (parent.parentId ?? parent.id);
-
   paymentMethodId.value = expense.paymentMethodId;
   spendDate.value = expense.spendDate;
   note.value = expense.note;
@@ -288,7 +530,11 @@ function fillFrom(expense: Expense): void {
 watch(
   () => props.open,
   async (open) => {
-    if (!open) return;
+    if (!open) {
+      categoryPickerOpen.value = false;
+      paymentPickerOpen.value = false;
+      return;
+    }
 
     errorMessage.value = null;
     saving.value = false;
@@ -302,19 +548,21 @@ watch(
     if (props.expense === null) resetForm();
     else fillFrom(props.expense);
 
-    // 不 await：它只是背景信息，慢一点都不该让抽屉晚开一帧
     void refreshMonthSpent();
     await refreshPreview();
+
+    setTimeout(() => {
+      desktopAmountInputRef.value?.focus();
+      desktopAmountInputRef.value?.select();
+    }, 50);
   },
   { immediate: true },
 );
 
-// 换支付方式或改日期都会改变账单日期，提示要跟着更新
 watch([paymentMethodId, spendDate], () => {
   if (props.open) void refreshPreview();
 });
 
-/** 键盘输入只做「字形」层面的约束，真正的数值解析在 money.ts 里统一处理 */
 function appendInput(key: string): void {
   if (key === '.') {
     if (input.value.includes('.')) return;
@@ -330,9 +578,7 @@ function appendInput(key: string): void {
   const [intPart = '', decPart] = input.value.split('.');
 
   if (decPart === undefined) {
-    // 整数部分最多 9 位：配合服务端的金额上限一起挡住「多按几个 0」
     if (intPart.length >= 9) return;
-    // 前导零替换掉，避免出现 "007"
     input.value = input.value === '0' ? key : input.value + key;
     return;
   }
@@ -366,11 +612,12 @@ function onKey(key: KeypadKey): void {
   appendInput(key);
 }
 
-function selectRoot(rootId: string): void {
-  activeRootId.value = rootId;
-  const root = dict.rootCategories.find((item) => item.id === rootId);
-  if (root === undefined) return;
-  categoryId.value = dict.selectableChildren(root)[0]?.id ?? null;
+function handleCategorySelected(id: string): void {
+  categoryId.value = id;
+}
+
+function handlePaymentMethodSelected(id: string): void {
+  paymentMethodId.value = id;
 }
 
 async function save(): Promise<void> {
@@ -385,11 +632,47 @@ async function save(): Promise<void> {
     return;
   }
 
+  if (canInstallment.value && isInstallment.value && customPeriods.value) {
+    const p = parseInt(customPeriodsInput.value, 10);
+    if (!Number.isFinite(p) || p < 2 || p > 600) {
+      errorMessage.value = '分期期数需在 2 到 600 之间';
+      return;
+    }
+  }
+
   const amountCents = isRefund.value ? -totalCents.value : totalCents.value;
 
   saving.value = true;
   try {
-    if (props.expense === null) {
+    if (canInstallment.value && isInstallment.value) {
+      if (!previewDates.value) {
+        await refreshPreview();
+      }
+      const planName =
+        note.value.trim() !== '' ? note.value.trim() : `${categoryLabel.value}分期`;
+      const firstDueDate = previewDates.value?.repaymentDate || spendDate.value;
+      await plansApi.create({
+        name: planName,
+        categoryId: categoryId.value,
+        paymentMethodId: paymentMethodId.value,
+        source: 'installment',
+        totalAmountCents: totalCents.value,
+        purchaseDate: spendDate.value,
+        periods: effectivePeriods.value,
+        firstDueDate,
+        remindDaysBefore: 3,
+        autoPost: false,
+        note: note.value.trim(),
+        confirmFirst: false,
+      });
+
+      // 将已有普通支出改为分期时，原记录由新创建的分期计划接管，移除原单笔记录避免重账
+      if (props.expense !== null) {
+        await expensesApi.remove(props.expense.id);
+      }
+
+      await plansStore.refresh();
+    } else if (props.expense === null) {
       await expensesApi.create({
         amountCents,
         categoryId: categoryId.value,
@@ -407,11 +690,11 @@ async function save(): Promise<void> {
       });
     }
 
-    // 记下这次的选择，下次打开抽屉直接沿用
     writeLastChoice({
       categoryId: categoryId.value,
       paymentMethodId: paymentMethodId.value,
     });
+    recordUsage(categoryId.value, paymentMethodId.value);
 
     emit('saved');
     emit('close');
@@ -450,7 +733,7 @@ function close(): void {
 
 <template>
   <div v-if="open" class="fixed inset-0 z-[var(--z-sheet)]">
-    <!-- 遮罩：点它关闭。用 button 而不是 div 以获得键盘可达性 -->
+    <!-- 遮罩背景 -->
     <button
       type="button"
       class="absolute inset-0 h-full w-full cursor-default bg-[var(--scrim)]"
@@ -459,231 +742,410 @@ function close(): void {
     />
 
     <!--
-      一份逻辑、两种容器：
-        窄屏（<1024px）—— 底部抽屉，贴底、只有上圆角。
-        桌面（≥1024px）—— 右侧定宽面板（500px），贴右边、整高、无圆角。
-      之前是 `inset-x-0` 通栏且没有 max-width：1440px 的屏幕上它就是一个
-      1440×846 的贴底大抽屉，输入框横跨整屏 —— 长得跟手机上不是一回事，
-      只是被拉宽了。断点跟 tokens.css 的 --content-max 一致，都是 1024px。
+      容器自适应：
+      - 窄屏（<1024px）：优雅底部抽屉（max-h-[92vh]），自适应内容高，底部吸附键盘；
+      - 宽屏（≥1024px）：右侧定宽 480px 面板。
     -->
     <section
-      class="absolute inset-x-0 bottom-0 top-[6vh] flex flex-col rounded-t-md bg-surface lg:left-auto lg:right-0 lg:top-0 lg:w-[500px] lg:rounded-none"
+      class="absolute inset-x-0 bottom-0 top-[5vh] flex flex-col rounded-t-xl bg-surface shadow-2xl lg:left-auto lg:right-0 lg:top-0 lg:w-[480px] lg:rounded-none"
       role="dialog"
       aria-modal="true"
       @keydown.esc="close"
     >
-      <header class="flex items-center gap-2 px-4 pt-4 pb-2 lg:px-6 lg:pt-6">
-        <h2 class="flex-1 text-lg font-bold">{{ expense === null ? '记一笔' : '编辑' }}</h2>
+      <!-- 顶栏 -->
+      <header class="flex items-center justify-between border-b border-line/60 px-4 py-3 sm:px-6">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base font-bold text-ink">
+            {{ expense === null ? '记一笔' : '编辑支出' }}
+          </h2>
+          <span v-if="expense?.source === 'plan'" class="rounded bg-sunken px-1.5 py-0.5 text-[10px] text-ink-muted">
+            计划生成
+          </span>
+        </div>
 
-        <button
-          v-if="expense !== null"
-          type="button"
-          class="rounded-sm px-3 py-2 text-sm font-semibold transition-colors duration-200"
-          :class="confirmingDelete ? 'bg-danger text-white' : 'text-danger-text hover:bg-sunken'"
-          :disabled="saving"
-          @click="confirmDelete"
-        >
-          {{ confirmingDelete ? '确认删除' : '删除' }}
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="expense !== null"
+            type="button"
+            class="rounded-sm px-2.5 py-1 text-xs font-semibold transition-colors duration-150"
+            :class="confirmingDelete ? 'bg-danger-fill text-on-danger font-bold' : 'text-danger-text hover:bg-sunken'"
+            :disabled="saving"
+            @click="confirmDelete"
+          >
+            {{ confirmingDelete ? '确认删除' : '删除' }}
+          </button>
 
-        <button
-          type="button"
-          class="rounded-sm px-3 py-2 text-sm font-semibold text-ink-muted transition-colors duration-200 hover:text-ink"
-          @click="close"
-        >
-          取消
-        </button>
+          <button
+            type="button"
+            class="grid h-7 w-7 place-items-center rounded-sm text-sm font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
+            aria-label="关闭"
+            @click="close"
+          >
+            ✕
+          </button>
+        </div>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 lg:px-6">
-        <!-- 金额 -->
-        <div class="mt-2 text-center">
-          <p class="text-xs text-ink-muted">
-            <span v-if="parts.length > 0">
-              {{ parts.map((item) => formatYuan(item)).join(' + ') }} +
-            </span>
-            <span class="ml-1">{{ isRefund ? '退款' : '支出' }}</span>
+      <!-- 中间可滚动表单区 -->
+      <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6 space-y-4">
+        <!-- ① 金额与支出/退款切换 -->
+        <div class="rounded-xl border border-line/60 bg-canvas/70 p-4 text-center shadow-xs">
+          <!-- 连加算式提示 -->
+          <p v-if="parts.length > 0" class="text-xs font-mono text-ink-muted">
+            {{ parts.map((item) => formatYuan(item)).join(' + ') }} +
           </p>
 
-          <p
-            class="mt-1 text-3xl font-extrabold tracking-tight"
-            :class="isRefund ? 'text-danger-text' : 'text-ink'"
+          <!-- 桌面端：直接用物理键盘输入的金额输入框 -->
+          <div
+            v-if="coreEditable"
+            class="mt-1 hidden lg:flex items-center justify-center font-mono text-3xl sm:text-4xl font-black tracking-tight"
           >
-            {{ formatYuan(totalCents) }}
+            <span :class="isRefund ? 'text-danger-text' : 'text-ink'">{{ isRefund ? '-¥' : '¥' }}</span>
+            <input
+              ref="desktopAmountInputRef"
+              :value="input"
+              type="text"
+              placeholder="0.00"
+              class="w-56 bg-transparent text-center outline-none border-b-2 border-line/40 focus:border-primary transition-colors placeholder:text-ink-muted/30"
+              :class="isRefund ? 'text-danger-text' : 'text-ink'"
+              @input="handleDesktopAmountInput"
+              @keydown.enter.prevent="save"
+            />
+          </div>
+
+          <!-- 移动端：展示大字金额，由下方自定义数字键盘输入 -->
+          <p
+            class="mt-1 font-mono text-3xl sm:text-4xl font-black tracking-tight"
+            :class="[isRefund ? 'text-danger-text' : 'text-ink', coreEditable ? 'lg:hidden' : '']"
+          >
+            {{ isRefund ? '-' : '' }}{{ formatYuan(totalCents) }}
           </p>
 
-          <div v-if="coreEditable" class="mt-3 flex justify-center gap-2">
-            <ChipButton :active="!isRefund" @click="isRefund = false">支出</ChipButton>
-            <ChipButton :active="isRefund" @click="isRefund = true">退款</ChipButton>
+          <!-- 支出 / 退款切换胶囊 -->
+          <div v-if="coreEditable" class="mt-2.5 inline-flex rounded-full bg-sunken/80 p-0.5">
+            <button
+              type="button"
+              class="rounded-full px-3 py-1 text-xs font-bold transition-all duration-150"
+              :class="!isRefund ? 'bg-surface text-ink shadow-xs' : 'text-ink-muted hover:text-ink'"
+              @click="isRefund = false"
+            >
+              支出
+            </button>
+            <button
+              type="button"
+              class="rounded-full px-3 py-1 text-xs font-bold transition-all duration-150"
+              :class="isRefund ? 'bg-surface text-danger-text shadow-xs' : 'text-ink-muted hover:text-ink'"
+              @click="isRefund = true"
+            >
+              退款
+            </button>
           </div>
         </div>
 
         <p
           v-if="!coreEditable"
-          class="mt-4 rounded-md bg-surface p-3 text-xs leading-relaxed text-ink-muted"
+          class="rounded-md bg-sunken/60 p-2.5 text-xs leading-relaxed text-ink-muted"
         >
-          这条记录由计划生成，金额与日期请在计划里修改；此处只能改备注。
+          此记录由计划自动生成，金额与日期在计划中维护；此处仅支持修改备注。
         </p>
 
-        <!--
-          分类：一级一行、二级一行。有子项时以子项为准。
-          它紧跟在金额下面（不折进任何抽屉），所以在窄屏上也**不必下滑就能选** ——
-          记账流程里真正必需的只有「金额 + 分类」，这两样都在首屏。
-        -->
-        <fieldset ref="categoryField" :disabled="!coreEditable" class="mt-5">
-          <legend class="label-cn">分类</legend>
-
-          <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
-            <ChipButton
-              v-for="root in dict.rootCategories"
-              :key="root.id"
-              :active="root.id === activeRootId"
-              @click="selectRoot(root.id)"
-            >
-              {{ root.name }}
-            </ChipButton>
-          </div>
-
-          <div v-if="childOptions.length > 0" class="mt-2 flex flex-wrap gap-2">
-            <ChipButton
-              v-for="option in childOptions"
-              :key="option.id"
-              :active="option.id === categoryId"
-              @click="categoryId = option.id"
-            >
-              {{ option.name }}
-            </ChipButton>
-          </div>
-        </fieldset>
-
-        <!-- 支付方式 -->
-        <fieldset ref="paymentField" :disabled="!coreEditable" class="mt-5">
-          <legend class="label-cn">支付方式</legend>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <ChipButton
-              v-for="method in dict.usablePaymentMethods"
-              :key="method.id"
-              :active="method.id === paymentMethodId"
-              @click="paymentMethodId = method.id"
-            >
-              <span class="inline-flex items-center gap-1.5">
-                <PaymentIcon :name="method.name" :icon="method.icon" :size="14" />
-                <span>{{ method.name }}</span>
-                <span v-if="method.type === 'credit'" class="text-xs opacity-70">
-                  {{ method.billingDay }}/{{ method.repaymentDay }}
-                </span>
-              </span>
-            </ChipButton>
-          </div>
-          <p v-if="dict.usablePaymentMethods.length === 0" class="mt-2 text-xs text-ink-muted">
-            还没有可用的支付方式，请先到「设置」里添加。
-          </p>
-        </fieldset>
-
-        <!-- 日期 + 备注 -->
-        <fieldset ref="dateField" :disabled="!coreEditable" class="mt-5">
-          <legend class="label-cn">消费日期</legend>
-          <div class="mt-2 flex items-center gap-2">
-            <input
-              v-model="spendDate"
-              type="date"
-              class="rounded-sm bg-sunken px-3 py-2 text-sm text-ink"
-            />
-            <ChipButton :active="spendDate === todayLocal()" @click="spendDate = todayLocal()">
-              今天
-            </ChipButton>
-          </div>
-
-          <!--
-            明确告诉用户这笔会落到哪个月。信用卡的还款日可能在下个月，
-            不说明的话「记完本月还是 0」会被当成保存失败。
-          -->
-          <p
-            v-if="landingHint !== null"
-            class="mt-2 text-xs"
-            :class="landingHint.shifted ? 'font-semibold text-accent-text' : 'text-ink-muted'"
+        <!-- ② 核心信息卡片（单行单元格流，彻底移除横向滑块） -->
+        <div class="divide-y divide-line/60 rounded-xl border border-line/60 bg-surface shadow-xs">
+          <!-- 分类单元格行 -->
+          <button
+            type="button"
+            :disabled="!coreEditable"
+            class="flex w-full items-center justify-between p-3.5 text-left transition-colors duration-150 hover:bg-sunken/40 first:rounded-t-xl active:bg-sunken disabled:opacity-60"
+            @click="categoryPickerOpen = true"
           >
-            {{ landingHint.text }}
-          </p>
-        </fieldset>
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunken">
+                <CategoryIcon :category-id="categoryId" :size="18" />
+              </div>
+              <div class="min-w-0">
+                <span class="block text-[10px] font-medium text-ink-muted">支出分类</span>
+                <span class="block truncate text-sm font-bold text-ink">
+                  {{ categoryLabel }}
+                </span>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 text-ink-muted">
+              <span class="text-xs font-medium">更改</span>
+              <ChevronRight class="h-4 w-4" />
+            </div>
+          </button>
 
-        <div ref="noteField" class="mt-5">
-          <label class="label-cn" for="expense-note">备注</label>
-          <input
-            id="expense-note"
-            v-model="note"
-            type="text"
-            maxlength="200"
-            placeholder="选填"
-            class="mt-2 w-full rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
-          />
+          <!-- 支付方式单元格行 -->
+          <button
+            type="button"
+            :disabled="!coreEditable"
+            class="flex w-full items-center justify-between p-3.5 text-left transition-colors duration-150 hover:bg-sunken/40 active:bg-sunken disabled:opacity-60"
+            @click="paymentPickerOpen = true"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunken">
+                <PaymentIcon
+                  v-if="selectedPaymentMethod"
+                  :name="selectedPaymentMethod.name"
+                  :icon="selectedPaymentMethod.icon"
+                  :size="18"
+                />
+              </div>
+              <div class="min-w-0">
+                <span class="block text-[10px] font-medium text-ink-muted">支付方式</span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="truncate text-sm font-bold text-ink">{{ paymentLabel }}</span>
+                  <span
+                    v-if="selectedPaymentMethod?.type === 'credit'"
+                    class="rounded bg-sunken px-1.5 py-0.2 text-[10px] text-ink-muted"
+                  >
+                    账单{{ selectedPaymentMethod.billingDay }}日 / 还款{{ selectedPaymentMethod.repaymentDay }}日
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 text-ink-muted">
+              <span class="text-xs font-medium">更改</span>
+              <ChevronRight class="h-4 w-4" />
+            </div>
+          </button>
+
+          <!-- 消费日期单元格行 -->
+          <div class="flex items-center justify-between p-3.5">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunken text-ink-muted">
+                <Calendar class="h-4 w-4" />
+              </div>
+              <div class="min-w-0">
+                <span class="block text-[10px] font-medium text-ink-muted">消费日期</span>
+                <span class="block text-sm font-bold text-ink">
+                  {{ formatMonthDay(spendDate) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                v-if="spendDate !== todayLocal()"
+                type="button"
+                class="rounded px-2 py-0.5 text-xs font-semibold text-primary hover:bg-sunken transition-colors"
+                @click="spendDate = todayLocal()"
+              >
+                设为今天
+              </button>
+              <input
+                v-model="spendDate"
+                type="date"
+                :disabled="!coreEditable"
+                class="rounded border border-line/80 bg-sunken px-2 py-1 text-xs font-semibold text-ink outline-none"
+              />
+            </div>
+          </div>
+
+          <!-- 分期付款单元格行（仅信用卡类型、非退款且可核心编辑时展示） -->
+          <div v-if="canInstallment" class="p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunken text-ink-muted">
+                  <CreditCard class="h-4 w-4" />
+                </div>
+                <div class="min-w-0">
+                  <span class="block text-[10px] font-medium text-ink-muted">分期还款</span>
+                  <span class="block text-sm font-bold text-ink">
+                    {{ isInstallment ? `${effectivePeriods} 期（约 ${installmentPerPeriodText}/期）` : '未开启' }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 切换开关 -->
+              <label class="relative inline-flex cursor-pointer items-center">
+                <input
+                  v-model="isInstallment"
+                  type="checkbox"
+                  class="peer sr-only"
+                />
+                <div
+                  class="h-5 w-9 rounded-full bg-sunken transition-colors duration-200 peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-4"
+                />
+              </label>
+            </div>
+
+            <!-- 分期期数选项 -->
+            <div v-if="isInstallment" class="rounded-lg bg-sunken/40 p-2.5">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <ChipButton
+                  v-for="p in [3, 6, 12, 24]"
+                  :key="p"
+                  :active="!customPeriods && installmentPeriods === p"
+                  @click="selectPeriods(p)"
+                >
+                  {{ p }} 期
+                </ChipButton>
+                <ChipButton
+                  :active="customPeriods"
+                  @click="enableCustomPeriods"
+                >
+                  自定义
+                </ChipButton>
+                <span v-if="customPeriods" class="inline-flex items-center gap-1 text-xs ml-1">
+                  <input
+                    v-model="customPeriodsInput"
+                    type="number"
+                    min="2"
+                    max="600"
+                    placeholder="期数"
+                    class="w-14 rounded border border-line bg-surface px-2 py-0.5 text-xs text-ink outline-none"
+                  />
+                  <span class="text-ink-muted">期</span>
+                </span>
+              </div>
+              <p class="mt-1.5 text-[11px] text-ink-muted">
+                {{
+                  expense !== null
+                    ? `将此笔支出转为 ${effectivePeriods} 期分期计划，原支出记录将由分期接管。`
+                    : `共 ${effectivePeriods} 期，到期前由系统自动提醒入账。`
+                }}
+              </p>
+            </div>
+          </div>
+
+          <!-- 备注单元格行 -->
+          <div class="flex items-center gap-3 p-3.5 last:rounded-b-xl">
+            <div class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunken text-ink-muted">
+              <FileText class="h-4 w-4" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <label for="expense-note-input" class="block text-[10px] font-medium text-ink-muted">
+                备注说明
+              </label>
+              <input
+                id="expense-note-input"
+                v-model="note"
+                type="text"
+                maxlength="200"
+                placeholder="选填，如商户名、商品名"
+                class="w-full bg-transparent text-sm font-medium text-ink outline-none placeholder:text-ink-muted/60"
+                @keydown.enter.prevent="save"
+              />
+            </div>
+            <button
+              v-if="note"
+              type="button"
+              class="text-xs text-ink-muted hover:text-ink px-1"
+              @click="note = ''"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
-        <p v-if="errorMessage !== null" class="mt-4 text-sm text-danger-text">
+        <p v-if="errorMessage !== null" class="mt-2 text-center text-xs font-semibold text-danger-text">
           {{ errorMessage }}
         </p>
       </div>
 
-      <!--
-        键盘吸底：编辑计划生成的记录时不需要金额输入，直接给保存。
-        两者共用一条上边框，所以下面几行常驻信息都放在它里面 ——
-        否则切到计划记录时会出现两条挨着的分割线。
-      -->
-      <div class="border-t border-line">
-        <!--
-          常驻摘要行：已选的分类 / 支付方式 / 日期 / 备注。
-          窄屏可滚动区只有 400 多像素，这四项刚好在折叠线之下 ——
-          每次都要下滑核对一次。点任意一段会把对应字段滚进视野，
-          所以「核对」和「要改」都只花一次点击，不用手动滑。
-        -->
-        <div class="flex gap-1.5 overflow-x-auto px-4 pt-2.5 lg:px-6">
-          <button
-            v-for="segment in summarySegments"
-            :key="segment.key"
-            type="button"
-            class="shrink-0 rounded-sm px-2 py-1 text-xs font-semibold transition-colors duration-200"
-            :class="segment.pending ? 'bg-sunken text-ink-muted' : 'bg-sunken text-ink'"
-            @click="reveal(segment.key)"
-          >
-            {{ segment.label }}
-          </button>
+      <!-- ③ 吸底区：去除横向滑动条，紧凑状态栏 + 数字键盘（移动端）/ 动作按钮（桌面端） -->
+      <div class="border-t border-line/60 bg-surface">
+        <!-- 紧凑单行状态栏 -->
+        <div class="flex items-center justify-between px-4 py-1.5 text-xs border-b border-line/30 lg:px-6">
+          <div class="min-w-0 pr-2">
+            <span
+              v-if="landingHint !== null"
+              :class="landingHint.shifted ? 'font-bold text-accent-text' : 'text-ink-muted'"
+              class="truncate block text-[11px]"
+            >
+              {{ landingHint.text }}
+            </span>
+          </div>
+
+          <div class="flex items-baseline gap-1.5 shrink-0 text-ink-muted text-[11px]">
+            <span>本月已支出</span>
+            <b class="text-ink font-bold tabular-nums">
+              {{ monthSpentCents === null ? '—' : formatCompact(monthSpentCents) }}
+            </b>
+          </div>
         </div>
 
-        <!--
-          跨月提示常驻在这里。
-          它原先在「消费日期」字段下面，同样在折叠线之下 —— 而「这笔会记在下个月」
-          恰恰是记账时最不能漏看的一句（项目早期就因为这个被误导过一次）。
-        -->
-        <p
-          v-if="landingHint !== null && landingHint.shifted"
-          class="px-4 pt-1.5 text-xs font-semibold text-accent-text lg:px-6"
+        <!-- 移动端快捷分类选择区：常用分类（横排单行，清晰分界底色） -->
+        <div
+          v-if="coreEditable && quickCategories.length > 0"
+          class="px-2.5 py-1.5 border-b border-line/70 bg-sunken/40 lg:hidden"
         >
-          {{ landingHint.text }}
-        </p>
+          <div class="flex items-center gap-1">
+            <button
+              v-for="cat in quickCategories"
+              :key="cat.id"
+              type="button"
+              :title="cat.name"
+              class="flex-1 min-w-0 py-1.5 px-1 rounded-full text-xs text-center transition-all duration-150 active:scale-95"
+              :class="
+                cat.id === categoryId
+                  ? 'bg-primary-fill text-on-primary font-bold shadow-xs'
+                  : 'bg-surface text-ink-muted hover:bg-canvas hover:text-ink font-medium border border-line/50'
+              "
+              @click="categoryId = cat.id"
+            >
+              <span class="truncate block">{{ cat.name.slice(0, 2) }}</span>
+            </button>
+          </div>
+        </div>
 
-        <!-- 键盘上方常驻「本月已支出」：记账时最该看见的数字，正好是抽屉盖住整屏后唯一看不见的那个 -->
-        <p class="flex items-baseline justify-between px-4 pt-1.5 text-xs lg:px-6">
-          <span class="text-ink-muted">本月已支出</span>
-          <span class="font-semibold text-ink">
-            {{ monthSpentCents === null ? '—' : formatCompact(monthSpentCents) }}
-          </span>
-        </p>
-
-        <!-- 桌面上键盘不该铺满 500px：按键会变成一排扁长的色块，反而不好按 -->
-        <div v-if="coreEditable" class="lg:mx-auto lg:max-w-[340px]">
+        <!-- 移动端数字键盘（5列网格：左侧常用支付方式 + 右侧 4 列标准数字键盘） -->
+        <div v-if="coreEditable" class="lg:hidden">
           <NumericKeypad
             :can-save="canSave"
             :saving="saving"
-            :save-label="expense === null ? '保存' : '更新'"
+            :save-label="saveLabel"
             @press="onKey"
-          />
+          >
+            <template #left>
+              <button
+                v-for="slot in leftPaymentSlots"
+                :key="slot.key"
+                type="button"
+                :disabled="slot.type === 'empty'"
+                :title="slot.title"
+                class="flex items-center justify-center rounded-lg text-xs font-medium transition-all duration-150 active:scale-95 disabled:invisible"
+                :class="[
+                  slot.rowSpan === 2 ? 'row-span-2' : slot.rowSpan === 4 ? 'row-span-4' : '',
+                  slot.type === 'method' && slot.method?.id === paymentMethodId
+                    ? 'bg-primary-fill text-on-primary font-bold shadow-xs'
+                    : 'bg-canvas text-ink-muted hover:bg-surface hover:text-ink border border-line/50',
+                ]"
+                @click="handleLeftSlotClick(slot)"
+              >
+                <span class="truncate px-1">{{ slot.label }}</span>
+              </button>
+            </template>
+          </NumericKeypad>
         </div>
 
+        <!-- 桌面端底部操作按钮栏（取代虚拟数字键盘组件） -->
+        <div v-if="coreEditable" class="hidden lg:flex items-center justify-end gap-3 px-6 py-4">
+          <button
+            type="button"
+            :disabled="saving"
+            class="rounded-sm border border-line px-5 py-2.5 text-xs font-semibold text-ink-muted hover:bg-sunken hover:text-ink transition-colors disabled:opacity-40"
+            @click="close"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            :disabled="!canSave || saving"
+            class="rounded-sm bg-primary-fill px-6 py-2.5 text-xs font-bold text-on-primary shadow-xs hover:opacity-90 active:scale-95 transition-all disabled:opacity-40"
+            @click="save"
+          >
+            {{ saving ? '保存中…' : saveLabel }}
+          </button>
+        </div>
+
+        <!-- 计划生成记录修改保存按钮 -->
         <div v-else class="p-4">
           <button
             type="button"
             :disabled="saving"
-            class="w-full rounded-md bg-primary-fill py-3.5 text-base font-bold text-on-primary transition-transform duration-200 active:scale-95"
+            class="w-full rounded-md bg-primary py-3 text-sm font-bold text-white shadow-xs transition-transform active:scale-95"
             @click="save"
           >
             {{ saving ? '保存中…' : '保存备注' }}
@@ -691,5 +1153,21 @@ function close(): void {
         </div>
       </div>
     </section>
+
+    <!-- 独立的双列分类选择抽屉（绝无横向滑动条） -->
+    <CategoryPickerSheet
+      :open="categoryPickerOpen"
+      :active-category-id="categoryId"
+      @close="categoryPickerOpen = false"
+      @select="handleCategorySelected"
+    />
+
+    <!-- 独立的纵向支付方式选择抽屉 -->
+    <PaymentMethodPickerSheet
+      :open="paymentPickerOpen"
+      :active-payment-method-id="paymentMethodId"
+      @close="paymentPickerOpen = false"
+      @select="handlePaymentMethodSelected"
+    />
   </div>
 </template>

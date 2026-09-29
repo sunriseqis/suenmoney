@@ -305,24 +305,206 @@ const ICON_BY_CATEGORY_NAME: Record<string, IconName> = {
   未分类: 'circle-ellipsis',
 };
 
+/** 语义化关键词自动匹配规则表 */
+const SEMANTIC_ICON_RULES: Array<{ keywords: string[]; icon: IconName }> = [
+  // 咖啡 / 早餐
+  { keywords: ['咖啡', '拿铁', '美式', '早饭', '早餐', '星巴克', '瑞幸'], icon: 'coffee' },
+  // 奶茶 / 酒水饮料
+  { keywords: ['奶茶', '啤酒', '精酿', '清吧', '酒吧', '汽水', '可乐', '饮料', '喜茶', '奈雪', '蜜雪', '果汁', '饮品'], icon: 'beer' },
+  // 蛋糕 / 甜点 / 烘焙
+  { keywords: ['蛋糕', '甜点', '面包', '烘焙', '糕点', '甜品', '冰淇淋', '雪糕'], icon: 'cake-slice' },
+  // 汉堡 / 简餐
+  { keywords: ['汉堡', '三明治', '简餐', '快餐', '麦当劳', '肯德基', '赛百味'], icon: 'sandwich' },
+  // 火锅 / 聚餐 / 堂食
+  { keywords: ['火锅', '下馆', '正餐', '聚餐', '料理', '烧烤', '串串', '夜市', '小吃', '大排档'], icon: 'soup' },
+  // 外卖 / 配送
+  { keywords: ['外卖', '美团', '饿了么', '配送', '跑腿'], icon: 'utensils-crossed' },
+  // 买菜 / 生鲜
+  { keywords: ['买菜', '生鲜', '菜场', '果蔬', '蔬菜', '水果', '海鲜', '肉禽', '蛋奶'], icon: 'shopping-basket' },
+  // 餐饮通用
+  { keywords: ['餐', '吃', '饭', '食', '宴', '零食', '宵夜'], icon: 'utensils' },
+
+  // 航空出行
+  { keywords: ['飞机', '机票', '航班', '机场', '飞行', '空运', '航司'], icon: 'plane' },
+  // 铁路 / 轨道
+  { keywords: ['高铁', '动车', '火车', '铁路', '地铁', '轻轨', '轨道'], icon: 'train' },
+  // 公交大巴
+  { keywords: ['公交', '大巴', '巴士', '班车'], icon: 'bus' },
+  // 网约车 / 出租车
+  { keywords: ['打车', '滴滴', '出租', '叫车', '专车', '高德', '顺风车', '快车'], icon: 'car-front' },
+  // 加油 / 充电
+  { keywords: ['加油', '油费', '汽油', '柴油', '加气', '充电桩'], icon: 'fuel' },
+  // 停车
+  { keywords: ['停车', '车位', '车库'], icon: 'parking' },
+  // 骑行
+  { keywords: ['骑行', '单车', '自行车', '共享单车', '电动车', '电瓶车', '摩托'], icon: 'bike' },
+  // 汽车相关
+  { keywords: ['汽车', '车辆', '车险', '检车', '保养', '洗车', '过路费', '高速', 'etc', 'ETC', '修车', '驾校'], icon: 'car' },
+  // 货运
+  { keywords: ['货运', '搬家', '货拉拉'], icon: 'truck' },
+
+  // 房贷 / 银行
+  { keywords: ['房贷', '按揭', '首付', '银行', '利息'], icon: 'landmark' },
+  // 租房 / 住所
+  { keywords: ['房租', '租房', '租金', '押金', '房屋', '租客'], icon: 'house' },
+  // 物业
+  { keywords: ['物业', '管理费', '居委', '小区'], icon: 'building' },
+  // 水电
+  { keywords: ['水费', '电费', '供电', '用电', '自来水', '供水'], icon: 'zap' },
+  // 燃气 / 暖气
+  { keywords: ['燃气', '煤气', '天然气', '暖气', '供暖', '取暖'], icon: 'flame' },
+  // 宽带
+  { keywords: ['宽带', '光纤', '网费', '路由器', 'wifi', 'WiFi', '网络'], icon: 'wifi' },
+  // 家电
+  { keywords: ['家电', '电器', '冰箱', '空调', '洗衣机', '电视', '灯', '照明'], icon: 'lamp' },
+  // 卧室
+  { keywords: ['床', '寝具', '床单', '被子', '枕头'], icon: 'bed' },
+  // 客厅家具
+  { keywords: ['沙发', '家具', '茶几', '桌椅', '柜子'], icon: 'sofa' },
+  // 卫浴
+  { keywords: ['卫浴', '花洒', '热水器', '马桶', '洗澡', '沐浴', '洗护', '洗头'], icon: 'shower-head' },
+  // 维修工具
+  { keywords: ['装修', '五金', '工具', '维修', '修理', '改造', '建材'], icon: 'wrench' },
+
+  // 商超购物
+  { keywords: ['超市', '商场', '便利店', '山姆', '盒马', '沃尔玛', '大润发', '购物', '网购', '淘宝', '京东', '拼多多'], icon: 'shopping-cart' },
+  // 服装
+  { keywords: ['衣服', '服装', '上衣', '裤子', '外套', '羽绒服', '裙子', '内衣', '衬衫', 'T恤', '服饰', '包包'], icon: 'shirt' },
+  // 鞋袜
+  { keywords: ['鞋', '运动鞋', '靴', '凉鞋', '拖鞋', '袜子'], icon: 'footprints' },
+  // 美妆护肤
+  { keywords: ['美妆', '化妆', '护肤', '面膜', '口红', '香水', '防晒', '医美', '美容'], icon: 'sparkles' },
+  // 理发美发
+  { keywords: ['理发', '美发', '剪发', '烫染', '洗剪吹'], icon: 'scissors' },
+  // 快递
+  { keywords: ['快递', '包裹', '顺丰', '邮费', '寄件', '菜鸟', '转运', '物流'], icon: 'package' },
+  // 日百百货
+  { keywords: ['日用', '百货', '杂货', '纸巾', '清洁', '生活用品'], icon: 'store' },
+
+  // 手机通讯
+  { keywords: ['手机', '话费', '充值', '通信', '移动', '联通', '电信'], icon: 'smartphone' },
+  // 电脑
+  { keywords: ['电脑', '笔记本', '主机', '键盘', '鼠标', '显卡', 'mac', 'Mac'], icon: 'laptop' },
+  // 数码产品
+  { keywords: ['显示器', '平板', 'ipad', 'iPad', '数码', '智能'], icon: 'monitor-smartphone' },
+  // 打印办公
+  { keywords: ['打印', '复印', '墨盒', '文具', '办公'], icon: 'printer' },
+  // 订阅资讯
+  { keywords: ['报刊', '杂志', '订阅', '资讯', '新闻', '知识库'], icon: 'newspaper' },
+
+  // 医疗门诊
+  { keywords: ['门诊', '挂号', '医院', '医生', '看病', '就医', '诊所'], icon: 'stethoscope' },
+  // 药品
+  { keywords: ['药', '西药', '中药', '药店', '感冒', '消炎', '处方'], icon: 'pill' },
+  // 治疗手术
+  { keywords: ['住院', '手术', '针灸', '打针', '输液', '化验'], icon: 'syringe' },
+  // 体检健康
+  { keywords: ['体检', '心脏', '血压', '保健', '康复', '心理'], icon: 'heart-pulse' },
+
+  // 游戏
+  { keywords: ['游戏', '电竞', 'steam', 'Steam', '主机', 'switch', 'Switch', 'ps5', 'PS5', '手柄', '网游', '手游'], icon: 'gamepad-2' },
+  // 电影
+  { keywords: ['电影', '影院', '万达', '看片'], icon: 'clapperboard' },
+  // 视频影视
+  { keywords: ['视频', '影视', '剧集', '爱奇艺', '腾讯视频', 'bilibili', 'B站'], icon: 'film' },
+  // 音乐
+  { keywords: ['音乐', '歌曲', '网易云', 'qq音乐', 'QQ音乐', '耳机', '音响', '唱片'], icon: 'music' },
+  // K歌
+  { keywords: ['ktv', 'KTV', '唱歌', '麦克风', '演唱会', 'live', 'Live'], icon: 'mic' },
+  // 剧场演出
+  { keywords: ['话剧', '音乐剧', '展览', '展会', '博物馆', '演出', '剧场'], icon: 'theater' },
+  // 门票景区
+  { keywords: ['门票', '景区', '游乐园', '迪士尼', '环球影城'], icon: 'ticket' },
+  // 聚会庆典
+  { keywords: ['聚会', '派对', '庆祝', '生日', '年会', '团建'], icon: 'party-popper' },
+  // 美术手工
+  { keywords: ['美术', '绘画', '颜料', '手工', '陶艺', '插画', '设计'], icon: 'palette' },
+  // 摄影
+  { keywords: ['摄影', '相机', '镜头', '拍照', '写真', '摄像'], icon: 'camera' },
+
+  // 人情礼金
+  { keywords: ['礼物', '送礼', '礼品', '纪念品', '礼盒'], icon: 'gift' },
+  { keywords: ['红包', '份子', '压岁钱', '打赏', '转账', '随礼'], icon: 'hand-coins' },
+  { keywords: ['钱包', '零花钱', '备用金'], icon: 'wallet' },
+  { keywords: ['现金', '钞票', '提现', '取款'], icon: 'banknote' },
+  { keywords: ['信用卡', '还款', '借款', '贷款', '还贷', '分期'], icon: 'credit-card' },
+
+  // 宠物生活
+  { keywords: ['猫', '喵'], icon: 'cat' },
+  { keywords: ['狗', '汪'], icon: 'dog' },
+  { keywords: ['宠物', '兽医', '宠粮', '疫苗'], icon: 'cat' },
+
+  // 母婴早教
+  { keywords: ['母婴', '婴儿', '宝宝', '儿童', '奶粉', '尿不湿', '玩具', '早教', '幼托'], icon: 'baby' },
+  // 学习进修
+  { keywords: ['学习', '考研', '考公', '培训', '学费', '网课', '学历', '考证', '教育'], icon: 'graduation-cap' },
+  // 书籍
+  { keywords: ['书', '图书', '阅读', '教材', '小说', '借书'], icon: 'book-open' },
+  // 运动健身
+  { keywords: ['运动', '健身', '私教', '跑步', '羽毛球', '篮球', '足球', '游泳', '瑜伽', '普拉提', '球类'], icon: 'dumbbell' },
+  // 植物花卉
+  { keywords: ['花', '绿植', '植物', '盆栽', '园艺', '鲜花'], icon: 'flower' },
+  // 烟草
+  { keywords: ['烟', '香烟', '电子烟'], icon: 'cigarette' },
+  // 户外露营旅游
+  { keywords: ['露营', '户外', '登山', '徒步', '公园', '旅游', '旅行'], icon: 'tree-pine' },
+  // 家政保洁
+  { keywords: ['家政', '保洁', '阿姨', '垃圾', '废品'], icon: 'trash-2' },
+  // 工作商务
+  { keywords: ['工作', '商务', '差旅', '出差'], icon: 'briefcase' },
+];
+
+/** 多样化兜底图标池（避免所有未知分类都展示同一种 Tag 图标） */
+const VARIED_FALLBACKS: readonly IconName[] = [
+  'tag',
+  'circle-ellipsis',
+  'sparkles',
+  'package',
+  'wallet',
+  'store',
+  'briefcase',
+  'party-popper',
+];
+
+export function resolveCategoryIconName(category: { name: string; icon: string }): IconName {
+  const stored = category.icon;
+  if (stored !== '' && stored in ICON_REGISTRY) {
+    return stored as IconName;
+  }
+
+  const trimmed = (category.name || '').trim();
+  if (!trimmed) return 'tag';
+
+  // 1. 精确匹配
+  const exact = ICON_BY_CATEGORY_NAME[trimmed];
+  if (exact !== undefined) return exact;
+
+  // 2. 语义关键词包含匹配
+  const lower = trimmed.toLowerCase();
+  for (const rule of SEMANTIC_ICON_RULES) {
+    for (const kw of rule.keywords) {
+      if (lower.includes(kw.toLowerCase())) {
+        return rule.icon;
+      }
+    }
+  }
+
+  // 3. 根据名称散列，均匀分散到不同兜底图标
+  let hash = 0;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    hash = (hash * 31 + trimmed.charCodeAt(i)) >>> 0;
+  }
+  return VARIED_FALLBACKS[hash % VARIED_FALLBACKS.length] ?? 'tag';
+}
+
 /**
  * 取分类图标。
  *
- * 传入整个分类对象而不是 icon 字段，是为了让「按名字反查」这条兜底路径
- * 不必由调用方重复实现 —— 五个视图各写一遍的话，迟早有一处忘记兜底、
- * 于是那一页的分类全是空白方块。
+ * 优先级：显式设置 > 精确匹配 > 语义关键词推导 > 多样散列兜底。
  */
 export function resolveCategoryIcon(category: { name: string; icon: string }): Component {
-  const stored = category.icon;
-
-  if (stored !== '' && stored in ICON_REGISTRY) {
-    return ICON_REGISTRY[stored as IconName];
-  }
-
-  const guessed = ICON_BY_CATEGORY_NAME[category.name];
-  if (guessed !== undefined) return ICON_REGISTRY[guessed];
-
-  return FALLBACK_ICON;
+  const iconName = resolveCategoryIconName(category);
+  return ICON_REGISTRY[iconName] ?? FALLBACK_ICON;
 }
 
 /**

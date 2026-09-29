@@ -38,7 +38,7 @@ function pick(name: IconName): void {
       :aria-pressed="modelValue === ''"
       @click="emit('update:modelValue', '')"
     >
-      自动（按分类名推断）
+      自动
     </button>
 
     <div class="mt-2 max-h-60 overflow-y-auto">

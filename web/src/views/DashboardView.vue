@@ -31,7 +31,7 @@ import {
   formatMonthLabel,
   shiftMonth,
 } from '@/utils/dates';
-import { formatCompact, formatYuan } from '@/utils/money';
+import { adaptiveAmountStyle, formatCompact, formatYuan } from '@/utils/money';
 import {
   reminderStateLabel,
   reminderToneOf,
@@ -66,13 +66,46 @@ function handleClickOutside(event: MouseEvent): void {
   }
 }
 
+const heroAmountContainerRef = ref<HTMLElement | null>(null);
+const heroAmountTextRef = ref<HTMLElement | null>(null);
+const heroCustomFontSizePx = ref<number | null>(null);
+
+let heroResizeObserver: ResizeObserver | null = null;
+
+function adjustHeroFontSize(): void {
+  heroCustomFontSizePx.value = null;
+  requestAnimationFrame(() => {
+    const container = heroAmountContainerRef.value;
+    const text = heroAmountTextRef.value;
+    if (!container || !text) return;
+    const cWidth = container.clientWidth;
+    const sWidth = text.scrollWidth;
+    if (cWidth > 0 && sWidth > cWidth) {
+      const currentSize = parseFloat(window.getComputedStyle(text).fontSize) || 24;
+      const targetSize = Math.max(14, Math.floor(currentSize * ((cWidth - 2) / sWidth)));
+      heroCustomFontSizePx.value = targetSize;
+    }
+  });
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
   load();
+
+  if (typeof ResizeObserver !== 'undefined' && heroAmountContainerRef.value) {
+    heroResizeObserver = new ResizeObserver(() => {
+      adjustHeroFontSize();
+    });
+    heroResizeObserver.observe(heroAmountContainerRef.value);
+  }
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
+  if (heroResizeObserver) {
+    heroResizeObserver.disconnect();
+    heroResizeObserver = null;
+  }
 });
 
 async function load(): Promise<void> {
@@ -117,6 +150,19 @@ const heroTotalCents = computed(() => {
   if (scope.value === 'month') return monthly.value?.totalCents ?? 0;
   if (scope.value === 'year') return yearly.value?.totalCents ?? 0;
   return summary.value?.totalCents ?? 0;
+});
+
+const heroFormattedAmount = computed(() => formatYuan(heroTotalCents.value));
+
+const heroAmountStyle = computed(() => {
+  if (heroCustomFontSizePx.value !== null) {
+    return { fontSize: `${heroCustomFontSizePx.value}px` };
+  }
+  return adaptiveAmountStyle(heroFormattedAmount.value, 'hero');
+});
+
+watch([heroTotalCents, scope], () => {
+  adjustHeroFontSize();
 });
 
 const isCurrentSelectedMonth = computed(() => month.value === currentMonth());
@@ -235,9 +281,21 @@ async function handleSkip(todoId: string): Promise<void> {
   <div class="pb-[calc(var(--bottom-bar-h)+var(--safe-bottom)+24px)]">
     <!-- 概况一屏总览 -->
     <header class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-[calc(var(--safe-top)+20px)] lg:px-6 lg:pt-8">
-      <!-- ① Hero 卡片：单色深色块，居中大数字，三档切换 -->
-      <div class="rounded-lg bg-primary-fill p-5 text-on-primary lg:rounded-[14px] lg:p-7">
-        <div class="flex items-center justify-between gap-2">
+      <!-- ① Hero 卡片：深蓝质感渐变 + 装饰光晕与水印（与流水顶卡对齐） -->
+      <div
+        class="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#2563eb] via-[#1d4ed8] to-[#1e40af] p-5 text-on-primary shadow-xs lg:rounded-[14px] lg:p-7"
+      >
+        <!-- 背景装饰光晕与水印（与流水顶卡一致的品牌设计语言） -->
+        <div class="pointer-events-none absolute -right-6 -bottom-10 h-40 w-40 rounded-full bg-white/[0.08] ring-8 ring-white/[0.03]" />
+        <div class="pointer-events-none absolute right-16 -top-10 h-32 w-32 rounded-full bg-white/[0.05]" />
+        <div
+          class="pointer-events-none absolute right-4 top-2 select-none font-sans font-black leading-none text-white/[0.07] text-7xl"
+        >
+          ¥
+        </div>
+
+        <div class="relative z-1">
+          <div class="flex items-center justify-between gap-2">
           <!-- 期间切换与标题 -->
           <div class="flex items-center gap-2">
             <button
@@ -264,51 +322,32 @@ async function handleSkip(todoId: string): Promise<void> {
             </button>
           </div>
 
-          <!-- 三档 Pill Tabs + 窄屏关闭按键 -->
-          <div class="flex items-center gap-2">
-            <div class="pill-tabs" role="tablist">
-              <button
-                type="button"
-                :aria-pressed="scope === 'month'"
-                @click="scope = 'month'"
-              >
-                本月
-              </button>
-              <button
-                type="button"
-                :aria-pressed="scope === 'year'"
-                @click="scope = 'year'"
-              >
-                今年
-              </button>
-              <button
-                type="button"
-                :aria-pressed="scope === 'all'"
-                @click="scope = 'all'"
-              >
-                汇总
-              </button>
-            </div>
-
-            <!-- 窄屏标题行行尾关闭按键（A24），返回流水落地页 -->
-            <RouterLink
-              :to="{ name: 'ledger' }"
-              class="grid h-8 w-8 place-items-center rounded-sm bg-white/15 text-sm font-bold text-white transition-colors hover:bg-white/30 lg:hidden"
-              aria-label="关闭概况，返回流水"
-            >
-              ✕
-            </RouterLink>
-          </div>
+          <!-- 标题行行尾关闭按键（A24），返回流水落地页 -->
+          <RouterLink
+            :to="{ name: 'ledger' }"
+            class="grid h-8 w-8 place-items-center rounded-sm bg-white/15 text-sm font-bold text-white transition-colors hover:bg-white/30"
+            aria-label="关闭概况，返回流水"
+          >
+            ✕
+          </RouterLink>
         </div>
 
         <p class="mt-4 text-xs font-semibold tracking-widest opacity-80">
           {{ heroTitle }}
         </p>
 
-        <p v-if="loading && heroTotalCents === 0" class="skeleton mt-2 h-[52px] w-56 rounded-sm" />
-        <p v-else class="mt-2 text-amount font-extrabold leading-none tracking-tight">
-          {{ formatYuan(heroTotalCents) }}
-        </p>
+        <!-- 自适应金额展示区：根据数字长短和屏幕宽度平滑缩放，永不折行、永不溢出 -->
+        <div ref="heroAmountContainerRef" class="mt-2 w-full min-w-0 overflow-hidden">
+          <p v-if="loading && heroTotalCents === 0" class="skeleton h-[44px] w-56 rounded-sm lg:h-[52px]" />
+          <p
+            v-else
+            ref="heroAmountTextRef"
+            class="font-extrabold leading-none tracking-tight tabular-nums whitespace-nowrap"
+            :style="heroAmountStyle"
+          >
+            {{ heroFormattedAmount }}
+          </p>
+        </div>
 
         <!-- 期间比对副标题 -->
         <p class="mt-2 text-xs opacity-85">
@@ -508,6 +547,50 @@ async function handleSkip(todoId: string): Promise<void> {
             </div>
           </div>
         </div>
+        </div>
+      </div>
+
+      <!-- 档位切换（本月 / 今年 / 汇总）平铺三列按钮 -->
+      <div class="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-sunken p-1 shadow-2xs" role="tablist" aria-label="统计范围">
+        <button
+          type="button"
+          :aria-pressed="scope === 'month'"
+          class="rounded-md py-2 text-center text-xs font-semibold transition-all duration-150 cursor-pointer"
+          :class="
+            scope === 'month'
+              ? 'bg-surface text-ink font-bold shadow-2xs'
+              : 'text-ink-muted hover:text-ink'
+          "
+          @click="scope = 'month'"
+        >
+          本月
+        </button>
+        <button
+          type="button"
+          :aria-pressed="scope === 'year'"
+          class="rounded-md py-2 text-center text-xs font-semibold transition-all duration-150 cursor-pointer"
+          :class="
+            scope === 'year'
+              ? 'bg-surface text-ink font-bold shadow-2xs'
+              : 'text-ink-muted hover:text-ink'
+          "
+          @click="scope = 'year'"
+        >
+          今年
+        </button>
+        <button
+          type="button"
+          :aria-pressed="scope === 'all'"
+          class="rounded-md py-2 text-center text-xs font-semibold transition-all duration-150 cursor-pointer"
+          :class="
+            scope === 'all'
+              ? 'bg-surface text-ink font-bold shadow-2xs'
+              : 'text-ink-muted hover:text-ink'
+          "
+          @click="scope = 'all'"
+        >
+          汇总
+        </button>
       </div>
 
       <p v-if="errorMessage !== null" class="mt-4 text-center text-sm font-semibold text-danger-text">
@@ -516,88 +599,101 @@ async function handleSkip(todoId: string): Promise<void> {
     </header>
 
     <main class="mx-auto mt-6 w-full max-w-[var(--content-max)] space-y-6 px-4 lg:px-6">
-      <!-- ② 第二行：本月要还 + 进度对比（card-grid 双列） -->
-      <section class="card-grid grid-cols-1 lg:grid-cols-2" aria-label="当期事实">
+      <!-- ② 第二行：本月要还 + 支出进度（双列等高卡片） -->
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-stretch" aria-label="当期事实">
         <!-- 本月要还 -->
-        <div class="rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80">
-          <div class="flex items-center justify-between">
-            <h2 class="label-cn">本月要还</h2>
-            <span class="text-xs text-ink-muted">信用卡账单</span>
+        <div class="flex flex-col justify-between rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80 h-full">
+          <div>
+            <div class="flex items-center justify-between">
+              <h2 class="label-cn">本月要还</h2>
+              <span class="text-xs text-ink-muted">信用卡账单</span>
+            </div>
+
+            <p class="mt-2 text-2xl font-extrabold text-amber-700 dark:text-amber-400">
+              {{ formatYuan(creditDueTotalCents) }}
+            </p>
+
+            <div v-if="creditDue.length === 0" class="mt-3 text-xs text-ink-muted">
+              本月无待还款信用卡
+            </div>
+            <ul v-else class="mt-3 divide-y divide-line/60 max-h-[160px] overflow-y-auto pr-0.5">
+              <li
+                v-for="item in creditDue"
+                :key="item.paymentMethodId"
+                class="flex items-center justify-between py-2 text-xs"
+              >
+                <PaymentIcon :name="item.name" :size="20" class="mr-2.5" />
+                <div class="min-w-0 flex-1">
+                  <span class="block truncate font-semibold text-ink">{{ item.name }}</span>
+                  <span
+                    v-if="item.repaymentDate !== null"
+                    class="block text-[11px]"
+                    :class="URGENCY_META[urgencyOfOptional(item.repaymentDate)]"
+                  >
+                    {{ formatMonthDay(item.repaymentDate) }} · {{ urgencyLabel(item.repaymentDate) }} · 已记 {{ item.count }} 笔
+                  </span>
+                </div>
+                <b class="shrink-0 text-sm font-bold tabular-nums text-ink">
+                  {{ formatYuan(item.cents) }}
+                </b>
+              </li>
+            </ul>
           </div>
 
-          <p class="mt-2 text-2xl font-extrabold text-amber-700 dark:text-amber-400">
-            {{ formatYuan(creditDueTotalCents) }}
-          </p>
-
-          <div v-if="creditDue.length === 0" class="mt-3 text-xs text-ink-muted">
-            本月无待还款信用卡
-          </div>
-          <ul v-else class="mt-3 divide-y divide-line/60">
-            <li
-              v-for="item in creditDue"
-              :key="item.paymentMethodId"
-              class="flex items-center justify-between py-2 text-xs"
-            >
-              <PaymentIcon :name="item.name" :size="20" class="mr-2.5" />
-              <div class="min-w-0 flex-1">
-                <span class="block truncate font-semibold text-ink">{{ item.name }}</span>
-                <span
-                  v-if="item.repaymentDate !== null"
-                  class="block text-[11px]"
-                  :class="URGENCY_META[urgencyOfOptional(item.repaymentDate)]"
-                >
-                  {{ formatMonthDay(item.repaymentDate) }} · {{ urgencyLabel(item.repaymentDate) }} · 已记 {{ item.count }} 笔
-                </span>
-              </div>
-              <b class="shrink-0 text-sm font-bold tabular-nums text-ink">
-                {{ formatYuan(item.cents) }}
-              </b>
-            </li>
-          </ul>
-        </div>
-
-        <!-- 进度对比卡 -->
-        <div class="rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80">
-          <div class="flex items-center justify-between">
-            <h2 class="label-cn">这个月走到哪了</h2>
-            <span class="text-xs text-ink-muted">对近 3 个月日均</span>
-          </div>
-
-          <p class="mt-2 text-xl font-bold text-ink">
-            {{ formatYuan(dailyAverageCents) }}
-            <span class="text-xs font-normal text-ink-muted"> / 天</span>
-          </p>
-
-          <p class="mt-1 text-xs text-ink-muted">
-            本月已过 {{ monthElapsed }} 天 · 已花 {{ formatYuan(monthly?.totalCents ?? 0) }}
-          </p>
-
-          <!-- 进度条 -->
-          <div class="mt-3.5 h-2 w-full overflow-hidden rounded-full bg-sunken">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :class="
-                progressBarPercent > 120
-                  ? 'bg-danger-fill'
-                  : progressBarPercent > 100
-                    ? 'bg-accent-fill'
-                    : 'bg-primary-fill'
-              "
-              :style="{ width: `${Math.min(100, progressBarPercent)}%` }"
-            />
-          </div>
-
-          <p class="mt-2 text-xs">
-            <template v-if="dailyCompareRatio !== null">
-              比近 3 个月日均
-              <b :class="dailyCompareRatio > 0 ? 'text-danger-text' : 'text-secondary-text'">
-                {{ dailyCompareRatio > 0 ? '高' : '低' }} {{ Math.abs(Math.round(dailyCompareRatio * 100)) }}%
-              </b>
+          <p class="mt-3 border-t border-line/60 pt-2 text-xs text-ink-muted">
+            <template v-if="creditDue.length > 0">
+              共 <b class="font-bold tabular-nums text-ink">{{ creditDue.length }}</b> 笔待还款信用卡
             </template>
             <template v-else>
-              近 3 个月无参考基准
+              全部信用卡账单已结清或无待还
             </template>
           </p>
+        </div>
+
+        <!-- 支出进度卡 -->
+        <div class="flex flex-col justify-between rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80 h-full">
+          <div>
+            <div class="flex items-center justify-between">
+              <h2 class="label-cn">本月支出进度</h2>
+              <span class="text-xs text-ink-muted">对近 3 个月日均</span>
+            </div>
+
+            <p class="mt-2 text-2xl font-extrabold text-ink">
+              {{ formatYuan(dailyAverageCents) }}
+              <span class="text-xs font-normal text-ink-muted"> / 天</span>
+            </p>
+
+            <p class="mt-1 text-xs text-ink-muted">
+              本月已过 {{ monthElapsed }} 天 · 已花 {{ formatYuan(monthly?.totalCents ?? 0) }}
+            </p>
+
+            <!-- 进度条 -->
+            <div class="mt-3.5 h-2 w-full overflow-hidden rounded-full bg-sunken">
+              <div
+                class="h-full rounded-full transition-all duration-300"
+                :class="
+                  progressBarPercent > 120
+                    ? 'bg-danger-fill'
+                    : progressBarPercent > 100
+                      ? 'bg-accent-fill'
+                      : 'bg-primary-fill'
+                "
+                :style="{ width: `${Math.min(100, progressBarPercent)}%` }"
+              />
+            </div>
+
+            <p class="mt-2 text-xs">
+              <template v-if="dailyCompareRatio !== null">
+                比近 3 个月日均
+                <b :class="dailyCompareRatio > 0 ? 'text-danger-text' : 'text-secondary-text'">
+                  {{ dailyCompareRatio > 0 ? '高' : '低' }} {{ Math.abs(Math.round(dailyCompareRatio * 100)) }}%
+                </b>
+              </template>
+              <template v-else>
+                近 3 个月无参考基准
+              </template>
+            </p>
+          </div>
 
           <p class="mt-3 border-t border-line/60 pt-2 text-xs text-ink-muted">
             预计月末
@@ -640,7 +736,7 @@ async function handleSkip(todoId: string): Promise<void> {
         </div>
       </section>
 
-      <!-- ④ 第四行：累计条（通栏一行，不含金额） -->
+      <!-- ④ 第四行：累计条（通栏一行） -->
       <div class="strip" role="region" aria-label="累计数据">
         <span class="strip__label">累计</span>
         <div class="strip__items">
@@ -659,7 +755,6 @@ async function handleSkip(todoId: string): Promise<void> {
           </span>
           <span>首笔 <b>{{ summary?.firstRepaymentDate ?? '—' }}</b></span>
         </div>
-        <span class="strip__note">不含金额 —— 那在「汇总」档</span>
       </div>
     </main>
   </div>

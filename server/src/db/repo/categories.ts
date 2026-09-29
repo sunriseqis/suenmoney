@@ -431,3 +431,55 @@ export function assertCategoryDeactivatable(db: DatabaseSync, id: string): void 
     throw conflict(`该分类下还有 ${expenses} 笔支出记录，请先把它们转移到别的分类`);
   }
 }
+
+/**
+ * 删除分类。
+ *
+ * 仅允许删除既没有子分类、也没有支出记录的分类（例如误新建、或记录已全部转移腾空）。
+ * 若已有支出记录，拦截并提示使用「停用」以维护历史账单完整性。
+ */
+export function deleteCategory(
+  db: DatabaseSync,
+  id: string,
+  actorId: string,
+  deviceId?: string | null,
+): void {
+  const existing = findCategory(db, id);
+  if (existing === null) throw notFound(`分类不存在：${id}`);
+
+  const row = db
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM expenses WHERE category_id = ? AND deleted_at IS NULL) AS expenses,
+         (SELECT COUNT(*) FROM categories WHERE parent_id = ? AND deleted_at IS NULL) AS children`,
+    )
+    .get(id, id);
+
+  const expenses = row === undefined ? 0 : Number(row['expenses']);
+  const children = row === undefined ? 0 : Number(row['children']);
+
+  if (children > 0) {
+    throw conflict(`该分类下还有 ${children} 个子分类，请先删除或移走子分类`);
+  }
+  if (expenses > 0) {
+    throw conflict(`该分类下已有 ${expenses} 笔支出记录。为保证历史账单完整，无法直接删除；若不再使用，可先转移记录或将其停用。`);
+  }
+
+  const timestamp = nowIso();
+  inTransaction(db, () => {
+    db.prepare(
+      `UPDATE categories
+          SET deleted_at = ?, updated_at = ?, rev = rev + 1, device_id = ?
+        WHERE id = ?`,
+    ).run(timestamp, timestamp, deviceId ?? null, id);
+
+    recordChange(db, {
+      entityType: 'category',
+      entityId: id,
+      op: 'delete',
+      actorId,
+      payload: { id, deletedAt: timestamp },
+      deviceId: deviceId ?? null,
+    });
+  });
+}

@@ -175,6 +175,45 @@ describe('创建计划', () => {
     );
   });
 
+  test('记账抽屉分期：confirmFirst=true 同时创建分期计划并确认入账第 1 期', async () => {
+    const res = await createPlan({
+      name: 'iPhone 17 分期',
+      categoryId,
+      paymentMethodId: cardId,
+      source: 'installment',
+      totalAmountCents: 120_000, // 1200元
+      purchaseDate: '2026-09-05',
+      periods: 12,
+      firstDueDate: '2026-09-28',
+      confirmFirst: true,
+      confirmSpendDate: '2026-09-05',
+    });
+    assert.equal(res.statusCode, 201);
+    const plan = res.json().plan;
+
+    assert.equal(plan.progress.paidCount, 1, '第 1 期应直接入账');
+    assert.equal(plan.progress.paidCents, 10_000);
+    assert.equal(plan.progress.pendingCount, 11, '剩余 11 期转入待办');
+    assert.equal(plan.progress.pendingCents, 110_000);
+
+    const todos = (await todosOf(plan.id)).json().todos as Array<Record<string, unknown>>;
+    assert.equal(todos[0]!['status'], 'confirmed');
+    assert.ok(todos[0]!['expenseId'] !== null);
+    assert.equal(todos[1]!['status'], 'pending');
+
+    // 验证第一笔支出记录确实已写入
+    const expenseRes = await app.inject({
+      method: 'GET',
+      url: `/api/expenses/${todos[0]!['expenseId']}`,
+      headers: auth(),
+    });
+    assert.equal(expenseRes.statusCode, 200);
+    assert.equal(expenseRes.json().expense.amountCents, 10_000);
+    assert.equal(expenseRes.json().expense.spendDate, '2026-09-05');
+    assert.equal(expenseRes.json().expense.source, 'plan');
+    assert.equal(expenseRes.json().expense.planPeriodSeq, 1);
+  });
+
   test('信用卡分期：入账日取自账单日（账单日 10、还款日 28）', async () => {
     const res = await createPlan({
       name: '卡分期',
@@ -1152,5 +1191,101 @@ describe('「我知道了」（ack）', () => {
       headers: auth(),
     });
     assert.equal(res.statusCode, 400);
+  });
+});
+
+describe('删除计划（DELETE /api/plans/:id）', () => {
+  test('终止后的计划可以被彻底删除，待办清理，历史支出保留', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/plans',
+      headers: auth(),
+      payload: {
+        name: '待删除计划',
+        categoryId,
+        paymentMethodId: cashId,
+        source: 'manual',
+        amountCents: 10_000,
+        periods: 3,
+        firstDueDate: '2028-10-01',
+      },
+    });
+    assert.equal(created.statusCode, 201);
+    const planId = created.json().plan.id as string;
+
+    const listRes = await app.inject({
+      method: 'GET',
+      url: `/api/plans/${planId}`,
+      headers: auth(),
+    });
+    const todos = listRes.json().todos as Array<{ id: string }>;
+    const firstTodoId = todos[0]!.id;
+
+    // 确认第 1 期，生成一笔支出
+    const confirmRes = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${firstTodoId}/confirm`,
+      headers: auth(),
+    });
+    assert.equal(confirmRes.statusCode, 200);
+    const expenseId = confirmRes.json().expenseId as string;
+
+    // 终止计划
+    const endRes = await app.inject({
+      method: 'POST',
+      url: `/api/plans/${planId}/end`,
+      headers: auth(),
+    });
+    assert.equal(endRes.statusCode, 200);
+
+    // 家人尝试删除别人的计划 → 403
+    const partnerDel = await app.inject({
+      method: 'DELETE',
+      url: `/api/plans/${planId}`,
+      headers: auth(partnerToken),
+    });
+    assert.equal(partnerDel.statusCode, 403);
+
+    // 创建者删除计划 → 204
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/plans/${planId}`,
+      headers: auth(),
+    });
+    assert.equal(delRes.statusCode, 204);
+
+    // 计划已被软删除，查找返回 404
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/plans/${planId}`,
+      headers: auth(),
+    });
+    assert.equal(getRes.statusCode, 404);
+
+    // 列表中不再包含该计划
+    const allPlans = await app.inject({
+      method: 'GET',
+      url: '/api/plans',
+      headers: auth(),
+    });
+    const plansList = allPlans.json().plans as Array<{ id: string }>;
+    assert.ok(!plansList.some((p) => p.id === planId));
+
+    // 历史已生成的支出依然存在且有效
+    const expenseCheck = await app.inject({
+      method: 'GET',
+      url: `/api/expenses`,
+      headers: auth(),
+    });
+    const expenses = expenseCheck.json().items as Array<{ id: string }>;
+    assert.ok(expenses.some((e) => e.id === expenseId));
+  });
+
+  test('未登录不能删除计划 → 401', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/plans/fake-id',
+    });
+    assert.equal(res.statusCode, 401);
   });
 });

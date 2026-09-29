@@ -10,7 +10,9 @@ import { expenseRoutes } from './expenses.ts';
 import { paymentMethodRoutes } from './payment-methods.ts';
 import { planRoutes } from './plans.ts';
 import { reportRoutes } from './reports.ts';
+import { snapshotRoutes } from './snapshots.ts';
 import { userRoutes } from './users.ts';
+import { webdavRoutes } from './webdav.ts';
 
 export async function buildServer(options: { logger?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify({
@@ -29,7 +31,7 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
     // 留空 = 同源部署（Web 由 nginx 一起托管），此时无需 CORS
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
     credentials: false,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   /**
@@ -70,6 +72,8 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
   await app.register(planRoutes);
   await app.register(userRoutes);
   await app.register(dataRoutes);
+  await app.register(snapshotRoutes);
+  await app.register(webdavRoutes);
 
   return app;
 }

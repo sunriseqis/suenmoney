@@ -5,6 +5,7 @@ import {
   ackTodo,
   confirmTodo,
   createPlan,
+  deletePlan,
   endPlan,
   findPlan,
   listPlans,
@@ -56,7 +57,7 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
     const plan = findPlan(db, id);
     if (plan === null) throw notFound(`计划不存在：${id}`);
 
-    return { plan, todos: listTodos(db, { planId: id, limit: 600 }) };
+    return { plan, todos: listTodos(db, { planId: id, limit: 600, orderBy: 'period_seq' }) };
   });
 
   app.post('/api/plans', { preHandler: requireAuth }, async (request, reply) => {
@@ -77,6 +78,8 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
       autoPost: optionalBool(body, 'autoPost', false),
       note: optionalString(body, 'note', ''),
       ownerId: auth.user.id,
+      confirmFirst: optionalBool(body, 'confirmFirst', false),
+      confirmSpendDate: optionalString(body, 'confirmSpendDate', '') || undefined,
     });
 
     return reply.code(201).send({ plan });
@@ -119,6 +122,13 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/plans/:id/end', { preHandler: requireAuth }, async (request) => {
     const auth = currentAuth(request);
     return { plan: endPlan(getDatabase(), pathParam(request.params, 'id'), auth.user.id) };
+  });
+
+  /** 删除计划：软删计划与相关待办，已生成的支出记录保留。 */
+  app.delete('/api/plans/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const auth = currentAuth(request);
+    deletePlan(getDatabase(), pathParam(request.params, 'id'), auth.user.id);
+    return reply.code(204).send();
   });
 
   /**

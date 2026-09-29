@@ -4,6 +4,7 @@ import { getDatabase } from '../db/index.ts';
 import {
   assertCategoryDeactivatable,
   createCategory,
+  deleteCategory,
   listCategoryTree,
   updateCategory,
   type UpdateCategoryInput,
@@ -72,5 +73,12 @@ export async function categoryRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return { category: updateCategory(db, id, patch) };
+  });
+
+  app.delete('/api/categories/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const auth = currentAuth(request);
+    const id = pathParam(request.params, 'id');
+    deleteCategory(getDatabase(), id, auth.user.id);
+    return reply.code(200).send({ ok: true });
   });
 }

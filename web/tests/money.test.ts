@@ -10,11 +10,13 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  adaptiveAmountStyle,
   centsToInput,
   formatCents,
   formatCompact,
   formatYuan,
   parseYuanToCents,
+  splitInstallment,
 } from '../src/utils/money.ts';
 
 describe('formatCents', () => {
@@ -115,3 +117,74 @@ describe('parseYuanToCents', () => {
     }
   });
 });
+
+describe('splitInstallment', () => {
+  test('整除场景：各期均分', () => {
+    assert.deepEqual(splitInstallment(120000, 12), Array(12).fill(10000));
+    assert.deepEqual(splitInstallment(300, 3), [100, 100, 100]);
+  });
+
+  test('除不尽场景：前 n-1 期取整，末期补差', () => {
+    // 10000 分拆 3 期：10000 / 3 = 3333.33 -> 3333 + 3333 + 3334 = 10000
+    const parts3 = splitInstallment(10000, 3);
+    assert.deepEqual(parts3, [3333, 3333, 3334]);
+    assert.equal(parts3.reduce((a, b) => a + b, 0), 10000);
+
+    // 10000 分拆 6 期：10000 / 6 = 1666.66 -> 1666 * 5 + 1670 = 10000
+    const parts6 = splitInstallment(10000, 6);
+    assert.deepEqual(parts6, [1666, 1666, 1666, 1666, 1666, 1670]);
+    assert.equal(parts6.reduce((a, b) => a + b, 0), 10000);
+  });
+
+  test('单期场景：原样返回', () => {
+    assert.deepEqual(splitInstallment(5000, 1), [5000]);
+  });
+
+  test('边界与非法输入保护', () => {
+    assert.deepEqual(splitInstallment(0, 12), []);
+    assert.deepEqual(splitInstallment(-100, 3), []);
+    assert.deepEqual(splitInstallment(1000, 0), []);
+    assert.deepEqual(splitInstallment(1000, -1), []);
+    assert.deepEqual(splitInstallment(1000, 601), []);
+    assert.deepEqual(splitInstallment(2, 3), []); // totalCents < periods
+  });
+});
+
+describe('adaptiveAmountStyle', () => {
+  test('Hero 变体：短金额保持大字号', () => {
+    const s1 = adaptiveAmountStyle('¥0.00', 'hero');
+    assert.match(s1.fontSize, /3\.5rem/); // max 56px
+
+    const s2 = adaptiveAmountStyle('¥842.50', 'hero');
+    assert.match(s2.fontSize, /3\.5rem/);
+  });
+
+  test('Hero 变体：大金额阶梯式递减', () => {
+    const sThousands = adaptiveAmountStyle('¥1,234.56', 'hero'); // len 9
+    const sTenThousands = adaptiveAmountStyle('¥12,345.67', 'hero'); // len 10
+    const sHundredThousands = adaptiveAmountStyle('¥123,456.78', 'hero'); // len 11
+    const sMillions = adaptiveAmountStyle('¥1,234,567.89', 'hero'); // len 13
+    const sTenMillions = adaptiveAmountStyle('¥12,345,678.90', 'hero'); // len 14
+    const sHundredMillions = adaptiveAmountStyle('¥123,456,789.00', 'hero'); // len 15
+
+    // 每一档最大字号都应该逐步缩小
+    assert.match(sThousands.fontSize, /3\.25rem/);
+    assert.match(sTenThousands.fontSize, /2\.75rem/);
+    assert.match(sHundredThousands.fontSize, /2\.75rem/);
+    assert.match(sMillions.fontSize, /2\.25rem/);
+    assert.match(sTenMillions.fontSize, /1\.875rem/);
+    assert.match(sHundredMillions.fontSize, /1\.875rem/);
+
+    const sBillions = adaptiveAmountStyle('¥1,234,567,890.00', 'hero'); // len 17
+    assert.match(sBillions.fontSize, /1\.625rem/); // 26px max
+  });
+
+  test('Card 变体：流水卡片金额自适应', () => {
+    const shortAmount = adaptiveAmountStyle('12.50', 'card');
+    assert.match(shortAmount.fontSize, /2\.75rem/);
+
+    const millions = adaptiveAmountStyle('1,234,567.89', 'card');
+    assert.match(millions.fontSize, /1\.75rem/);
+  });
+});
+

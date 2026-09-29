@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import type { PaymentCycle } from '../../domain/billing-cycle.ts';
+import { resolveExpenseDates } from '../../domain/billing-cycle.ts';
 import { badRequest, conflict, notFound } from '../../lib/http-error.ts';
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange } from '../sync.ts';
@@ -386,3 +387,181 @@ export function assertPaymentMethodDeactivatable(db: DatabaseSync, id: string): 
     throw conflict(`还有 ${plans} 个进行中的计划在用这个支付方式，请先结束它们或把计划改到别的支付方式`);
   }
 }
+
+/**
+ * 删除支付方式。
+ *
+ * 仅允许删除既没有关联计划、也没有支出记录的支付方式（例如误新建、或测试数据）。
+ * 若已有支出记录，拦截并提示使用「停用」以维护历史账单完整性。
+ */
+export function deletePaymentMethod(
+  db: DatabaseSync,
+  id: string,
+  actorId: string,
+  deviceId?: string | null,
+): void {
+  const existing = findPaymentMethod(db, id);
+  if (existing === null) throw notFound(`支付方式不存在：${id}`);
+
+  const row = db
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM expenses WHERE payment_method_id = ? AND deleted_at IS NULL) AS expenses,
+         (SELECT COUNT(*) FROM plans WHERE payment_method_id = ? AND deleted_at IS NULL) AS plans`,
+    )
+    .get(id, id);
+
+  const expenses = row === undefined ? 0 : Number(row['expenses']);
+  const plans = row === undefined ? 0 : Number(row['plans']);
+
+  if (plans > 0) {
+    throw conflict(`还有 ${plans} 个计划关联了此支付方式，请先修改或删除对应计划`);
+  }
+  if (expenses > 0) {
+    throw conflict(`该支付方式下已有 ${expenses} 笔支出记录。为保证历史账单完整，无法直接删除；若不再使用，可点击「停用」将其归档。`);
+  }
+
+  const timestamp = nowIso();
+  inTransaction(db, () => {
+    db.prepare(
+      `UPDATE payment_methods
+          SET deleted_at = ?, updated_at = ?, rev = rev + 1, device_id = ?
+        WHERE id = ?`,
+    ).run(timestamp, timestamp, deviceId ?? null, id);
+
+    recordChange(db, {
+      entityType: 'payment_method',
+      entityId: id,
+      op: 'delete',
+      actorId,
+      payload: { id, deletedAt: timestamp },
+      deviceId: deviceId ?? null,
+    });
+  });
+}
+
+export interface MergePaymentMethodInput {
+  targetId: string;
+  deleteSource?: boolean;
+  actorId: string;
+  deviceId?: string | null;
+}
+
+export interface MergePaymentMethodResult {
+  movedExpenses: number;
+  movedPlans: number;
+  sourceDeleted: boolean;
+}
+
+/**
+ * 支付方式合并 / 数据迁移。
+ *
+ * 将源支付方式下的所有有效支出与计划全部迁移至目标支付方式。
+ * 针对支出记录，按目标支付方式的还款周期（若为信用卡）重新推算入账日与还款日。
+ * 若指定 deleteSource: true，则迁移完成后软删除源支付方式。
+ */
+export function mergePaymentMethod(
+  db: DatabaseSync,
+  sourceId: string,
+  input: MergePaymentMethodInput,
+): MergePaymentMethodResult {
+  const source = findPaymentMethod(db, sourceId);
+  if (source === null) throw notFound(`源支付方式不存在：${sourceId}`);
+
+  if (sourceId === input.targetId) {
+    throw conflict('目标支付方式不能与源支付方式相同');
+  }
+
+  const target = findPaymentMethod(db, input.targetId);
+  if (target === null) throw notFound(`目标支付方式不存在：${input.targetId}`);
+  if (target.is_enabled !== 1) {
+    throw conflict('目标支付方式已停用，无法作为合并目标');
+  }
+
+  const timestamp = nowIso();
+  const targetCycle = toPaymentCycle(target);
+
+  return inTransaction(db, () => {
+    // 1. 查询并迁移源支付方式下的所有有效支出
+    const expenseRows = db
+      .prepare('SELECT id, spend_date, rev FROM expenses WHERE payment_method_id = ? AND deleted_at IS NULL')
+      .all(sourceId) as unknown as Array<{ id: string; spend_date: string; rev: number }>;
+
+    for (const exp of expenseRows) {
+      const { postingDate, repaymentDate } = resolveExpenseDates(exp.spend_date, targetCycle);
+      db.prepare(
+        `UPDATE expenses
+            SET payment_method_id = ?, posting_date = ?, repayment_date = ?, updated_at = ?, rev = rev + 1, device_id = ?
+          WHERE id = ?`,
+      ).run(target.id, postingDate, repaymentDate, timestamp, input.deviceId ?? null, exp.id);
+
+      recordChange(db, {
+        entityType: 'expense',
+        entityId: exp.id,
+        op: 'upsert',
+        actorId: input.actorId,
+        payload: {
+          id: exp.id,
+          paymentMethodId: target.id,
+          postingDate,
+          repaymentDate,
+          updatedAt: timestamp,
+        },
+        deviceId: input.deviceId ?? null,
+      });
+    }
+
+    // 2. 查询并迁移源支付方式下的所有有效计划
+    const planRows = db
+      .prepare('SELECT id, rev FROM plans WHERE payment_method_id = ? AND deleted_at IS NULL')
+      .all(sourceId) as unknown as Array<{ id: string; rev: number }>;
+
+    for (const plan of planRows) {
+      db.prepare(
+        `UPDATE plans
+            SET payment_method_id = ?, updated_at = ?, rev = rev + 1, device_id = ?
+          WHERE id = ?`,
+      ).run(target.id, timestamp, input.deviceId ?? null, plan.id);
+
+      recordChange(db, {
+        entityType: 'plan',
+        entityId: plan.id,
+        op: 'upsert',
+        actorId: input.actorId,
+        payload: {
+          id: plan.id,
+          paymentMethodId: target.id,
+          updatedAt: timestamp,
+        },
+        deviceId: input.deviceId ?? null,
+      });
+    }
+
+    // 3. 若指定删除源支付方式
+    let sourceDeleted = false;
+    if (input.deleteSource) {
+      db.prepare(
+        `UPDATE payment_methods
+            SET deleted_at = ?, updated_at = ?, rev = rev + 1, device_id = ?
+          WHERE id = ?`,
+      ).run(timestamp, timestamp, input.deviceId ?? null, sourceId);
+
+      recordChange(db, {
+        entityType: 'payment_method',
+        entityId: sourceId,
+        op: 'delete',
+        actorId: input.actorId,
+        payload: { id: sourceId, deletedAt: timestamp },
+        deviceId: input.deviceId ?? null,
+      });
+      sourceDeleted = true;
+    }
+
+    return {
+      movedExpenses: expenseRows.length,
+      movedPlans: planRows.length,
+      sourceDeleted,
+    };
+  });
+}
+

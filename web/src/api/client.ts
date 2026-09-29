@@ -56,7 +56,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 type QueryValue = string | number | boolean | undefined | null;
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, QueryValue>;
 }

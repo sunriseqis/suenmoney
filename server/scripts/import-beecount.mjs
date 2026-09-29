@@ -106,25 +106,25 @@ const CATEGORY_DEFS = [
   {
     name: '数码家电',
     icon: 'laptop',
-    color: '1',
+    color: '9',
     children: ['手机数码', '家用电器', '电脑配件', '会员服务'],
   },
   {
     name: '贷款还款',
     icon: 'landmark',
-    color: '2',
+    color: '10',
     children: ['房屋贷款', '汽车贷款', '信用分期'],
   },
   {
     name: '人情往来',
     icon: 'gift',
-    color: '3',
+    color: '11',
     children: ['孝敬长辈', '人情礼金', '婚庆开支', '其他花费'],
   },
   {
     name: '休闲娱乐',
     icon: 'gamepad-2',
-    color: '4',
+    color: '12',
     children: ['游戏娱乐', '文娱活动', '旅行出游', '摄影写真'],
   },
 ];

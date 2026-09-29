@@ -109,6 +109,11 @@ export const usePlansStore = defineStore('plans', () => {
     await refresh();
   }
 
+  async function deletePlan(planId: string): Promise<void> {
+    await plansApi.delete(planId);
+    await refresh();
+  }
+
   return {
     plans,
     dueTodos,
@@ -125,5 +130,6 @@ export const usePlansStore = defineStore('plans', () => {
     revertTodo,
     restoreTodo,
     endPlan,
+    deletePlan,
   };
 });

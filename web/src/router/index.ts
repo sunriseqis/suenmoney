@@ -6,6 +6,7 @@ import LedgerView from '@/views/LedgerView.vue';
 import LoginView from '@/views/LoginView.vue';
 import ReportView from '@/views/ReportView.vue';
 import SettingsView from '@/views/SettingsView.vue';
+import AnnualSummaryView from '@/views/AnnualSummaryView.vue';
 
 /**
  * 底部导航只放三个高频入口（首页 / 流水 / 报表）加一个「记一笔」。
@@ -25,6 +26,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/ledger', name: 'ledger', component: LedgerView },
   { path: '/report', name: 'report', component: ReportView },
   { path: '/settings', name: 'settings', component: SettingsView },
+  { path: '/annual-summary', name: 'annual-summary', component: AnnualSummaryView },
   // 记账抽屉是「动作」而不是「页面」，所以没有独立路由 —— 见 components/ExpenseSheet.vue
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ];

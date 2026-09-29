@@ -232,6 +232,7 @@ async function restoreTodo(todo: PlanTodo): Promise<void> {
 
 const expandedPlanId = ref<string | null>(null);
 const planTodos = ref<PlanTodo[]>([]);
+const sortedPlanTodos = computed(() => [...planTodos.value].sort((a, b) => a.periodSeq - b.periodSeq));
 const detailLoading = ref(false);
 
 async function togglePlan(plan: Plan): Promise<void> {
@@ -316,6 +317,26 @@ async function submitEnd(plan: Plan): Promise<void> {
     ui.markDataChanged();
   } catch (error) {
     report(error, '终止计划失败');
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function submitDelete(plan: Plan): Promise<void> {
+  if (!confirm(`确定彻底删除计划「${plan.name}」吗？已生成的历史记账记录将完整保留，该计划及相关待办将被移除。`)) {
+    return;
+  }
+  clearMessages();
+  busy.value = true;
+  try {
+    await plansStore.deletePlan(plan.id);
+    notice.value = `已删除计划「${plan.name}」`;
+    if (expandedPlanId.value === plan.id) {
+      expandedPlanId.value = null;
+    }
+    ui.markDataChanged();
+  } catch (error) {
+    report(error, '删除计划失败');
   } finally {
     busy.value = false;
   }
@@ -485,7 +506,7 @@ watch(() => ui.dataVersion, () => void plansStore.refresh());
             class="w-full rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
           />
 
-          <div class="flex gap-2 overflow-x-auto pb-1">
+          <div class="no-scrollbar flex gap-2 overflow-x-auto pb-1">
             <ChipButton
               v-for="root in dict.rootCategories"
               :key="root.id"
@@ -702,7 +723,7 @@ watch(() => ui.dataVersion, () => void plansStore.refresh());
 
               <ul v-else class="mt-4 max-h-64 space-y-1 overflow-y-auto">
                 <li
-                  v-for="todo in planTodos"
+                  v-for="todo in sortedPlanTodos"
                   :key="todo.id"
                   class="relative overflow-hidden rounded-sm"
                 >
@@ -887,7 +908,7 @@ watch(() => ui.dataVersion, () => void plansStore.refresh());
                 <div v-else class="mt-4 flex gap-2">
                   <button
                     type="button"
-                    class="rounded-sm bg-canvas px-4 py-2.5 text-sm font-semibold text-ink"
+                    class="rounded-sm bg-canvas px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sunken transition-colors"
                     @click="startEdit(plan)"
                   >
                     改计划
@@ -896,10 +917,19 @@ watch(() => ui.dataVersion, () => void plansStore.refresh());
                     v-if="plan.state === 'active'"
                     type="button"
                     :disabled="busy"
-                    class="rounded-sm bg-canvas px-4 py-2.5 text-sm font-semibold text-danger-text disabled:opacity-40"
+                    class="rounded-sm bg-canvas px-4 py-2.5 text-sm font-semibold text-danger-text hover:bg-danger/10 transition-colors disabled:opacity-40"
                     @click="submitEnd(plan)"
                   >
                     终止计划
+                  </button>
+                  <button
+                    v-if="plan.state === 'ended'"
+                    type="button"
+                    :disabled="busy"
+                    class="rounded-sm bg-canvas px-4 py-2.5 text-sm font-semibold text-danger-text hover:bg-danger/10 transition-colors disabled:opacity-40"
+                    @click="submitDelete(plan)"
+                  >
+                    删除计划
                   </button>
                 </div>
               </template>

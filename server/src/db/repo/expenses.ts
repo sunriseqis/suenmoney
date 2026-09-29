@@ -4,7 +4,9 @@ import { resolveExpenseDates } from '../../domain/billing-cycle.ts';
 import { badRequest, forbidden, notFound } from '../../lib/http-error.ts';
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange } from '../sync.ts';
+import type { CategoryRow } from './categories.ts';
 import { requireUsableCategory } from './categories.ts';
+import type { PaymentMethodRow } from './payment-methods.ts';
 import { requireUsablePaymentMethod, toPaymentCycle } from './payment-methods.ts';
 
 /**
@@ -102,7 +104,7 @@ const JOINS = `JOIN users u ON u.id = e.owner_id
 const DISPLAY_COLUMNS = `${COLUMNS},
                          u.display_name AS owner_name,
                          c.name AS category_name,
-                         c.icon AS category_icon,
+                         COALESCE(p.icon, c.icon) AS category_icon,
                          c.color AS category_color,
                          p.color AS parent_category_color,
                          p.name AS parent_category_name,
@@ -400,6 +402,98 @@ export function createExpense(db: DatabaseSync, input: CreateExpenseInput): Expe
   const created = findExpense(db, row.id);
   if (created === null) throw new Error('写入后读取失败，数据库状态异常');
   return created;
+}
+
+export interface BatchExpenseItem {
+  amountCents: number;
+  categoryId: string;
+  paymentMethodId: string;
+  spendDate: string;
+  note?: string | undefined;
+}
+
+export interface BatchCreateExpensesInput {
+  items: BatchExpenseItem[];
+}
+
+export interface BatchCreateExpensesResult {
+  createdCount: number;
+  expenseIds: string[];
+}
+
+/**
+ * 批量创建支出（用于账单导入等场景）。
+ *
+ * 在单次事务内完成校验、入账日/还款日推算与写入，避免数百次网络往返与磁盘事务提交。
+ */
+export function batchCreateExpenses(
+  db: DatabaseSync,
+  input: BatchCreateExpensesInput,
+  ownerId: string,
+  deviceId?: string | null,
+): BatchCreateExpensesResult {
+  if (input.items.length === 0) {
+    return { createdCount: 0, expenseIds: [] };
+  }
+  if (input.items.length > 5000) {
+    throw badRequest('单次批量导入不能超过 5000 笔');
+  }
+
+  return inTransaction(db, () => {
+    const categoryCache = new Map<string, CategoryRow>();
+    const methodCache = new Map<string, PaymentMethodRow>();
+
+    const expenseIds: string[] = [];
+    const timestamp = nowIso();
+
+    for (const item of input.items) {
+      validateAmount(item.amountCents);
+      const note = validateNote(item.note ?? '');
+
+      let category = categoryCache.get(item.categoryId);
+      if (!category) {
+        category = requireUsableCategory(db, item.categoryId);
+        categoryCache.set(item.categoryId, category);
+      }
+
+      let method = methodCache.get(item.paymentMethodId);
+      if (!method) {
+        method = requireUsablePaymentMethod(db, item.paymentMethodId);
+        methodCache.set(item.paymentMethodId, method);
+      }
+
+      const { postingDate, repaymentDate } = resolveExpenseDates(
+        item.spendDate,
+        toPaymentCycle(method),
+      );
+
+      const id = ulid();
+      const row: ExpenseRow = {
+        id,
+        owner_id: ownerId,
+        amount_cents: item.amountCents,
+        category_id: category.id,
+        payment_method_id: method.id,
+        spend_date: item.spendDate,
+        posting_date: postingDate,
+        repayment_date: repaymentDate,
+        note,
+        source: 'manual',
+        plan_id: null,
+        plan_period_seq: null,
+        created_at: timestamp,
+        updated_at: timestamp,
+        deleted_at: null,
+        rev: 1,
+        device_id: deviceId ?? null,
+      };
+
+      insertExpense(db, row, ownerId);
+      expenseIds.push(id);
+    }
+
+    return { createdCount: expenseIds.length, expenseIds };
+  });
 }
 
 /** 计划生成支出时复用（source='plan'）。 */

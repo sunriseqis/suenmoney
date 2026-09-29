@@ -47,12 +47,24 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
         1 2 3 保存
         . 0 00 保存(跨两行)
   -->
-  <div class="grid grid-cols-4 grid-rows-4 gap-2 p-2">
+  <div
+    class="grid gap-1.5 p-1.5 sm:gap-2 sm:p-2 bg-canvas/30"
+    :class="$slots.left ? 'grid-cols-5 grid-rows-4' : 'grid-cols-4 grid-rows-4'"
+  >
+    <!-- 左侧第 1 列快捷通道（独立侧栏，带右侧物理分割线） -->
+    <div
+      v-if="$slots.left"
+      class="col-start-1 row-span-4 grid grid-rows-4 gap-1.5 border-r border-line/70 pr-1.5 sm:gap-2 sm:pr-2"
+    >
+      <slot name="left" />
+    </div>
+
+    <!-- 数字与操作键（纯正计算器形态：浮起微圆角白卡，带清晰层次） -->
     <button
       v-for="digit in DIGITS"
       :key="digit"
       type="button"
-      class="rounded-md bg-surface py-3.5 text-xl font-semibold text-ink transition-transform duration-200 active:scale-95"
+      class="rounded-lg bg-surface py-2.5 text-xl font-bold text-ink shadow-2xs transition-transform duration-150 active:scale-95 hover:bg-surface/80 sm:py-3 sm:text-2xl"
       @click="emit('press', digit)"
     >
       {{ digit }}
@@ -60,7 +72,8 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
     <button
       type="button"
-      class="col-start-4 row-start-1 rounded-md bg-surface py-3.5 text-lg font-semibold text-ink-muted transition-transform duration-200 active:scale-95"
+      :class="$slots.left ? 'col-start-5' : 'col-start-4'"
+      class="row-start-1 rounded-lg bg-sunken/60 py-2.5 text-base font-semibold text-ink-muted transition-transform duration-150 active:scale-95 hover:bg-sunken sm:py-3 sm:text-lg"
       aria-label="退格"
       @click="emit('press', 'back')"
     >
@@ -69,7 +82,8 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
     <button
       type="button"
-      class="col-start-4 row-start-2 rounded-md bg-surface py-3.5 text-lg font-semibold text-primary-text transition-transform duration-200 active:scale-95"
+      :class="$slots.left ? 'col-start-5' : 'col-start-4'"
+      class="row-start-2 rounded-lg bg-sunken/60 py-2.5 text-base font-bold text-primary-text transition-transform duration-150 active:scale-95 hover:bg-sunken sm:py-3 sm:text-lg"
       aria-label="加上一笔"
       @click="emit('press', 'plus')"
     >
@@ -78,21 +92,21 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
     <button
       type="button"
-      class="rounded-md bg-surface py-3.5 text-xl font-semibold text-ink transition-transform duration-200 active:scale-95"
+      class="rounded-lg bg-surface py-2.5 text-xl font-bold text-ink shadow-2xs transition-transform duration-150 active:scale-95 hover:bg-surface/80 sm:py-3 sm:text-2xl"
       @click="emit('press', '.')"
     >
       .
     </button>
     <button
       type="button"
-      class="rounded-md bg-surface py-3.5 text-xl font-semibold text-ink transition-transform duration-200 active:scale-95"
+      class="rounded-lg bg-surface py-2.5 text-xl font-bold text-ink shadow-2xs transition-transform duration-150 active:scale-95 hover:bg-surface/80 sm:py-3 sm:text-2xl"
       @click="emit('press', '0')"
     >
       0
     </button>
     <button
       type="button"
-      class="rounded-md bg-surface py-3.5 text-lg font-semibold text-ink-muted transition-transform duration-200 active:scale-95"
+      class="rounded-lg bg-surface py-2.5 text-base font-semibold text-ink-muted shadow-2xs transition-transform duration-150 active:scale-95 hover:bg-surface/80 sm:py-3 sm:text-lg"
       @click="emit('press', '00')"
     >
       00
@@ -101,7 +115,8 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
     <button
       type="button"
       :disabled="!canSave || saving"
-      class="col-start-4 row-span-2 row-start-3 rounded-md bg-primary-fill text-base font-bold text-on-primary transition-transform duration-200 active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+      :class="$slots.left ? 'col-start-5' : 'col-start-4'"
+      class="row-span-2 row-start-3 rounded-lg bg-primary-fill text-sm font-bold text-on-primary shadow-xs transition-transform duration-150 active:scale-95 disabled:opacity-40 disabled:active:scale-100 sm:text-base"
       @click="emit('press', 'save')"
     >
       {{ saving ? '…' : saveLabel }}

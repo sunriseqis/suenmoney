@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { getDatabase } from '../db/index.ts';
 import {
+  batchCreateExpenses,
   createExpense,
   findExpense,
   listExpenses,
@@ -9,9 +10,10 @@ import {
   softDeleteExpense,
   transferExpenses,
   updateExpense,
+  type BatchExpenseItem,
   type UpdateExpenseInput,
 } from '../db/repo/expenses.ts';
-import { notFound } from '../lib/http-error.ts';
+import { badRequest, notFound } from '../lib/http-error.ts';
 import {
   asRecord,
   optionalDateParam,
@@ -88,6 +90,29 @@ export async function expenseRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return reply.code(201).send({ expense });
+  });
+
+  app.post('/api/expenses/batch', { preHandler: requireAuth }, async (request, reply) => {
+    const auth = currentAuth(request);
+    const body = asRecord(request.body);
+    const rawItems = body['items'];
+    if (!Array.isArray(rawItems)) {
+      throw badRequest('items 必须是数组');
+    }
+
+    const items: BatchExpenseItem[] = rawItems.map((raw) => {
+      const rec = asRecord(raw);
+      return {
+        amountCents: requireInt(rec, 'amountCents'),
+        categoryId: requireString(rec, 'categoryId'),
+        paymentMethodId: requireString(rec, 'paymentMethodId'),
+        spendDate: requireString(rec, 'spendDate'),
+        note: optionalString(rec, 'note', ''),
+      };
+    });
+
+    const result = batchCreateExpenses(getDatabase(), { items }, auth.user.id);
+    return reply.code(201).send(result);
   });
 
   app.patch('/api/expenses/:id', { preHandler: requireAuth }, async (request) => {

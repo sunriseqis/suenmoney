@@ -37,16 +37,18 @@ import ReportCalendar, { type CalendarCell } from '@/components/ReportCalendar.v
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
-import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors';
+import { categoryColorVar } from '@/utils/category-colors';
 import {
   currentMonth,
   daysInMonth,
+  elapsedDays,
   formatLedgerDate,
   formatMonthDay,
   formatMonthLabel,
+  shiftMonth,
   todayLocal,
 } from '@/utils/dates';
-import { formatYuan } from '@/utils/money';
+import { adaptiveAmountStyle, formatCents, formatCompact, formatYuan } from '@/utils/money';
 import {
   reminderStateLabel,
   reminderToneOf,
@@ -78,6 +80,14 @@ if (typeof route.query.month === 'string' && route.query.month) {
   scope.value = 'all';
 }
 
+const previousMonth = computed(() => shiftMonth(month.value, -1));
+const previousMonthLabel = computed(() => formatMonthLabel(previousMonth.value));
+
+function goToPreviousMonth(): void {
+  month.value = previousMonth.value;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 const categoryId = ref<string | null>(null);
 const paymentMethodId = ref<string | null>(null);
 const keyword = ref('');
@@ -96,6 +106,59 @@ const errorMessage = ref<string | null>(null);
 // 顶卡数据（移动端）
 const currentMonthTotalCents = ref(0);
 const isTopCardExpanded = ref(false);
+const currentMonthlyReport = ref<MonthlyReport | null>(null);
+
+const topCardTitle = computed(() => {
+  if (scope.value === 'month') {
+    return month.value === currentMonth() ? '本月支出' : `${formatMonthLabel(month.value)}支出`;
+  }
+  if (scope.value === 'year') {
+    return `${year.value} 年支出`;
+  }
+  return '全部时间支出';
+});
+
+const displayTotalCents = computed(() => {
+  if (scope.value === 'year') {
+    return yearlyReportData.value?.totalCents ?? 0;
+  }
+  if (scope.value === 'all') {
+    return summaryReportData.value?.totalCents ?? 0;
+  }
+  return currentMonthTotalCents.value;
+});
+
+const displayCount = computed(() => {
+  if (scope.value === 'month') {
+    return currentMonthlyReport.value?.count ?? 0;
+  }
+  if (scope.value === 'year') {
+    return yearlyReportData.value?.count ?? 0;
+  }
+  return summaryReportData.value?.count ?? 0;
+});
+
+const monthChangeRatio = computed(() => currentMonthlyReport.value?.change.ratio ?? null);
+const monthChangeDelta = computed(() => currentMonthlyReport.value?.change.deltaCents ?? 0);
+
+const monthTotalDays = computed(() => daysInMonth(scope.value === 'month' ? month.value : currentMonth()));
+
+const currentMonthElapsed = computed(() =>
+  Math.max(1, elapsedDays(scope.value === 'month' ? month.value : currentMonth())),
+);
+
+const dailyAverageCents = computed(() => {
+  const total = displayTotalCents.value;
+  return Math.round(total / currentMonthElapsed.value);
+});
+
+const estimatedMonthEndCents = computed<number | null>(() => {
+  if (scope.value !== 'month') return null;
+  if (currentMonthElapsed.value < 3) return null;
+  return Math.round((displayTotalCents.value / currentMonthElapsed.value) * monthTotalDays.value);
+});
+
+const largestExpense = computed(() => currentMonthlyReport.value?.largest ?? null);
 
 const dueTodos = computed(() => plansStore.dueTodos);
 const dueTotalAmount = computed(() =>
@@ -249,10 +312,12 @@ async function loadSelectedYearDetail(y: string): Promise<void> {
 
 async function loadTopCardData(): Promise<void> {
   try {
+    const targetM = scope.value === 'month' ? month.value : currentMonth();
     const [mRes] = await Promise.all([
-      reportsApi.monthly(currentMonth()),
+      reportsApi.monthly(targetM),
       plansStore.loadDueTodos(),
     ]);
+    currentMonthlyReport.value = mRes.report;
     currentMonthTotalCents.value = mRes.report.totalCents;
   } catch {
     // 静默兜底
@@ -375,53 +440,180 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
           class="lg:hidden"
           :class="[hasOverdue ? 'sticky top-[calc(var(--safe-top)+8px)] z-[var(--z-sticky)]' : '']"
         >
+          <!-- 支出 Hero 卡（始终全宽，背景深色质感，内嵌小巧提醒胶囊） -->
           <div
-            class="grid gap-2 rounded-md border border-line/60 bg-subtle p-2.5 shadow-xs"
-            :class="dueTodos.length > 0 ? 'grid-cols-2' : 'grid-cols-1'"
+            class="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#2563eb] via-[#1d4ed8] to-[#1e40af] p-4 text-on-primary shadow-xs"
           >
-            <!-- 左格：本月支出 -->
-            <div class="flex flex-col justify-between rounded-sm bg-canvas/80 p-3">
-              <span class="block text-xs font-medium text-ink-muted">本月支出</span>
-              <b class="mt-1 block truncate text-xl font-extrabold tracking-tight text-ink tabular-nums">
-                {{ formatYuan(currentMonthTotalCents) }}
-              </b>
+            <!-- 背景装饰光晕与水印（消除纯白与空白感，赋予质感） -->
+            <div class="pointer-events-none absolute -right-6 -bottom-10 h-32 w-32 rounded-full bg-white/[0.08] ring-8 ring-white/[0.03]" />
+            <div class="pointer-events-none absolute right-10 -top-8 h-24 w-24 rounded-full bg-white/[0.05]" />
+            <div
+              class="pointer-events-none absolute right-4 top-2 select-none font-sans font-black leading-none text-white/[0.07] text-6xl"
+            >
+              ¥
             </div>
 
-            <!-- 右格：处理提醒，点击向下展开明细 -->
-            <button
-              v-if="dueTodos.length > 0"
-              type="button"
-              class="flex flex-col justify-between rounded-sm bg-canvas/80 p-3 text-left transition-colors hover:bg-canvas"
-              @click="isTopCardExpanded = !isTopCardExpanded"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-ink">
-                  {{ hasOverdue ? '有待办逾期' : `${dueTodos.length} 期待处理` }}
-                </span>
-                <span
-                  class="text-xs transition-transform duration-200"
-                  :class="[
-                    reminderTone === 'late'
-                      ? 'text-danger-text'
-                      : reminderTone === 'manual'
-                        ? 'text-accent-text'
-                        : 'text-ink-muted',
-                    isTopCardExpanded ? 'rotate-180' : '',
-                  ]"
+            <!-- 卡片内容区 -->
+            <div class="relative z-1">
+              <!-- 顶栏：标题 + 内嵌小巧提醒胶囊 -->
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5 text-xs font-medium text-white/85 truncate">
+                  <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300 shrink-0" />
+                  <span class="truncate">{{ topCardTitle }}</span>
+                </div>
+
+                <!-- 缩小并包在卡片内部的提醒胶囊 -->
+                <button
+                  v-if="dueTodos.length > 0"
+                  type="button"
+                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all cursor-pointer shrink-0 shadow-2xs"
+                  :class="hasOverdue ? 'bg-red-500 text-white ring-1 ring-white/30' : 'bg-white/20 text-white hover:bg-white/30'"
+                  @click="isTopCardExpanded = !isTopCardExpanded"
                 >
-                  ▾
-                </span>
+                  <span
+                    class="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+                    :class="hasOverdue ? 'bg-white animate-pulse' : (reminderTone === 'manual' ? 'bg-amber-300' : 'bg-emerald-300')"
+                  />
+                  <span>{{ hasOverdue ? '待办逾期' : `${dueTodos.length} 期待处理` }}</span>
+                  <span class="font-bold tabular-nums">¥{{ formatCents(dueTotalAmount) }}</span>
+                  <span
+                    class="text-[9px] transition-transform duration-200"
+                    :class="isTopCardExpanded ? 'rotate-180' : ''"
+                  >
+                    ▾
+                  </span>
+                </button>
               </div>
-              <span class="mt-1 block truncate text-base font-bold tabular-nums text-ink">
-                {{ formatYuan(dueTotalAmount) }}
-              </span>
-            </button>
+
+              <!-- 中间：大金额展示（自适应缩放） -->
+              <div class="mt-2.5 min-w-0 overflow-hidden">
+                <div class="flex items-baseline gap-0.5 whitespace-nowrap">
+                  <span class="text-sm font-bold text-white/80 shrink-0">¥</span>
+                  <span
+                    class="font-extrabold tracking-tight tabular-nums text-white font-sans whitespace-nowrap"
+                    :style="adaptiveAmountStyle(formatCents(displayTotalCents), 'card')"
+                  >
+                    {{ formatCents(displayTotalCents) }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 期间环比与亮点说明 -->
+              <div class="mt-1 flex items-center justify-between text-xs text-white/85">
+                <div class="truncate">
+                  <span v-if="scope === 'month' && monthChangeRatio !== null" class="inline-flex items-center gap-1">
+                    <span class="opacity-80">较上月</span>
+                    <b :class="monthChangeRatio > 0 ? 'text-amber-200' : 'text-emerald-200'">
+                      {{ monthChangeRatio > 0 ? '+' : '' }}{{ (monthChangeRatio * 100).toFixed(1) }}%
+                    </b>
+                    <span class="opacity-70 text-[11px]">
+                      （{{ monthChangeDelta >= 0 ? '+' : '' }}{{ formatYuan(monthChangeDelta) }}）
+                    </span>
+                  </span>
+                  <span v-else-if="scope === 'month'" class="opacity-70 text-[11px]">
+                    首月记录
+                  </span>
+                  <span v-else-if="scope === 'year'" class="opacity-80">
+                    {{ year }} 全年支出汇总
+                  </span>
+                  <span v-else class="opacity-80">
+                    全量历史支出汇总
+                  </span>
+                </div>
+
+                <div v-if="scope === 'month' && largestExpense" class="text-[11px] opacity-75 truncate max-w-[150px] shrink-0 text-right">
+                  最高: {{ largestExpense.categoryName }} {{ formatCompact(largestExpense.cents) }}
+                </div>
+              </div>
+
+              <!-- 底部：3 列结构化指标格（充实信息，消灭空洞感） -->
+              <div class="mt-3 grid grid-cols-3 gap-2 border-t border-white/15 pt-2.5 text-xs text-white/90">
+                <!-- 栏位 1: 日均 (月) / 月均 (年) -->
+                <div>
+                  <span class="block text-[11px] opacity-70">
+                    {{ scope === 'month' ? '日均支出' : '月均支出' }}
+                  </span>
+                  <b class="mt-0.5 block text-sm font-bold tabular-nums">
+                    <template v-if="scope === 'month'">
+                      {{ formatYuan(dailyAverageCents) }}
+                    </template>
+                    <template v-else-if="scope === 'year'">
+                      {{ formatYuan(Math.round(displayTotalCents / 12)) }}
+                    </template>
+                    <template v-else>
+                      {{ formatCompact(summaryReportData?.monthlyAverageCents ?? 0) }}
+                    </template>
+                  </b>
+                  <span class="mt-0.5 block text-[10px] opacity-60">
+                    <template v-if="scope === 'month'">
+                      已过 {{ currentMonthElapsed }} 天
+                    </template>
+                    <template v-else-if="scope === 'year'">
+                      全年 12 个月
+                    </template>
+                    <template v-else>
+                      历史月均
+                    </template>
+                  </span>
+                </div>
+
+                <!-- 栏位 2: 预计月末 (月) / 最高月 (年) -->
+                <div>
+                  <span class="block text-[11px] opacity-70">
+                    {{ scope === 'month' ? '预计月末' : (scope === 'year' ? '最高支出月' : '历史最高月') }}
+                  </span>
+                  <b class="mt-0.5 block text-sm font-bold tabular-nums">
+                    <template v-if="scope === 'month'">
+                      {{ estimatedMonthEndCents !== null ? formatYuan(estimatedMonthEndCents) : '—' }}
+                    </template>
+                    <template v-else-if="scope === 'year'">
+                      {{ yearlyReportData?.peakMonth ? formatCompact(yearlyReportData.peakMonth.totalCents) : '—' }}
+                    </template>
+                    <template v-else>
+                      {{ summaryReportData?.peakMonth ? formatCompact(summaryReportData.peakMonth.totalCents) : '—' }}
+                    </template>
+                  </b>
+                  <span class="mt-0.5 block text-[10px] opacity-60">
+                    <template v-if="scope === 'month'">
+                      {{ estimatedMonthEndCents !== null ? '按当前速度' : '数据积累中' }}
+                    </template>
+                    <template v-else-if="scope === 'year'">
+                      {{ yearlyReportData?.peakMonth ? `${Number(yearlyReportData.peakMonth.month.slice(5))} 月` : '—' }}
+                    </template>
+                    <template v-else>
+                      {{ summaryReportData?.peakMonth ? summaryReportData.peakMonth.month : '—' }}
+                    </template>
+                  </span>
+                </div>
+
+                <!-- 栏位 3: 交易笔数 / 单笔均 -->
+                <div>
+                  <span class="block text-[11px] opacity-70">
+                    {{ scope === 'month' ? '交易笔数' : (scope === 'year' ? '年度笔数' : '总笔数') }}
+                  </span>
+                  <b class="mt-0.5 block text-sm font-bold tabular-nums">
+                    {{ displayCount }} 笔
+                  </b>
+                  <span class="mt-0.5 block text-[10px] opacity-60">
+                    <template v-if="scope === 'month'">
+                      {{ displayCount > 0 ? `笔均 ${formatCompact(Math.round(displayTotalCents / displayCount))}` : '暂无交易' }}
+                    </template>
+                    <template v-else-if="scope === 'year'">
+                      {{ displayCount > 0 ? `笔均 ${formatCompact(Math.round(displayTotalCents / displayCount))}` : '—' }}
+                    </template>
+                    <template v-else>
+                      {{ `均 ${formatCompact(summaryReportData?.perExpenseAverageCents ?? 0)}/笔` }}
+                    </template>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 顶卡向下展开的待办明细与动作层（§6.5 三·补） -->
           <div
             v-if="isTopCardExpanded && dueTodos.length > 0"
-            class="mt-2 divide-y divide-line/40 rounded-md border border-line/60 bg-subtle p-3 animate-in fade-in"
+            class="mt-2 divide-y divide-line/40 rounded-xl border border-line/60 bg-surface p-3 animate-in fade-in shadow-xs"
           >
             <div
               v-for="item in dueTodos"
@@ -668,7 +860,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
         <!-- 仅月档且展开时显示的筛选 Chips -->
         <template v-if="scope === 'month' && isFilterExpanded">
           <div class="flex flex-col gap-1.5 pt-1 animate-in fade-in">
-            <div class="flex gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
+            <div class="no-scrollbar flex gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
               <ChipButton :active="categoryId === null" @click="categoryId = null">全部分类</ChipButton>
               <ChipButton
                 v-for="root in dict.rootCategories"
@@ -683,7 +875,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
               </ChipButton>
             </div>
 
-            <div class="flex gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
+            <div class="no-scrollbar flex gap-1.5 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
               <ChipButton :active="paymentMethodId === null" @click="paymentMethodId = null">
                 全部方式
               </ChipButton>
@@ -887,7 +1079,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             </li>
           </ul>
 
-          <!-- 加载更多 -->
+          <!-- 加载更多 / 查看上月 -->
           <button
             v-if="hasMore"
             type="button"
@@ -897,6 +1089,17 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
           >
             {{ loadingMore ? '加载中…' : '加载更多' }}
           </button>
+          <div v-else-if="items.length > 0" class="mt-8 flex flex-col items-center gap-2 pb-6">
+            <p class="text-xs text-ink-muted">已显示本月全部记录</p>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink shadow-sm transition-colors hover:bg-sunken active:scale-95"
+              @click="goToPreviousMonth"
+            >
+              <span>查看上月（{{ previousMonthLabel }}）</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
         </template>
       </template>
 
@@ -975,7 +1178,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                     <span class="flex items-center gap-2">
                       <span
                         class="h-2 w-2 rounded-xs"
-                        :style="{ background: categoryColorVar(resolveCategoryColor(cat.name, cat.color)) }"
+                        :style="{ background: categoryColorVar(dict.colorOf(cat.categoryId, cat.name, cat.color)) }"
                       />
                       <span class="text-ink">{{ cat.name }}</span>
                     </span>
@@ -1066,7 +1269,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                     <span class="flex items-center gap-2">
                       <span
                         class="h-2 w-2 rounded-xs"
-                        :style="{ background: categoryColorVar(resolveCategoryColor(cat.name, cat.color)) }"
+                        :style="{ background: categoryColorVar(dict.colorOf(cat.categoryId, cat.name, cat.color)) }"
                       />
                       <span class="text-ink">{{ cat.name }}</span>
                     </span>

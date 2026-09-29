@@ -721,3 +721,13 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 隐藏原生滚动条但保持滑动能力（移动端横滑筛选 Chips、Tab 等） */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+

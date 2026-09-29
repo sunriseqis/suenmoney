@@ -489,3 +489,170 @@ describe('支付方式', () => {
     assert.equal(cash['isEnabled'], false);
   });
 });
+
+describe('删除分类与支付方式', () => {
+  test('空分类可以删除，有记录或子分类的分类拒绝删除', async () => {
+    // 1. 新建一个独立分类，可以删除
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '临时测试分类' },
+    });
+    assert.equal(created.statusCode, 201);
+    const tempId = created.json().category.id;
+
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/categories/${tempId}`,
+      headers: auth(),
+    });
+    assert.equal(delRes.statusCode, 200);
+    assert.equal(delRes.json().ok, true);
+
+    // 2. 有子分类的分类不能删除
+    const parentWithChild = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '有子项的父级' },
+    });
+    const pId = parentWithChild.json().category.id;
+    await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '子项1', parentId: pId },
+    });
+
+    const delParentRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/categories/${pId}`,
+      headers: auth(),
+    });
+    assert.equal(delParentRes.statusCode, 409);
+    assert.match(delParentRes.json().error, /子分类/);
+  });
+
+  test('空支付方式可以删除，有记录的支付方式拒绝删除', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/payment-methods',
+      headers: auth(),
+      payload: { name: '临时钱包', type: 'cash' },
+    });
+    assert.equal(created.statusCode, 201);
+    const tempMethodId = created.json().paymentMethod.id;
+
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/payment-methods/${tempMethodId}`,
+      headers: auth(),
+    });
+    assert.equal(delRes.statusCode, 200);
+    assert.equal(delRes.json().ok, true);
+  });
+
+  test('支付方式合并与记录迁移', async () => {
+    // 创建两个支付方式：A（微信支付），B（支付宝）
+    const resA = await app.inject({
+      method: 'POST',
+      url: '/api/payment-methods',
+      headers: auth(),
+      payload: { name: '迁移测试-微信', type: 'cash' },
+    });
+    const resB = await app.inject({
+      method: 'POST',
+      url: '/api/payment-methods',
+      headers: auth(),
+      payload: { name: '迁移测试-支付宝', type: 'cash' },
+    });
+    const idA = resA.json().paymentMethod.id;
+    const idB = resB.json().paymentMethod.id;
+
+    // 创建一个分类以供记账
+    const catRes = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: auth(),
+      payload: { name: '迁移记账分类' },
+    });
+    const catId = catRes.json().category.id;
+
+    // 在 B (支付宝) 下记两笔支出
+    await app.inject({
+      method: 'POST',
+      url: '/api/expenses',
+      headers: auth(),
+      payload: { amountCents: 1500, categoryId: catId, paymentMethodId: idB, spendDate: '2026-03-01' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/expenses',
+      headers: auth(),
+      payload: { amountCents: 2500, categoryId: catId, paymentMethodId: idB, spendDate: '2026-03-02' },
+    });
+
+    // 尝试合并到自己 → 409
+    const selfMerge = await app.inject({
+      method: 'POST',
+      url: `/api/payment-methods/${idB}/merge`,
+      headers: auth(),
+      payload: { targetId: idB },
+    });
+    assert.equal(selfMerge.statusCode, 409);
+
+    // 将 B 合并到 A，保留 B
+    const merge1 = await app.inject({
+      method: 'POST',
+      url: `/api/payment-methods/${idB}/merge`,
+      headers: auth(),
+      payload: { targetId: idA, deleteSource: false },
+    });
+    assert.equal(merge1.statusCode, 200);
+    assert.equal(merge1.json().movedExpenses, 2);
+    assert.equal(merge1.json().sourceDeleted, false);
+
+    // 现在 B 下有 0 笔支出，A 下有 2 笔支出
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/payment-methods',
+      headers: auth(),
+    });
+    const methods = listRes.json().paymentMethods as Array<{ id: string; expenseCount: number }>;
+    const foundA = methods.find((m) => m.id === idA);
+    const foundB = methods.find((m) => m.id === idB);
+    assert.equal(foundA?.expenseCount, 2);
+    assert.equal(foundB?.expenseCount, 0);
+
+    // 再创建一个电子钱包 C，把 A 合并到 C 并删除 A
+    const resC = await app.inject({
+      method: 'POST',
+      url: '/api/payment-methods',
+      headers: auth(),
+      payload: { name: '迁移测试-电子钱包', type: 'cash' },
+    });
+    const idC = resC.json().paymentMethod.id;
+
+    const merge2 = await app.inject({
+      method: 'POST',
+      url: `/api/payment-methods/${idA}/merge`,
+      headers: auth(),
+      payload: { targetId: idC, deleteSource: true },
+    });
+    assert.equal(merge2.statusCode, 200);
+    assert.equal(merge2.json().movedExpenses, 2);
+    assert.equal(merge2.json().sourceDeleted, true);
+
+    // A 已被删除，C 继承了 2 笔记录
+    const listRes2 = await app.inject({
+      method: 'GET',
+      url: '/api/payment-methods',
+      headers: auth(),
+    });
+    const methods2 = listRes2.json().paymentMethods as Array<{ id: string; expenseCount: number }>;
+    assert.equal(methods2.some((m) => m.id === idA), false);
+    const foundC = methods2.find((m) => m.id === idC);
+    assert.equal(foundC?.expenseCount, 2);
+  });
+});

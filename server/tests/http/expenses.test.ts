@@ -951,3 +951,95 @@ describe('账号管理', () => {
     assert.match(res.json().error, /唯一/);
   });
 });
+
+describe('批量创建支出（POST /api/expenses/batch）', () => {
+  test('正常批量创建多笔支出', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/expenses/batch',
+      headers: auth(),
+      payload: {
+        items: [
+          {
+            amountCents: 1500,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-10',
+            note: '买菜A',
+          },
+          {
+            amountCents: 2500,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-11',
+            note: '买菜B',
+          },
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json();
+    assert.equal(body.createdCount, 2);
+    assert.equal(body.expenseIds.length, 2);
+
+    // 验证查出其中一笔
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/expenses/${body.expenseIds[0]}`,
+      headers: auth(),
+    });
+    assert.equal(getRes.statusCode, 200);
+    assert.equal(getRes.json().expense.amountCents, 1500);
+    assert.equal(getRes.json().expense.note, '买菜A');
+  });
+
+  test('items 不是数组 → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/expenses/batch',
+      headers: auth(),
+      payload: { items: 'not-array' },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  test('原子性回滚：其中一笔分类不存在时整批回滚', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/expenses/batch',
+      headers: auth(),
+      payload: {
+        items: [
+          {
+            amountCents: 3000,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-12',
+            note: '有效',
+          },
+          {
+            amountCents: 4000,
+            categoryId: '01INVALID00000000000000000',
+            paymentMethodId: cashId,
+            spendDate: '2026-09-12',
+            note: '无效分类',
+          },
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 400);
+
+    // 确认「有效」那笔没有被孤立写入
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/expenses?q=有效',
+      headers: auth(),
+    });
+    assert.equal(listRes.statusCode, 200);
+    const found = (listRes.json().items as Array<{ note: string }>).some(
+      (it) => it.note === '有效',
+    );
+    assert.equal(found, false);
+  });
+});
+

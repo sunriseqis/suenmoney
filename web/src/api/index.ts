@@ -21,10 +21,13 @@ import type {
   PlanSource,
   PlanTodo,
   PlanTodoStatus,
+  SnapshotInfo,
   TransferResult,
   SummaryReport,
   User,
   UserRole,
+  WebdavConfig,
+  WebdavStatus,
   YearlyReport,
 } from './types';
 
@@ -99,6 +102,8 @@ export const categories = {
       isEnabled?: boolean;
     },
   ) => request<{ category: Category }>(`/api/categories/${id}`, { method: 'PATCH', body: input }),
+
+  remove: (id: string) => request<{ ok: true }>(`/api/categories/${id}`, { method: 'DELETE' }),
 };
 
 // ---- 支付方式 -------------------------------------------------------------
@@ -126,6 +131,21 @@ export const paymentMethods = {
       isEnabled?: boolean;
     },
   ) => request<{ paymentMethod: PaymentMethod }>(`/api/payment-methods/${id}`, { method: 'PATCH', body: input }),
+
+  remove: (id: string) => request<{ ok: true }>(`/api/payment-methods/${id}`, { method: 'DELETE' }),
+
+  merge: (
+    id: string,
+    input: {
+      targetId: string;
+      deleteSource?: boolean;
+    },
+  ) =>
+    request<{
+      movedExpenses: number;
+      movedPlans: number;
+      sourceDeleted: boolean;
+    }>(`/api/payment-methods/${id}/merge`, { method: 'POST', body: input }),
 };
 
 // ---- 支出 -----------------------------------------------------------------
@@ -185,6 +205,20 @@ export const expenses = {
 
   remove: (id: string) => request<void>(`/api/expenses/${id}`, { method: 'DELETE' }),
 
+  batchCreate: (
+    items: Array<{
+      amountCents: number;
+      categoryId: string;
+      paymentMethodId: string;
+      spendDate: string;
+      note?: string;
+    }>,
+  ) =>
+    request<{ createdCount: number; expenseIds: string[] }>('/api/expenses/batch', {
+      method: 'POST',
+      body: { items },
+    }),
+
   /** 把某分类下的全部记录转移到另一个分类（停用分类前用） */
   transfer: (fromCategoryId: string, toCategoryId: string) =>
     request<{ moved: number }>('/api/expenses/transfer', {
@@ -212,6 +246,9 @@ export interface PlanCreateInput {
   remindDaysBefore?: number;
   autoPost?: boolean;
   note?: string;
+  /** 是否在创建后立即确认第一期（用于记账抽屉顺手分期：创建计划同时首期直接入账） */
+  confirmFirst?: boolean;
+  confirmSpendDate?: string;
 }
 
 export interface PlanUpdateInput {
@@ -239,6 +276,7 @@ export const plans = {
     request<{ plan: Plan }>(`/api/plans/${id}`, { method: 'PATCH', body: input }),
 
   end: (id: string) => request<{ plan: Plan }>(`/api/plans/${id}/end`, { method: 'POST' }),
+  delete: (id: string) => request<void>(`/api/plans/${id}`, { method: 'DELETE' }),
 };
 
 export interface PlanTodoQuery {
@@ -373,3 +411,46 @@ export const data = {
       body: { confirm: 'reset-demo', today },
     }),
 };
+
+export const snapshots = {
+  /** 获取运维数据库物理快照列表 */
+  list: () => request<{ snapshots: SnapshotInfo[] }>('/api/snapshots'),
+
+  /** 触发一次即时 VACUUM INTO 物理快照 */
+  create: () => request<{ snapshot: SnapshotInfo }>('/api/snapshots', { method: 'POST' }),
+
+  /** 下载指定快照文件（.sqlite） */
+  download: (filename: string) => downloadFile(`/api/snapshots/${encodeURIComponent(filename)}`),
+
+  /** 删除指定快照文件 */
+  remove: (filename: string) =>
+    request<{ success: boolean }>(`/api/snapshots/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+    }),
+};
+
+export const webdavBackup = {
+  /** 获取 WebDAV 配置及备份状态 */
+  get: () => request<{ config: WebdavConfig | null; status: WebdavStatus }>('/api/backup/webdav'),
+
+  /** 保存 WebDAV 配置 */
+  save: (payload: { url: string; username: string; password?: string; path?: string; isEnabled?: boolean }) =>
+    request<{ ok: boolean; config: WebdavConfig }>('/api/backup/webdav', {
+      method: 'PUT',
+      body: payload,
+    }),
+
+  /** 测试 WebDAV 连通性与写入权限 */
+  test: (payload: { url?: string; username?: string; password?: string; path?: string }) =>
+    request<{ ok: boolean; message: string }>('/api/backup/webdav/test', {
+      method: 'POST',
+      body: payload,
+    }),
+
+  /** 立即执行一次 WebDAV 备份 */
+  run: () =>
+    request<{ ok: boolean; filename: string; sizeBytes: number; uploadedAt: string }>('/api/backup/webdav/run', {
+      method: 'POST',
+    }),
+};
+

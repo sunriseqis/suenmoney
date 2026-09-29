@@ -95,6 +95,18 @@ export function optionalInt(
   return value;
 }
 
+export function optionalBoolean(
+  body: Record<string, unknown>,
+  field: string,
+): boolean | undefined {
+  const value = body[field];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'boolean') {
+    throw badRequest(`参数类型错误（应为布尔值）：${field}`);
+  }
+  return value;
+}
+
 export function requireEnum<T extends string>(
   body: Record<string, unknown>,
   field: string,

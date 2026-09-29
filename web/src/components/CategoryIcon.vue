@@ -17,7 +17,7 @@
 import { computed } from 'vue';
 
 import { useDictionariesStore } from '@/stores/dictionaries';
-import { categoryColorVar, resolveCategoryColor } from '@/utils/category-colors';
+import { categoryColorVar } from '@/utils/category-colors';
 import { resolveCategoryIcon } from '@/utils/icons';
 
 const props = withDefaults(
@@ -61,13 +61,20 @@ const component = computed(() =>
 /**
  * 图标颜色 = 分类颜色。
  *
- * 必须走内联 style 而不是 Tailwind 类：色号是 1–8 的**运行时**值，
+ * 必须走内联 style 而不是 Tailwind 类：色号是 1–16 的**运行时**值，
  * Tailwind 只会为它在源码里出现过的字面量生成类，动态值生成不出来。
  * 内联 style 优先级高于 `class="text-ink-muted"`，所以调用处即便还写着
  * 灰色类也会被覆盖 —— 那种类现在是死代码，应从调用处删掉。
  */
+const colorIndex = computed(() => {
+  if (fromId.value) {
+    return fromId.value.colorIndex;
+  }
+  return dict.colorOf(props.categoryId, colorName.value, displayColor.value);
+});
+
 const colorStyle = computed(() => ({
-  color: categoryColorVar(resolveCategoryColor(colorName.value, displayColor.value)),
+  color: categoryColorVar(colorIndex.value),
 }));
 </script>
 

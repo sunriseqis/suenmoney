@@ -3,7 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { getDatabase } from '../db/index.ts';
 import {
   createPaymentMethod,
+  deletePaymentMethod,
   listPaymentMethods,
+  mergePaymentMethod,
   updatePaymentMethod,
   type PaymentMethodType,
   type UpdatePaymentMethodInput,
@@ -55,5 +57,26 @@ export async function paymentMethodRoutes(app: FastifyInstance): Promise<void> {
     if (body['isEnabled'] !== undefined) patch.isEnabled = optionalBool(body, 'isEnabled', true);
 
     return { paymentMethod: updatePaymentMethod(getDatabase(), id, patch) };
+  });
+
+  app.post('/api/payment-methods/:id/merge', { preHandler: requireAuth }, async (request, reply) => {
+    const auth = currentAuth(request);
+    const id = pathParam(request.params, 'id');
+    const body = asRecord(request.body);
+
+    const result = mergePaymentMethod(getDatabase(), id, {
+      targetId: requireString(body, 'targetId'),
+      deleteSource: optionalBool(body, 'deleteSource', false),
+      actorId: auth.user.id,
+    });
+
+    return reply.code(200).send(result);
+  });
+
+  app.delete('/api/payment-methods/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const auth = currentAuth(request);
+    const id = pathParam(request.params, 'id');
+    deletePaymentMethod(getDatabase(), id, auth.user.id);
+    return reply.code(200).send({ ok: true });
   });
 }

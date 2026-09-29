@@ -1,0 +1,44 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: suenmoney-server
+    restart: unless-stopped
+    environment:
+      - SUENMONEY_HOST=0.0.0.0
+      - SUENMONEY_PORT=3310
+      - SUENMONEY_DB_PATH=/app/server/data/suenmoney.sqlite
+      - SUENMONEY_BACKUP_DIR=/app/server/data/backups
+      - SUENMONEY_BACKUP_KEEP=14
+      # 首次部署可选：配置环境变量以自动创建管理员账户
+      # - SUENMONEY_ADMIN_USER=admin
+      # - SUENMONEY_ADMIN_PASSWORD=your_secure_password
+      # - SUENMONEY_ADMIN_NAME=管理员
+    volumes:
+      - suenmoney-data:/app/server/data
+    networks:
+      - suenmoney-net
+    expose:
+      - "3310"
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: suenmoney-web
+    restart: unless-stopped
+    ports:
+      - "${SUENMONEY_PORT:-5310}:80"
+    depends_on:
+      - server
+    networks:
+      - suenmoney-net
+
+volumes:
+  suenmoney-data:
+    name: suenmoney-data
+
+networks:
+  suenmoney-net:
+    name: suenmoney-net
