@@ -16,6 +16,8 @@
     "build:web": "npm --prefix web run build",
     "build:android": "npm --prefix web run android:sync && (cd android && ./gradlew assembleDebug)",
     "build:android:release": "npm --prefix web run android:sync && (cd android && ./gradlew assembleRelease)",
+    "ios:sync": "node scripts/build-ios.mjs --sync-only",
+    "build:ios": "node scripts/build-ios.mjs --unsigned",
     "check": "npm run typecheck && npm test && npm run build:web"
   }
 }
