@@ -720,10 +720,17 @@ export function parseSuenmoneyBill(
       suggestedCategoryId = suggestCategory(`${rawParent} ${rawChild} ${note}`, categories);
     }
 
-    // 支付方式匹配
+    // 支付方式匹配：精确名 → 包含名（对账表常来自其他记账工具，
+    // 写的是「信用卡」「银行卡」这类通用名，库里则是「中信信用卡」「工商银行卡」），
+    // 与微信/支付宝解析器的 suggestPaymentMethod 同策略，最后兜底第一个可用项
     let suggestedPaymentMethodId: string | null = null;
     if (rawMethod) {
-      const match = paymentMethods.find((m) => m.isEnabled && m.name.toLowerCase() === rawMethod.toLowerCase());
+      const raw = rawMethod.toLowerCase();
+      const match =
+        paymentMethods.find((m) => m.isEnabled && m.name.toLowerCase() === raw) ??
+        paymentMethods.find(
+          (m) => m.isEnabled && (m.name.toLowerCase().includes(raw) || raw.includes(m.name.toLowerCase())),
+        );
       if (match) suggestedPaymentMethodId = match.id;
     }
     if (!suggestedPaymentMethodId && paymentMethods.length > 0) {
