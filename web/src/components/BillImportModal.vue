@@ -12,7 +12,7 @@
 import { computed, ref, watch } from 'vue';
 import { Check, Upload, X } from '@lucide/vue';
 
-import { ApiError, expenses as expensesApi, type Category } from '@/api';
+import { ApiError, categories as categoriesApi, expenses as expensesApi, paymentMethods as paymentMethodsApi, type Category } from '@/api';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -48,6 +48,8 @@ const errorMessage = ref<string | null>(null);
 
 const parseResult = ref<ParseBillResult | null>(null);
 const filterDirection = ref<'all' | 'expense' | 'income'>('expense');
+/** 「缺就建」提示：自动新建了多少分类与支付方式 */
+const provisionNotice = ref<string | null>(null);
 
 // 批量兜底与配置
 const defaultCategoryId = ref<string | null>(null);
@@ -110,6 +112,7 @@ watch(
       parseResult.value = null;
       rows.value = [];
       errorMessage.value = null;
+      provisionNotice.value = null;
       selectedSource.value = 'wechat';
       return;
     }
@@ -118,6 +121,111 @@ watch(
   },
   { immediate: true },
 );
+
+/**
+ * 「缺就建」：导入时 CSV 里出现的分类与支付方式，本地没有就自动创建。
+ *
+ * 预设分类/支付方式已移除，全新部署就是空库 —— 靠这一步让导入自给自足。
+ * 只对 suenmoney 对账来源生效：只有它携带真实的分类名与账户名；
+ * 微信/支付宝来源的原始文本是「商家名 + 渠道串」，建出来的是垃圾。
+ * 全程串行 + 本地缓存，同一批 3228 行里的「信用卡」只创建一次。
+ */
+async function provisionMissing(result: ParseBillResult): Promise<void> {
+  if (result.source !== 'suenmoney') return;
+
+  const localRoots = new Map<string, string>();
+  const localChildren = new Map<string, string>();
+  for (const c of dict.categories) {
+    if (c.parentId === null) localRoots.set(c.name, c.id);
+    else localChildren.set(`${c.parentId}:${c.name}`, c.id);
+  }
+  const localMethods = new Map<string, string>();
+  for (const m of dict.paymentMethods) localMethods.set(m.name, m.id);
+
+  let createdCategories = 0;
+  let createdMethods = 0;
+  const catCache = new Map<string, string | null>();
+  const methodCache = new Map<string, string | null>();
+  const provisionedCat = new Map<number, string>();
+  const provisionedMethod = new Map<number, string>();
+
+  const ensureCategory = async (parentName: string, childName: string): Promise<string | null> => {
+    const cacheKey = `${parentName}|${childName}`;
+    if (catCache.has(cacheKey)) return catCache.get(cacheKey) ?? null;
+
+    let rootId = localRoots.get(parentName);
+    if (rootId === undefined) {
+      const created = await categoriesApi.create({ name: parentName });
+      rootId = created.category.id;
+      localRoots.set(parentName, rootId);
+      createdCategories += 1;
+    }
+
+    let childId: string | undefined;
+    let resultId: string | null = rootId;
+    if (childName !== '' && childName !== parentName) {
+      const childKey = `${rootId}:${childName}`;
+      childId = localChildren.get(childKey);
+      if (childId === undefined) {
+        const created = await categoriesApi.create({ name: childName, parentId: rootId });
+        childId = created.category.id;
+        localChildren.set(childKey, childId);
+        createdCategories += 1;
+      }
+      resultId = childId;
+    }
+    catCache.set(cacheKey, resultId);
+    return resultId;
+  };
+
+  const ensureMethod = async (name: string): Promise<string | null> => {
+    if (methodCache.has(name)) return methodCache.get(name) ?? null;
+    // 名称含信用卡字样按信用卡建（默认 1 日出账 / 10 日还款，可在设置中调整账期）；
+    // 其余一律储蓄卡 —— 与其猜一个错的账期，不如给一个能改的起点
+    const isCredit = /信用卡|贷记|花呗/.test(name);
+    const created = await paymentMethodsApi.create({
+      name,
+      type: isCredit ? 'credit' : 'cash',
+      ...(isCredit ? { billingDay: 1, repaymentDay: 10 } : {}),
+    });
+    localMethods.set(name, created.paymentMethod.id);
+    methodCache.set(name, created.paymentMethod.id);
+    createdMethods += 1;
+    return created.paymentMethod.id;
+  };
+
+  for (const item of result.items) {
+    try {
+      if (item.suggestedCategoryId === null && (item.categoryParentName || item.categoryChildName)) {
+        const id = await ensureCategory(item.categoryParentName ?? '', item.categoryChildName ?? '');
+        if (id !== null) provisionedCat.set(item.rawIndex, id);
+      }
+      if (item.suggestedPaymentMethodId === null && item.paymentMethodRaw !== '') {
+        const id = await ensureMethod(item.paymentMethodRaw);
+        if (id !== null) provisionedMethod.set(item.rawIndex, id);
+      }
+    } catch {
+      // 单条建失败不阻塞导入（如同名并发冲突）：该行回落到「手动选择」路径
+    }
+  }
+
+  if (createdCategories > 0 || createdMethods > 0) {
+    await dict.load();
+    provisionNotice.value =
+      `已自动新建分类 ${createdCategories} 个、支付方式 ${createdMethods} 个` +
+      (createdMethods > 0 ? '（新建信用卡默认 1日出账/10日还款，可在设置中调整账期）' : '');
+  }
+
+  // 用新建好的 id 回填建议
+  if (provisionedCat.size > 0 || provisionedMethod.size > 0) {
+    for (const item of result.items) {
+      const catId = provisionedCat.get(item.rawIndex);
+      if (catId !== undefined) item.suggestedCategoryId = catId;
+      const methodId = provisionedMethod.get(item.rawIndex);
+      if (methodId !== undefined) item.suggestedPaymentMethodId = methodId;
+    }
+  }
+}
 
 function runParse(source: 'wechat' | 'alipay' | 'suenmoney'): void {
   if (!rawCsvText.value) return;
@@ -153,11 +261,24 @@ function runParse(source: 'wechat' | 'alipay' | 'suenmoney'): void {
   }
 }
 
+/** 缺就建需要打接口，解析主流程改为异步执行，失败回落为纯本地解析结果 */
+async function runParseWithProvision(source: 'wechat' | 'alipay' | 'suenmoney'): Promise<void> {
+  if (!rawCsvText.value) return;
+  runParse(source);
+  if (parseResult.value === null) return;
+  try {
+    await provisionMissing(parseResult.value);
+    runParse(source); // 带上新建的 id 重新构建预览行
+  } catch {
+    // 供给失败（网络/权限）不阻塞：用户仍可手动指定分类与支付方式
+  }
+}
+
 function changeSource(s: 'wechat' | 'alipay' | 'suenmoney'): void {
   selectedSource.value = s;
   errorMessage.value = null;
   if (rawCsvText.value) {
-    runParse(s);
+    runParseWithProvision(s);
   }
 }
 
@@ -169,6 +290,7 @@ async function onFileSelected(event: Event): Promise<void> {
 
   file.value = picked;
   errorMessage.value = null;
+  provisionNotice.value = null;
   parsing.value = true;
 
   try {
@@ -181,7 +303,7 @@ async function onFileSelected(event: Event): Promise<void> {
       selectedSource.value = detected;
     }
 
-    runParse(selectedSource.value);
+    runParseWithProvision(selectedSource.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '文件解析失败';
     parseResult.value = null;
@@ -331,6 +453,11 @@ function close(): void {
         <!-- 错误提示 -->
         <p v-if="errorMessage !== null" class="mb-4 rounded-sm bg-danger/10 p-3 text-xs text-danger-text">
           {{ errorMessage }}
+        </p>
+
+        <!-- 「缺就建」提示 -->
+        <p v-if="provisionNotice !== null" class="mb-4 rounded-sm bg-primary/10 p-3 text-xs text-primary-text">
+          {{ provisionNotice }}
         </p>
 
         <!-- 步骤 1：未选择文件或重新上传 -->

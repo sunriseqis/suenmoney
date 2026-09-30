@@ -25,6 +25,9 @@ export interface ParsedBillItem {
   note: string;
   suggestedCategoryId: string | null;
   suggestedPaymentMethodId: string | null;
+  /** 对账来源（suenmoney）携带的一级/二级分类原始名，供导入端「缺就建」；其他来源为 null */
+  categoryParentName?: string | null;
+  categoryChildName?: string | null;
   selected: boolean;
 }
 
@@ -754,6 +757,8 @@ export function parseSuenmoneyBill(
       note,
       suggestedCategoryId,
       suggestedPaymentMethodId,
+      categoryParentName: rawParent || null,
+      categoryChildName: rawChild || null,
       selected: true,
     });
     expenseCount += 1;
