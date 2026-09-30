@@ -708,13 +708,37 @@ async function save(): Promise<void> {
         }
       }
     } else {
-      await expensesApi.update(props.expense.id, {
-        amountCents,
-        categoryId: categoryId.value,
-        paymentMethodId: paymentMethodId.value,
-        spendDate: spendDate.value,
-        note: note.value,
-      });
+      if (!syncStore.isOnline) {
+        await syncStore.updateOfflineExpense(props.expense.id, {
+          amountCents,
+          categoryId: categoryId.value,
+          paymentMethodId: paymentMethodId.value,
+          spendDate: spendDate.value,
+          note: note.value,
+        });
+      } else {
+        try {
+          await expensesApi.update(props.expense.id, {
+            amountCents,
+            categoryId: categoryId.value,
+            paymentMethodId: paymentMethodId.value,
+            spendDate: spendDate.value,
+            note: note.value,
+          });
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 0) {
+            await syncStore.updateOfflineExpense(props.expense.id, {
+              amountCents,
+              categoryId: categoryId.value,
+              paymentMethodId: paymentMethodId.value,
+              spendDate: spendDate.value,
+              note: note.value,
+            });
+          } else {
+            throw error;
+          }
+        }
+      }
     }
 
     writeLastChoice({
@@ -742,7 +766,19 @@ async function confirmDelete(): Promise<void> {
 
   saving.value = true;
   try {
-    await expensesApi.remove(props.expense.id);
+    if (!syncStore.isOnline) {
+      await syncStore.deleteOfflineExpense(props.expense.id);
+    } else {
+      try {
+        await expensesApi.remove(props.expense.id);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 0) {
+          await syncStore.deleteOfflineExpense(props.expense.id);
+        } else {
+          throw error;
+        }
+      }
+    }
     emit('saved');
     emit('close');
   } catch (error) {

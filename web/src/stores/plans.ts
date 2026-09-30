@@ -1,8 +1,17 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import { planTodos as planTodosApi, plans as plansApi, type Plan, type PlanTodo } from '@/api';
+import { ApiError, planTodos as planTodosApi, plans as plansApi, type Plan, type PlanTodo } from '@/api';
+import {
+  getCachedPlans,
+  getCachedPlanTodos,
+  isIdbSupported,
+  saveCachedPlans,
+  saveCachedPlanTodos,
+} from '@/utils/idb';
 import { todayLocal } from '@/utils/dates';
+import { useSyncStore } from './sync';
+import { useUiStore } from './ui';
 
 /**
  * 计划与其待办。
@@ -28,7 +37,23 @@ export const usePlansStore = defineStore('plans', () => {
   const endedPlans = computed(() => plans.value.filter((plan) => plan.state === 'ended'));
 
   async function loadPlans(): Promise<void> {
-    plans.value = (await plansApi.list()).plans;
+    try {
+      const result = await plansApi.list();
+      plans.value = result.plans;
+      void saveCachedPlans(result.plans);
+    } catch (err) {
+      if (isIdbSupported()) {
+        const cached = await getCachedPlans();
+        if (cached.length > 0) {
+          plans.value = cached;
+          return;
+        }
+      }
+      if (err instanceof ApiError && err.status === 0) {
+        return;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -40,19 +65,34 @@ export const usePlansStore = defineStore('plans', () => {
    */
   async function loadDueTodos(): Promise<number> {
     const today = todayLocal();
-    const result = await planTodosApi.list({
-      today,
-      status: 'pending',
-      remindBefore: today,
-      /**
-       * 已点过「确认」的期次不再占位置。
-       * 这是 `ack_at` 唯一的可见效果 —— 它不改任何业务状态（见 migration 003）。
-       */
-      hideAcked: true,
-    });
+    try {
+      const result = await planTodosApi.list({
+        today,
+        status: 'pending',
+        remindBefore: today,
+        /**
+         * 已点过「确认」的期次不再占位置。
+         * 这是 `ack_at` 唯一的可见效果 —— 它不改任何业务状态（见 migration 003）。
+         */
+        hideAcked: true,
+      });
 
-    dueTodos.value = result.todos;
-    return result.settled;
+      dueTodos.value = result.todos;
+      void saveCachedPlanTodos(result.todos);
+      return result.settled;
+    } catch (err) {
+      if (isIdbSupported()) {
+        const cached = await getCachedPlanTodos('pending');
+        if (cached.length > 0) {
+          dueTodos.value = cached;
+          return 0;
+        }
+      }
+      if (err instanceof ApiError && err.status === 0) {
+        return 0;
+      }
+      throw err;
+    }
   }
 
   async function refresh(): Promise<number> {
@@ -64,6 +104,13 @@ export const usePlansStore = defineStore('plans', () => {
       await loadPlans();
       return settled;
     } catch (err) {
+      // 若已有缓存数据，网络异常时平滑静默，不红字阻断页面
+      if (dueTodos.value.length > 0 || plans.value.length > 0) {
+        return 0;
+      }
+      if (err instanceof ApiError && err.status === 0) {
+        return 0;
+      }
       error.value = err instanceof Error ? err.message : '计划数据加载失败';
       throw err;
     } finally {
@@ -72,13 +119,55 @@ export const usePlansStore = defineStore('plans', () => {
   }
 
   async function confirmTodo(todoId: string, spendDate?: string): Promise<void> {
-    await planTodosApi.confirm(todoId, spendDate);
-    await refresh();
+    const syncStore = useSyncStore();
+    const ui = useUiStore();
+
+    if (!syncStore.isOnline) {
+      await syncStore.confirmOfflineTodo(todoId, spendDate);
+      dueTodos.value = dueTodos.value.filter((t) => t.id !== todoId);
+      ui.markDataChanged();
+      return;
+    }
+
+    try {
+      await planTodosApi.confirm(todoId, spendDate);
+      await refresh();
+      ui.markDataChanged();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) {
+        await syncStore.confirmOfflineTodo(todoId, spendDate);
+        dueTodos.value = dueTodos.value.filter((t) => t.id !== todoId);
+        ui.markDataChanged();
+        return;
+      }
+      throw err;
+    }
   }
 
   async function skipTodo(todoId: string): Promise<void> {
-    await planTodosApi.skip(todoId);
-    await refresh();
+    const syncStore = useSyncStore();
+    const ui = useUiStore();
+
+    if (!syncStore.isOnline) {
+      await syncStore.skipOfflineTodo(todoId);
+      dueTodos.value = dueTodos.value.filter((t) => t.id !== todoId);
+      ui.markDataChanged();
+      return;
+    }
+
+    try {
+      await planTodosApi.skip(todoId);
+      await refresh();
+      ui.markDataChanged();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) {
+        await syncStore.skipOfflineTodo(todoId);
+        dueTodos.value = dueTodos.value.filter((t) => t.id !== todoId);
+        ui.markDataChanged();
+        return;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -88,8 +177,29 @@ export const usePlansStore = defineStore('plans', () => {
    * 报表数字**不该变**。若发现报表跟着变了，说明调用点用错了接口。
    */
   async function ackTodo(todoId: string): Promise<void> {
-    await planTodosApi.ack(todoId);
-    await refresh();
+    const syncStore = useSyncStore();
+    const ui = useUiStore();
+
+    if (!syncStore.isOnline) {
+      await syncStore.ackOfflineTodo(todoId);
+      dueTodos.value = dueTodos.value.filter((t) => t.id !== todoId);
+      ui.markDataChanged();
+      return;
+    }
+
+    try {
+      await planTodosApi.ack(todoId);
+      await refresh();
+      ui.markDataChanged();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) {
+        await syncStore.ackOfflineTodo(todoId);
+        dueTodos.value = dueTodos.value.filter((t) => t.id !== todoId);
+        ui.markDataChanged();
+        return;
+      }
+      throw err;
+    }
   }
 
   /** 撤销一次确认：撤掉该期的入账（支出软删），待办回到待办列表。 */

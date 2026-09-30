@@ -20,10 +20,13 @@ import {
   removeOutboxItems,
   saveSingleCachedExpense,
   setMeta,
+  updateCachedExpense,
+  updateCachedPlanTodo,
 } from '@/utils/idb';
 import { ulid } from '@/utils/ulid';
 import { useAuthStore } from './auth';
 import { useDictionariesStore } from './dictionaries';
+import { usePlansStore } from './plans';
 
 export const useSyncStore = defineStore('sync', () => {
   // 必须基于实际服务端探测，不能仅凭 navigator.onLine 判定连通
@@ -202,7 +205,181 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
-   * 推送 Outbox 离线待发送队列至服务端
+   * 离线修改账单：
+   * 立即更新本地 IndexedDB 缓存（支持离线即刻呈现），
+   * 若该记录仅存在于本地离线待发队列中，直接更新该队列项；
+   * 若为已同步记录，则写入 update_expense 暂存队列。
+   */
+  async function updateOfflineExpense(
+    id: string,
+    input: {
+      amountCents?: number;
+      categoryId?: string;
+      paymentMethodId?: string;
+      spendDate?: string;
+      note?: string;
+    },
+  ): Promise<void> {
+    const dict = useDictionariesStore();
+    const partial: Partial<Expense> = {};
+
+    if (input.amountCents !== undefined) partial.amountCents = input.amountCents;
+    if (input.categoryId !== undefined) {
+      partial.categoryId = input.categoryId;
+      const cat = dict.findCategory(input.categoryId);
+      const parentCat = cat?.parentId ? dict.findCategory(cat.parentId) : null;
+      partial.categoryName = cat?.name ?? '';
+      partial.categoryIcon = cat?.icon ?? '';
+      partial.categoryColor = cat?.color ?? '';
+      partial.parentCategoryColor = parentCat?.color ?? null;
+      partial.parentCategoryName = parentCat?.name ?? null;
+    }
+    if (input.paymentMethodId !== undefined) {
+      partial.paymentMethodId = input.paymentMethodId;
+      const pm = dict.findPaymentMethod(input.paymentMethodId);
+      partial.paymentMethodName = pm?.name ?? '';
+      partial.paymentMethodType = pm?.type ?? 'cash';
+    }
+    if (input.spendDate !== undefined) {
+      partial.spendDate = input.spendDate;
+      partial.postingDate = input.spendDate;
+      partial.repaymentDate = input.spendDate;
+    }
+    if (input.note !== undefined) partial.note = input.note;
+
+    if (isIdbSupported()) {
+      await updateCachedExpense(id, partial, true);
+
+      const items = await getOutboxItems();
+      const existingCreate = items.find(
+        (item) => item.action === 'create_expense' && item.entityId === id,
+      );
+
+      if (existingCreate) {
+        // 如果这笔账还在离线新建队列里，直接合并修改该新建项
+        await addOutboxItem({
+          ...existingCreate,
+          payload: {
+            ...existingCreate.payload,
+            ...input,
+          },
+        });
+      } else {
+        // 已经推送到服务端的记录，写入一条 update_expense
+        await addOutboxItem({
+          id: ulid(),
+          action: 'update_expense',
+          entityId: id,
+          payload: {
+            id,
+            ...input,
+          },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+      }
+      await refreshPendingCount();
+    }
+
+    scheduleSync(300);
+  }
+
+  /**
+   * 离线删除账单：
+   * 本地立即移除（秒删），若是离线新建队列中的记录，直接作废该创建队列项；
+   * 若是服务端历史记录，写入 delete_expense 队列待补偿。
+   */
+  async function deleteOfflineExpense(id: string): Promise<void> {
+    if (isIdbSupported()) {
+      await deleteCachedExpense(id);
+
+      const items = await getOutboxItems();
+      const localRelated = items.filter((item) => item.entityId === id);
+
+      const wasPendingCreate = localRelated.some((item) => item.action === 'create_expense');
+      if (wasPendingCreate) {
+        // 该记录还从未同步上云，直接撤销相关的所有离线队列项
+        await removeOutboxItems(localRelated.map((i) => i.id));
+      } else {
+        // 已存在于服务端的记录，写入 delete_expense
+        await addOutboxItem({
+          id: ulid(),
+          action: 'delete_expense',
+          entityId: id,
+          payload: { id },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+      }
+      await refreshPendingCount();
+    }
+
+    scheduleSync(300);
+  }
+
+  /**
+   * 离线确认待办（confirm_todo）
+   */
+  async function confirmOfflineTodo(todoId: string, spendDate?: string): Promise<void> {
+    if (isIdbSupported()) {
+      await updateCachedPlanTodo(todoId, {
+        status: 'confirmed',
+        postedDate: spendDate,
+        confirmedAt: new Date().toISOString(),
+      });
+      await addOutboxItem({
+        id: ulid(),
+        action: 'confirm_todo',
+        entityId: todoId,
+        payload: { id: todoId, spendDate },
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      });
+      await refreshPendingCount();
+    }
+    scheduleSync(300);
+  }
+
+  /**
+   * 离线跳过待办（skip_todo）
+   */
+  async function skipOfflineTodo(todoId: string): Promise<void> {
+    if (isIdbSupported()) {
+      await updateCachedPlanTodo(todoId, { status: 'skipped' });
+      await addOutboxItem({
+        id: ulid(),
+        action: 'skip_todo',
+        entityId: todoId,
+        payload: { id: todoId },
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      });
+      await refreshPendingCount();
+    }
+    scheduleSync(300);
+  }
+
+  /**
+   * 离线知晓待办（ack_todo）
+   */
+  async function ackOfflineTodo(todoId: string): Promise<void> {
+    if (isIdbSupported()) {
+      await updateCachedPlanTodo(todoId, { ackAt: new Date().toISOString() });
+      await addOutboxItem({
+        id: ulid(),
+        action: 'ack_todo',
+        entityId: todoId,
+        payload: { id: todoId },
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      });
+      await refreshPendingCount();
+    }
+    scheduleSync(300);
+  }
+
+  /**
+   * 推送 Outbox 离线待发送队列至服务端（支持新增、修改、删除支出以及计划待办状态）
    */
   async function pushOutbox(): Promise<number> {
     if (!isIdbSupported() || !isOnline.value) return 0;
@@ -213,25 +390,81 @@ export const useSyncStore = defineStore('sync', () => {
     if (items.length === 0) return 0;
 
     const expenseCreates = items.filter((i) => i.action === 'create_expense');
-    if (expenseCreates.length === 0) return 0;
+    const expenseUpdates = items.filter((i) => i.action === 'update_expense');
+    const expenseDeletes = items.filter((i) => i.action === 'delete_expense');
+    const todoConfirms = items.filter((i) => i.action === 'confirm_todo');
+    const todoSkips = items.filter((i) => i.action === 'skip_todo');
+    const todoAcks = items.filter((i) => i.action === 'ack_todo');
 
     const deviceId = await getDeviceId();
-    const batchList = expenseCreates.map((item) => ({
-      id: typeof item.payload['id'] === 'string' ? item.payload['id'] : undefined,
-      amountCents: Number(item.payload['amountCents']),
-      categoryId: String(item.payload['categoryId']),
-      paymentMethodId: String(item.payload['paymentMethodId']),
-      spendDate: String(item.payload['spendDate']),
-      note: typeof item.payload['note'] === 'string' ? item.payload['note'] : undefined,
-    }));
 
-    const result = await syncApi.push({ expenses: batchList, deviceId });
+    const pushPayload = {
+      deviceId,
+      expenses:
+        expenseCreates.length > 0
+          ? expenseCreates.map((item) => ({
+              id: typeof item.payload['id'] === 'string' ? item.payload['id'] : undefined,
+              amountCents: Number(item.payload['amountCents']),
+              categoryId: String(item.payload['categoryId']),
+              paymentMethodId: String(item.payload['paymentMethodId']),
+              spendDate: String(item.payload['spendDate']),
+              note: typeof item.payload['note'] === 'string' ? item.payload['note'] : undefined,
+            }))
+          : undefined,
+      updatedExpenses:
+        expenseUpdates.length > 0
+          ? expenseUpdates.map((item) => ({
+              id: String(item.payload['id'] || item.entityId),
+              amountCents:
+                item.payload['amountCents'] !== undefined
+                  ? Number(item.payload['amountCents'])
+                  : undefined,
+              categoryId:
+                typeof item.payload['categoryId'] === 'string'
+                  ? item.payload['categoryId']
+                  : undefined,
+              paymentMethodId:
+                typeof item.payload['paymentMethodId'] === 'string'
+                  ? item.payload['paymentMethodId']
+                  : undefined,
+              spendDate:
+                typeof item.payload['spendDate'] === 'string'
+                  ? item.payload['spendDate']
+                  : undefined,
+              note: typeof item.payload['note'] === 'string' ? item.payload['note'] : undefined,
+            }))
+          : undefined,
+      deletedExpenseIds:
+        expenseDeletes.length > 0
+          ? expenseDeletes.map((item) => String(item.payload['id'] || item.entityId))
+          : undefined,
+      confirmedTodos:
+        todoConfirms.length > 0
+          ? todoConfirms.map((item) => ({
+              id: String(item.payload['id'] || item.entityId),
+              spendDate:
+                typeof item.payload['spendDate'] === 'string'
+                  ? item.payload['spendDate']
+                  : undefined,
+            }))
+          : undefined,
+      skippedTodoIds:
+        todoSkips.length > 0
+          ? todoSkips.map((item) => String(item.payload['id'] || item.entityId))
+          : undefined,
+      ackedTodoIds:
+        todoAcks.length > 0
+          ? todoAcks.map((item) => String(item.payload['id'] || item.entityId))
+          : undefined,
+    };
 
-    // 服务端确认接收后，安全清理这些 outbox 记录
-    await removeOutboxItems(expenseCreates.map((i) => i.id));
+    const result = await syncApi.push(pushPayload);
+
+    // 服务端确认接收后，安全清理这些已推送到远端的 outbox 记录
+    await removeOutboxItems(items.map((i) => i.id));
     await refreshPendingCount();
 
-    return result.pushedExpensesCount;
+    return result.pushedExpensesCount + result.updatedExpensesCount + result.deletedExpensesCount;
   }
 
   /**
@@ -246,6 +479,7 @@ export const useSyncStore = defineStore('sync', () => {
     let currentVer = lastSyncVersion.value;
     let totalPulled = 0;
     let anyDictChanged = false;
+    let anyPlanChanged = false;
 
     while (hasMore) {
       const result = await syncApi.pull(currentVer, 200);
@@ -255,6 +489,8 @@ export const useSyncStore = defineStore('sync', () => {
         totalPulled++;
         if (change.entityType === 'category' || change.entityType === 'payment_method') {
           anyDictChanged = true;
+        } else if (change.entityType === 'plan' || change.entityType === 'plan_todo') {
+          anyPlanChanged = true;
         } else if (change.entityType === 'expense') {
           if (change.op === 'delete') {
             await deleteCachedExpense(change.entityId);
@@ -310,7 +546,13 @@ export const useSyncStore = defineStore('sync', () => {
     // 若分类或支付方式有变动，通知字典 store 静默重刷并更新本地缓存
     if (anyDictChanged) {
       const dict = useDictionariesStore();
-      await dict.load(true);
+      void dict.load(true);
+    }
+
+    // 若计划或待办有变动，通知计划 store 静默重刷并更新本地缓存
+    if (anyPlanChanged) {
+      const plans = usePlansStore();
+      void plans.refresh();
     }
 
     return totalPulled;
@@ -359,6 +601,11 @@ export const useSyncStore = defineStore('sync', () => {
     checkConnectivity,
     refreshPendingCount,
     addOfflineExpense,
+    updateOfflineExpense,
+    deleteOfflineExpense,
+    confirmOfflineTodo,
+    skipOfflineTodo,
+    ackOfflineTodo,
     pushOutbox,
     pullChanges,
     runSync,

@@ -127,6 +127,10 @@ async function load(): Promise<void> {
     yearly.value = yearlyRes.report;
     summary.value = summaryRes.report;
   } catch (error) {
+    if (error instanceof ApiError && error.status === 0) {
+      // 离线静默，不展示报错横幅
+      return;
+    }
     errorMessage.value = error instanceof ApiError ? error.message : '加载失败，请重试';
   } finally {
     loading.value = false;

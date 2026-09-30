@@ -6,6 +6,8 @@ import {
   currentSyncVersion,
   pullChanges,
   pushChanges,
+  type BatchConfirmTodoItem,
+  type BatchUpdateExpenseItem,
 } from '../db/repo/sync.ts';
 import { badRequest } from '../lib/http-error.ts';
 import {
@@ -74,11 +76,93 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    const updatedRaw = body['updatedExpenses'];
+    const updatedExpenses: BatchUpdateExpenseItem[] = [];
+
+    if (updatedRaw !== undefined) {
+      if (!Array.isArray(updatedRaw)) {
+        throw badRequest('updatedExpenses 必须是数组');
+      }
+      for (let i = 0; i < updatedRaw.length; i++) {
+        const item = asRecord(updatedRaw[i]);
+        updatedExpenses.push({
+          id: requireString(item, 'id'),
+          amountCents:
+            item['amountCents'] !== undefined ? requireInt(item, 'amountCents') : undefined,
+          categoryId: optionalString(item, 'categoryId', '') || undefined,
+          paymentMethodId: optionalString(item, 'paymentMethodId', '') || undefined,
+          spendDate: optionalString(item, 'spendDate', '') || undefined,
+          note: item['note'] !== undefined ? optionalString(item, 'note', '') : undefined,
+        });
+      }
+    }
+
+    const deletedRaw = body['deletedExpenseIds'];
+    const deletedExpenseIds: string[] = [];
+    if (deletedRaw !== undefined) {
+      if (!Array.isArray(deletedRaw)) {
+        throw badRequest('deletedExpenseIds 必须是数组');
+      }
+      for (const id of deletedRaw) {
+        if (typeof id === 'string' && id) {
+          deletedExpenseIds.push(id);
+        }
+      }
+    }
+
+    const confirmedRaw = body['confirmedTodos'];
+    const confirmedTodos: BatchConfirmTodoItem[] = [];
+    if (confirmedRaw !== undefined) {
+      if (!Array.isArray(confirmedRaw)) {
+        throw badRequest('confirmedTodos 必须是数组');
+      }
+      for (const item of confirmedRaw) {
+        const rec = asRecord(item);
+        confirmedTodos.push({
+          id: requireString(rec, 'id'),
+          spendDate: optionalString(rec, 'spendDate', '') || undefined,
+        });
+      }
+    }
+
+    const skippedRaw = body['skippedTodoIds'];
+    const skippedTodoIds: string[] = [];
+    if (skippedRaw !== undefined) {
+      if (!Array.isArray(skippedRaw)) {
+        throw badRequest('skippedTodoIds 必须是数组');
+      }
+      for (const id of skippedRaw) {
+        if (typeof id === 'string' && id) {
+          skippedTodoIds.push(id);
+        }
+      }
+    }
+
+    const ackedRaw = body['ackedTodoIds'];
+    const ackedTodoIds: string[] = [];
+    if (ackedRaw !== undefined) {
+      if (!Array.isArray(ackedRaw)) {
+        throw badRequest('ackedTodoIds 必须是数组');
+      }
+      for (const id of ackedRaw) {
+        if (typeof id === 'string' && id) {
+          ackedTodoIds.push(id);
+        }
+      }
+    }
+
     const deviceId = optionalString(body, 'deviceId', '') || undefined;
 
     const result = pushChanges(
       getDatabase(),
-      { expenses },
+      {
+        expenses,
+        updatedExpenses,
+        deletedExpenseIds,
+        confirmedTodos,
+        skippedTodoIds,
+        ackedTodoIds,
+      },
       auth.user.id,
       deviceId,
     );

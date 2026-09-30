@@ -81,6 +81,10 @@ async function load(): Promise<void> {
       summary.value = res.report;
     }
   } catch (error) {
+    if (error instanceof ApiError && error.status === 0) {
+      // 离线静默，不展示报错横幅
+      return;
+    }
     errorMessage.value = error instanceof ApiError ? error.message : '加载报表失败，请重试';
   } finally {
     loading.value = false;

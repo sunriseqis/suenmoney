@@ -8,15 +8,21 @@
  * - `expenses`: 本地支出明细副本（按 id 主键，支持按月份/日期索引筛选）
  * - `outbox`: 离线操作暂存队列（待网络恢复时补偿提交至服务端）
  */
-import type { Category, Expense, PaymentMethod } from '../api/types.ts';
+import type { Category, Expense, PaymentMethod, Plan, PlanTodo } from '../api/types.ts';
 import { ulid } from './ulid.ts';
 
 const DB_NAME = 'suenmoney_offline_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface OutboxItem {
   id: string; // ulid
-  action: 'create_expense' | 'update_expense' | 'delete_expense';
+  action:
+    | 'create_expense'
+    | 'update_expense'
+    | 'delete_expense'
+    | 'confirm_todo'
+    | 'skip_todo'
+    | 'ack_todo';
   entityId: string;
   payload: Record<string, unknown>;
   createdAt: string;
@@ -69,6 +75,16 @@ export function openOfflineDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('outbox')) {
         const outboxStore = db.createObjectStore('outbox', { keyPath: 'id' });
         outboxStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+
+      // 5. 计划与待办副本
+      if (!db.objectStoreNames.contains('plans')) {
+        db.createObjectStore('plans', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('plan_todos')) {
+        const todoStore = db.createObjectStore('plan_todos', { keyPath: 'id' });
+        todoStore.createIndex('planId', 'planId', { unique: false });
+        todoStore.createIndex('status', 'status', { unique: false });
       }
     };
 
@@ -285,6 +301,59 @@ export async function saveSingleCachedExpense(item: Expense, isOfflinePending = 
   }
 }
 
+export async function getCachedExpenseById(id: string): Promise<Expense | null> {
+  if (!isIdbSupported()) return null;
+  try {
+    const db = await openOfflineDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('expenses', 'readonly');
+      const store = tx.objectStore('expenses');
+      const req = store.get(id);
+      req.onsuccess = () => resolve((req.result as Expense) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function updateCachedExpense(
+  id: string,
+  updates: Partial<Expense>,
+  isOfflinePending = true,
+): Promise<void> {
+  if (!isIdbSupported()) return;
+  try {
+    const db = await openOfflineDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('expenses', 'readwrite');
+      const store = tx.objectStore('expenses');
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const existing = req.result as (Expense & { month?: string; isOfflinePending?: boolean }) | undefined;
+        if (!existing) {
+          resolve();
+          return;
+        }
+        const updated = {
+          ...existing,
+          ...updates,
+          isOfflinePending,
+          updatedAt: new Date().toISOString(),
+        };
+        if (updates.spendDate) {
+          updated.month = updates.spendDate.slice(0, 7);
+        }
+        store.put(updated);
+        resolve();
+      };
+      req.onerror = () => resolve();
+    });
+  } catch {
+    // 忽略异常
+  }
+}
+
 export async function deleteCachedExpense(id: string): Promise<void> {
   if (!isIdbSupported()) return;
   try {
@@ -295,6 +364,116 @@ export async function deleteCachedExpense(id: string): Promise<void> {
       const req = store.delete(id);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // 忽略异常
+  }
+}
+
+// ---- 计划与待办本地副本 -----------------------------------------------------
+
+export async function getCachedPlans(): Promise<Plan[]> {
+  if (!isIdbSupported()) return [];
+  try {
+    const db = await openOfflineDb();
+    if (!db.objectStoreNames.contains('plans')) return [];
+    return new Promise((resolve) => {
+      const tx = db.transaction('plans', 'readonly');
+      const store = tx.objectStore('plans');
+      const req = store.getAll();
+      req.onsuccess = () => resolve((req.result as Plan[]) ?? []);
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCachedPlans(plans: Plan[]): Promise<void> {
+  if (!isIdbSupported() || plans.length === 0) return;
+  try {
+    const db = await openOfflineDb();
+    if (!db.objectStoreNames.contains('plans')) return;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('plans', 'readwrite');
+      const store = tx.objectStore('plans');
+      store.clear();
+      for (const p of plans) {
+        store.put(p);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // 忽略异常
+  }
+}
+
+export async function getCachedPlanTodos(status?: string): Promise<PlanTodo[]> {
+  if (!isIdbSupported()) return [];
+  try {
+    const db = await openOfflineDb();
+    if (!db.objectStoreNames.contains('plan_todos')) return [];
+    return new Promise((resolve) => {
+      const tx = db.transaction('plan_todos', 'readonly');
+      const store = tx.objectStore('plan_todos');
+      if (status) {
+        const index = store.index('status');
+        const req = index.getAll(status);
+        req.onsuccess = () => resolve((req.result as PlanTodo[]) ?? []);
+        req.onerror = () => resolve([]);
+      } else {
+        const req = store.getAll();
+        req.onsuccess = () => resolve((req.result as PlanTodo[]) ?? []);
+        req.onerror = () => resolve([]);
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCachedPlanTodos(todos: PlanTodo[]): Promise<void> {
+  if (!isIdbSupported() || todos.length === 0) return;
+  try {
+    const db = await openOfflineDb();
+    if (!db.objectStoreNames.contains('plan_todos')) return;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('plan_todos', 'readwrite');
+      const store = tx.objectStore('plan_todos');
+      for (const t of todos) {
+        store.put(t);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // 忽略异常
+  }
+}
+
+export async function updateCachedPlanTodo(
+  id: string,
+  updates: Partial<PlanTodo>,
+): Promise<void> {
+  if (!isIdbSupported()) return;
+  try {
+    const db = await openOfflineDb();
+    if (!db.objectStoreNames.contains('plan_todos')) return;
+    return new Promise((resolve) => {
+      const tx = db.transaction('plan_todos', 'readwrite');
+      const store = tx.objectStore('plan_todos');
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const existing = req.result as PlanTodo | undefined;
+        if (!existing) {
+          resolve();
+          return;
+        }
+        store.put({ ...existing, ...updates, updatedAt: new Date().toISOString() });
+        resolve();
+      };
+      req.onerror = () => resolve();
     });
   } catch {
     // 忽略异常
@@ -361,16 +540,15 @@ export async function clearAllOfflineData(): Promise<void> {
   if (!isIdbSupported()) return;
   try {
     const db = await openOfflineDb();
+    const stores = ['meta', 'categories', 'payment_methods', 'expenses', 'outbox'];
+    if (db.objectStoreNames.contains('plans')) stores.push('plans');
+    if (db.objectStoreNames.contains('plan_todos')) stores.push('plan_todos');
+
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(
-        ['meta', 'categories', 'payment_methods', 'expenses', 'outbox'],
-        'readwrite',
-      );
-      tx.objectStore('meta').clear();
-      tx.objectStore('categories').clear();
-      tx.objectStore('payment_methods').clear();
-      tx.objectStore('expenses').clear();
-      tx.objectStore('outbox').clear();
+      const tx = db.transaction(stores, 'readwrite');
+      for (const s of stores) {
+        tx.objectStore(s).clear();
+      }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

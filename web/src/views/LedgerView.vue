@@ -235,8 +235,8 @@ async function fetchPage(cursor: string | null): Promise<void> {
     nextCursor.value = page.nextCursor;
     hasMore.value = page.hasMore;
   } catch (error) {
-    // 离线容灾：如果网络断开且为首屏加载，尝试从本地 IndexedDB 恢复展示
-    if (cursor === null && error instanceof ApiError && error.status === 0) {
+    // 离线容灾：如果网络断开且为首屏加载，优先从本地 IndexedDB 恢复展示
+    if (cursor === null) {
       const cached = await getCachedExpenses(month.value);
       if (cached.length > 0) {
         items.value = cached;
@@ -244,6 +244,12 @@ async function fetchPage(cursor: string | null): Promise<void> {
         hasMore.value = false;
         return;
       }
+    }
+    if (error instanceof ApiError && error.status === 0) {
+      items.value = [];
+      nextCursor.value = null;
+      hasMore.value = false;
+      return;
     }
     throw error;
   }
@@ -255,6 +261,10 @@ async function reloadList(): Promise<void> {
   try {
     await fetchPage(null);
   } catch (error) {
+    if (error instanceof ApiError && error.status === 0) {
+      // 离线状态静默降级，不展示错误横幅
+      return;
+    }
     errorMessage.value = error instanceof ApiError ? error.message : '加载失败';
   } finally {
     loading.value = false;
@@ -267,6 +277,9 @@ async function loadMore(): Promise<void> {
   try {
     await fetchPage(nextCursor.value);
   } catch (error) {
+    if (error instanceof ApiError && error.status === 0) {
+      return;
+    }
     errorMessage.value = error instanceof ApiError ? error.message : '加载更多失败';
   } finally {
     loadingMore.value = false;
@@ -289,7 +302,11 @@ async function loadYearData(): Promise<void> {
     selectedCalendarKey.value = candidateMonth;
     await loadSelectedMonthDetail(candidateMonth);
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '加载年度日历失败';
+    if (error instanceof ApiError && error.status === 0) {
+      // 离线静默
+      return;
+    }
+    errorMessage.value = error instanceof ApiError ? error.message : '加载年档日历失败';
   } finally {
     loading.value = false;
   }
@@ -321,6 +338,9 @@ async function loadSummaryData(): Promise<void> {
       await loadSelectedYearDetail(latestYear);
     }
   } catch (error) {
+    if (error instanceof ApiError && error.status === 0) {
+      return;
+    }
     errorMessage.value = error instanceof ApiError ? error.message : '加载汇总日历失败';
   } finally {
     loading.value = false;

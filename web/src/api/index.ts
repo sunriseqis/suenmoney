@@ -481,11 +481,31 @@ export interface SyncPushInput {
     spendDate: string;
     note?: string;
   }>;
+  updatedExpenses?: Array<{
+    id: string;
+    amountCents?: number;
+    categoryId?: string;
+    paymentMethodId?: string;
+    spendDate?: string;
+    note?: string;
+  }>;
+  deletedExpenseIds?: string[];
+  confirmedTodos?: Array<{
+    id: string;
+    spendDate?: string;
+  }>;
+  skippedTodoIds?: string[];
+  ackedTodoIds?: string[];
   deviceId?: string;
 }
 
 export interface SyncPushResult {
   pushedExpensesCount: number;
+  updatedExpensesCount: number;
+  deletedExpensesCount: number;
+  confirmedTodosCount: number;
+  skippedTodosCount: number;
+  ackedTodosCount: number;
   expenseIds: string[];
   latestVersion: number;
 }

@@ -214,4 +214,56 @@ describe('增量同步接口（GET/POST /api/sync）', () => {
     // 幂等确认返回该 id，并不重复创建额外记录
     assert.equal(pushJson.expenseIds.length, 1);
   });
+
+  test('离线补偿推送支持批量更新与删除支出（updatedExpenses / deletedExpenseIds）', async () => {
+    const offlineId1 = '01J9OFFLINE000000000000001';
+
+    // 1. 批量更新金额与备注
+    const updateRes = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers: auth(userToken),
+      payload: {
+        updatedExpenses: [
+          {
+            id: offlineId1,
+            amountCents: 3200,
+            note: '修改后的便利店早餐',
+          },
+        ],
+      },
+    });
+
+    assert.equal(updateRes.statusCode, 200);
+    const updateJson = updateRes.json();
+    assert.equal(updateJson.updatedExpensesCount, 1);
+
+    // 2. 批量删除
+    const deleteRes = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers: auth(userToken),
+      payload: {
+        deletedExpenseIds: [offlineId1],
+      },
+    });
+
+    assert.equal(deleteRes.statusCode, 200);
+    const deleteJson = deleteRes.json();
+    assert.equal(deleteJson.deletedExpensesCount, 1);
+
+    // 3. 拉取验证包含 delete 操作
+    const pullRes = await app.inject({
+      method: 'GET',
+      url: `/api/sync/pull?since=${updateJson.latestVersion}`,
+      headers: auth(userToken),
+    });
+    assert.equal(pullRes.statusCode, 200);
+    const pullJson = pullRes.json();
+    const deletedChanges = pullJson.changes.filter(
+      (c: { entityId: string; op: string }) => c.entityId === offlineId1 && c.op === 'delete',
+    );
+    assert.equal(deletedChanges.length, 1);
+  });
 });
+

@@ -14,6 +14,8 @@
     "test": "npm --prefix server test && npm --prefix web test",
     "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck",
     "build:web": "npm --prefix web run build",
+    "build:android": "npm --prefix web run android:sync && (cd android && ./gradlew assembleDebug)",
+    "build:android:release": "npm --prefix web run android:sync && (cd android && ./gradlew assembleRelease)",
     "check": "npm run typecheck && npm test && npm run build:web"
   }
 }
