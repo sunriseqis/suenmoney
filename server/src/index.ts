@@ -1,12 +1,15 @@
 /**
  * 服务端入口。
  *
- * 启动顺序是刻意的：**先迁移、初始化默认项、再启动快照调度与 HTTP 监听**。
+ * 启动顺序是刻意的：**先迁移、再启动快照调度与 HTTP 监听**。
  * 反过来的话，容器刚起来的一小段时间里请求会打到还没建表的库上，表现为 500。
+ *
+ * 分类与支付方式**不再预置默认值**：全新部署就是一张空白的分类体系，
+ * 由用户自己建立，或由「导入流水」按 CSV 里的名字自动创建 ——
+ * 预设的「餐饮美食 / 微信支付」反而会成为没人用的遗留垃圾。
  */
 import { config } from './config.ts';
 import { migrate, openDatabase } from './db/index.ts';
-import { initDefaultsIfEmpty } from './db/init-defaults.ts';
 import { startDailySnapshotScheduler, stopDailySnapshotScheduler } from './db/repo/snapshots.ts';
 import { startDailyWebdavScheduler, stopDailyWebdavScheduler } from './db/repo/webdav.ts';
 import { buildServer } from './http/server.ts';
@@ -17,9 +20,6 @@ const applied = migrate(db);
 if (applied.length > 0) {
   console.log(`已应用 ${applied.length} 个迁移：${applied.join(', ')}`);
 }
-
-// 自动补齐基础默认分类与支付方式（仅在库为空时触发，幂等）
-initDefaultsIfEmpty(db);
 
 // 启动每日 SQLite VACUUM INTO 运维快照调度与 WebDAV 安全备份调度
 startDailySnapshotScheduler(db);
