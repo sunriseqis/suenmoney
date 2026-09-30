@@ -36,6 +36,7 @@ import PeriodPicker from '@/components/PeriodPicker.vue';
 import ReportCalendar, { type CalendarCell } from '@/components/ReportCalendar.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
+import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
 import { categoryColorVar } from '@/utils/category-colors';
 import { getCachedExpenses, saveCachedExpenses } from '@/utils/idb';
@@ -62,6 +63,7 @@ const route = useRoute();
 const ui = useUiStore();
 const dict = useDictionariesStore();
 const plansStore = usePlansStore();
+const syncStore = useSyncStore();
 
 type Scope = 'month' | 'year' | 'all';
 type SortBy = 'date_desc' | 'amount_desc';
@@ -92,6 +94,8 @@ function goToPreviousMonth(): void {
 const categoryId = ref<string | null>(null);
 const paymentMethodId = ref<string | null>(null);
 const keyword = ref('');
+/** 搜索激活：任何档位输入关键词都会切换为跨期流水列表（月=当月 / 年=全年 / 全部=全库） */
+const isSearchActive = computed(() => keyword.value.trim() !== '');
 const sortBy = ref<SortBy>('date_desc');
 const isFilterExpanded = ref(false);
 const hasChipFilter = computed(() => categoryId.value !== null || paymentMethodId.value !== null);
@@ -207,15 +211,22 @@ const today = todayLocal();
 
 async function fetchPage(cursor: string | null): Promise<void> {
   try {
-    const page = await expensesApi.list({
-      month: month.value,
-      by: 'spend_date',
+    // 搜索范围随档位：月=当月，年=全年，全部=全库历史
+    const base = {
+      by: 'spend_date' as const,
       categoryId: categoryId.value ?? undefined,
       paymentMethodId: paymentMethodId.value ?? undefined,
       q: keyword.value.trim() === '' ? undefined : keyword.value.trim(),
       limit: PAGE_SIZE,
       cursor: cursor ?? undefined,
-    });
+    };
+    const page = await expensesApi.list(
+      scope.value === 'month'
+        ? { ...base, month: month.value }
+        : scope.value === 'year'
+          ? { ...base, from: `${year.value}-01-01`, to: `${year.value}-12-31` }
+          : base,
+    );
 
     if (cursor === null) {
       // 检查本地是否有尚未同步至服务端的离线待发记录，融合展示在顶部
@@ -375,7 +386,8 @@ async function loadTopCardData(): Promise<void> {
 
 async function refresh(): Promise<void> {
   loadTopCardData();
-  if (scope.value === 'month') {
+  if (scope.value === 'month' || isSearchActive.value) {
+    // 搜索激活时即使处于年/全部档也展示跨期列表，日历暂不加载
     await reloadList();
   } else if (scope.value === 'year') {
     await loadYearData();
@@ -391,7 +403,7 @@ onMounted(async () => {
 
 watch([scope, month, year], refresh);
 watch([categoryId, paymentMethodId], () => {
-  if (scope.value === 'month') reloadList();
+  if (scope.value === 'month' || isSearchActive.value) reloadList();
 });
 watch(() => ui.dataVersion, refresh);
 
@@ -399,7 +411,12 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined;
 watch(keyword, () => {
   if (searchTimer !== undefined) clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    if (scope.value === 'month') reloadList();
+    if (scope.value === 'month' || keyword.value.trim() !== '') {
+      void reloadList();
+    } else {
+      // 关键词清空：从跨期搜索列表回到年/全部日历视图
+      void refresh();
+    }
   }, 300);
 });
 
@@ -659,6 +676,42 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             </div>
           </div>
 
+          <!--
+            同步状态条（提醒卡区域常驻承载，用户裁决）：
+            只由「待同步条目存在」驱动 —— 队列为空时即使离线也不显示（不制造焦虑）；
+            离线时提示记录先存本机、恢复联网自动上传；在线待同步可点击立即推；
+            同步成功后队列清空自动消失。无到期待办时它单独成条，有则位于展开明细上方。
+          -->
+          <button
+            v-if="syncStore.hasPending || syncStore.isSyncing"
+            type="button"
+            class="mt-2 flex w-full items-center gap-1.5 rounded-lg px-3 py-1.5 text-left text-[11px] font-medium transition-colors lg:hidden"
+            :class="syncStore.isSyncing
+              ? 'bg-sunken text-primary-text'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'"
+            :title="syncStore.isSyncing
+              ? '正在与服务器同步'
+              : syncStore.isOnline
+                ? '点击立即同步到服务器'
+                : '当前离线：记录先存在本机，恢复联网后自动同步'"
+            :disabled="syncStore.isSyncing || !syncStore.isOnline"
+            @click="syncStore.runSync()"
+          >
+            <span
+              class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+              :class="syncStore.isSyncing ? 'animate-pulse bg-primary' : syncStore.isOnline ? 'bg-amber-500' : 'bg-amber-500'"
+            />
+            <span class="truncate">
+              <template v-if="syncStore.isSyncing">同步中…</template>
+              <template v-else-if="syncStore.isOnline">
+                待同步 {{ syncStore.pendingCount }} 条，点击立即上传
+              </template>
+              <template v-else>
+                离线中 · {{ syncStore.pendingCount }} 条记录已存本机，联网后自动同步
+              </template>
+            </span>
+          </button>
+
           <!-- 顶卡向下展开的待办明细与动作层（§6.5 三·补） -->
           <div
             v-if="isTopCardExpanded && dueTodos.length > 0"
@@ -807,12 +860,12 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
           </div>
         </div>
 
-        <!-- 移动端搜索行（独占撑满，A21） -->
-        <div v-if="scope === 'month'" class="lg:hidden">
+        <!-- 移动端搜索行（独占撑满，A21）：任何档位均可搜索，年/全部档为跨期搜索 -->
+        <div class="lg:hidden">
           <input
             v-model="keyword"
             type="search"
-            placeholder="搜索分类或备注…"
+            :placeholder="scope === 'month' ? '搜索分类或备注…' : scope === 'year' ? `搜索 ${year} 年流水…` : '搜索全部流水…'"
             class="w-full rounded-sm bg-sunken px-3 py-2 text-xs text-ink placeholder:text-ink-muted focus:ring-1 focus:ring-primary"
           />
         </div>
@@ -867,16 +920,16 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             </div>
           </div>
 
-          <!-- 搜索与排序 -->
-          <div v-if="scope === 'month'" class="flex items-center gap-2">
+          <!-- 搜索与排序（搜索任何档位可用；排序仅月档列表有意义） -->
+          <div class="flex items-center gap-2">
             <input
               v-model="keyword"
               type="search"
-              placeholder="搜索分类或备注…"
+              :placeholder="scope === 'month' ? '搜索分类或备注…' : scope === 'year' ? `搜索 ${year} 年流水…` : '搜索全部流水…'"
               class="w-64 rounded-sm bg-sunken px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:ring-1 focus:ring-primary"
             />
 
-            <div class="flex items-center rounded-sm bg-sunken p-0.5 text-xs">
+            <div v-if="scope === 'month'" class="flex items-center rounded-sm bg-sunken p-0.5 text-xs">
               <button
                 type="button"
                 class="rounded-xs px-2.5 py-1 text-xs font-medium transition-colors"
@@ -944,7 +997,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
         </template>
 
         <!-- 合计行：只有在有筛选时才展示金额，无筛选时仅展示笔数（§6.2 ③） -->
-        <div v-if="scope === 'month'" class="flex items-center justify-between text-xs text-ink-muted pt-0.5">
+        <div v-if="scope === 'month' || isSearchActive" class="flex items-center justify-between text-xs text-ink-muted pt-0.5">
           <span>
             <template v-if="isFilterActive">
               筛选结果 <b>{{ items.length }}</b> 笔 · 合计 <b class="text-ink tabular-nums">{{ formatYuan(loadedTotal) }}</b>
@@ -971,11 +1024,12 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
       <p v-else-if="loading" class="py-12 text-center text-sm text-ink-muted">加载中…</p>
 
       <!-- =====================================================================
-           月档：流水列表（无组头，一行一项，每段 100 笔）
+           流水列表（无组头，一行一项，每段 100 笔）：
+           月档常规展示；年/全部档输入搜索关键词时切换为跨期搜索结果
            ===================================================================== -->
-      <template v-else-if="scope === 'month'">
+      <template v-else-if="scope === 'month' || isSearchActive">
         <p v-if="items.length === 0" class="py-16 text-center text-sm text-ink-muted">
-          {{ isFilterActive ? '没有符合筛选条件的记录' : '本月还没有流水记录' }}
+          {{ isFilterActive ? '没有符合筛选条件的记录' : scope === 'month' ? '本月还没有流水记录' : '没有符合条件的流水记录' }}
         </p>
 
         <template v-else>
@@ -1151,8 +1205,9 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             {{ loadingMore ? '加载中…' : '加载更多' }}
           </button>
           <div v-else-if="items.length > 0" class="mt-8 flex flex-col items-center gap-2 pb-6">
-            <p class="text-xs text-ink-muted">已显示本月全部记录</p>
+            <p class="text-xs text-ink-muted">{{ scope === 'month' ? '已显示本月全部记录' : '已显示范围内全部记录' }}</p>
             <button
+              v-if="scope === 'month'"
               type="button"
               class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink shadow-sm transition-colors hover:bg-sunken active:scale-95"
               @click="goToPreviousMonth"

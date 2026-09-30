@@ -90,7 +90,7 @@ function close(): void {
         </div>
         <button
           type="button"
-          class="grid h-7 w-7 place-items-center rounded-sm text-sm font-bold text-ink-muted hover:bg-sunken hover:text-ink"
+          class="relative grid h-10 w-10 place-items-center rounded-sm text-sm font-bold text-ink-muted hover:bg-sunken hover:text-ink after:absolute after:-inset-0.5 after:rounded-sm after:content-['']"
           aria-label="关闭"
           @click="close"
         >

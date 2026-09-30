@@ -211,7 +211,7 @@ function formatTimestamp(iso: string): string {
         <!-- 窄屏标题行行尾关闭按键（A24），返回流水落地页 -->
         <RouterLink
           :to="{ name: 'ledger' }"
-          class="grid h-9 w-9 place-items-center rounded-sm text-base font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink lg:hidden"
+          class="relative grid h-10 w-10 place-items-center rounded-sm text-base font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink after:absolute after:-inset-0.5 after:rounded-sm after:content-[''] lg:hidden"
           aria-label="关闭设置，返回流水"
         >
           ✕

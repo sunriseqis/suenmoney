@@ -22,7 +22,9 @@ export interface OutboxItem {
     | 'delete_expense'
     | 'confirm_todo'
     | 'skip_todo'
-    | 'ack_todo';
+    | 'ack_todo'
+    | 'revert_todo'
+    | 'restore_todo';
   entityId: string;
   payload: Record<string, unknown>;
   createdAt: string;

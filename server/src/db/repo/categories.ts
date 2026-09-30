@@ -417,15 +417,22 @@ export function assertCategoryDeactivatable(db: DatabaseSync, id: string): void 
     .prepare(
       `SELECT
          (SELECT COUNT(*) FROM expenses WHERE category_id = ? AND deleted_at IS NULL) AS expenses,
-         (SELECT COUNT(*) FROM categories WHERE parent_id = ? AND deleted_at IS NULL) AS children`,
+         (SELECT COUNT(*) FROM categories WHERE parent_id = ? AND deleted_at IS NULL) AS children,
+         (SELECT COUNT(*) FROM plans WHERE category_id = ? AND deleted_at IS NULL AND state = 'active') AS plans`,
     )
-    .get(id, id);
+    .get(id, id, id);
 
   const expenses = row === undefined ? 0 : Number(row['expenses']);
   const children = row === undefined ? 0 : Number(row['children']);
+  const plans = row === undefined ? 0 : Number(row['plans']);
 
   if (children > 0) {
     throw conflict(`该分类下还有 ${children} 个子分类，请先停用子分类`);
+  }
+  if (plans > 0) {
+    throw conflict(
+      `还有 ${plans} 个进行中的计划在用这个分类，请先结束它们或把计划改到别的分类`,
+    );
   }
   if (expenses > 0) {
     throw conflict(`该分类下还有 ${expenses} 笔支出记录，请先把它们转移到别的分类`);
@@ -435,8 +442,11 @@ export function assertCategoryDeactivatable(db: DatabaseSync, id: string): void 
 /**
  * 删除分类。
  *
- * 仅允许删除既没有子分类、也没有支出记录的分类（例如误新建、或记录已全部转移腾空）。
+ * 仅允许删除既没有子分类、也没有支出记录、更没有进行中计划的分类
+ * （例如误新建、或记录已全部转移腾空）。
  * 若已有支出记录，拦截并提示使用「停用」以维护历史账单完整性。
+ * 进行中的计划（房贷/分期等）引用该分类时必须级联拦截：
+ * 否则后续到期自动入账会因分类不可用而抛错，计划待办卡死。
  */
 export function deleteCategory(
   db: DatabaseSync,
@@ -451,15 +461,22 @@ export function deleteCategory(
     .prepare(
       `SELECT
          (SELECT COUNT(*) FROM expenses WHERE category_id = ? AND deleted_at IS NULL) AS expenses,
-         (SELECT COUNT(*) FROM categories WHERE parent_id = ? AND deleted_at IS NULL) AS children`,
+         (SELECT COUNT(*) FROM categories WHERE parent_id = ? AND deleted_at IS NULL) AS children,
+         (SELECT COUNT(*) FROM plans WHERE category_id = ? AND deleted_at IS NULL AND state = 'active') AS plans`,
     )
-    .get(id, id);
+    .get(id, id, id);
 
   const expenses = row === undefined ? 0 : Number(row['expenses']);
   const children = row === undefined ? 0 : Number(row['children']);
+  const plans = row === undefined ? 0 : Number(row['plans']);
 
   if (children > 0) {
     throw conflict(`该分类下还有 ${children} 个子分类，请先删除或移走子分类`);
+  }
+  if (plans > 0) {
+    throw conflict(
+      `还有 ${plans} 个进行中的计划在用这个分类，请先结束它们或把计划改到别的分类`,
+    );
   }
   if (expenses > 0) {
     throw conflict(`该分类下已有 ${expenses} 笔支出记录。为保证历史账单完整，无法直接删除；若不再使用，可先转移记录或将其停用。`);

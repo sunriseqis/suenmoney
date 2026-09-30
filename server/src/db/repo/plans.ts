@@ -477,12 +477,19 @@ function generateTodos(
   return amounts.length;
 }
 
-/** 删除该计划全部未执行的待办（pending / skipped），并发出 delete 变更。 */
+/**
+ * 删除该计划全部未执行的待办（仅 pending），并发出 delete 变更。
+ *
+ * 注意不能顺带删 skipped：跳过是用户显式执行过的历史期次（宽限期等场景），
+ * lastExecutedSeq 依赖它推算下一期期序；调息重算若把它删了，
+ * 期序会回缩、已跳过月份的待办会被重新生成，时间轴倒流。
+ * 需要连同 skipped 一起清掉的调用方（如 deletePlan）会另行软删除。
+ */
 function deletePendingTodos(db: DatabaseSync, planId: string, actorId: string): number {
   const rows = db
     .prepare(
       `SELECT ${TODO_COLUMNS} FROM plan_todos
-        WHERE plan_id = ? AND deleted_at IS NULL AND status IN ('pending', 'skipped')`,
+        WHERE plan_id = ? AND deleted_at IS NULL AND status = 'pending'`,
     )
     .all(planId) as unknown as PlanTodoRow[];
 
@@ -868,8 +875,8 @@ export function endPlan(db: DatabaseSync, id: string, actorId: string): PlanApi 
 
 /**
  * 删除计划：
- * 1. 清除未执行的待办（pending / skipped）；
- * 2. 软删除其余已确认的待办（记录墓碑变更）；
+ * 1. 物理删除未执行的待办（pending），skipped 落入下一步软删除；
+ * 2. 软删除其余待办（skipped / confirmed，记录墓碑变更）；
  * 3. 软删除计划本身（记录墓碑变更）；
  * 4. 历史已生成的支出保持不变。
  */

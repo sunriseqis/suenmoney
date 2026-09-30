@@ -48,7 +48,7 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
         . 0 00 保存(跨两行)
   -->
   <div
-    class="grid gap-1.5 p-1.5 sm:gap-2 sm:p-2 bg-canvas/30"
+    class="grid gap-1.5 p-1.5 pb-[calc(var(--safe-bottom)+0.375rem)] sm:gap-2 sm:p-2 sm:pb-[calc(var(--safe-bottom)+0.5rem)] bg-canvas/30"
     :class="$slots.left ? 'grid-cols-5 grid-rows-4' : 'grid-cols-4 grid-rows-4'"
   >
     <!-- 左侧第 1 列快捷通道（独立侧栏，带右侧物理分割线） -->

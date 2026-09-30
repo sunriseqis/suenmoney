@@ -289,8 +289,10 @@ export function listExpenses(
   if (filter.keyword !== undefined && filter.keyword !== '') {
     // LIKE 里的 % 与 _ 是通配符，用户搜「50%」时不该被当成模式
     const escaped = filter.keyword.replace(/[\\%_]/g, (char) => `\\${char}`);
-    where.push("e.note LIKE '%' || ? || '%' ESCAPE '\\'");
-    params.push(escaped);
+    // 搜索框承诺的是「分类或备注」：备注、二级分类名、一级分类名都参与匹配
+    const like = "LIKE '%' || ? || '%' ESCAPE '\\'";
+    where.push(`(e.note ${like} OR c.name ${like} OR p.name ${like})`);
+    params.push(escaped, escaped, escaped);
   }
 
   if (filter.cursor !== undefined) {

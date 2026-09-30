@@ -62,12 +62,19 @@ export function centsToInput(cents: number): string {
 export function parseYuanToCents(input: string): number {
   if (input === '' || input === '.') return 0;
 
-  const [intPart = '0', decPart = ''] = input.split('.');
+  // 符号位先剥离，剩余部分按绝对值计算，最后统一赋符号。
+  // 否则 "-15.50" 会切出 yuan=-15、fen=50，算成 -1500+50=-1450（少算 1 元）；
+  // "-0.50" 会切出 yuan=Number("-0")===0，算成 0+50=+50（负数翻正）。
+  const negative = input.startsWith('-');
+  const abs = negative ? input.slice(1) : input;
+
+  const [intPart = '0', decPart = ''] = abs.split('.');
   const yuan = Number(intPart === '' ? '0' : intPart);
   const fen = Number((decPart + '00').slice(0, 2));
 
   if (!Number.isFinite(yuan) || !Number.isFinite(fen)) return 0;
-  return yuan * 100 + fen;
+  const cents = yuan * 100 + fen;
+  return negative ? -cents : cents;
 }
 
 /**

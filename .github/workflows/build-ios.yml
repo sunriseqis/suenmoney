@@ -1,16 +1,9 @@
 name: Build iOS IPA
 
 on:
+  # macOS runner 按 10 倍计费，收拢为 Tag 发版 / 手动派发两种入口，
+  # 日常 Web/脚本推送不再自动触发昂贵的 Xcode 编译。
   push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'ios/**'
-      - 'web/**'
-      - 'VERSION'
-      - 'scripts/**'
-      - '.github/workflows/build-ios.yml'
     tags:
       - 'v*'
   workflow_dispatch:

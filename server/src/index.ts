@@ -37,14 +37,38 @@ try {
 /**
  * 优雅退出。
  *
- * SQLite 在 WAL 模式下正常关闭会把 -wal/-shm 归并回主库文件；直接 kill
- * 虽然不会损坏数据库，但会留下需要下次打开时恢复的 WAL。
+ * SQLite 在 WAL 模式下正常关闭会把 -wal/-shm 归并回主库文件；只关 HTTP 服务
+ * 而硬退（process.exit）不会触发归并，下次容器启动必须走崩溃恢复。
+ * 因此停机顺序是：停调度器 → 关 HTTP → wal_checkpoint(TRUNCATE) → 关库 → 退出。
+ * 另设 5 秒兜底：HTTP 关闭挂死时也要保证库被归并关闭，不让容器卡在 stopping。
  */
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     app.log.info(`收到 ${signal}，正在关闭`);
     stopDailySnapshotScheduler();
     stopDailyWebdavScheduler();
-    void app.close().then(() => process.exit(0));
+
+    const hardExit = setTimeout(() => {
+      try {
+        db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        db.close();
+      } finally {
+        process.exit(0);
+      }
+    }, 5_000);
+    hardExit.unref();
+
+    app
+      .close()
+      .then(() => {
+        clearTimeout(hardExit);
+        db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        db.close();
+        process.exit(0);
+      })
+      .catch((error) => {
+        app.log.error(error);
+        process.exit(1);
+      });
   });
 }

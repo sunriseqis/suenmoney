@@ -329,7 +329,7 @@ async function handleSkip(todoId: string): Promise<void> {
           <!-- 标题行行尾关闭按键（A24），返回流水落地页 -->
           <RouterLink
             :to="{ name: 'ledger' }"
-            class="grid h-8 w-8 place-items-center rounded-sm bg-white/15 text-sm font-bold text-white transition-colors hover:bg-white/30"
+            class="relative grid h-10 w-10 place-items-center rounded-sm bg-white/15 text-sm font-bold text-white transition-colors hover:bg-white/30 after:absolute after:-inset-0.5 after:rounded-sm after:content-['']"
             aria-label="关闭概况，返回流水"
           >
             ✕

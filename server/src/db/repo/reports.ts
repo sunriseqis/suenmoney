@@ -310,6 +310,15 @@ function categoryCentsByRoot(db: DatabaseSync, scope: PeriodScope): Map<string, 
  * 平局时按 id 兜底，保证同一份数据每次返回同一条（否则界面上会出现
  * 「刷新一下最大的一笔换了个分类」这种无从解释的现象）。
  */
+/**
+ * 金额最大的一笔。
+ *
+ * 强制只看正数支出：`amount_cents > 0` 把退款/冲销排除在外。
+ * 仅按 `DESC` 排序是不够的 —— 全退款月份里所有金额都是负数，
+ * 「最大的」-100.00 也会被选中，退款就被评成了最大支出。
+ * 平局时按 id 兜底，保证同一份数据每次返回同一条（否则界面上会出现
+ * 「刷新一下最大的一笔换了个分类」这种无从解释的现象）。
+ */
 function largestExpense(db: DatabaseSync, scope: PeriodScope): LargestExpense | null {
   const where = scopeClause(scope);
 
@@ -322,7 +331,7 @@ function largestExpense(db: DatabaseSync, scope: PeriodScope): LargestExpense | 
          FROM expenses e
          JOIN categories c ON c.id = e.category_id
     LEFT JOIN categories root ON root.id = COALESCE(c.parent_id, c.id)
-        WHERE ${where.sql}
+        WHERE e.amount_cents > 0 AND ${where.sql}
         ORDER BY e.amount_cents DESC, e.id
         LIMIT 1`,
     )

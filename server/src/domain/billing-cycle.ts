@@ -192,10 +192,20 @@ export function resolvePostingDate(repaymentDate: string, cycle: PaymentCycle): 
   if (cycle.type === 'cash') return repaymentDate;
 
   const repay = parseDate(repaymentDate);
-  const { billingDay } = cycle;
+  const { billingDay, repaymentDay } = cycle;
+
+  // 月末吸附还原：待办日期是「每月 R 号、遇该月无此日取月末」生成的，
+  // 平年 2 月的「R=31 号」落在 2/28。直接拿 28 与账单日比较会把它误判成
+  // 上一期（如账单日 28 时 28 > 28 不成立），入账日倒退一个月。
+  // 因此当日期被月末吸附（是该月最后一天且 R 比它大）时，按配置的 R 参与比较。
+  const clampedToMonthEnd =
+    repay.day === daysInMonth(repay.year, repay.month) && repaymentDay > repay.day;
+  const effectiveDay = clampedToMonthEnd ? repaymentDay : repay.day;
 
   const period =
-    repay.day > billingDay ? { year: repay.year, month: repay.month } : shiftMonth(repay.year, repay.month, -1);
+    effectiveDay > billingDay
+      ? { year: repay.year, month: repay.month }
+      : shiftMonth(repay.year, repay.month, -1);
 
   return toDateString(period.year, period.month, clampDay(period.year, period.month, billingDay));
 }

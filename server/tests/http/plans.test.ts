@@ -523,6 +523,56 @@ describe('改计划（LPR 调整 / 提前还款）', () => {
     assert.equal(res.json().plan.amountCents, 250_000);
   });
 
+  test('调息重算保留 skipped 历史：期序不回缩，跳过月份不复活', async () => {
+    const created = await createPlan({
+      name: '跳过后续接',
+      categoryId,
+      paymentMethodId: cashId,
+      source: 'manual',
+      amountCents: 10_000,
+      periods: 3,
+      firstDueDate: '2026-01-05',
+    });
+    const planId = created.json().plan.id;
+    const todos = (await todosOf(planId)).json().todos as Array<Record<string, unknown>>;
+
+    // 用户显式跳过第 2 期（宽限期场景）—— 跳过是执行过的历史
+    const skipped = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todos[1]!['id']}/skip`,
+      headers: auth(),
+    });
+    assert.equal(skipped.statusCode, 200);
+
+    // 调息：改金额并重算剩余期数
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/plans/${planId}`,
+      headers: auth(),
+      payload: { amountCents: 11_000, remainingPeriods: 1 },
+    });
+    assert.equal(res.statusCode, 200);
+
+    const after = (await todosOf(planId)).json().todos as Array<Record<string, unknown>>;
+    const shape = after
+      .map((item) => `${item['periodSeq']}:${item['status']}`)
+      .sort((a, b) => Number(a.split(':')[0]) - Number(b.split(':')[0]));
+    assert.ok(
+      shape.includes('2:skipped'),
+      `被跳过的第 2 期必须保留历史，实际：${shape.join(', ')}`,
+    );
+    assert.ok(
+      !shape.includes('2:pending'),
+      '跳过的月份不允许被重新生成待办（期序回缩 / 时间轴倒流）',
+    );
+    assert.equal(
+      after.filter((item) => item['status'] === 'pending').length,
+      1,
+      '剩余期数 1 = 从最后执行期（skipped 第 2 期）之后续接 1 期',
+    );
+    assert.ok(shape.includes('3:pending'), '新待办应从第 3 期续接');
+  });
+
   test('剩余期数设为 0 = 只保留历史（相当于提前结清）', async () => {
     const res = await app.inject({
       method: 'PATCH',

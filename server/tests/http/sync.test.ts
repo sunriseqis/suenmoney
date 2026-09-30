@@ -16,18 +16,22 @@ const { migrate, openDatabase } = await import('../../src/db/index.ts');
 const { createUser } = await import('../../src/db/repo/users.ts');
 const { createCategory } = await import('../../src/db/repo/categories.ts');
 const { createPaymentMethod } = await import('../../src/db/repo/payment-methods.ts');
+const { createPlan, confirmTodo, listTodos } = await import('../../src/db/repo/plans.ts');
 const { buildServer } = await import('../../src/http/server.ts');
 
 let app: FastifyInstance;
 let userToken = '';
+let testUserId = '';
 let testCategoryId = '';
 let testPaymentMethodId = '';
+let syncDb: ReturnType<typeof openDatabase>;
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
 before(async () => {
   const db = openDatabase();
   migrate(db);
+  syncDb = db;
 
   const testUser = createUser(db, {
     username: 'syncuser',
@@ -35,6 +39,7 @@ before(async () => {
     password: 'password123',
     role: 'admin',
   });
+  testUserId = testUser.id;
 
   const cat = createCategory(db, {
     name: '餐饮食品',
@@ -213,6 +218,95 @@ describe('增量同步接口（GET/POST /api/sync）', () => {
     const pushJson = pushRes.json();
     // 幂等确认返回该 id，并不重复创建额外记录
     assert.equal(pushJson.expenseIds.length, 1);
+  });
+
+  test('毒丸隔离：单条新增被拒不影响同批其他条目入库', async () => {    const offlineId = '01J9OFFLINE000000000000003';
+
+    const pushRes = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers: auth(userToken),
+      payload: {
+        expenses: [
+          {
+            id: '01J9OFFLINE000000000000BAD',
+            amountCents: 1000,
+            categoryId: '01J9NOPTEXISTCATEGORY00000',
+            paymentMethodId: testPaymentMethodId,
+            spendDate: '2026-09-29',
+            note: '引用了不存在的分类 —— 服务端必须拒收这一条',
+          },
+          {
+            id: offlineId,
+            amountCents: 6600,
+            categoryId: testCategoryId,
+            paymentMethodId: testPaymentMethodId,
+            spendDate: '2026-09-29',
+            note: '同批的正常条目必须照常入库',
+          },
+        ],
+      },
+    });
+
+    assert.equal(pushRes.statusCode, 200, '单条坏数据不应把整个推送打回（否则 Outbox 被永久锁死）');
+    const pushJson = pushRes.json();
+    assert.equal(pushJson.pushedExpensesCount, 1);
+    assert.deepEqual(pushJson.expenseIds, [offlineId]);
+    assert.deepEqual(pushJson.failedExpenseIndexes, [0], '失败条目按请求下标回传，供客户端死信隔离');
+  });
+
+  test('离线撤销确认与恢复跳过（revertedTodoIds / restoredTodoIds）', async () => {
+    const plan = createPlan(syncDb, {
+      name: '同步撤销测试',
+      categoryId: testCategoryId,
+      paymentMethodId: testPaymentMethodId,
+      source: 'manual',
+      amountCents: 5_000,
+      periods: 2,
+      firstDueDate: '2026-10-05',
+      ownerId: testUserId,
+    });
+    const todos = listTodos(syncDb, { planId: plan.id });
+    assert.equal(todos.length, 2);
+
+    // 确认第 1 期 → 离线撤销 → 待办回 pending
+    confirmTodo(syncDb, todos[0]!.id, testUserId);
+
+    const revertRes = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers: auth(userToken),
+      payload: { revertedTodoIds: [todos[0]!.id] },
+    });
+    assert.equal(revertRes.statusCode, 200);
+    assert.equal(revertRes.json().revertedTodosCount, 1);
+    assert.equal(
+      listTodos(syncDb, { planId: plan.id }).find((t) => t.id === todos[0]!.id)!.status,
+      'pending',
+      '撤销推送后待办应回到 pending',
+    );
+
+    // 跳过第 2 期 → 离线恢复 → 待办回 pending
+    const skipRes = await app.inject({
+      method: 'POST',
+      url: `/api/plan-todos/${todos[1]!.id}/skip`,
+      headers: auth(userToken),
+    });
+    assert.equal(skipRes.statusCode, 200);
+
+    const restoreRes = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers: auth(userToken),
+      payload: { restoredTodoIds: [todos[1]!.id] },
+    });
+    assert.equal(restoreRes.statusCode, 200);
+    assert.equal(restoreRes.json().restoredTodosCount, 1);
+    assert.equal(
+      listTodos(syncDb, { planId: plan.id }).find((t) => t.id === todos[1]!.id)!.status,
+      'pending',
+      '恢复推送后待办应回到 pending',
+    );
   });
 
   test('离线补偿推送支持批量更新与删除支出（updatedExpenses / deletedExpenseIds）', async () => {
