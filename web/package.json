@@ -15,12 +15,14 @@
     "typecheck": "vue-tsc --noEmit",
     "cap": "cap",
     "cap:sync": "npm run build && cap sync",
-    "android:sync": "npm run build && cap sync android"
+    "android:sync": "npm run build && cap sync android",
+    "ios:sync": "npm run build && cap sync ios"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@fontsource-variable/outfit": "^5.1.1",
     "@lucide/vue": "^1.48.0",
     "misans": "^5.0.0",
