@@ -25,6 +25,7 @@ android/.idea/
 android/local.properties
 android/**/*.apk
 android/**/*.aab
+/app/
 
 # ---- ios：Xcode 与打包产物 ----
 ios/App/build/

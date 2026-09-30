@@ -8,14 +8,14 @@
     "node": ">=22.9"
   },
   "scripts": {
-    "dev": "node ../scripts/node-run.mjs --watch src/index.ts",
-    "start": "node ../scripts/node-run.mjs src/index.ts",
-    "test": "node ../scripts/node-run.mjs --test",
-    "test:schema": "node ../scripts/node-run.mjs --test tests/schema.test.ts",
-    "db:init": "node ../scripts/node-run.mjs src/cli/db-init.ts",
-    "user:add": "node ../scripts/node-run.mjs src/cli/user-add.ts",
+    "dev": "node scripts/node-run.mjs --watch src/index.ts",
+    "start": "node scripts/node-run.mjs src/index.ts",
+    "test": "node scripts/node-run.mjs --test",
+    "test:schema": "node scripts/node-run.mjs --test tests/schema.test.ts",
+    "db:init": "node scripts/node-run.mjs src/cli/db-init.ts",
+    "user:add": "node scripts/node-run.mjs src/cli/user-add.ts",
     "typecheck": "tsc --noEmit",
-    "seed:demo": "node ../scripts/node-run.mjs scripts/seed-demo.mjs"
+    "seed:demo": "node scripts/node-run.mjs scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",

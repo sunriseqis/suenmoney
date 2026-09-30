@@ -1,0 +1,40 @@
+name: CI Test & Lint
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Run Typecheck, Tests and Web Build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install Dependencies
+        run: |
+          npm --prefix server ci
+          npm --prefix web ci
+
+      - name: Run Full Checks
+        run: |
+          npm run check
