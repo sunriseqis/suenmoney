@@ -24,11 +24,12 @@ services:
       - SUENMONEY_DB_PATH=/app/data/suenmoney.sqlite
       - SUENMONEY_BACKUP_DIR=/app/data/backups
       - SUENMONEY_BACKUP_KEEP=14
+      # 时区：镜像默认已是 Asia/Shanghai；宿主机若在他处可在此覆盖
+      # - TZ=Asia/Shanghai
       # 可选：开放自动注册（默认仅允许管理员建号）
       # - SUENMONEY_ALLOW_REGISTRATION=false
     volumes:
       - suenmoney-data:/app/data
-      - /etc/localtime:/etc/localtime:ro
 
   suenmoney-web:
     image: ghcr.io/sunriseqis/suenmoney-web:latest
@@ -41,6 +42,8 @@ services:
       - "5310:80"
     environment:
       - BACKEND_URL=http://suenmoney-server:3310
+      # 时区：镜像默认已是 Asia/Shanghai（影响 Nginx 访问日志时间戳）
+      # - TZ=Asia/Shanghai
     depends_on:
       - suenmoney-server
 

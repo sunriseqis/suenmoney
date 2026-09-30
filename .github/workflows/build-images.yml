@@ -1,0 +1,113 @@
+name: Build and Push Images to GHCR
+
+# ==============================================================================
+# Server + Web 双镜像一体化构建（整合原 build-server.yml / build-web.yml）。
+# 触发按路径过滤：改 server 或 web 任一侧都会重建两个镜像 —— 镜像小、
+# 有 GHA 缓存，合并成单 job 反而省去重复的 checkout / login 开销。
+# 多架构 linux/amd64 + linux/arm64；默认分支推 latest，tag 推 semver。
+# ==============================================================================
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'server/**'
+      - 'web/**'
+      - 'VERSION'
+      - '.github/workflows/build-images.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: '是否推送到 ghcr.io'
+        required: true
+        type: boolean
+        default: true
+      custom_tag:
+        description: '自定义镜像 Tag（可选）'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-images:
+    name: Build & Push Server + Web Images
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU (Multi-arch support)
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolve Lowercase Owner Name
+        id: owner
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=${OWNER_LC}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (Server)
+        id: meta-server
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.owner }}/suenmoney-server
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=${{ inputs.custom_tag }},enable=${{ inputs.custom_tag != '' }}
+
+      - name: Extract Docker metadata (Web)
+        id: meta-web
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.owner }}/suenmoney-web
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=${{ inputs.custom_tag }},enable=${{ inputs.custom_tag != '' }}
+
+      - name: Build and push Server image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_images }}
+          tags: ${{ steps.meta-server.outputs.tags }}
+          labels: ${{ steps.meta-server.outputs.labels }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_images }}
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

@@ -25,7 +25,10 @@ ENV NODE_ENV=production \
     SUENMONEY_HOST=0.0.0.0 \
     SUENMONEY_PORT=3310 \
     SUENMONEY_DB_PATH=/app/data/suenmoney.sqlite \
-    SUENMONEY_BACKUP_DIR=/app/data/backups
+    SUENMONEY_BACKUP_DIR=/app/data/backups \
+    # 时区固定为东八区：快照/备份调度器的「每日」时刻、日志时间戳都依赖本地时区。
+    # 业务日期不受影响（客户端传入 YYYY-MM-DD，服务端不推算），见 docs/decisions.md。
+    TZ=Asia/Shanghai
 
 # 纯 JS 依赖：直接复用构建机装好的 node_modules
 COPY --from=deps /app/node_modules ./node_modules

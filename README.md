@@ -13,14 +13,28 @@ Android / iOS 复用同一份前端代码。
 
 ### 方式一：Docker Compose（推荐，自托管生产环境）
 
+镜像已自动托管在 GitHub Container Registry（`ghcr.io/sunriseqis/suenmoney-server` / `ghcr.io/sunriseqis/suenmoney-web`，多架构 amd64/arm64，每次推送 main 自动重建）：
+
 ```bash
-# 启动并在后台运行
+# 拉取镜像并启动（无需本地构建）
+docker compose pull && docker compose up -d
+
+# 更新版本
+docker compose pull && docker compose up -d
+
+# 或不拉镜像、直接本地构建
 docker compose up -d --build
 
 # （可选）若未在环境变量预设管理员，可在容器内手动添加首个管理员：
-docker compose exec server npm run user:add -- --username admin --name 管理员 --admin
+docker compose exec suenmoney-server npm run user:add -- --username admin --name 管理员 --admin
 ```
-打开 `http://127.0.0.1:5310` 即可开始使用。详细运维与备份请阅读 [部署与运维指南](docs/deploy.md)。
+
+打开 `http://127.0.0.1:5310` 即可开始使用。
+
+> **时区**：两个镜像默认 `TZ=Asia/Shanghai`（影响备份调度时刻与容器日志时间戳）。
+> 业务日期不受容器时区影响——客户端按本地时区判定后传入 `YYYY-MM-DD`。
+> 宿主机在其他时区时，在 `docker-compose.yml` 里覆盖 `TZ` 即可。
+> 详细运维与备份请阅读 [部署与运维指南](docs/deploy.md)。
 
 ---
 
