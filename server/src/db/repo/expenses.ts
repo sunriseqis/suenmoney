@@ -424,10 +424,106 @@ export interface BatchCreateExpensesResult {
   expenseIds: string[];
 }
 
+/** 批量创建中单行失败的原因，`index` 是入参数组下标（从 0 起）。 */
+export interface BatchCreateFailure {
+  index: number;
+  reason: string;
+}
+
 /**
- * 批量创建支出（用于账单导入等场景）。
+ * 逐条容错的批量创建结果。
  *
- * 在单次事务内完成校验、入账日/还款日推算与写入，避免数百次网络往返与磁盘事务提交。
+ * 与 `BatchCreateExpensesResult` 的区别在于：坏行被跳过并记入 `failed`，
+ * 而不是让整个批次回滚。`expenseIds` 仍然保留 —— 它是既有调用方与
+ * 幂等语义（同一客户端 ULID 重复提交不会产生重复记录）的载体。
+ */
+export interface BatchCreateExpensesTolerantResult {
+  createdCount: number;
+  expenseIds: string[];
+  failed: BatchCreateFailure[];
+}
+
+/**
+ * 新增/幂等命中一条支出，返回它的 id。
+ *
+ * **不含事务**：由调用方决定这一条是「整批同事务」还是「单条独立事务」。
+ * 之所以抽出来：旧的整批回滚路径与新的逐条容错路径必须共用同一套校验、
+ * 去重与落库逻辑，否则两条路径会在某次修改后悄悄漂移。
+ */
+function insertBatchItem(
+  db: DatabaseSync,
+  item: BatchExpenseItem,
+  ownerId: string,
+  deviceId: string | null,
+  timestamp: string,
+  categoryCache: Map<string, CategoryRow>,
+  methodCache: Map<string, PaymentMethodRow>,
+): string {
+  validateAmount(item.amountCents);
+  const note = validateNote(item.note ?? '');
+
+  let category = categoryCache.get(item.categoryId);
+  if (!category) {
+    category = requireUsableCategory(db, item.categoryId);
+    categoryCache.set(item.categoryId, category);
+  }
+
+  let method = methodCache.get(item.paymentMethodId);
+  if (!method) {
+    method = requireUsablePaymentMethod(db, item.paymentMethodId);
+    methodCache.set(item.paymentMethodId, method);
+  }
+
+  const { postingDate, repaymentDate } = resolveExpenseDates(
+    item.spendDate,
+    toPaymentCycle(method),
+  );
+
+  const id = typeof item.id === 'string' && item.id.trim() !== '' ? item.id.trim() : ulid();
+
+  // 幂等：客户端用自己生成的 ULID 作主键，重复导入同一批不会产生重复数据
+  const existing = db.prepare('SELECT id FROM expenses WHERE id = ?').get(id);
+  if (existing !== undefined) {
+    return id;
+  }
+
+  const row: ExpenseRow = {
+    id,
+    owner_id: ownerId,
+    amount_cents: item.amountCents,
+    category_id: category.id,
+    payment_method_id: method.id,
+    spend_date: item.spendDate,
+    posting_date: postingDate,
+    repayment_date: repaymentDate,
+    note,
+    source: 'manual',
+    plan_id: null,
+    plan_period_seq: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+    deleted_at: null,
+    rev: 1,
+    device_id: deviceId ?? null,
+  };
+
+  insertExpense(db, row, ownerId);
+  return id;
+}
+
+function assertBatchSize(count: number): void {
+  if (count > 5000) {
+    throw badRequest('单次批量导入不能超过 5000 笔');
+  }
+}
+
+/**
+ * 批量创建支出（**整批原子**语义，供客户端离线同步补偿使用）。
+ *
+ * 在单次事务内完成校验、入账日/还款日推算与写入：任一行无效即整批回滚。
+ * 这一语义对「客户端推送离线队列」是必要的 —— 调用方（sync.ts）用抛出的
+ * 异常来定位失败条目并做死信隔离，因此**不能**把这里改成逐条容错。
+ * 面向用户的账单导入请用 `batchCreateExpensesTolerant`。
  */
 export function batchCreateExpenses(
   db: DatabaseSync,
@@ -438,9 +534,7 @@ export function batchCreateExpenses(
   if (input.items.length === 0) {
     return { createdCount: 0, expenseIds: [] };
   }
-  if (input.items.length > 5000) {
-    throw badRequest('单次批量导入不能超过 5000 笔');
-  }
+  assertBatchSize(input.items.length);
 
   return inTransaction(db, () => {
     const categoryCache = new Map<string, CategoryRow>();
@@ -450,61 +544,59 @@ export function batchCreateExpenses(
     const timestamp = nowIso();
 
     for (const item of input.items) {
-      validateAmount(item.amountCents);
-      const note = validateNote(item.note ?? '');
-
-      let category = categoryCache.get(item.categoryId);
-      if (!category) {
-        category = requireUsableCategory(db, item.categoryId);
-        categoryCache.set(item.categoryId, category);
-      }
-
-      let method = methodCache.get(item.paymentMethodId);
-      if (!method) {
-        method = requireUsablePaymentMethod(db, item.paymentMethodId);
-        methodCache.set(item.paymentMethodId, method);
-      }
-
-      const { postingDate, repaymentDate } = resolveExpenseDates(
-        item.spendDate,
-        toPaymentCycle(method),
+      expenseIds.push(
+        insertBatchItem(db, item, ownerId, deviceId ?? null, timestamp, categoryCache, methodCache),
       );
-
-      const id =
-        typeof item.id === 'string' && item.id.trim() !== '' ? item.id.trim() : ulid();
-
-      const existing = db.prepare('SELECT id FROM expenses WHERE id = ?').get(id);
-      if (existing !== undefined) {
-        expenseIds.push(id);
-        continue;
-      }
-
-      const row: ExpenseRow = {
-        id,
-        owner_id: ownerId,
-        amount_cents: item.amountCents,
-        category_id: category.id,
-        payment_method_id: method.id,
-        spend_date: item.spendDate,
-        posting_date: postingDate,
-        repayment_date: repaymentDate,
-        note,
-        source: 'manual',
-        plan_id: null,
-        plan_period_seq: null,
-        created_at: timestamp,
-        updated_at: timestamp,
-        deleted_at: null,
-        rev: 1,
-        device_id: deviceId ?? null,
-      };
-
-      insertExpense(db, row, ownerId);
-      expenseIds.push(id);
     }
 
     return { createdCount: expenseIds.length, expenseIds };
   });
+}
+
+/**
+ * 批量创建支出，**逐条容错**（用于账单导入）。
+ *
+ * 为什么不能整批回滚：导入是「一次贴几百上千行」的场景，只要其中一行引用了
+ * 已失效的分类或支付方式，整批就会作废 —— 用户导入 3228 笔的 CSV 时，
+ * 一笔坏数据会让他丢掉全部 3227 笔好数据，而且界面上只看到一句笼统的报错，
+ * **不知道是哪一行**。逐条容错 + 返回 `failed`（含下标与原因）让好数据照常
+ * 落库、坏数据可被精确定位后修正重导。
+ *
+ * 每行独立事务：坏行回滚只影响自己，已成功写入的行不受牵连；同时每行的
+ * 「查重 + 插入 + recordChange」仍是一个原子单元，客户端 ULID 的幂等语义不变。
+ */
+export function batchCreateExpensesTolerant(
+  db: DatabaseSync,
+  input: BatchCreateExpensesInput,
+  ownerId: string,
+  deviceId?: string | null,
+): BatchCreateExpensesTolerantResult {
+  if (input.items.length === 0) {
+    return { createdCount: 0, expenseIds: [], failed: [] };
+  }
+  assertBatchSize(input.items.length);
+
+  const categoryCache = new Map<string, CategoryRow>();
+  const methodCache = new Map<string, PaymentMethodRow>();
+
+  const expenseIds: string[] = [];
+  const failed: BatchCreateFailure[] = [];
+  const timestamp = nowIso();
+
+  input.items.forEach((item, index) => {
+    try {
+      // 独立事务：坏行仅回滚自己，成功行照常 COMMIT 并落 recordChange
+      const id = inTransaction(db, () =>
+        insertBatchItem(db, item, ownerId, deviceId ?? null, timestamp, categoryCache, methodCache),
+      );
+      expenseIds.push(id);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      failed.push({ index, reason });
+    }
+  });
+
+  return { createdCount: expenseIds.length, expenseIds, failed };
 }
 
 /** 计划生成支出时复用（source='plan'）。 */

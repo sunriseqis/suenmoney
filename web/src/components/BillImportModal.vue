@@ -22,6 +22,7 @@ import {
   type ParsedBillItem,
   type ParseBillResult,
 } from '@/utils/bill-parser';
+import { decidePlacement } from '@/utils/category-placement';
 import { formatYuan } from '@/utils/money';
 
 import ChipButton from './ChipButton.vue';
@@ -45,6 +46,13 @@ const selectedSource = ref<'wechat' | 'alipay' | 'suenmoney'>('wechat');
 const parsing = ref(false);
 const importing = ref(false);
 const errorMessage = ref<string | null>(null);
+
+// 部分失败提示：服务端已改为逐条容错，成功部分照常落库、失败行被跳过。
+// 只报「成功导入 N 笔」会让用户察觉不到少了几笔，也无法追溯是哪几行，故单独留一个提示块。
+const importNotice = ref<{
+  createdCount: number;
+  failures: Array<{ label: string; reason: string }>;
+} | null>(null);
 
 const parseResult = ref<ParseBillResult | null>(null);
 const filterDirection = ref<'all' | 'expense' | 'income'>('expense');
@@ -110,6 +118,7 @@ watch(
       parseResult.value = null;
       rows.value = [];
       errorMessage.value = null;
+      importNotice.value = null;
       provisionNotice.value = null;
       provisionPlan.value = null;
       provisionDismissed.value = false;
@@ -180,15 +189,45 @@ async function confirmProvision(): Promise<void> {
     const roots = new Map<string, string>(); // 一级名 → id
     const children = new Map<string, string>(); // 二级名 → id
     const methods = new Map<string, string>(); // 支付方式名 → id
+    const rootNameById = new Map<string, string>(); // 一级 id → 名
     for (const c of dict.categories) {
-      if (c.parentId === null) roots.set(c.name, c.id);
-      else children.set(c.name, c.id);
+      if (c.parentId === null) {
+        roots.set(c.name, c.id);
+        rootNameById.set(c.id, c.name);
+      } else {
+        children.set(c.name, c.id);
+      }
     }
     for (const m of dict.paymentMethods) methods.set(m.name, m.id);
+
+    // 证据集合：现有字典里的一级/二级名 + **本批计划里同时有 parent 与 child 的项**。
+    // 后者是关键 —— 同一批数据里完整填了两列的行，能提供「叶子 → 父级」的父子关系，
+    // 用来纠正那些「二级分类」为空、叶子名直接写进「分类」列的行，避免误建一堆一级分类。
+    const knownRoots = new Set<string>();
+    const knownChildren = new Set<string>();
+    const knownChildToParent = new Map<string, string>();
+    for (const c of dict.categories) {
+      if (c.parentId === null) {
+        knownRoots.add(c.name);
+      } else {
+        knownChildren.add(c.name);
+        const parentName = rootNameById.get(c.parentId);
+        if (parentName !== undefined) knownChildToParent.set(c.name, parentName);
+      }
+    }
+    for (const { parent, child } of plan.categories) {
+      if (parent !== '' && child !== '') {
+        knownRoots.add(parent);
+        knownChildren.add(child);
+        knownChildToParent.set(child, parent);
+      }
+    }
 
     let createdCategories = 0;
     let createdMethods = 0;
     const resolved = new Map<string, string>(); // 'parent|child' → categoryId
+    // 因「完全没有任何层级证据」而兜底建成一级的名字，收集起来在完成提示里告知用户
+    const fallbackRoots = new Set<string>();
 
     const ensureRoot = async (name: string): Promise<string> => {
       let id = roots.get(name);
@@ -201,36 +240,55 @@ async function confirmProvision(): Promise<void> {
       return id;
     };
 
+    const ensureChild = async (parentId: string, name: string): Promise<string> => {
+      // 二级名已存在（哪怕挂在别的一级下）直接认领，避免同名两份
+      let id = children.get(name);
+      if (id === undefined) {
+        const created = await categoriesApi.create({ name, parentId });
+        id = created.category.id;
+        children.set(name, id);
+        createdCategories += 1;
+      }
+      return id;
+    };
+
     for (const { parent, child } of plan.categories) {
       const key = `${parent}|${child}`;
       if (resolved.has(key)) continue;
 
-      if (parent === '') {
-        // 只给了二级名：按名字认领现有分类（一级或二级均可），否则建为一级
-        const existing = children.get(child) ?? roots.get(child);
-        if (existing !== undefined) {
-          resolved.set(key, existing);
+      // 按证据推断落位：能认领就认领、能证明是二级就挂到父下、否则才兜底建一级
+      const placement = decidePlacement({
+        parent,
+        child,
+        knownChildToParent,
+        knownRoots,
+        knownChildren,
+      });
+
+      if (placement.kind === 'existing') {
+        const id = children.get(placement.categoryName) ?? roots.get(placement.categoryName);
+        if (id !== undefined) {
+          resolved.set(key, id);
           continue;
         }
-        resolved.set(key, await ensureRoot(child));
+        // 名字有证据但库里尚未存在（证据仅来自本批数据）：按证据落到父下，否则建根
+        const evidenceParent = knownChildToParent.get(placement.categoryName);
+        if (evidenceParent !== undefined) {
+          resolved.set(key, await ensureChild(await ensureRoot(evidenceParent), placement.categoryName));
+        } else {
+          resolved.set(key, await ensureRoot(placement.categoryName));
+        }
         continue;
       }
 
-      const rootId = await ensureRoot(parent);
-      if (child === '' || child === parent) {
-        resolved.set(key, rootId);
+      if (placement.kind === 'createChild') {
+        resolved.set(key, await ensureChild(await ensureRoot(placement.parentName), placement.childName));
         continue;
       }
-      // 二级名已存在（哪怕挂在别的一级下）直接认领，避免同名两份
-      const existingChild = children.get(child);
-      if (existingChild !== undefined) {
-        resolved.set(key, existingChild);
-        continue;
-      }
-      const created = await categoriesApi.create({ name: child, parentId: rootId });
-      children.set(child, created.category.id);
-      createdCategories += 1;
-      resolved.set(key, created.category.id);
+
+      // createRoot：没有任何证据，只能建一级 —— 记下来让用户知晓并去设置里手改
+      fallbackRoots.add(placement.name);
+      resolved.set(key, await ensureRoot(placement.name));
     }
 
     for (const name of plan.methods) {
@@ -246,6 +304,10 @@ async function confirmProvision(): Promise<void> {
       methods.set(name, created.paymentMethod.id);
       createdMethods += 1;
     }
+
+    // 先强制刷新字典，再重建预览行 —— 顺序不能反：分类下拉（allSelectableCategories）
+    // 是从 dict 计算出来的，字典没刷进来时新建的分类 id 不在选项里，行会显示成空白「无分类」。
+    await dict.load(true);
 
     // 回填解析结果并重建预览行 —— 不再需要关掉窗口重导
     const result = parseResult.value;
@@ -265,11 +327,15 @@ async function confirmProvision(): Promise<void> {
       buildRows(result);
     }
 
-    await dict.load();
-
-    provisionNotice.value =
+    let noticeText =
       `已新建分类 ${createdCategories} 个、支付方式 ${createdMethods} 个` +
       (createdMethods > 0 ? '（新建信用卡默认 1日出账/10日还款，可在设置中调整账期）' : '');
+    if (fallbackRoots.size > 0) {
+      noticeText +=
+        `；另有 ${fallbackRoots.size} 个名字缺少层级信息，已按一级创建：` +
+        `${[...fallbackRoots].join('、')}，可在设置中调整到正确的一级分类下`;
+    }
+    provisionNotice.value = noticeText;
     provisionPlan.value = null;
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : '自动创建失败，请手动指定分类与支付方式';
@@ -411,6 +477,7 @@ async function doImport(): Promise<void> {
   if (selectedCount.value === 0 || importing.value) return;
 
   errorMessage.value = null;
+  importNotice.value = null;
 
   // 校验所有选中的行是否具备分类和支付方式
   const missingCategoryIndex = selectedRows.value.findIndex((r) => !r.categoryId);
@@ -427,7 +494,9 @@ async function doImport(): Promise<void> {
 
   importing.value = true;
   try {
-    const payload = selectedRows.value.map((r) => ({
+    // 提交顺序与 selectedRows 一一对应，服务端回来的是同一数组的下标
+    const targetRows = selectedRows.value;
+    const payload = targetRows.map((r) => ({
       amountCents: r.amountCents,
       categoryId: r.categoryId!,
       paymentMethodId: r.paymentMethodId!,
@@ -436,9 +505,35 @@ async function doImport(): Promise<void> {
     }));
 
     const result = await expensesApi.batchCreate(payload);
+
+    // 新建的分类/支付方式只在服务端，客户端字典是带缓存的（loaded 为真时 load() 直接 return）。
+    // 导入成功后强制刷新一次，否则列表侧拿着旧字典渲染，新导入的流水会显示成「未分类」。
+    await dict.load(true);
+
+    // 成功的那部分必须照常生效：即便有行被跳过，也不能把整批当失败。
+    // 本项目导入是幂等的（重复导入不会产生重复数据），但若整体报失败，用户会以为一笔没进
+    // 而重导一遍，白白多一次操作；况且成功的笔数确已落库，父组件/列表侧必须收到通知去刷新。
     ui.markDataChanged();
     emit('imported', result.createdCount);
-    emit('close');
+
+    if (result.failed.length === 0) {
+      emit('close');
+      return;
+    }
+
+    // 有失败行时不直接关窗：留在弹窗里逐条交代「哪几行没进、为什么」。
+    // index 是提交数组下标，映射回选中的行给出人看得懂的口径（第 N 笔 + 日期 + 金额 + 对手方）。
+    importNotice.value = {
+      createdCount: result.createdCount,
+      failures: result.failed.map((f) => {
+        const row = targetRows[f.index];
+        const label =
+          row === undefined
+            ? `第 ${f.index + 1} 笔`
+            : `第 ${f.index + 1} 笔 · ${row.spendDate} · ${formatYuan(row.amountCents)} · ${row.note || row.counterparty || '—'}`;
+        return { label, reason: f.reason };
+      }),
+    };
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : '批量导入失败，请重试';
   } finally {
@@ -537,6 +632,25 @@ function close(): void {
         <p v-if="provisionNotice !== null" class="mb-4 rounded-sm bg-primary/10 p-3 text-xs text-primary-text">
           {{ provisionNotice }}
         </p>
+
+        <!-- 部分失败提示：成功部分已入账，被跳过的行逐条列出（最多 5 条） -->
+        <div
+          v-if="importNotice !== null"
+          class="mb-4 rounded-sm bg-accent/10 p-3 text-xs text-accent-text"
+        >
+          <p class="font-semibold">
+            已成功导入 {{ importNotice.createdCount }} 笔，另有
+            {{ importNotice.failures.length }} 笔被跳过（未入账）。
+          </p>
+          <ul class="mt-1 space-y-0.5 leading-relaxed">
+            <li v-for="(f, i) in importNotice.failures.slice(0, 5)" :key="i" class="break-all">
+              {{ f.label }}：{{ f.reason }}
+            </li>
+          </ul>
+          <p v-if="importNotice.failures.length > 5" class="mt-1">
+            其余略，等 {{ importNotice.failures.length }} 笔。
+          </p>
+        </div>
 
         <!-- 步骤 1：未选择文件或重新上传 -->
         <div
