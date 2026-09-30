@@ -5,6 +5,8 @@
 
 # ---- 依赖 ----
 node_modules/
+# 仓库根无 dependencies，前后端各自用子目录 lock，根锁不入库
+/package-lock.json
 
 # ---- server：没有构建步骤，只有运行时数据 ----
 server/data/
@@ -31,6 +33,9 @@ android/**/*.aab
 ios/App/build/
 ios/App/Pods/
 ios/**/*.xcworkspace/xcuserdata/
+# SPM 迷你 workspace 索引由 Xcode 打开时自动生成，不入库；
+# 但 xcshareddata/swiftpm/Package.resolved（iOS 依赖锁）必须跟踪，别整目录忽略
+ios/**/*.xcworkspace/contents.xcworkspacedata
 ios/**/*.xcodeproj/xcuserdata/
 ios/**/*.ipa
 ios/**/*.xcarchive
