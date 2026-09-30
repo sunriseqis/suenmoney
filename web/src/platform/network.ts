@@ -47,6 +47,13 @@ export function onNetworkChange(callback: NetworkChangeListener): () => void {
     connection.addEventListener('change', triggerChange);
   }
 
+  // 安卓 WebView 里 online/offline 事件常常完全不触发（真机实测：断网恢复后
+  // 应用仍自认为离线，待同步提醒不消失）。所以注册时若 navigator 自报在线，
+  // 就乐观放行一次回调，让上层立刻安排一次真实探测；连通性最终由 sync 的心跳校正。
+  if (typeof navigator !== 'undefined' && navigator.onLine) {
+    triggerChange();
+  }
+
   return () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     if (typeof window !== 'undefined') {

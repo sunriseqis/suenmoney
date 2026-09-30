@@ -41,6 +41,11 @@ import { useUiStore } from '@/stores/ui';
 import { categoryColorVar } from '@/utils/category-colors';
 import { getCachedExpenses, saveCachedExpenses } from '@/utils/idb';
 import {
+  buildMonthlyReportFallback,
+  buildSummaryReportFallback,
+  buildYearlyReportFallback,
+} from '@/utils/offline-stats';
+import {
   currentMonth,
   daysInMonth,
   elapsedDays,
@@ -209,6 +214,23 @@ const today = todayLocal();
 // 月档：流水加载
 // ---------------------------------------------------------------------------
 
+/**
+ * 读取当前档位对应的本地缓存流水。
+ *
+ * 缓存里的 `month` 索引是 **spendDate** 口径（与流水列表的查询维度同源），
+ * 所以年档按 spendDate 的年份前缀过滤，而不是按报表归属用的还款日 —— 列表与
+ * 在线请求保持同一口径，避免「列表少了上一年 12 月还款的那笔」这类错位。
+ */
+async function loadCachedForScope(): Promise<Expense[]> {
+  if (scope.value === 'month') return getCachedExpenses(month.value);
+  const all = await getCachedExpenses();
+  if (scope.value === 'year') {
+    const prefix = `${year.value}-`;
+    return all.filter((item) => item.spendDate.startsWith(prefix));
+  }
+  return all;
+}
+
 async function fetchPage(cursor: string | null): Promise<void> {
   try {
     // 搜索范围随档位：月=当月，年=全年，全部=全库历史
@@ -230,7 +252,7 @@ async function fetchPage(cursor: string | null): Promise<void> {
 
     if (cursor === null) {
       // 检查本地是否有尚未同步至服务端的离线待发记录，融合展示在顶部
-      const cached = await getCachedExpenses(month.value);
+      const cached = await loadCachedForScope();
       const existingIds = new Set(page.items.map((i) => i.id));
       const pendingLocal = cached.filter(
         (c) => (c as { isOfflinePending?: boolean }).isOfflinePending && !existingIds.has(c.id),
@@ -248,7 +270,7 @@ async function fetchPage(cursor: string | null): Promise<void> {
   } catch (error) {
     // 离线容灾：如果网络断开且为首屏加载，优先从本地 IndexedDB 恢复展示
     if (cursor === null) {
-      const cached = await getCachedExpenses(month.value);
+      const cached = await loadCachedForScope();
       if (cached.length > 0) {
         items.value = cached;
         nextCursor.value = null;
@@ -314,7 +336,14 @@ async function loadYearData(): Promise<void> {
     await loadSelectedMonthDetail(candidateMonth);
   } catch (error) {
     if (error instanceof ApiError && error.status === 0) {
-      // 离线静默
+      // 离线兜底：用本地缓存流水聚合出年档日历与选中月详情。
+      const cached = await getCachedExpenses();
+      yearlyReportData.value = buildYearlyReportFallback(cached, year.value);
+
+      const currentM = currentMonth();
+      const candidateMonth = currentM.startsWith(year.value) ? currentM : `${year.value}-01`;
+      selectedCalendarKey.value = candidateMonth;
+      await loadSelectedMonthDetail(candidateMonth);
       return;
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载年档日历失败';
@@ -329,7 +358,9 @@ async function loadSelectedMonthDetail(m: string): Promise<void> {
     const res = await reportsApi.monthly(m);
     selectedMonthReport.value = res.report;
   } catch {
-    selectedMonthReport.value = null;
+    // 离线兜底：下钻卡也要能显示缓存数据，而不是空白。
+    const cached = await getCachedExpenses();
+    selectedMonthReport.value = buildMonthlyReportFallback(cached, m);
   } finally {
     loadingCard.value = false;
   }
@@ -350,6 +381,16 @@ async function loadSummaryData(): Promise<void> {
     }
   } catch (error) {
     if (error instanceof ApiError && error.status === 0) {
+      // 离线兜底：用本地缓存流水聚合出全部档日历与选中年详情。
+      const cached = await getCachedExpenses();
+      const fallback = buildSummaryReportFallback(cached);
+      summaryReportData.value = fallback;
+
+      const latestYear = fallback.years.length > 0 ? fallback.years[fallback.years.length - 1]?.year : year.value;
+      if (latestYear) {
+        selectedCalendarKey.value = latestYear;
+        await loadSelectedYearDetail(latestYear);
+      }
       return;
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载汇总日历失败';
@@ -364,7 +405,9 @@ async function loadSelectedYearDetail(y: string): Promise<void> {
     const res = await reportsApi.yearly(y);
     selectedYearReport.value = res.report;
   } catch {
-    selectedYearReport.value = null;
+    // 离线兜底：下钻年概况卡也要能显示缓存数据。
+    const cached = await getCachedExpenses();
+    selectedYearReport.value = buildYearlyReportFallback(cached, y);
   } finally {
     loadingCard.value = false;
   }
@@ -380,7 +423,12 @@ async function loadTopCardData(): Promise<void> {
     currentMonthlyReport.value = mRes.report;
     currentMonthTotalCents.value = mRes.report.totalCents;
   } catch {
-    // 静默兜底
+    // 离线兜底：顶卡金额不能显示 0 —— 用本地缓存流水聚合出当月报表。
+    const targetM = scope.value === 'month' ? month.value : currentMonth();
+    const cached = await getCachedExpenses();
+    const fallback = buildMonthlyReportFallback(cached, targetM);
+    currentMonthlyReport.value = fallback;
+    currentMonthTotalCents.value = fallback.totalCents;
   }
 }
 
@@ -406,6 +454,14 @@ watch([categoryId, paymentMethodId], () => {
   if (scope.value === 'month' || isSearchActive.value) reloadList();
 });
 watch(() => ui.dataVersion, refresh);
+
+// 网络恢复后重新拉服务端数据，用在线口径覆盖本地回退。
+watch(
+  () => syncStore.isOnline,
+  (online) => {
+    if (online) void refresh();
+  },
+);
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 watch(keyword, () => {

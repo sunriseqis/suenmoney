@@ -43,6 +43,31 @@ export function notifyConnectivity(isOnline: boolean, activeUrl: string | null):
 }
 
 /**
+ * 离线闸门时间戳。任一次网络层失败（ApiError.status === 0）后置为 now + 10s。
+ *
+ * 存在的理由：候选地址往往不止一个（内网/Tailscale/公网），离线时逐个都要等满超时，
+ * 一次记账要卡 6~18s，界面像是死了。已知离线时直接失败、不发任何网络包，
+ * 用户的操作早已落本地，立即给出「已保存在本地」比空转等待有用得多。
+ * 之所以是「时间窗」而不是「布尔开关」：手机网络恢复没有可靠事件通知，
+ * 用一个会过期的窗口让请求定期重新试探，才能真正恢复。
+ */
+let offlineUntil = 0;
+const OFFLINE_COOLDOWN_MS = 10000;
+
+/** 单次候选地址的请求超时：首个 4s、其余 2.5s，且全部候选合计不超过 6s。 */
+const REQUEST_FIRST_TIMEOUT_MS = 4000;
+const REQUEST_RETRY_TIMEOUT_MS = 2500;
+const REQUEST_TOTAL_BUDGET_MS = 6000;
+
+/**
+ * 探测/健康检查类请求不受离线闸门约束。
+ * 否则闸门生效期间没有任何请求能走网络，就永远等不到探测成功来清零闸门。
+ */
+function isConnectivityProbe(path: string): boolean {
+  return path.includes('/api/health');
+}
+
+/**
  * 读取配置的服务端地址列表（按优先级由高到低排序，通常服务端 1 为内网，2 为 Tailscale/异地，3 为公网域名）。
  */
 export function readServerUrls(): string[] {
@@ -174,6 +199,8 @@ export async function probeServerUrl(
     clearTimeout(timer);
     const latencyMs = Date.now() - start;
     if (resp.status >= 200 && resp.status < 500) {
+      // 探测成功 => 网络确实可用，立刻解除离线闸门，让积压的请求马上重试
+      offlineUntil = 0;
       return { ok: true, status: resp.status, latencyMs };
     }
     return { ok: false, status: resp.status, latencyMs, error: `HTTP ${resp.status}` };
@@ -308,6 +335,12 @@ function toApiError(response: Response, raw: string): ApiError {
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  // 离线闸门：已知离线时立即失败，异常语义仍是 ApiError(status=0)，
+  // 调用方无需改动，UI 也能立刻响应而不是干等超时。
+  if (Date.now() < offlineUntil && !isConnectivityProbe(path)) {
+    throw new ApiError(0, '当前处于离线状态，操作已保存在本地');
+  }
+
   const headers: Record<string, string> = {};
 
   const token = readToken();
@@ -323,11 +356,20 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     ? [currentActive, ...configuredUrls.filter((u) => u !== currentActive)]
     : [currentActive, ...configuredUrls];
 
-  for (const baseUrl of candidateUrls) {
+  // 总预算：全候选合计不超过 6s，超预算就不再尝试后续候选。
+  // 首个候选给 4s（内网/公网首次握手可能稍慢），其余 2.5s，再长就没意义了。
+  const budgetStart = Date.now();
+  for (let i = 0; i < candidateUrls.length; i++) {
+    const baseUrl = candidateUrls[i];
     if (!baseUrl) continue;
+    const remaining = REQUEST_TOTAL_BUDGET_MS - (Date.now() - budgetStart);
+    if (i > 0 && remaining <= 0) break;
     const fullUrl = buildUrlFor(baseUrl, path, options.query);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      Math.min(i === 0 ? REQUEST_FIRST_TIMEOUT_MS : REQUEST_RETRY_TIMEOUT_MS, remaining),
+    );
 
     try {
       const response = await fetch(fullUrl, {
@@ -337,6 +379,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
         signal: controller.signal,
       });
       clearTimeout(timeout);
+
+      // 请求成功送达（服务端有响应）=> 网络可用，解除离线闸门
+      offlineUntil = 0;
 
       // 请求成功送达（服务端有响应）
       if (baseUrl !== currentActive) {
@@ -367,7 +412,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       if (err instanceof ApiError && err.status !== 0) {
         throw err;
       }
-      // 网络层失败（连不上、超时等）：如果有其它备选服务器，继续循环重试下一个
+      // 网络层失败（连不上、超时等）：落闸，防止后续请求逐候选空转；
+      // 如果有其它备选服务器，继续循环重试下一个（成功会自动清闸）
+      offlineUntil = Date.now() + OFFLINE_COOLDOWN_MS;
     }
   }
 
@@ -391,6 +438,11 @@ export async function downloadFile(
   path: string,
   query?: Record<string, QueryValue>,
 ): Promise<DownloadedFile> {
+  // 与 request 共用同一个离线闸门：已知离线时立即失败，不空等 10s×候选数
+  if (Date.now() < offlineUntil) {
+    throw new ApiError(0, '当前处于离线状态，操作已保存在本地');
+  }
+
   const headers: Record<string, string> = {};
   const token = readToken();
   if (token !== null) headers['authorization'] = `Bearer ${token}`;
@@ -411,6 +463,9 @@ export async function downloadFile(
       const response = await fetch(fullUrl, { headers, signal: controller.signal });
       clearTimeout(timeout);
 
+      // 下载成功送达 => 网络可用，解除离线闸门
+      offlineUntil = 0;
+
       if (baseUrl !== currentActive) {
         setActiveServerUrl(baseUrl);
         notifyConnectivity(true, baseUrl);
@@ -425,6 +480,8 @@ export async function downloadFile(
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof ApiError && err.status !== 0) throw err;
+      // 网络层失败：落闸，后续请求在本轮冷却期内直接失败
+      offlineUntil = Date.now() + OFFLINE_COOLDOWN_MS;
     }
   }
 

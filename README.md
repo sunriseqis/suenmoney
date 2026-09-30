@@ -29,7 +29,10 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 docker compose exec suenmoney-server npm run user:add -- --username admin --name 管理员 --admin
 ```
 
-打开 `http://127.0.0.1:5310` 即可开始使用。
+在部署机上打开 `http://127.0.0.1:5310`（局域网内其它设备用 `http://<宿主机IP>:5310`）即可开始使用。
+
+> **访问入口只有前端 5310**：后端 3310 仅在 Docker 内部网络被 Nginx 反向代理（`/api`），**不映射到宿主机**，
+> 因此 App 的「后端服务器设置」或浏览器地址一律填前端地址（`http://<宿主机IP>:5310`），**不要填 3310**。
 
 > **时区**：两个镜像默认 `TZ=Asia/Shanghai`（影响备份调度时刻与容器日志时间戳）。
 > 业务日期不受容器时区影响——客户端按本地时区判定后传入 `YYYY-MM-DD`。
@@ -54,6 +57,9 @@ npm run dev:web              # 前端，默认 127.0.0.1:5310
 ```
 
 打开 `http://127.0.0.1:5310` 即可。第一个账号会自动成为管理员。
+
+> 上面的 `127.0.0.1:3310` 是**本地开发**时后端进程的监听地址（仅本机可达，仅供 `dev:web` 开发代理使用）；
+> App / 浏览器填写的访问入口仍然是前端 `127.0.0.1:5310`。
 
 > **关于实验性旗标**：`node:sqlite` 与 TypeScript 类型剥离在不同 Node 小版本上
 > 的状态不一致（22.5 起需要旗标，新版本已默认开启）。`scripts/node-run.mjs`

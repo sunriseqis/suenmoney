@@ -22,6 +22,7 @@ import {
 } from '@/api';
 import PaymentIcon from '@/components/PaymentIcon.vue';
 import { usePlansStore } from '@/stores/plans';
+import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
 import {
   currentMonth,
@@ -31,7 +32,13 @@ import {
   formatMonthLabel,
   shiftMonth,
 } from '@/utils/dates';
+import { getCachedExpenses } from '@/utils/idb';
 import { adaptiveAmountStyle, formatCompact, formatYuan } from '@/utils/money';
+import {
+  buildMonthlyReportFallback,
+  buildSummaryReportFallback,
+  buildYearlyReportFallback,
+} from '@/utils/offline-stats';
 import {
   reminderStateLabel,
   reminderToneOf,
@@ -43,6 +50,7 @@ import {
 const router = useRouter();
 const ui = useUiStore();
 const plansStore = usePlansStore();
+const syncStore = useSyncStore();
 
 type Scope = 'month' | 'year' | 'all';
 
@@ -56,6 +64,11 @@ const summary = ref<SummaryReport | null>(null);
 
 const loading = ref(true);
 const errorMessage = ref<string | null>(null);
+/**
+ * 是否处于「离线本地口径」：最近一次请求因网络不可达（status 0）失败。
+ * 为 true 时 monthly/yearly/summary 展示的是本地缓存流水聚合的结果。
+ */
+const isOffline = ref(false);
 const isPopoverOpen = ref(false);
 
 const chipbarRef = ref<HTMLElement | null>(null);
@@ -126,9 +139,13 @@ async function load(): Promise<void> {
     monthly.value = monthlyRes.report;
     yearly.value = yearlyRes.report;
     summary.value = summaryRes.report;
+    isOffline.value = false;
   } catch (error) {
     if (error instanceof ApiError && error.status === 0) {
-      // 离线静默，不展示报错横幅
+      // 离线：在线报表不可用，改用本地缓存流水聚合的报表。
+      // 这样离线记一笔后 ui.dataVersion 变化触发重算，hero 数字立刻刷新。
+      isOffline.value = true;
+      await loadOfflineReports();
       return;
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载失败，请重试';
@@ -137,8 +154,27 @@ async function load(): Promise<void> {
   }
 }
 
+/**
+ * 用本地缓存流水构造报表形状的对象，塞回原来的 monthly/yearly/summary ref，
+ * 使模板里既有的字段绑定（hero、本月要还、热力图…）无需改造即可消费。
+ */
+async function loadOfflineReports(): Promise<void> {
+  const cached = await getCachedExpenses();
+  monthly.value = buildMonthlyReportFallback(cached, month.value);
+  yearly.value = buildYearlyReportFallback(cached, year.value);
+  summary.value = buildSummaryReportFallback(cached);
+}
+
 watch(month, load);
 watch(() => ui.dataVersion, load);
+
+// 网络恢复后重新拉服务端数据：服务端是权威，用在线口径覆盖本地回退。
+watch(
+  () => syncStore.isOnline,
+  (online) => {
+    if (online) void load();
+  },
+);
 
 // ---------------------------------------------------------------------------
 // 桌面 Hero 指标
@@ -599,6 +635,9 @@ async function handleSkip(todoId: string): Promise<void> {
 
       <p v-if="errorMessage !== null" class="mt-4 text-center text-sm font-semibold text-danger-text">
         {{ errorMessage }}
+      </p>
+      <p v-if="isOffline" class="mt-4 text-center text-xs text-ink-muted">
+        离线数据，联网后自动校准
       </p>
     </header>
 

@@ -24,15 +24,23 @@ import {
 import PaymentIcon from '@/components/PaymentIcon.vue';
 import PeriodPicker from '@/components/PeriodPicker.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
+import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
 import { categoryColorVar } from '@/utils/category-colors';
 import { currentMonth, elapsedDays, formatMonthDay, formatMonthLabel } from '@/utils/dates';
 import { buildDonutArcs, DONUT_RADIUS } from '@/utils/donut';
+import { getCachedExpenses } from '@/utils/idb';
 import { formatCompact, formatYuan } from '@/utils/money';
+import {
+  buildMonthlyReportFallback,
+  buildSummaryReportFallback,
+  buildYearlyReportFallback,
+} from '@/utils/offline-stats';
 
 const route = useRoute();
 const ui = useUiStore();
 const dict = useDictionariesStore();
+const syncStore = useSyncStore();
 
 type Scope = 'month' | 'year' | 'all';
 
@@ -58,6 +66,12 @@ const summary = ref<SummaryReport | null>(null);
 const loading = ref(true);
 const errorMessage = ref<string | null>(null);
 
+/**
+ * 是否处于「离线本地口径」：最近一次请求因网络不可达（status 0）失败。
+ * 为 true 时下面几个 computed 展示的是本地缓存流水聚合的结果。
+ */
+const isOffline = ref(false);
+
 // 展开的二级分类集合
 const expandedCategoryIds = ref<Set<string>>(new Set());
 
@@ -80,9 +94,13 @@ async function load(): Promise<void> {
       const res = await reportsApi.summary();
       summary.value = res.report;
     }
+    isOffline.value = false;
   } catch (error) {
     if (error instanceof ApiError && error.status === 0) {
-      // 离线静默，不展示报错横幅
+      // 离线：在线报表不可用，改用本地缓存流水聚合的报表。
+      // 这样离线记一笔后，ui.dataVersion 变化触发重算，分类/支付/总额立刻刷新。
+      isOffline.value = true;
+      await loadOfflineReports();
       return;
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载报表失败，请重试';
@@ -91,12 +109,31 @@ async function load(): Promise<void> {
   }
 }
 
+/**
+ * 用本地缓存流水构造报表形状的对象，塞回原来的 monthly/yearly/summary ref，
+ * 使模板里既有的字段绑定（分类构成、支付统计、总额、笔数…）无需改造即可消费。
+ */
+async function loadOfflineReports(): Promise<void> {
+  const cached = await getCachedExpenses();
+  monthly.value = buildMonthlyReportFallback(cached, month.value);
+  yearly.value = buildYearlyReportFallback(cached, year.value);
+  summary.value = buildSummaryReportFallback(cached);
+}
+
 onMounted(() => {
   dict.load();
   load();
 });
 watch([scope, month, year], load);
 watch(() => ui.dataVersion, load);
+
+// 网络恢复后重新拉服务端数据：服务端是权威，用在线口径覆盖本地回退。
+watch(
+  () => syncStore.isOnline,
+  (online) => {
+    if (online) void load();
+  },
+);
 
 // ---------------------------------------------------------------------------
 // 基础统计与分类构成
@@ -583,6 +620,9 @@ const memberRows = computed(() => {
 
       <p v-if="errorMessage !== null" class="mt-3 text-center text-sm text-danger-text">
         {{ errorMessage }}
+      </p>
+      <p v-if="isOffline" class="mt-3 text-center text-xs text-ink-muted">
+        离线数据，联网后自动校准
       </p>
     </header>
 

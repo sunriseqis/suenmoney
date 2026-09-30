@@ -15,8 +15,13 @@ services:
     image: ghcr.io/sunriseqis/suenmoney-server:latest
     container_name: suenmoney-server
     restart: unless-stopped
-    ports:
-      - "3310:3310"
+    # 后端**不映射到宿主机**：它只在本 compose 内部网络（服务名 suenmoney-server:3310）
+    # 被 Web 容器的 Nginx 反向代理访问（见下方 BACKEND_URL）。
+    # 对外暴露 3310 没有用途，反而会让用户误把「后端端口」当成访问地址填进 App ——
+    # 直连后端会绕过 Nginx 的 /api 反代与静态资源一体入口，等于绕开了正常的访问路径。
+    # 本地开发或需要直连后端调试时，临时加回下面两行即可：
+    # ports:
+    #   - "3310:3310"
     environment:
       - SUENMONEY_HOST=0.0.0.0
       - SUENMONEY_PORT=3310

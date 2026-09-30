@@ -15,7 +15,7 @@ SuenMoney 是专为家庭设计的精益记账系统。本文档介绍如何使�
 │  - 托管 Vue 3 SPA 静态资源与字体 (Gzip 强缓存)    │
 │  - 反向代理 /api/ 到后端服务                     │
 └───────────────────────┬───────────────────────┘
-                        │ (Docker 内部网络: 3310)
+                        │ (Docker 内部网络: 3310，仅容器间可达)
                         ▼
 ┌───────────────────────────────────────────────┐
 │             Fastify (Server)                  │
@@ -52,7 +52,6 @@ cd suenmoney
 
 ```yaml
     environment:
-      - SUENMONEY_PORT=3310
       - SUENMONEY_ADMIN_USER=admin
       - SUENMONEY_ADMIN_PASSWORD=your_secure_password
       - SUENMONEY_ADMIN_NAME=家庭管理员
@@ -69,13 +68,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 ### 5. 访问与初始化
-服务默认监听在宿主机的 `http://localhost:5310`。
+宿主机对外只暴露前端 Web 入口，默认在 `http://localhost:5310`（Nginx 会在容器内部把 `/api` 反代到后端的 3310，后端自身**不映射到宿主机**）。
 - 若已在 `docker-compose.yml` 中配置了初始管理员，直接登录即可开始记账；
 - 若未配置，可在容器内手动添加管理员：
 ```bash
 docker compose exec suenmoney-server npm run user:add -- --username admin --name 管理员 --password 你的安全口令 --admin
 ```
 *(若不指定 `--password`，命令会自动随机生成一个高强度口令并打印)*
+> **若确需从宿主机直连后端（仅排查用）**：临时在 `docker-compose.yml` 的 `suenmoney-server` 下加回端口映射 `ports: - "3310:3310"`，调试完请移除，避免把后端端口当成日常访问地址。
 
 ---
 
@@ -83,7 +83,7 @@ docker compose exec suenmoney-server npm run user:add -- --username admin --name
 
 | 环境变量 | 默认值 | 作用说明 |
 |---|---|---|
-| `SUENMONEY_PORT` | `5310` (Web) / `3310` (Server) | Web 映射端口与服务端监听端口 |
+| `SUENMONEY_PORT` | `3310` | **容器内**服务端监听端口（非宿主机端口）；宿主机对外入口是 Web 容器的 `5310:80` 映射，后端不暴露到宿主机 |
 | `SUENMONEY_HOST` | `0.0.0.0` | 服务端监听地址 |
 | `SUENMONEY_DB_PATH` | `/app/server/data/suenmoney.sqlite` | SQLite 单文件数据库完整路径 |
 | `SUENMONEY_BACKUP_DIR` | `/app/server/data/backups` | 物理快照与恢复前归档存储目录 |
