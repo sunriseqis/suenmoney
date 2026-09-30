@@ -47,6 +47,13 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null;
   }
 
+  /** 重新拉取当前用户信息（修改显示名后调用，保持缓存与展示一致） */
+  async function refreshUser(): Promise<void> {
+    const res = await auth.me();
+    user.value = res.user;
+    writeCachedUser(res.user);
+  }
+
   /**
    * 任何请求遇到 401 都会走到这里。
    *
@@ -91,5 +98,5 @@ export const useAuthStore = defineStore('auth', () => {
     clear();
   }
 
-  return { token, user, ready, isAuthenticated, bootstrap, login, setup, logout, clear };
+  return { token, user, ready, isAuthenticated, bootstrap, login, setup, logout, clear, refreshUser };
 });

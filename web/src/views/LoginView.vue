@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { ApiError, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
+import { ApiError, auth as authApi, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
 import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
@@ -14,9 +14,11 @@ const auth = useAuthStore();
  *
  * 「初始化管理员」不做成独立页面而是同一个表单的另一种模式：两者字段几乎
  * 相同，而且新用户第一次打开时看到的是「登录」会很困惑 —— 他还没有账号。
- * 默认仍是登录，页脚给一条切换链接。
+ * 页面加载时查询服务端初始化状态：已有账号则隐藏切换入口（点了也会被 403
+ * 打回，不如一开始就不给）；查询失败（如离线）保持入口可见，服务端兜底。
  */
 const mode = ref<'login' | 'setup'>('login');
+const needsSetup = ref<boolean | null>(null);
 
 const username = ref('');
 const displayName = ref('');
@@ -88,6 +90,17 @@ function switchMode(): void {
   mode.value = mode.value === 'login' ? 'setup' : 'login';
   errorMessage.value = null;
 }
+
+onMounted(async () => {
+  try {
+    const status = await authApi.status();
+    needsSetup.value = status.needsSetup;
+    // 全新部署：直接进入初始化表单，省一次点击
+    if (status.needsSetup) mode.value = 'setup';
+  } catch {
+    // 查询失败（离线/服务器未起）：保持默认登录模式与入口可见，提交时服务端兜底
+  }
+});
 </script>
 
 <template>
@@ -146,27 +159,27 @@ function switchMode(): void {
         </button>
       </form>
 
-      <p class="mt-6 text-center text-xs text-ink-muted">
-        <template v-if="mode === 'login'">
-          首次部署？
-          <button
-            type="button"
-            class="font-semibold text-primary-text underline"
-            @click="switchMode"
-          >
-            初始化管理员账号
-          </button>
-        </template>
-        <template v-else>
-          系统已有账号？
-          <button
-            type="button"
-            class="font-semibold text-primary-text underline"
-            @click="switchMode"
-          >
-            返回登录
-          </button>
-        </template>
+      <p v-if="mode === 'login' && needsSetup !== false" class="mt-6 text-center text-xs text-ink-muted">
+        首次部署？
+        <button
+          type="button"
+          class="font-semibold text-primary-text underline"
+          @click="switchMode"
+        >
+          初始化管理员账号
+        </button>
+      </p>
+
+      <!-- 状态未知（查询失败）时才给返回路；确认过已有账号则本就不该进 setup 模式 -->
+      <p v-if="mode === 'setup' && needsSetup === null" class="mt-6 text-center text-xs text-ink-muted">
+        系统已有账号？
+        <button
+          type="button"
+          class="font-semibold text-primary-text underline"
+          @click="switchMode"
+        >
+          返回登录
+        </button>
       </p>
 
       <p v-if="mode === 'setup'" class="mt-4 text-center text-xs leading-relaxed text-ink-muted">

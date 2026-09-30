@@ -39,6 +39,8 @@ export * as updateApi from './update';
 
 export const auth = {
   /** 首次初始化。仅在系统里一个用户都没有时可用，之后永久 403 */
+  status: () => request<{ needsSetup: boolean }>('/api/auth/status'),
+
   setup: (username: string, displayName: string, password: string) =>
     request<{ token: string; expiresAt: string; user: User }>('/api/auth/setup', {
       method: 'POST',
@@ -54,6 +56,17 @@ export const auth = {
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
 
   me: () => request<{ user: User }>('/api/auth/me'),
+
+  /** 修改自己的显示名（自助，无需管理员） */
+  updateMe: (displayName: string) =>
+    request<{ user: User }>('/api/auth/me', { method: 'PATCH', body: { displayName } }),
+
+  /** 修改自己的密码：验证当前口令，成功后其他设备全部退出 */
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ revoked: number; message: string }>('/api/auth/me/password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+    }),
 
   sessions: () =>
     request<{
