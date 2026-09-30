@@ -148,6 +148,29 @@ describe('parseSuenmoneyBill', () => {
     assert.equal(second.amountCents, 1200);
     assert.equal(second.note, '地铁通勤');
   });
+
+  test('✱ 支付方式包含匹配：通用名「信用卡 / 银行卡」命中库里完整名', () => {
+    // 对账表常来自其他记账工具，写的是通用名；库里是「中信信用卡」「工商银行卡」。
+    // 旧实现按名称完全相等匹配，全部落到「第一个可用支付方式」兜底，
+    // 信用卡消费会被记成储蓄卡，账期归属（入账日/还款日）跟着算错。
+    const methods: PaymentMethod[] = [
+      { id: 'pm-bank', name: '工商银行卡', isEnabled: true, type: 'cash' },
+      { id: 'pm-credit', name: '中信信用卡', isEnabled: true, type: 'credit' },
+      { id: 'pm-cash', name: '现金', isEnabled: true, type: 'cash' },
+    ] as unknown as PaymentMethod[];
+
+    const csv = `\uFEFF消费日,入账日,还款日,金额,分类,二级分类,支付方式,记录人,备注,来源,计划,期次
+2026-09-25,,,45.50,餐饮美食,堂食外卖,信用卡,,,
+2026-09-26,,,12.00,交通出行,公交地铁,银行卡,,,
+2026-09-27,,,3.00,餐饮美食,堂食外卖,现金,,,
+`;
+
+    const res = detectAndParseBill(csv, [], methods);
+    assert.equal(res.totalParsed, 3);
+    assert.equal(res.items[0]!.suggestedPaymentMethodId, 'pm-credit', '「信用卡」应包含匹配到「中信信用卡」');
+    assert.equal(res.items[1]!.suggestedPaymentMethodId, 'pm-bank', '「银行卡」应包含匹配到「工商银行卡」');
+    assert.equal(res.items[2]!.suggestedPaymentMethodId, 'pm-cash', '精确名仍然优先');
+  });
 });
 
 describe('智能分类与渠道匹配', () => {
