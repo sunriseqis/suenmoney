@@ -50,6 +50,60 @@ export const useSyncStore = defineStore('sync', () => {
   const hasPending = computed(() => pendingCount.value > 0);
 
   let syncDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * 失败退避重试节奏：5s -> 10s -> 30s 封顶。
+   *
+   * 存在的理由：安卓 WebView 里 online/offline 事件不可靠，若 push 一次性失败后
+   * 只记 lastError 而不重试，离线队列会永久卡住、待同步角标一直不消失。
+   * 失败后主动安排重试；逐级拉长的间隔避免在确实离线时疯狂打网络。
+   */
+  const RETRY_BACKOFF_MS = [5000, 10000, 30000];
+  let retryAttempt = 0;
+
+  /** 复位退避节奏（同步成功或队列已清空时调用），并取消尚未触发的重试 */
+  function resetRetry(): void {
+    retryAttempt = 0;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
+  }
+
+  /** 同步失败后安排一次退避重试；队列已空则不再重试 */
+  function scheduleRetry(): void {
+    if (!hasPending.value) {
+      resetRetry();
+      return;
+    }
+    const delay = RETRY_BACKOFF_MS[Math.min(retryAttempt, RETRY_BACKOFF_MS.length - 1)] ?? 30000;
+    retryAttempt++;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      void runSync();
+    }, delay);
+  }
+
+  /**
+   * 心跳兜底探测：每 10s 一次，仅在「当前认为离线」或「还有待同步数据」时才真正探测。
+   *
+   * 不能依赖 WebView 的网络事件来判断恢复（真机实测断网再恢复后应用仍停留在离线态），
+   * 所以用定时轮询兜底：网络真回来时最多 10s 内自动恢复连通、补推离线队列。
+   * 先清理旧的句柄，保证重复调用不会注册出两份定时器。
+   */
+  function startHeartbeat(): void {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(() => {
+      if (!isOnline.value || hasPending.value) {
+        void checkConnectivity().then((connected) => {
+          if (connected && hasPending.value) void runSync();
+        });
+      }
+    }, 10000);
+  }
 
   /**
    * 客户端本地操作主动触发防抖同步（默认 300ms）。
@@ -91,8 +145,9 @@ export const useSyncStore = defineStore('sync', () => {
    * 1. 恢复本地 IndexedDB 记录的同步版本号与时间；
    * 2. 挂载网络切换监听（含离线/在线以及 移动网络 ↔ Wi-Fi 切换）；
    * 3. 挂载应用前台唤醒监听（打开软件、切回前台）；
-   * 4. 实时探测最优服务端真实连通性；
-   * 5. 触发首次补偿与增量拉取。
+   * 4. 启动心跳兜底轮询（WebView 网络事件不可靠）；
+   * 5. 实时探测最优服务端真实连通性；
+   * 6. 触发首次补偿与增量拉取。
    */
   async function init(): Promise<void> {
     if (initialized.value || !isIdbSupported()) return;
@@ -131,7 +186,10 @@ export const useSyncStore = defineStore('sync', () => {
 
     initialized.value = true;
 
-    // 3. 启动时主动探测服务端并同步
+    // 4. 启动心跳兜底（WebView 网络事件不可靠，靠它发现「其实已经能连上」）
+    startHeartbeat();
+
+    // 5. 启动时主动探测服务端并同步
     await checkConnectivity();
 
     const auth = useAuthStore();
@@ -672,6 +730,8 @@ export const useSyncStore = defineStore('sync', () => {
       const connected = await checkConnectivity();
       if (!connected) {
         lastError.value = '无法连接到任何配置的服务端';
+        // 连通失败也算一次失败：只要还有待同步数据，就按退避节奏再试，避免永久卡住
+        scheduleRetry();
         return;
       }
     }
@@ -682,8 +742,11 @@ export const useSyncStore = defineStore('sync', () => {
     try {
       await pushOutbox();
       await pullChanges();
+      // 同步成功：复位退避节奏；若仍有残留（如被服务端拒绝的条目）交给心跳按需再试
+      resetRetry();
     } catch (err) {
       lastError.value = err instanceof ApiError ? err.message : '网络同步未完成';
+      scheduleRetry();
     } finally {
       isSyncing.value = false;
     }
