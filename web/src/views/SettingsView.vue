@@ -156,6 +156,61 @@ async function onMethodSaved(): Promise<void> {
   notice.value = '支付方式已保存';
 }
 
+// ---- 我的账号自助维护 -------------------------------------------------------
+
+const editingName = ref(false);
+const editDisplayName = ref('');
+const nameSaving = ref(false);
+
+function startEditName(): void {
+  editDisplayName.value = auth.user?.displayName ?? '';
+  errorMessage.value = null;
+  editingName.value = true;
+}
+
+async function saveDisplayName(): Promise<void> {
+  const name = editDisplayName.value.trim();
+  if (name === '') {
+    errorMessage.value = '显示名不能为空';
+    return;
+  }
+  nameSaving.value = true;
+  try {
+    await authApi.updateMe(name);
+    await auth.refreshUser();
+    editingName.value = false;
+    errorMessage.value = null;
+    notice.value = '显示名已更新';
+  } catch (error) {
+    report(error, '更新显示名失败');
+  } finally {
+    nameSaving.value = false;
+  }
+}
+
+const showPasswordForm = ref(false);
+const pwBusy = ref(false);
+const pwForm = ref({ current: '', next: '', confirm: '' });
+
+async function changePassword(): Promise<void> {
+  if (pwForm.value.next !== pwForm.value.confirm) {
+    errorMessage.value = '两次输入的新密码不一致';
+    return;
+  }
+  pwBusy.value = true;
+  try {
+    const result = await authApi.changePassword(pwForm.value.current, pwForm.value.next);
+    notice.value = result.message;
+    showPasswordForm.value = false;
+    pwForm.value = { current: '', next: '', confirm: '' };
+    errorMessage.value = null;
+  } catch (error) {
+    report(error, '修改密码失败');
+  } finally {
+    pwBusy.value = false;
+  }
+}
+
 // ---- 设备会话 -------------------------------------------------------------
 
 const sessions = ref<Array<{ id: string; deviceLabel: string; lastSeenAt: string; current: boolean }>>(
@@ -401,7 +456,43 @@ function formatTimestamp(iso: string): string {
         <h2 class="label-cn">我的账号</h2>
         <div class="mt-3 flex items-center gap-3 rounded-md bg-surface px-4 py-3">
           <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-semibold">{{ auth.user?.displayName }}</p>
+            <template v-if="editingName">
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="editDisplayName"
+                  maxlength="20"
+                  class="w-40 rounded-sm bg-sunken px-2.5 py-1.5 text-sm text-ink outline-none focus:ring-1 focus:ring-primary"
+                  @keydown.enter.prevent="saveDisplayName"
+                />
+                <button
+                  type="button"
+                  class="rounded-sm bg-primary-fill px-3 py-1.5 text-xs font-bold text-on-primary disabled:opacity-40"
+                  :disabled="nameSaving"
+                  @click="saveDisplayName"
+                >
+                  保存
+                </button>
+                <button
+                  type="button"
+                  class="text-xs text-ink-muted hover:text-ink"
+                  @click="editingName = false"
+                >
+                  取消
+                </button>
+              </div>
+            </template>
+            <template v-else>
+              <p class="flex items-center gap-2 truncate text-sm font-semibold">
+                {{ auth.user?.displayName }}
+                <button
+                  type="button"
+                  class="text-[11px] font-normal text-primary-text hover:underline"
+                  @click="startEditName"
+                >
+                  改名
+                </button>
+              </p>
+            </template>
             <p class="text-xs text-ink-muted">
               {{ auth.user?.username }} ·
               {{ auth.user?.role === 'admin' ? '管理员' : '成员' }}
@@ -414,6 +505,52 @@ function formatTimestamp(iso: string): string {
           >
             退出登录
           </button>
+        </div>
+
+        <!-- 修改密码（自助）：验证当前口令，成功后其他设备全部退出 -->
+        <div class="mt-2 rounded-md bg-surface px-4 py-3">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between text-sm font-semibold text-ink"
+            @click="showPasswordForm = !showPasswordForm"
+          >
+            <span>修改密码</span>
+            <span class="text-xs font-normal text-ink-muted">{{ showPasswordForm ? '收起' : '展开' }}</span>
+          </button>
+
+          <form v-if="showPasswordForm" class="mt-3 space-y-2" @submit.prevent="changePassword">
+            <input
+              v-model="pwForm.current"
+              type="password"
+              autocomplete="current-password"
+              placeholder="当前密码"
+              class="w-full rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
+            />
+            <input
+              v-model="pwForm.next"
+              type="password"
+              autocomplete="new-password"
+              placeholder="新密码（至少 8 位）"
+              class="w-full rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
+            />
+            <input
+              v-model="pwForm.confirm"
+              type="password"
+              autocomplete="new-password"
+              placeholder="确认新密码"
+              class="w-full rounded-sm bg-sunken px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted"
+            />
+            <button
+              type="submit"
+              :disabled="pwBusy || pwForm.current === '' || pwForm.next.length < 8 || pwForm.next !== pwForm.confirm"
+              class="w-full rounded-sm bg-primary-fill py-2.5 text-sm font-bold text-on-primary transition-transform active:scale-[0.99] disabled:opacity-40"
+            >
+              {{ pwBusy ? '提交中…' : '确认修改' }}
+            </button>
+            <p class="text-[11px] leading-relaxed text-ink-muted">
+              修改成功后其他设备会自动退出登录，需重新登录。
+            </p>
+          </form>
         </div>
       </section>
             <!-- 家庭成员 -->

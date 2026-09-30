@@ -52,6 +52,13 @@ describe('健康检查与 404', () => {
 describe('首次初始化', () => {
   let token = '';
 
+  test('无用户时 /api/auth/status 报告 needsSetup = true', async () => {
+    // 本测试文件用独立临时库，before 钩子尚未建任何账号
+    const res = await app.inject({ method: 'GET', url: '/api/auth/status' });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { needsSetup: true });
+  });
+
   test('系统无用户时 /api/auth/setup 可创建管理员并直接发令牌', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -67,6 +74,12 @@ describe('首次初始化', () => {
     assert.equal(body.user.password_hash, undefined, '响应里绝不能出现口令哈希');
 
     token = body.token;
+  });
+
+  test('已有用户后 /api/auth/status 报告 needsSetup = false 且不泄漏用户信息', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/auth/status' });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { needsSetup: false }, '只暴露一个布尔值，不泄漏用户名或数量');
   });
 
   test('已有用户后 /api/auth/setup 永久关闭', async () => {

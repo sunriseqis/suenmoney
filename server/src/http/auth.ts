@@ -3,12 +3,15 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { config } from '../config.ts';
 import { getDatabase } from '../db/index.ts';
 import { createSession, listSessions, revokeOtherSessions, revokeSessionByToken } from '../db/repo/sessions.ts';
-import { countUsers, createUser, findUserByUsername, toPublicUser } from '../db/repo/users.ts';
-import { forbidden, unauthorized } from '../lib/http-error.ts';
+import { countUsers, createUser, findUserByUsername, findUserById, updateUser, toPublicUser } from '../db/repo/users.ts';
+import { forbidden, unauthorized, badRequest } from '../lib/http-error.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
 import { enforceRateLimit, resetRateLimit } from '../lib/rate-limit.ts';
 import { asRecord, optionalString, requireString } from '../lib/validate.ts';
 import { currentAuth, requireAuth } from './guard.ts';
+
+/** 口令最短长度 —— 与账号管理路由保持同一标准。 */
+const MIN_PASSWORD_LENGTH = 8;
 
 /**
  * 一个固定的、不可能匹配成功的口令哈希。
@@ -28,6 +31,16 @@ function loginKey(request: FastifyRequest, username: string): string {
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * 初始化状态查询（公开，无需登录）。
+   *
+   * 登录页据此决定要不要展示「初始化管理员」入口：系统里已有账号时入口隐藏，
+   * 免得用户点进去填完表单才被 403 打回。只暴露一个布尔值，不泄漏任何用户信息。
+   */
+  app.get('/api/auth/status', async () => {
+    return { needsSetup: countUsers(getDatabase()) === 0 };
+  });
+
   /**
    * 首次初始化：仅在**系统里一个用户都没有**时可用。
    *
@@ -81,6 +94,53 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (request) => {
     return { user: currentAuth(request).user };
+  });
+
+  /**
+   * 修改自己的显示名（自助，无需管理员）。
+   *
+   * 显示名是「记录人」的展示来源，两人随时可能要改（比如改了昵称）；
+   * 这不该是管理员代劳的事。用户名不可改 —— 它是登录凭据的一部分，
+   * 改了会让其他设备上记住的用户名失效，也方便冒充他人，交给管理员处理。
+   */
+  app.patch('/api/auth/me', { preHandler: requireAuth }, async (request) => {
+    const auth = currentAuth(request);
+    const body = asRecord(request.body);
+    const displayName = requireString(body, 'displayName').trim();
+    if (displayName === '') throw badRequest('显示名不能为空');
+
+    const user = updateUser(getDatabase(), auth.user.id, {
+      displayName,
+      actorId: auth.user.id,
+    });
+    return { user };
+  });
+
+  /**
+   * 修改自己的密码（自助）：必须验证当前口令，改完吊销其他设备的会话。
+   *
+   * 依赖「当前口令」而不是管理员权限 —— 这是账号归属的证明；
+   * 其他会话全部失效是改密的应有之义（怀疑泄漏时改密即止血）。
+   */
+  app.post('/api/auth/me/password', { preHandler: requireAuth }, async (request) => {
+    const auth = currentAuth(request);
+    const body = asRecord(request.body);
+    const currentPassword = requireString(body, 'currentPassword');
+    const newPassword = requireString(body, 'newPassword');
+
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      throw badRequest(`口令至少 ${MIN_PASSWORD_LENGTH} 位`);
+    }
+
+    const db = getDatabase();
+    const row = findUserById(db, auth.user.id);
+    if (row === null || !verifyPassword(currentPassword, row.password_hash)) {
+      throw badRequest('当前密码不正确');
+    }
+
+    updateUser(db, auth.user.id, { password: newPassword, actorId: auth.user.id });
+    const revoked = revokeOtherSessions(db, auth.user.id, auth.sessionId);
+    return { revoked, message: '密码已更新，其他设备已退出登录' };
   });
 
   app.post('/api/auth/logout', { preHandler: requireAuth }, async (request, reply) => {
