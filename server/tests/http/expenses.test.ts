@@ -1035,7 +1035,14 @@ describe('批量创建支出（POST /api/expenses/batch）', () => {
     assert.equal(res.statusCode, 400);
   });
 
-  test('原子性回滚：其中一笔分类不存在时整批回滚', async () => {
+  /**
+   * 导入健壮性的核心用例：**一笔坏数据不该作废整批**。
+   *
+   * 旧的「整批回滚」语义下，3228 笔的 CSV 只要有一行引用了已失效的分类，
+   * 全部作废；而且返回的只是一句笼统报错，用户无从知道是哪一行。
+   * 现在改为逐条容错：好行照常写入，坏行被跳过并在 failed 里回报下标与原因。
+   */
+  test('逐条容错：中间一条分类无效时，其余照常写入并回报行号', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/expenses/batch',
@@ -1047,31 +1054,96 @@ describe('批量创建支出（POST /api/expenses/batch）', () => {
             categoryId: groceries,
             paymentMethodId: cashId,
             spendDate: '2026-09-12',
-            note: '有效',
+            note: '容错首行',
           },
           {
             amountCents: 4000,
             categoryId: '01INVALID00000000000000000',
             paymentMethodId: cashId,
             spendDate: '2026-09-12',
-            note: '无效分类',
+            note: '容错坏行',
+          },
+          {
+            amountCents: 5000,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-13',
+            note: '容错末行',
           },
         ],
       },
     });
-    assert.equal(res.statusCode, 400);
 
-    // 确认「有效」那笔没有被孤立写入
-    const listRes = await app.inject({
+    assert.equal(res.statusCode, 201, '单行业务无效不该让整批失败');
+    const body = res.json();
+    assert.equal(body.createdCount, 2);
+    assert.equal(body.expenseIds.length, 2);
+    assert.equal(body.failed.length, 1, '只有坏行被跳过');
+    assert.equal(body.failed[0].index, 1, '下标应是入参数组下标（从 0 起）');
+    assert.ok(
+      typeof body.failed[0].reason === 'string' && body.failed[0].reason.length > 0,
+      'failed 里要带可读的原因，前端才能告诉用户哪一行错在哪',
+    );
+
+    // 数据库里确实只有两笔好数据，坏行没有落库
+    const list = await app.inject({
       method: 'GET',
-      url: '/api/expenses?q=有效',
+      url: `/api/expenses?q=${encodeURIComponent('容错')}`,
       headers: auth(),
     });
-    assert.equal(listRes.statusCode, 200);
-    const found = (listRes.json().items as Array<{ note: string }>).some(
-      (it) => it.note === '有效',
-    );
-    assert.equal(found, false);
+    const notes = (list.json().items as Array<{ note: string }>)
+      .map((item) => item.note)
+      .sort();
+    assert.deepEqual(notes, ['容错末行', '容错首行']);
+  });
+
+  test('全部有效时 failed 为空', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/expenses/batch',
+      headers: auth(),
+      payload: {
+        items: [
+          {
+            amountCents: 100,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-14',
+          },
+          {
+            amountCents: 200,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-14',
+          },
+        ],
+      },
+    });
+
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.json().createdCount, 2);
+    assert.deepEqual(res.json().failed, []);
+  });
+
+  test('结构性错误（某行缺 categoryId）仍然整批 400', async () => {
+    // 这是客户端 bug 而非数据问题：逐条跳过会把 bug 藏起来，所以整批拒绝
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/expenses/batch',
+      headers: auth(),
+      payload: {
+        items: [
+          {
+            amountCents: 100,
+            categoryId: groceries,
+            paymentMethodId: cashId,
+            spendDate: '2026-09-15',
+          },
+          { amountCents: 200, paymentMethodId: cashId, spendDate: '2026-09-15' },
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 400);
   });
 });
 

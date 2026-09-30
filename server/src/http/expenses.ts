@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { getDatabase } from '../db/index.ts';
 import {
-  batchCreateExpenses,
+  batchCreateExpensesTolerant,
   createExpense,
   findExpense,
   listExpenses,
@@ -100,6 +100,12 @@ export async function expenseRoutes(app: FastifyInstance): Promise<void> {
       throw badRequest('items 必须是数组');
     }
 
+    /**
+     * 结构性错误（items 不是数组、某行缺 amountCents/categoryId/... 或类型不对）
+     * 在这里整批 400 —— 那是**客户端 bug**，不是用户的数据问题：它说明发请求的
+     * 代码与接口契约对不上，逐条跳过只会把 bug 藏起来。只有「单行业务无效」
+     * （比如引用了已失效的分类/支付方式）才交给 repo 逐条跳过并回报行号。
+     */
     const items: BatchExpenseItem[] = rawItems.map((raw) => {
       const rec = asRecord(raw);
       return {
@@ -111,7 +117,8 @@ export async function expenseRoutes(app: FastifyInstance): Promise<void> {
       };
     });
 
-    const result = batchCreateExpenses(getDatabase(), { items }, auth.user.id);
+    const result = batchCreateExpensesTolerant(getDatabase(), { items }, auth.user.id);
+    // failed 原样返回：前端据此把「第 N 行 + 原因」展示给用户
     return reply.code(201).send(result);
   });
 

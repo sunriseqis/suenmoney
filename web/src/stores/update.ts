@@ -55,6 +55,12 @@ export const useUpdateStore = defineStore('update', () => {
    * @param silent 是否为静默检查（启动时使用：无更新或网络故障时不打扰，被忽略过的版本不再弹）
    */
   async function check(silent = false): Promise<void> {
+    // 平台门禁：纯 Web / Docker 部署没有「客户端」可更新。
+    // 少了这道门禁时，getNativeAppVersion() 返回 null，下面会兜底成 1.0.0 的安卓包，
+    // 再硬编码 platform:'android' 去和服务端比 —— 只要服务端有更高的 APK 就误弹「更新客户端」。
+    // 非原生环境直接返回：不请求、不弹窗，也不会污染 appVersion / result 状态。
+    if (!isSupported.value) return;
+
     if (checking.value) return;
 
     checking.value = true;

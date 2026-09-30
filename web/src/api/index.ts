@@ -228,7 +228,12 @@ export const expenses = {
       note?: string;
     }>,
   ) =>
-    request<{ createdCount: number; expenseIds: string[] }>('/api/expenses/batch', {
+    request<{
+      createdCount: number;
+      expenseIds: string[];
+      /** 被跳过的坏行：index 是入参数组下标（从 0 起），reason 是原因 */
+      failed: Array<{ index: number; reason: string }>;
+    }>('/api/expenses/batch', {
       method: 'POST',
       body: { items },
     }),
