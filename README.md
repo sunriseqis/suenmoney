@@ -22,8 +22,8 @@ docker compose pull && docker compose up -d
 # 更新版本
 docker compose pull && docker compose up -d
 
-# 或不拉镜像、直接本地构建
-docker compose up -d --build
+# 或不拉镜像、直接本地构建（需要完整仓库源码）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 # （可选）若未在环境变量预设管理员，可在容器内手动添加首个管理员：
 docker compose exec suenmoney-server npm run user:add -- --username admin --name 管理员 --admin
