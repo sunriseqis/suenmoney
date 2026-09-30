@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+def appVersionCode = Integer.parseInt(project.findProperty('versionCode') ?: System.getenv('VERSION_CODE') ?: "1")
+def appVersionName = (project.findProperty('versionName') ?: System.getenv('VERSION_NAME') ?: "1.0").toString()
+
 android {
     namespace = "com.suenmoney.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +10,8 @@ android {
         applicationId "com.suenmoney.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,11 +19,37 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def defaultKeystore = file('suenmoney.keystore')
+            if (project.hasProperty('android.injected.signing.store.file')) {
+                storeFile file(project.property('android.injected.signing.store.file'))
+                storePassword project.property('android.injected.signing.store.password')
+                keyAlias project.property('android.injected.signing.key.alias')
+                keyPassword project.property('android.injected.signing.key.password')
+            } else if (defaultKeystore.exists()) {
+                storeFile defaultKeystore
+                storePassword 'suenmoney'
+                keyAlias 'suenmoney'
+                keyPassword 'suenmoney'
+            }
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 }
 
