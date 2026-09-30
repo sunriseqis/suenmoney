@@ -46,6 +46,16 @@ jobs:
           # versionCode 需计算提交历史数，必须是完整历史
           fetch-depth: 0
 
+      # Capacitor 8.5.2 的 iOS 二进制（capacitor-swift-pm）由 Swift 6.2 编译，
+      # 必须用带 Swift ≥6.2 的 Xcode（≥ 26.0.1）读取其 .swiftinterface，
+      # 否则老编译器会漏掉 CAPPluginCall.reject 等成员导致编译失败。
+      # 明确钉到 26.3（Swift 6.2.3）：与本机对齐、可复现；且它是仍能装在
+      # macOS Sequoia(macOS-15 runner) 上的最新版（26.4+ 需要 Tahoe 26.2）。
+      - name: Select Xcode 26.3 (Swift 6.2)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
       - name: Determine Version
         id: get_version
         run: |
