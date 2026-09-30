@@ -1,6 +1,8 @@
 # ==============================================================================
 # SuenMoney Docker Compose 生产部署编排
-# 镜像全自动托管于 GitHub Container Registry (ghcr.io)，支持一键拉取运行或本地构建
+# 镜像托管于 GitHub Container Registry (ghcr.io)，本文件为**纯拉取部署**，
+# 不含 build 段 —— 部署机上不需要仓库源码，只要这一个 yml 即可。
+# 本地开发构建请叠加覆写文件：docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 #
 # 使用指南：
 #   启动运行：docker compose up -d
@@ -11,9 +13,6 @@
 services:
   suenmoney-server:
     image: ghcr.io/sunriseqis/suenmoney-server:latest
-    build:
-      context: ./server
-      dockerfile: Dockerfile
     container_name: suenmoney-server
     restart: unless-stopped
     ports:
@@ -33,9 +32,6 @@ services:
 
   suenmoney-web:
     image: ghcr.io/sunriseqis/suenmoney-web:latest
-    build:
-      context: ./web
-      dockerfile: Dockerfile
     container_name: suenmoney-web
     restart: unless-stopped
     ports:

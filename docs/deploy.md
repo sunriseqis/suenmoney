@@ -61,11 +61,11 @@ cd suenmoney
 
 ### 4. 启动服务
 ```bash
-# 拉取 GHCR 托管镜像并启动（推荐，无需本地构建）
+# 拉取 GHCR 托管镜像并启动（推荐，部署机无需仓库源码，只要 compose 文件）
 docker compose pull && docker compose up -d
 
-# 或直接本地构建启动
-docker compose up -d --build
+# 本地开发时从源码构建（需完整仓库，叠加 dev 覆写文件）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 ### 5. 访问与初始化
