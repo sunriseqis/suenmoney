@@ -199,4 +199,12 @@ master_squircle.resize((512, 512), Image.Resampling.LANCZOS).save(os.path.join(W
 import shutil
 shutil.copyfile(SVG_PATH, os.path.join(WEB_PUBLIC, "logo.svg"))
 
-print("All Android and Web assets successfully generated!")
+print("[6/6] Generating iOS AppIcon (full-bleed)...")
+# iOS 系统自己切 superellipse 遮罩：图标必须是**边到边**的渐变 + 居中图形。
+# 之前误用「缩放 squircle 贴在插值渐变画布上」的合成图，内嵌方块边缘清晰可见。
+IOS_ICON = os.path.join(ROOT_DIR, "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png")
+os.makedirs(os.path.dirname(IOS_ICON), exist_ok=True)
+bleed.resize((1024, 1024), Image.Resampling.LANCZOS).convert("RGB").save(IOS_ICON)
+print(f"  -> Generated {IOS_ICON}")
+
+print("All Android, iOS and Web assets successfully generated!")
