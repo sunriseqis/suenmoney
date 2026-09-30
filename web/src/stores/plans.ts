@@ -202,16 +202,58 @@ export const usePlansStore = defineStore('plans', () => {
     }
   }
 
-  /** 撤销一次确认：撤掉该期的入账（支出软删），待办回到待办列表。 */
+  /** 撤销一次确认：撤掉该期的入账（支出软删），待办回到待办列表。离线可逆。 */
   async function revertTodo(todoId: string): Promise<void> {
-    await planTodosApi.revert(todoId);
-    await refresh();
+    const syncStore = useSyncStore();
+    const ui = useUiStore();
+
+    if (!syncStore.isOnline) {
+      await syncStore.revertOfflineTodo(todoId);
+      await refresh();
+      ui.markDataChanged();
+      return;
+    }
+
+    try {
+      await planTodosApi.revert(todoId);
+      await refresh();
+      ui.markDataChanged();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) {
+        await syncStore.revertOfflineTodo(todoId);
+        await refresh();
+        ui.markDataChanged();
+        return;
+      }
+      throw err;
+    }
   }
 
-  /** 恢复一个被跳过的期次。 */
+  /** 恢复一个被跳过的期次。离线可逆。 */
   async function restoreTodo(todoId: string): Promise<void> {
-    await planTodosApi.restore(todoId);
-    await refresh();
+    const syncStore = useSyncStore();
+    const ui = useUiStore();
+
+    if (!syncStore.isOnline) {
+      await syncStore.restoreOfflineTodo(todoId);
+      await refresh();
+      ui.markDataChanged();
+      return;
+    }
+
+    try {
+      await planTodosApi.restore(todoId);
+      await refresh();
+      ui.markDataChanged();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) {
+        await syncStore.restoreOfflineTodo(todoId);
+        await refresh();
+        ui.markDataChanged();
+        return;
+      }
+      throw err;
+    }
   }
 
   async function endPlan(planId: string): Promise<void> {

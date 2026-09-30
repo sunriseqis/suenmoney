@@ -103,6 +103,15 @@ describe('parseYuanToCents', () => {
     assert.equal(parseYuanToCents('1.00'), 100);
   });
 
+  test('✱ 负数：符号剥离后按绝对值计算再统一赋符号', () => {
+    // 旧实现的两个 bug："-15.50" 切出 yuan=-15、fen=50 算成 -1450（少算 1 元）；
+    // "-0.50" 切出 Number("-0")===0 算成 +50（负数翻正）。
+    assert.equal(parseYuanToCents('-15.50'), -1550);
+    assert.equal(parseYuanToCents('-0.50'), -50);
+    assert.equal(parseYuanToCents('-32'), -3200);
+    assert.equal(parseYuanToCents('-.5'), -50);
+  });
+
   test('超过两位小数截断而不是四舍五入（键盘本身就限制两位）', () => {
     assert.equal(parseYuanToCents('32.567'), 3256);
   });

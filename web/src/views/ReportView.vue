@@ -523,7 +523,7 @@ const memberRows = computed(() => {
         <!-- 窄屏关闭按键（A24），返回流水落地页 -->
         <RouterLink
           :to="{ name: 'ledger' }"
-          class="absolute right-0 top-0 grid h-8 w-8 place-items-center rounded-sm text-sm font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink lg:hidden"
+          class="absolute right-0 top-0 grid h-10 w-10 place-items-center rounded-sm text-sm font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink after:absolute after:-inset-0.5 after:rounded-sm after:content-[''] lg:hidden"
           aria-label="关闭报表，返回流水"
         >
           ✕

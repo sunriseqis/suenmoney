@@ -16,17 +16,25 @@ import {
   getDeviceId,
   getMeta,
   getOutboxItems,
+  getCachedPlanTodos,
   isIdbSupported,
   removeOutboxItems,
   saveSingleCachedExpense,
   setMeta,
   updateCachedExpense,
   updateCachedPlanTodo,
+  type OutboxItem,
 } from '@/utils/idb';
 import { ulid } from '@/utils/ulid';
 import { useAuthStore } from './auth';
 import { useDictionariesStore } from './dictionaries';
 import { usePlansStore } from './plans';
+
+/**
+ * Outbox 单条推送失败的重试上限：
+ * 超过后该条进入死信隔离（不再参与推送），防止毒丸数据永久卡死队列。
+ */
+const OUTBOX_MAX_RETRY = 3;
 
 export const useSyncStore = defineStore('sync', () => {
   // 必须基于实际服务端探测，不能仅凭 navigator.onLine 判定连通
@@ -60,11 +68,11 @@ export const useSyncStore = defineStore('sync', () => {
     }, delayMs);
   }
 
-  /** 刷新待发送 Outbox 队列条数 */
+  /** 刷新待发送 Outbox 队列条数（死信隔离中的条目不计入） */
   async function refreshPendingCount(): Promise<void> {
     if (!isIdbSupported()) return;
     const items = await getOutboxItems();
-    pendingCount.value = items.length;
+    pendingCount.value = items.filter((i) => i.retryCount <= OUTBOX_MAX_RETRY).length;
   }
 
   /**
@@ -379,6 +387,57 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
+   * 离线撤销确认（revert_todo）：待办回 pending，本地缓存的生成支出软删
+   */
+  async function revertOfflineTodo(todoId: string): Promise<void> {
+    if (isIdbSupported()) {
+      // 先读缓存待办拿到 expenseId，把本地已入账的支出移除（服务端 push 时会软删）
+      const todos = await getCachedPlanTodos();
+      const todo = todos.find((t) => t.id === todoId);
+      if (todo?.expenseId) {
+        await deleteCachedExpense(todo.expenseId);
+      }
+      await updateCachedPlanTodo(todoId, {
+        status: 'pending',
+        postedDate: null,
+        confirmedBy: null,
+        confirmedAt: null,
+        expenseId: null,
+        holdAutoPost: true,
+      });
+      await addOutboxItem({
+        id: ulid(),
+        action: 'revert_todo',
+        entityId: todoId,
+        payload: { id: todoId },
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      });
+      await refreshPendingCount();
+    }
+    scheduleSync(300);
+  }
+
+  /**
+   * 离线恢复跳过（restore_todo）：skipped → pending
+   */
+  async function restoreOfflineTodo(todoId: string): Promise<void> {
+    if (isIdbSupported()) {
+      await updateCachedPlanTodo(todoId, { status: 'pending', holdAutoPost: true });
+      await addOutboxItem({
+        id: ulid(),
+        action: 'restore_todo',
+        entityId: todoId,
+        payload: { id: todoId },
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      });
+      await refreshPendingCount();
+    }
+    scheduleSync(300);
+  }
+
+  /**
    * 推送 Outbox 离线待发送队列至服务端（支持新增、修改、删除支出以及计划待办状态）
    */
   async function pushOutbox(): Promise<number> {
@@ -386,7 +445,9 @@ export const useSyncStore = defineStore('sync', () => {
     const auth = useAuthStore();
     if (!auth.isAuthenticated) return 0;
 
-    const items = await getOutboxItems();
+    const allItems = await getOutboxItems();
+    // 死信隔离：重试超限的毒丸条目不再参与推送，避免阻塞后续队列
+    const items = allItems.filter((i) => i.retryCount <= OUTBOX_MAX_RETRY);
     if (items.length === 0) return 0;
 
     const expenseCreates = items.filter((i) => i.action === 'create_expense');
@@ -395,6 +456,8 @@ export const useSyncStore = defineStore('sync', () => {
     const todoConfirms = items.filter((i) => i.action === 'confirm_todo');
     const todoSkips = items.filter((i) => i.action === 'skip_todo');
     const todoAcks = items.filter((i) => i.action === 'ack_todo');
+    const todoReverts = items.filter((i) => i.action === 'revert_todo');
+    const todoRestores = items.filter((i) => i.action === 'restore_todo');
 
     const deviceId = await getDeviceId();
 
@@ -456,12 +519,51 @@ export const useSyncStore = defineStore('sync', () => {
         todoAcks.length > 0
           ? todoAcks.map((item) => String(item.payload['id'] || item.entityId))
           : undefined,
+      revertedTodoIds:
+        todoReverts.length > 0
+          ? todoReverts.map((item) => String(item.payload['id'] || item.entityId))
+          : undefined,
+      restoredTodoIds:
+        todoRestores.length > 0
+          ? todoRestores.map((item) => String(item.payload['id'] || item.entityId))
+          : undefined,
     };
 
     const result = await syncApi.push(pushPayload);
 
-    // 服务端确认接收后，安全清理这些已推送到远端的 outbox 记录
-    await removeOutboxItems(items.map((i) => i.id));
+    // 新增支出按服务端逐条校验的结果分流：
+    // 成功的正常清理；被拒绝的（毒丸，如关联了已失效分类）保留在 Outbox 并累计重试次数，
+    // 超过上限后进入死信隔离 —— 不再参与推送，避免单条坏数据永久卡死整个队列。
+    const failedCreateIdx = new Set(result.failedExpenseIndexes ?? []);
+    const succeededOutboxIds: string[] = [];
+    const rejectedCreates: OutboxItem[] = [];
+    expenseCreates.forEach((item, idx) => {
+      if (failedCreateIdx.has(idx)) {
+        rejectedCreates.push(item);
+      } else {
+        succeededOutboxIds.push(item.id);
+      }
+    });
+
+    // 其余动作（修改/删除/待办）服务端已逐条容错接收，全部清理
+    const otherOutboxIds = items
+      .filter((i) => i.action !== 'create_expense')
+      .map((i) => i.id);
+    await removeOutboxItems([...succeededOutboxIds, ...otherOutboxIds]);
+
+    for (const item of rejectedCreates) {
+      const nextRetry = item.retryCount + 1;
+      if (nextRetry > OUTBOX_MAX_RETRY) {
+        await addOutboxItem({
+          ...item,
+          retryCount: nextRetry,
+          lastError: '多次被服务端拒绝，已隔离（死信）',
+        });
+      } else {
+        await addOutboxItem({ ...item, retryCount: nextRetry, lastError: '服务端拒绝该笔新增' });
+      }
+    }
+
     await refreshPendingCount();
 
     return result.pushedExpensesCount + result.updatedExpensesCount + result.deletedExpensesCount;
@@ -606,6 +708,8 @@ export const useSyncStore = defineStore('sync', () => {
     confirmOfflineTodo,
     skipOfflineTodo,
     ackOfflineTodo,
+    revertOfflineTodo,
+    restoreOfflineTodo,
     pushOutbox,
     pullChanges,
     runSync,

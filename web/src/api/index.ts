@@ -496,6 +496,10 @@ export interface SyncPushInput {
   }>;
   skippedTodoIds?: string[];
   ackedTodoIds?: string[];
+  /** 撤销确认（confirmed → pending） */
+  revertedTodoIds?: string[];
+  /** 恢复跳过（skipped → pending） */
+  restoredTodoIds?: string[];
   deviceId?: string;
 }
 
@@ -506,7 +510,11 @@ export interface SyncPushResult {
   confirmedTodosCount: number;
   skippedTodosCount: number;
   ackedTodosCount: number;
+  revertedTodosCount: number;
+  restoredTodosCount: number;
   expenseIds: string[];
+  /** 被服务端拒绝的新增支出条目在请求 expenses 数组中的下标（0 起） */
+  failedExpenseIndexes: number[];
   latestVersion: number;
 }
 

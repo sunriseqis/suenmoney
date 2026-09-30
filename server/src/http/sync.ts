@@ -151,6 +151,32 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    const revertedRaw = body['revertedTodoIds'];
+    const revertedTodoIds: string[] = [];
+    if (revertedRaw !== undefined) {
+      if (!Array.isArray(revertedRaw)) {
+        throw badRequest('revertedTodoIds 必须是数组');
+      }
+      for (const id of revertedRaw) {
+        if (typeof id === 'string' && id) {
+          revertedTodoIds.push(id);
+        }
+      }
+    }
+
+    const restoredRaw = body['restoredTodoIds'];
+    const restoredTodoIds: string[] = [];
+    if (restoredRaw !== undefined) {
+      if (!Array.isArray(restoredRaw)) {
+        throw badRequest('restoredTodoIds 必须是数组');
+      }
+      for (const id of restoredRaw) {
+        if (typeof id === 'string' && id) {
+          restoredTodoIds.push(id);
+        }
+      }
+    }
+
     const deviceId = optionalString(body, 'deviceId', '') || undefined;
 
     const result = pushChanges(
@@ -162,6 +188,8 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
         confirmedTodos,
         skippedTodoIds,
         ackedTodoIds,
+        revertedTodoIds,
+        restoredTodoIds,
       },
       auth.user.id,
       deviceId,

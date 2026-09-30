@@ -5,7 +5,10 @@
 # ==============================================================================
 
 # ---- 阶段 1：构建前端纯静态资源 ----
-FROM node:22-alpine AS builder
+# --platform=$BUILDPLATFORM：npm ci 与 vite build 是纯 JS 工作负载，
+# 交叉构建 linux/arm64 时在宿主架构（原生）跑，避免 QEMU 模拟拖慢 10 倍以上。
+# 与 server/Dockerfile 的写法保持一致。
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 
 WORKDIR /app
 

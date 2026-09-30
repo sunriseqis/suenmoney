@@ -47,20 +47,25 @@ const isPullThreshold = ref(false);
 const isPullTransitioning = ref(false);
 
 const PULL_MAX_OFFSET = 80; // 视觉最大下移位移 (px)
-const PULL_THRESHOLD_OFFSET = 48; // 判定达标的阻尼后位移阈值 (px)
+const PULL_THRESHOLD_OFFSET = 36; // 判定达标的阻尼后位移阈值 (px)
+const PULL_DAMPING = 0.6; // 阻尼乘数：与阈值联立，达标物理位移 ≈ 36 / 0.6 = 60px，跟手不沉重
 
 let touchStartX = 0;
 let touchStartY = 0;
 let isEligiblePull = false;
 let hasVibrated = false;
 
+/** 下拉手势仅限流水页：它是移动端的主落地页；概况/报表等二级页顶部下拉不应误唤记账 */
+const isLedgerRoute = computed(() => route.name === 'ledger');
+
 function getScrollTop(): number {
   return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
 }
 
 function onTouchStart(e: TouchEvent): void {
-  // 抽屉已打开或列表不在最顶部时不触发
+  // 抽屉已打开、非流水页、或列表不在最顶部时不触发
   if (ui.sheetOpen) return;
+  if (!isLedgerRoute.value) return;
   if (getScrollTop() > 3) {
     isEligiblePull = false;
     return;
@@ -95,7 +100,7 @@ function onTouchMove(e: TouchEvent): void {
       e.preventDefault();
     }
     // 物理阻尼曲线：拉动距离越长阻力越大
-    const damped = Math.min(PULL_MAX_OFFSET, deltaY * 0.44);
+    const damped = Math.min(PULL_MAX_OFFSET, deltaY * PULL_DAMPING);
     pullOffset.value = damped;
 
     const reached = damped >= PULL_THRESHOLD_OFFSET;

@@ -38,6 +38,7 @@ import { useSyncStore } from '@/stores/sync';
 import { currentMonth, formatMonthDay, formatMonthLabel, todayLocal } from '@/utils/dates';
 import {
   centsToInput,
+  formatCents,
   formatCompact,
   formatYuan,
   parseYuanToCents,
@@ -73,6 +74,13 @@ const categoryId = ref<string | null>(null);
 const paymentMethodId = ref<string | null>(null);
 const spendDate = ref(todayLocal());
 const note = ref('');
+
+/**
+ * 备注输入框是否聚焦。
+ * 移动端聚焦时折叠自制数字键盘（原生软键盘必然弹起，两键盘并存会把输入框
+ * 和金额顶出可视区），并把「保存」临时挂到原生键盘上方的辅助条里。
+ */
+const noteFocused = ref(false);
 
 const saving = ref(false);
 const errorMessage = ref<string | null>(null);
@@ -840,7 +848,7 @@ function close(): void {
 
           <button
             type="button"
-            class="grid h-7 w-7 place-items-center rounded-sm text-sm font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
+            class="relative grid h-10 w-10 place-items-center rounded-sm text-sm font-bold text-ink-muted transition-colors hover:bg-sunken hover:text-ink after:absolute after:-inset-0.5 after:rounded-sm after:content-['']"
             aria-label="关闭"
             @click="close"
           >
@@ -1088,6 +1096,8 @@ function close(): void {
                 maxlength="200"
                 placeholder="选填，如商户名、商品名"
                 class="w-full bg-transparent text-sm font-medium text-ink outline-none placeholder:text-ink-muted/60"
+                @focus="noteFocused = true"
+                @blur="noteFocused = false"
                 @keydown.enter.prevent="save"
               />
             </div>
@@ -1153,8 +1163,30 @@ function close(): void {
           </div>
         </div>
 
-        <!-- 移动端数字键盘（5列网格：左侧常用支付方式 + 右侧 4 列标准数字键盘） -->
-        <div v-if="coreEditable" class="lg:hidden">
+        <!-- 备注输入辅助条（移动端）：原生软键盘弹出、数字键盘折叠时，保存临时挂在这条上。
+             v-show 而非 v-if —— blur 与按钮 click 的竞态下元素不能被卸载。 -->
+        <div
+          v-show="noteFocused"
+          class="flex items-center justify-between gap-3 px-4 py-2 border-b border-line/70 lg:hidden"
+        >
+          <div class="min-w-0 text-xs text-ink-muted">
+            <span class="mr-1.5">金额</span>
+            <b class="text-sm font-bold text-ink tabular-nums">{{ formatCents(totalCents) }}</b>
+          </div>
+          <button
+            type="button"
+            :disabled="coreEditable ? !canSave || saving : saving"
+            class="rounded-md bg-primary-fill px-5 py-1.5 text-xs font-bold text-on-primary shadow-xs transition-transform active:scale-95 disabled:opacity-40"
+            @mousedown.prevent
+            @click="save"
+          >
+            {{ saving ? '…' : coreEditable ? saveLabel : '保存备注' }}
+          </button>
+        </div>
+
+        <!-- 移动端数字键盘（5列网格：左侧常用支付方式 + 右侧 4 列标准数字键盘）。
+             备注聚焦时折叠：原生软键盘 + 数字键盘并存会把表单顶出屏幕。 -->
+        <div v-if="coreEditable" v-show="!noteFocused" class="lg:hidden">
           <NumericKeypad
             :can-save="canSave"
             :saving="saving"

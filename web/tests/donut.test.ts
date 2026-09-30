@@ -62,6 +62,16 @@ describe('buildDonutArcs', () => {
     );
   });
 
+  test('✱ 负净额钳制为 0：退款大于支出时不把负数写进 stroke-dasharray', () => {
+    // 服务端在某分类退款大于支出时会给出负 ratio；负 percent 会破坏 SVG 弧段语法
+    const arcs = buildDonutArcs([slice('1', -0.3), slice('2', 0.6)]);
+
+    assert.equal(arcs[0]?.percent, 0);
+    assert.equal(arcs[0]?.offset, 25);
+    assert.equal(arcs[1]?.percent, 60);
+    assert.equal(arcs[1]?.offset, 25, '负段不占位置，后续弧的起点不被它推走');
+  });
+
   test('空列表返回空数组', () => {
     assert.deepEqual(buildDonutArcs([]), []);
   });

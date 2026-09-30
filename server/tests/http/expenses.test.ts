@@ -116,6 +116,38 @@ describe('记账：账单周期落库', () => {
     assert.equal(res.statusCode, 401);
   });
 
+  test('搜索：关键词能命中分类名（二级与一级），不只是备注', async () => {
+    // 备注为空、分类为「餐饮/外卖」的记录：搜「外卖」（二级）与「餐饮」（一级）都应命中
+    // 用一个独立的远期月份，避免污染 2026-01 的月度报表用例
+    const seeded = await create({
+      amountCents: 4_200,
+      categoryId: takeout,
+      paymentMethodId: cashId,
+      spendDate: '2024-06-05',
+    });
+    assert.equal(seeded.statusCode, 201);
+
+    const byChild = await app.inject({
+      method: 'GET',
+      url: '/api/expenses?q=' + encodeURIComponent('外卖'),
+      headers: auth(),
+    });
+    assert.ok(
+      byChild.json().items.some((item: { id: string }) => item.id === seeded.json().expense.id),
+      '二级分类名应命中',
+    );
+
+    const byParent = await app.inject({
+      method: 'GET',
+      url: '/api/expenses?q=' + encodeURIComponent('餐饮'),
+      headers: auth(),
+    });
+    assert.ok(
+      byParent.json().items.some((item: { id: string }) => item.id === seeded.json().expense.id),
+      '一级分类名应命中',
+    );
+  });
+
   test('现金：入账日与还款日都等于消费日', async () => {
     const res = await create({
       amountCents: 3200,

@@ -45,7 +45,9 @@ export function buildDonutArcs(slices: readonly DonutSlice[]): DonutArc[] {
   let cumulative = 0;
 
   return slices.map((slice) => {
-    const percent = round2(slice.ratio * 100);
+    // 负净额保护：某分类退款大于支出时服务端可能给出负 ratio，
+    // 负数写进 stroke-dasharray 会破坏 SVG 弧段语法，环图整体错乱。
+    const percent = round2(Math.max(0, slice.ratio) * 100);
     const arc = {
       id: slice.id,
       percent,

@@ -149,6 +149,23 @@ describe('还款日 → 入账日（计划的待办用它反推）', () => {
     assert.equal(resolvePostingDate('2026-03-15', same), '2026-02-15');
   });
 
+  test('✱ 平年 2 月末吸附：账单日 28 / 还款日 31，2/28 不倒退到 1 月', () => {
+    // 还款日是「每月 31 号、遇月末取月末」生成的：平年 2 月的 31 号吸附成 2/28。
+    // 直接拿 28 与账单日 28 比较会误判成上一期（28 > 28 不成立）→ 入账日倒退到 1 月。
+    const monthEnd: PaymentCycle = { type: 'credit', billingDay: 28, repaymentDay: 31 };
+    assert.equal(resolvePostingDate('2027-02-28', monthEnd), '2027-02-28');
+    // 闰年 2 月 29 日同理（吸附自 31 号）
+    assert.equal(resolvePostingDate('2028-02-29', monthEnd), '2028-02-28');
+    // 其它月份不吸附，行为不变：1/31 → 本月 28
+    assert.equal(resolvePostingDate('2027-01-31', monthEnd), '2027-01-28');
+  });
+
+  test('✱ 平年 2 月末吸附不越权：真实的月末还款（还款日本身就是月末号）不受影响', () => {
+    // 还款日 28 的卡在 2/28 还款不是吸附，是真实日期：28 <= 31 仍归上一期
+    const real28: PaymentCycle = { type: 'credit', billingDay: 31, repaymentDay: 28 };
+    assert.equal(resolvePostingDate('2027-02-28', real28), '2027-01-31');
+  });
+
   test('✱ 与 resolveExpenseDates 互为逆运算（入账日回推得到原还款日所在期）', () => {
     // 显式标注数组类型：内联字面量会让 TS 在这个嵌套循环里推断出循环依赖
     const cycles: readonly PaymentCycle[] = [CARD_10_28, CARD_25_10];
