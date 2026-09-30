@@ -33,7 +33,6 @@
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
     "@fontsource/outfit": "^5.1.0",
-    "@rollup/rollup-linux-x64-gnu": "^4.63.5",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.10.5",
     "@vitejs/plugin-vue": "^5.2.1",
@@ -41,5 +40,8 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vue-tsc": "^2.2.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.63.5"
   }
 }
