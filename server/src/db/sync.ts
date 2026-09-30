@@ -46,9 +46,9 @@ export function recordChange(db: DatabaseSync, input: ChangeInput): number {
     input.entityType,
     input.entityId,
     input.op,
-    input.actorId,
+    input.actorId ?? null,
     JSON.stringify(input.payload),
-    input.deviceId,
+    input.deviceId ?? null,
     new Date().toISOString(),
   );
 

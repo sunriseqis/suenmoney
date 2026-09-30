@@ -12,9 +12,15 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node ../scripts/node-run.mjs --test",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "cap": "cap",
+    "cap:sync": "npm run build && cap sync",
+    "android:sync": "npm run build && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
     "@fontsource-variable/outfit": "^5.1.1",
     "@lucide/vue": "^1.48.0",
     "misans": "^5.0.0",
@@ -23,6 +29,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@fontsource/outfit": "^5.1.0",
     "@rollup/rollup-linux-x64-gnu": "^4.63.5",
     "@tailwindcss/vite": "^4.0.0",

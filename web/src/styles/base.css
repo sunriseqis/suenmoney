@@ -37,6 +37,11 @@
     height: 100%;
   }
 
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
   html {
     background: var(--bg);
   }

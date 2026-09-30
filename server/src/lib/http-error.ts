@@ -27,3 +27,10 @@ export const forbidden = (message = '没有权限执行该操作'): HttpError =>
 export const notFound = (message = '资源不存在'): HttpError => new HttpError(404, message);
 
 export const conflict = (message: string): HttpError => new HttpError(409, message);
+
+export const badGateway = (message: string, details?: unknown): HttpError =>
+  new HttpError(502, message, details);
+
+export const serviceUnavailable = (message: string, details?: unknown): HttpError =>
+  new HttpError(503, message, details);
+

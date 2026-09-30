@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { ApiError } from '@/api';
+import { ApiError, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
 import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
@@ -23,6 +23,35 @@ const displayName = ref('');
 const password = ref('');
 const busy = ref(false);
 const errorMessage = ref<string | null>(null);
+
+// 服务器连接配置
+const showServerConfig = ref(false);
+const customServerUrl = ref(readServerUrl());
+const serverTesting = ref(false);
+const serverUrlNotice = ref<string | null>(null);
+
+async function testServerConnection(): Promise<void> {
+  serverTesting.value = true;
+  serverUrlNotice.value = null;
+  const raw = customServerUrl.value.trim();
+  if (!raw) {
+    serverUrlNotice.value = '请填写服务器地址';
+    serverTesting.value = false;
+    return;
+  }
+  const probe = await probeServerUrl(raw, 3000);
+  if (probe.ok) {
+    serverUrlNotice.value = `连接正常 (${probe.latencyMs}ms)`;
+  } else {
+    serverUrlNotice.value = `连接失败 (${probe.error ?? '无法访问'})`;
+  }
+  serverTesting.value = false;
+}
+
+function saveServerConnection(): void {
+  writeServerUrl(customServerUrl.value.trim());
+  serverUrlNotice.value = '服务器地址已保存';
+}
 
 const canSubmit = computed(
   () => username.value.trim() !== '' && password.value.length >= 8 && !busy.value,
@@ -143,6 +172,50 @@ function switchMode(): void {
       <p v-if="mode === 'setup'" class="mt-4 text-center text-xs leading-relaxed text-ink-muted">
         该入口只在系统里一个账号都没有时可用，建好第一个账号后会自动关闭。
       </p>
+
+      <!-- 自定义服务器连接配置（移动端或局域网自建部署） -->
+      <div class="mt-8 border-t border-line pt-4 text-xs">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between text-ink-muted transition-colors hover:text-ink"
+          @click="showServerConfig = !showServerConfig"
+        >
+          <span>后端服务器设置</span>
+          <span>{{ showServerConfig ? '收起' : '展开' }}</span>
+        </button>
+
+        <div v-if="showServerConfig" class="mt-3 space-y-2.5">
+          <input
+            v-model="customServerUrl"
+            type="url"
+            placeholder="http://192.168.1.100:3000"
+            class="w-full rounded-sm bg-sunken px-3 py-2 text-xs text-ink outline-none placeholder:text-ink-muted focus:ring-1 focus:ring-primary"
+          />
+          <div class="flex items-center justify-between gap-2">
+            <span v-if="serverUrlNotice" class="truncate text-[11px] text-ink-muted">
+              {{ serverUrlNotice }}
+            </span>
+            <span v-else class="flex-1" />
+            <div class="flex gap-2">
+              <button
+                type="button"
+                :disabled="serverTesting || !customServerUrl"
+                class="rounded-sm border border-line bg-canvas px-2.5 py-1 text-xs hover:bg-surface disabled:opacity-40"
+                @click="testServerConnection"
+              >
+                {{ serverTesting ? '测试中…' : '测试连接' }}
+              </button>
+              <button
+                type="button"
+                class="rounded-sm bg-surface border border-line px-2.5 py-1 text-xs font-semibold hover:bg-canvas"
+                @click="saveServerConnection"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

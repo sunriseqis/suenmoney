@@ -44,6 +44,19 @@ const isRoot = computed(() => {
   return props.category ? props.category.parentId === null : true;
 });
 
+const parentCategory = computed(() => {
+  const pid = isRoot.value ? null : parentId.value;
+  if (!pid) return null;
+  return props.parentCategories.find((c) => c.id === pid) ?? null;
+});
+
+const displayColor = computed(() => {
+  if (isRoot.value) {
+    return color.value || String(autoColor.value);
+  }
+  return parentCategory.value?.color || color.value || String(autoColor.value);
+});
+
 watch(
   () => [props.open, props.category] as const,
   ([isOpen, cat]) => {
@@ -90,8 +103,8 @@ async function handleSave(): Promise<void> {
       await categoriesApi.create({
         name: trimmed,
         parentId: isRoot.value ? null : parentId.value,
-        icon: isRoot.value ? icon.value : undefined,
-        color: isRoot.value ? color.value : undefined,
+        icon: icon.value || undefined,
+        color: isRoot.value ? (color.value || undefined) : undefined,
       });
     } else if (props.category) {
       const payload: {
@@ -102,13 +115,13 @@ async function handleSave(): Promise<void> {
         isEnabled?: boolean;
       } = {
         name: trimmed,
+        icon: icon.value,
         isEnabled: isEnabled.value,
       };
 
       if (isRoot.value) {
-        payload.icon = icon.value;
         payload.color = color.value;
-      } else if (parentId.value !== props.category.parentId) {
+      } else if (parentId.value && parentId.value !== props.category.parentId) {
         payload.parentId = parentId.value;
       }
 
@@ -162,10 +175,9 @@ async function handleToggleEnabled(): Promise<void> {
       <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
         <div class="flex items-center gap-2">
           <CategoryIcon
-            v-if="isRoot"
-            :name="name"
+            :name="name || (isRoot ? '分类' : '子分类')"
             :icon="icon"
-            :color="color || String(autoColor)"
+            :color="displayColor"
             :size="20"
           />
           <h2 class="text-base font-bold text-ink">
@@ -233,33 +245,30 @@ async function handleToggleEnabled(): Promise<void> {
           />
         </div>
 
-        <!-- 一级分类：图标与颜色 -->
-        <template v-if="isRoot">
-          <div>
-            <label class="label-cn block mb-1.5">分类图标</label>
-            <IconPicker v-model="icon" />
-          </div>
+        <!-- 分类图标：一级与二级均支持自定义图标选择 -->
+        <div>
+          <label class="label-cn block mb-1.5">分类图标</label>
+          <IconPicker v-model="icon" />
+        </div>
 
-          <div>
-            <label class="label-cn block mb-1.5">色彩主题</label>
-            <ColorPicker v-model="color" :auto-color="autoColor" />
-          </div>
-        </template>
+        <!-- 一级分类专属：色彩主题 -->
+        <div v-if="isRoot">
+          <label class="label-cn block mb-1.5">色彩主题</label>
+          <ColorPicker v-model="color" :auto-color="autoColor" />
+        </div>
 
         <!-- 编辑已有二级分类：移动归属 -->
-        <template v-else-if="!isCreate">
-          <div v-if="moveTargets.length > 0">
-            <label class="label-cn block mb-1.5">归属父分类</label>
-            <select
-              v-model="parentId"
-              class="w-full rounded-sm bg-sunken px-3 py-2 text-sm text-ink focus:ring-1 focus:ring-primary"
-            >
-              <option v-for="root in parentCategories" :key="root.id" :value="root.id">
-                {{ root.name }}
-              </option>
-            </select>
-          </div>
-        </template>
+        <div v-if="!isRoot && !isCreate && moveTargets.length > 0">
+          <label class="label-cn block mb-1.5">归属父分类</label>
+          <select
+            v-model="parentId"
+            class="w-full rounded-sm bg-sunken px-3 py-2 text-sm text-ink focus:ring-1 focus:ring-primary"
+          >
+            <option v-for="root in parentCategories" :key="root.id" :value="root.id">
+              {{ root.name }}
+            </option>
+          </select>
+        </div>
       </div>
 
       <!-- 底部动作条：停用最左边，取消与保存靠右 -->

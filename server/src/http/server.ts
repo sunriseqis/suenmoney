@@ -11,6 +11,8 @@ import { paymentMethodRoutes } from './payment-methods.ts';
 import { planRoutes } from './plans.ts';
 import { reportRoutes } from './reports.ts';
 import { snapshotRoutes } from './snapshots.ts';
+import { syncRoutes } from './sync.ts';
+import { updateRoutes } from './update.ts';
 import { userRoutes } from './users.ts';
 import { webdavRoutes } from './webdav.ts';
 
@@ -28,10 +30,22 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
   });
 
   await app.register(cors, {
-    // 留空 = 同源部署（Web 由 nginx 一起托管），此时无需 CORS
-    origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
+    origin: (origin, cb) => {
+      // 允许没有 Origin 头的内部/curl 请求
+      if (!origin) return cb(null, true);
+      // 若配置了显式白名单，按白名单校验
+      if (config.corsOrigins.length > 0) {
+        if (config.corsOrigins.includes('*') || config.corsOrigins.includes(origin)) {
+          return cb(null, true);
+        }
+        return cb(null, false);
+      }
+      // 默认允许 Capacitor、localhost 以及局域网客户端跨源访问
+      cb(null, true);
+    },
     credentials: false,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   /**
@@ -74,6 +88,8 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
   await app.register(dataRoutes);
   await app.register(snapshotRoutes);
   await app.register(webdavRoutes);
+  await app.register(syncRoutes);
+  await app.register(updateRoutes);
 
   return app;
 }

@@ -38,6 +38,7 @@ import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
 import { categoryColorVar } from '@/utils/category-colors';
+import { getCachedExpenses, saveCachedExpenses } from '@/utils/idb';
 import {
   currentMonth,
   daysInMonth,
@@ -205,19 +206,47 @@ const today = todayLocal();
 // ---------------------------------------------------------------------------
 
 async function fetchPage(cursor: string | null): Promise<void> {
-  const page = await expensesApi.list({
-    month: month.value,
-    by: 'spend_date',
-    categoryId: categoryId.value ?? undefined,
-    paymentMethodId: paymentMethodId.value ?? undefined,
-    q: keyword.value.trim() === '' ? undefined : keyword.value.trim(),
-    limit: PAGE_SIZE,
-    cursor: cursor ?? undefined,
-  });
+  try {
+    const page = await expensesApi.list({
+      month: month.value,
+      by: 'spend_date',
+      categoryId: categoryId.value ?? undefined,
+      paymentMethodId: paymentMethodId.value ?? undefined,
+      q: keyword.value.trim() === '' ? undefined : keyword.value.trim(),
+      limit: PAGE_SIZE,
+      cursor: cursor ?? undefined,
+    });
 
-  items.value = cursor === null ? page.items : [...items.value, ...page.items];
-  nextCursor.value = page.nextCursor;
-  hasMore.value = page.hasMore;
+    if (cursor === null) {
+      // 检查本地是否有尚未同步至服务端的离线待发记录，融合展示在顶部
+      const cached = await getCachedExpenses(month.value);
+      const existingIds = new Set(page.items.map((i) => i.id));
+      const pendingLocal = cached.filter(
+        (c) => (c as { isOfflinePending?: boolean }).isOfflinePending && !existingIds.has(c.id),
+      );
+      items.value = [...pendingLocal, ...page.items];
+      if (page.items.length > 0) {
+        void saveCachedExpenses(page.items);
+      }
+    } else {
+      items.value = [...items.value, ...page.items];
+    }
+
+    nextCursor.value = page.nextCursor;
+    hasMore.value = page.hasMore;
+  } catch (error) {
+    // 离线容灾：如果网络断开且为首屏加载，尝试从本地 IndexedDB 恢复展示
+    if (cursor === null && error instanceof ApiError && error.status === 0) {
+      const cached = await getCachedExpenses(month.value);
+      if (cached.length > 0) {
+        items.value = cached;
+        nextCursor.value = null;
+        hasMore.value = false;
+        return;
+      }
+    }
+    throw error;
+  }
 }
 
 async function reloadList(): Promise<void> {
@@ -1013,12 +1042,12 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
             </tbody>
           </table>
 
-          <!-- 移动端 / 窄屏：一行一项，永不折行（A27 · A29） -->
+          <!-- 移动端 / 窄屏：双行紧凑布局（主行：分类全名 + 金额；次行：支付方式 + 完整备注 + 账期） -->
           <ul class="divide-y divide-line/40 lg:hidden">
             <li v-for="row in sortedItems" :key="row.id">
               <button
                 type="button"
-                class="flex w-full items-center gap-2.5 py-2.5 px-1 text-left transition-colors duration-150 active:bg-sunken"
+                class="flex w-full items-center gap-3 py-2.5 px-1 text-left transition-colors duration-150 active:bg-sunken"
                 @click="ui.openEdit(row)"
               >
                 <!-- 日期格：最远支持 2 天简化显示（今日星期一 / 昨日星期日 / 26日星期六） -->
@@ -1041,40 +1070,52 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                     :icon="row.categoryIcon"
                     :color="row.parentCategoryColor ?? row.categoryColor"
                     :color-name="row.parentCategoryName ?? row.categoryName"
-                    :size="18"
+                    :size="20"
                   />
                 </span>
 
-                <!-- 中间信息：主名 + 副信息同行，可截断 -->
-                <div class="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
-                  <!-- 主名（优先保住） -->
-                  <span class="shrink-0 max-w-[55%] truncate text-sm font-medium text-ink">
-                    {{ row.parentCategoryName === null ? row.categoryName : `${row.parentCategoryName} · ${row.categoryName}` }}
-                  </span>
-
-                  <!-- 副信息：备注 · 方式 · 账期（窄屏账期让位） -->
-                  <span class="min-w-0 flex-1 truncate text-xs text-ink-muted">
-                    <span v-if="row.note">{{ row.note }} · </span>
-                    <span class="inline-flex items-center gap-1">
-                      <PaymentIcon :name="row.paymentMethodName" :size="11" />
-                      <span>{{ row.paymentMethodName }}</span>
+                <!-- 中间与右侧主体区：上下双行分层 -->
+                <div class="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                  <!-- 主行：分类名（左） + 金额（右） -->
+                  <div class="flex items-baseline justify-between gap-2">
+                    <span class="truncate text-sm font-medium text-ink">
+                      {{ row.parentCategoryName === null ? row.categoryName : `${row.parentCategoryName} · ${row.categoryName}` }}
                     </span>
                     <span
-                      v-if="billingGraceDays(row.spendDate, row.repaymentDate) > 0"
-                      class="hidden sm:inline"
+                      class="shrink-0 text-sm font-bold tabular-nums text-right whitespace-nowrap"
+                      :class="row.amountCents < 0 ? 'text-danger-text' : 'text-ink'"
                     >
-                      · {{ billingGraceDays(row.spendDate, row.repaymentDate) }}天账期
+                      {{ formatYuan(row.amountCents) }}
                     </span>
-                  </span>
-                </div>
+                  </div>
 
-                <!-- 金额：永不截断、永不换行 -->
-                <span
-                  class="shrink-0 text-sm font-bold tabular-nums text-right whitespace-nowrap"
-                  :class="row.amountCents < 0 ? 'text-danger-text' : 'text-ink'"
-                >
-                  {{ formatYuan(row.amountCents) }}
-                </span>
+                  <!-- 副信息行：支付方式 + 备注 + 账期/记录人 -->
+                  <div class="flex items-center justify-between gap-2 text-xs text-ink-muted">
+                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                      <span class="inline-flex items-center gap-1 shrink-0">
+                        <PaymentIcon :name="row.paymentMethodName" :size="12" />
+                        <span>{{ row.paymentMethodName }}</span>
+                      </span>
+                      <template v-if="row.note">
+                        <span class="text-ink-muted/40 shrink-0">·</span>
+                        <span class="truncate text-ink-muted/90">{{ row.note }}</span>
+                      </template>
+                    </div>
+
+                    <span
+                      v-if="billingGraceDays(row.spendDate, row.repaymentDate) > 0"
+                      class="shrink-0 text-[11px] text-ink-muted/80 whitespace-nowrap"
+                    >
+                      {{ billingGraceDays(row.spendDate, row.repaymentDate) }}天账期
+                    </span>
+                    <span
+                      v-else-if="row.ownerName"
+                      class="shrink-0 text-[11px] text-ink-muted/70 whitespace-nowrap"
+                    >
+                      {{ row.ownerName }}
+                    </span>
+                  </div>
+                </div>
               </button>
             </li>
           </ul>

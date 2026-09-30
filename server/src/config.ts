@@ -53,6 +53,23 @@ export const config = {
 
   backupDir: resolve(str('SUENMONEY_BACKUP_DIR', './data/backups')),
   backupKeep: num('SUENMONEY_BACKUP_KEEP', 14),
+
+  /** Android / iOS 客户端自动更新（对接 UGREEN 私有云分享源） */
+  updateUgreenBaseUrl: str(
+    'SUENMONEY_UPDATE_UGREEN_BASE_URL',
+    'https://suenqi.cn35.ug.link/ugreen/v1',
+  ),
+  updateShareId: str(
+    'SUENMONEY_UPDATE_SHARE_ID',
+    '87870bfaf0cf4e078326b43c063afa1e',
+  ),
+  updateSharePath: str(
+    'SUENMONEY_UPDATE_SHARE_PATH',
+    '/home/suenqi/应用/SuenApp/SuenMoney',
+  ),
+  updateVersionCode: num('SUENMONEY_UPDATE_VERSION_CODE', 0),
+  updateSha256: str('SUENMONEY_UPDATE_SHA256', '').toLowerCase(),
+  updateSecret: str('SUENMONEY_UPDATE_SECRET', ''),
 } as const;
 
 /**

@@ -34,6 +34,7 @@ import PaymentMethodPickerSheet from '@/components/PaymentMethodPickerSheet.vue'
 import type { KeypadKey } from '@/components/keypad';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
+import { useSyncStore } from '@/stores/sync';
 import { currentMonth, formatMonthDay, formatMonthLabel, todayLocal } from '@/utils/dates';
 import {
   centsToInput,
@@ -55,6 +56,7 @@ const emit = defineEmits<{ close: []; saved: [] }>();
 
 const dict = useDictionariesStore();
 const plansStore = usePlansStore();
+const syncStore = useSyncStore();
 
 // 弹层控制
 const categoryPickerOpen = ref(false);
@@ -673,13 +675,38 @@ async function save(): Promise<void> {
 
       await plansStore.refresh();
     } else if (props.expense === null) {
-      await expensesApi.create({
-        amountCents,
-        categoryId: categoryId.value,
-        paymentMethodId: paymentMethodId.value,
-        spendDate: spendDate.value,
-        note: note.value,
-      });
+      if (!syncStore.isOnline) {
+        await syncStore.addOfflineExpense({
+          amountCents,
+          categoryId: categoryId.value,
+          paymentMethodId: paymentMethodId.value,
+          spendDate: spendDate.value,
+          note: note.value,
+        });
+      } else {
+        try {
+          await expensesApi.create({
+            amountCents,
+            categoryId: categoryId.value,
+            paymentMethodId: paymentMethodId.value,
+            spendDate: spendDate.value,
+            note: note.value,
+          });
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 0) {
+            // 网络异常连不上服务器时，平滑转入离线队列
+            await syncStore.addOfflineExpense({
+              amountCents,
+              categoryId: categoryId.value,
+              paymentMethodId: paymentMethodId.value,
+              spendDate: spendDate.value,
+              note: note.value,
+            });
+          } else {
+            throw error;
+          }
+        }
+      }
     } else {
       await expensesApi.update(props.expense.id, {
         amountCents,

@@ -4,9 +4,29 @@ import { computed, ref } from 'vue';
 import { ApiError, auth, readToken, setUnauthorizedHandler, writeToken, type User } from '@/api';
 import { deviceLabel } from '@/utils/device';
 
+const USER_KEY = 'suenmoney:user';
+
+export function readCachedUser(): User | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedUser(user: User | null): void {
+  try {
+    if (user === null) localStorage.removeItem(USER_KEY);
+    else localStorage.setItem(USER_KEY, JSON.stringify(user));
+  } catch {
+    // 忽略异常
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(readToken());
-  const user = ref<User | null>(null);
+  const user = ref<User | null>(readCachedUser());
 
   /** 是否已尝试过恢复登录态。路由守卫靠它避免每次跳转都打一次 /me */
   const ready = ref(false);
@@ -15,12 +35,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   function apply(session: { token: string; user: User }): void {
     writeToken(session.token);
+    writeCachedUser(session.user);
     token.value = session.token;
     user.value = session.user;
   }
 
   function clear(): void {
     writeToken(null);
+    writeCachedUser(null);
     token.value = null;
     user.value = null;
   }
@@ -41,10 +63,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     try {
-      user.value = (await auth.me()).user;
+      const res = await auth.me();
+      user.value = res.user;
+      writeCachedUser(res.user);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) clear();
-      // 其余情况（网络失败、5xx）保留令牌，等用户手动重试
+      // 其余情况（网络失败、5xx）保留本地令牌与用户信息缓存，支持离线进入
     } finally {
       ready.value = true;
     }

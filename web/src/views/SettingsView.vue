@@ -7,7 +7,7 @@
  * 界面上的「停用」按钮在服务端会做前置检查（有子分类或记录时拒绝），
  * 所以被拒绝时要把服务端的原话显示出来 —— 它说清了「为什么不能停用」。
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { ChevronDown, ChevronRight } from '@lucide/vue';
 import { RouterLink, useRouter } from 'vue-router';
 
@@ -39,6 +39,10 @@ const errorMessage = ref<string | null>(null);
 const notice = ref<string | null>(null);
 
 function report(error: unknown, fallback: string): void {
+  if (error instanceof ApiError && error.status === 0) {
+    // 离线状态静默，不展示报错条，保障页面无扰无抖动
+    return;
+  }
   errorMessage.value = error instanceof ApiError ? error.message : fallback;
   notice.value = null;
 }
@@ -98,11 +102,14 @@ const SETTING_TABS = [
 ] as const;
 type TabId = (typeof SETTING_TABS)[number]['id'];
 
-/** 管理员才看得到「系统」；分组标题跟着它出现或消失，不留一个空标题。 */
-const visibleTabs = computed(() => SETTING_TABS.filter((tab) => tab.id !== 'system' || isAdmin.value));
+const visibleTabs = computed(() => SETTING_TABS);
 const SETTING_GROUPS = computed(() => [...new Set(visibleTabs.value.map((tab) => tab.group))]);
 
 const activeTab = ref<TabId>('categories');
+
+watch(activeTab, () => {
+  clearMessages();
+});
 
 /**
  * 二级分类默认折叠。
@@ -234,13 +241,13 @@ function formatTimestamp(iso: string): string {
         计划在这里只做**管理**（新建/编辑/规则），hide-todos 关掉「该处理了」：
         待办是首页的事，两页重复同一份提醒只会让人怀疑数据是不是两份。
       -->
-      <div class="mt-4 grid grid-cols-5 gap-1 rounded-md bg-sunken p-1 lg:hidden">
+      <div class="mt-4 flex gap-1 overflow-x-auto no-scrollbar rounded-md bg-sunken p-1 lg:hidden">
         <button
           v-for="t in visibleTabs"
           :key="t.id"
           type="button"
-          class="rounded-sm py-2 text-xs font-semibold transition-colors duration-200"
-          :class="activeTab === t.id ? 'bg-canvas text-ink' : 'text-ink-muted'"
+          class="shrink-0 px-3.5 py-2 text-xs font-semibold rounded-sm transition-colors duration-200"
+          :class="activeTab === t.id ? 'bg-canvas text-ink shadow-sm' : 'text-ink-muted'"
           :aria-pressed="activeTab === t.id"
           @click="activeTab = t.id"
         >
@@ -269,13 +276,7 @@ function formatTimestamp(iso: string): string {
         </aside>
 
         <div class="min-w-0 flex-1">
-          <!--
-            「数据」用 v-if 而不是 v-show：其余 tab 用 v-show 是为了留住各自的
-            编辑态，而这一页要的恰好相反 —— 每次进来都重新读一遍概览，
-            条数才是当下的。而且用 v-show 的话它会在页面加载时就发一次请求，
-            非管理员即使看不到这个 tab，也会先吃一个 403。
-          -->
-          <DataPanel v-if="isAdmin && activeTab === 'system'" />
+          <DataPanel v-if="activeTab === 'system'" />
 
           <div v-show="activeTab === 'plans'">
             <PlansPanel hide-todos />

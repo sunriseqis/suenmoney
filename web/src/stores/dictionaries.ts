@@ -8,6 +8,12 @@ import {
   deriveCategoryColor,
   parseCategoryColor,
 } from '@/utils/category-colors';
+import {
+  getCachedCategories,
+  getCachedPaymentMethods,
+  saveCachedCategories,
+  saveCachedPaymentMethods,
+} from '@/utils/idb';
 
 /**
  * 共享字典：分类与支付方式。
@@ -176,6 +182,27 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
     if (loaded.value && !force) return;
     if (loading.value) return;
 
+    // 离线优先：如果当前内存为空，先从 IndexedDB 瞬间填充，实现 0ms 秒开呈现
+    if (categories.value.length === 0 || paymentMethods.value.length === 0) {
+      try {
+        const [cachedCats, cachedPms] = await Promise.all([
+          getCachedCategories(),
+          getCachedPaymentMethods(),
+        ]);
+        if (cachedCats.length > 0 && categories.value.length === 0) {
+          categories.value = cachedCats;
+        }
+        if (cachedPms.length > 0 && paymentMethods.value.length === 0) {
+          paymentMethods.value = cachedPms;
+        }
+        if (cachedCats.length > 0 || cachedPms.length > 0) {
+          loaded.value = true;
+        }
+      } catch {
+        // 忽略本地缓存读取异常
+      }
+    }
+
     loading.value = true;
     error.value = null;
 
@@ -188,7 +215,15 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
       categories.value = categoryResult.categories;
       paymentMethods.value = methodResult.paymentMethods;
       loaded.value = true;
+
+      // 异步持久化到本地 IndexedDB
+      void saveCachedCategories(categoryResult.categories);
+      void saveCachedPaymentMethods(methodResult.paymentMethods);
     } catch (err) {
+      // 如果本地已经有可用缓存，静默降级，不阻断界面使用
+      if (categories.value.length > 0 && paymentMethods.value.length > 0) {
+        return;
+      }
       error.value = err instanceof Error ? err.message : '字典数据加载失败';
       throw err;
     } finally {

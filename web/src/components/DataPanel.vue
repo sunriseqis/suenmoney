@@ -6,7 +6,7 @@
  * 1. 数据管理：包含导出账本、导入账本、导出流水、导入流水 4 个核心操作，无冗余解释文字；
  * 2. 安全备份：基于 WebDAV 远程自动化定时灾备，每日自动保留最近 3 天备份。
  */
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import {
   Archive,
   FileSpreadsheet,
@@ -22,12 +22,20 @@ import {
   type WebdavConfig,
   type WebdavStatus,
 } from '@/api';
+import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
+import { useUpdateStore } from '@/stores/update';
+
+const updateStore = useUpdateStore();
 
 import BillImportModal from './BillImportModal.vue';
 import LedgerImportModal from './LedgerImportModal.vue';
+import ServerSettingsPanel from './ServerSettingsPanel.vue';
 
+const auth = useAuthStore();
 const ui = useUiStore();
+
+const isAdmin = computed(() => auth.user?.role === 'admin');
 
 const errorMessage = ref<string | null>(null);
 const notice = ref<string | null>(null);
@@ -192,23 +200,28 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
-    <!-- 全局提示条 -->
-    <div
-      v-if="notice"
-      class="flex items-center justify-between rounded-md bg-primary-fill/10 border border-primary/20 px-4 py-2.5 text-xs text-primary"
-    >
-      <span>{{ notice }}</span>
-      <button type="button" class="ml-2 font-bold hover:underline" @click="notice = null">✕</button>
-    </div>
-    <div
-      v-if="errorMessage"
-      class="flex items-center justify-between rounded-md bg-danger/10 border border-danger/20 px-4 py-2.5 text-xs text-danger-text"
-    >
-      <span>{{ errorMessage }}</span>
-      <button type="button" class="ml-2 font-bold hover:underline" @click="errorMessage = null">✕</button>
-    </div>
+    <!-- 服务端设置（置顶展示，所有成员均可配置） -->
+    <ServerSettingsPanel />
 
-    <!-- 卡片 1：数据管理 -->
+    <!-- 管理员专属：数据管理与安全备份 -->
+    <template v-if="isAdmin">
+      <!-- 全局提示条 -->
+      <div
+        v-if="notice"
+        class="flex items-center justify-between rounded-md bg-primary-fill/10 border border-primary/20 px-4 py-2.5 text-xs text-primary"
+      >
+        <span>{{ notice }}</span>
+        <button type="button" class="ml-2 font-bold hover:underline" @click="notice = null">✕</button>
+      </div>
+      <div
+        v-if="errorMessage"
+        class="flex items-center justify-between rounded-md bg-danger/10 border border-danger/20 px-4 py-2.5 text-xs text-danger-text"
+      >
+        <span>{{ errorMessage }}</span>
+        <button type="button" class="ml-2 font-bold hover:underline" @click="errorMessage = null">✕</button>
+      </div>
+
+      <!-- 卡片 1：数据管理 -->
     <section class="rounded-lg border border-line bg-surface p-5 shadow-xs">
       <h3 class="text-sm font-bold text-ink">数据管理</h3>
 
@@ -374,6 +387,44 @@ onMounted(() => {
         >
           {{ webdavRunning ? '备份中…' : '立即备份' }}
         </button>
+      </div>
+    </section>
+    </template>
+
+    <!-- 关于应用与品牌展示 -->
+    <section aria-label="关于应用" class="flex flex-col items-center justify-center pt-8 pb-4 text-center select-none">
+      <img src="/logo.png" alt="SuenMoney" class="w-12 h-12 rounded-xl shadow-xs mb-2" />
+      <div class="text-sm font-bold text-ink">SuenMoney</div>
+      <div class="text-xs text-ink-muted mt-0.5">家庭记账 · 离线优先 · 多端自动同步</div>
+      <div class="text-[11px] text-ink-muted/70 mt-1">
+        版本 v{{ updateStore.appVersion?.versionName || '1.0.0' }}
+      </div>
+
+      <!-- 更新检查操作与状态反馈 -->
+      <div class="mt-2.5 flex flex-col items-center gap-1.5">
+        <button
+          v-if="!updateStore.available"
+          type="button"
+          :disabled="updateStore.checking"
+          class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas disabled:opacity-50"
+          @click="updateStore.check(false)"
+        >
+          <span v-if="updateStore.checking" class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span>{{ updateStore.checking ? '正在检查…' : '检查更新' }}</span>
+        </button>
+
+        <button
+          v-else
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-full bg-primary-fill px-3.5 py-1 text-xs font-bold text-on-primary transition-transform hover:opacity-95 active:scale-95"
+          @click="updateStore.open()"
+        >
+          <span>发现新版本 v{{ updateStore.latest?.versionName }} · 立即更新</span>
+        </button>
+
+        <p v-if="updateStore.message" class="text-[11px] text-ink-muted transition-opacity">
+          {{ updateStore.message }}
+        </p>
       </div>
     </section>
 

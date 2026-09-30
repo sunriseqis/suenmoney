@@ -405,6 +405,7 @@ export function createExpense(db: DatabaseSync, input: CreateExpenseInput): Expe
 }
 
 export interface BatchExpenseItem {
+  id?: string | undefined;
   amountCents: number;
   categoryId: string;
   paymentMethodId: string;
@@ -467,7 +468,15 @@ export function batchCreateExpenses(
         toPaymentCycle(method),
       );
 
-      const id = ulid();
+      const id =
+        typeof item.id === 'string' && item.id.trim() !== '' ? item.id.trim() : ulid();
+
+      const existing = db.prepare('SELECT id FROM expenses WHERE id = ?').get(id);
+      if (existing !== undefined) {
+        expenseIds.push(id);
+        continue;
+      }
+
       const row: ExpenseRow = {
         id,
         owner_id: ownerId,

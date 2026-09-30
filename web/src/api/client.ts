@@ -16,6 +16,202 @@
  */
 
 const TOKEN_KEY = 'suenmoney:token';
+const SERVER_URL_KEY = 'suenmoney:server-url';
+const SERVER_URLS_KEY = 'suenmoney:server-urls';
+const ACTIVE_SERVER_URL_KEY = 'suenmoney:active-server-url';
+
+let memoryActiveServerUrl: string | null = null;
+let connectivityListeners: Array<(isOnline: boolean, activeUrl: string | null) => void> = [];
+
+export function onConnectivityChange(
+  listener: (isOnline: boolean, activeUrl: string | null) => void,
+): () => void {
+  connectivityListeners.push(listener);
+  return () => {
+    connectivityListeners = connectivityListeners.filter((l) => l !== listener);
+  };
+}
+
+export function notifyConnectivity(isOnline: boolean, activeUrl: string | null): void {
+  for (const listener of connectivityListeners) {
+    try {
+      listener(isOnline, activeUrl);
+    } catch {
+      // 忽略监听器异常
+    }
+  }
+}
+
+/**
+ * 读取配置的服务端地址列表（按优先级由高到低排序，通常服务端 1 为内网，2 为 Tailscale/异地，3 为公网域名）。
+ */
+export function readServerUrls(): string[] {
+  try {
+    const raw = localStorage.getItem(SERVER_URLS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed
+          .map((u) => String(u).trim().replace(/\/+$/, ''))
+          .filter(Boolean);
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+    // 兼容旧版单地址配置
+    const legacy = localStorage.getItem(SERVER_URL_KEY);
+    if (legacy && legacy.trim() !== '') {
+      return [legacy.trim().replace(/\/+$/, '')];
+    }
+  } catch {
+    // 隐私模式或解析失败
+  }
+  const defaultOrigin =
+    typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'http://localhost';
+  return [defaultOrigin];
+}
+
+/**
+ * 写入服务端地址列表并重置当前激活地址。
+ */
+export function writeServerUrls(urls: string[]): void {
+  try {
+    const cleaned = urls.map((u) => u.trim().replace(/\/+$/, '')).filter(Boolean);
+    if (cleaned.length === 0) {
+      localStorage.removeItem(SERVER_URLS_KEY);
+      localStorage.removeItem(SERVER_URL_KEY);
+      localStorage.removeItem(ACTIVE_SERVER_URL_KEY);
+      memoryActiveServerUrl = null;
+    } else {
+      localStorage.setItem(SERVER_URLS_KEY, JSON.stringify(cleaned));
+      const first = cleaned[0];
+      if (first) {
+        localStorage.setItem(SERVER_URL_KEY, first);
+        // 若当前激活地址不在新列表内，首选第一个
+        if (!cleaned.includes(memoryActiveServerUrl ?? '')) {
+          setActiveServerUrl(first);
+        }
+      }
+    }
+  } catch {
+    // 忽略异常
+  }
+}
+
+/**
+ * 读取当前激活使用的服务端地址（首选已激活的，否则退回列表第一个）。
+ */
+export function getActiveServerUrl(): string {
+  if (memoryActiveServerUrl) return memoryActiveServerUrl;
+  try {
+    const saved = localStorage.getItem(ACTIVE_SERVER_URL_KEY);
+    if (saved && saved.trim() !== '') {
+      memoryActiveServerUrl = saved.trim().replace(/\/+$/, '');
+      return memoryActiveServerUrl;
+    }
+  } catch {
+    // 忽略异常
+  }
+  const urls = readServerUrls();
+  memoryActiveServerUrl = urls[0] ?? 'http://localhost';
+  return memoryActiveServerUrl;
+}
+
+/**
+ * 切换/设定当前激活的服务端地址。
+ */
+export function setActiveServerUrl(url: string | null): void {
+  if (url === null || url.trim() === '') {
+    memoryActiveServerUrl = null;
+    try {
+      localStorage.removeItem(ACTIVE_SERVER_URL_KEY);
+    } catch {
+      // 忽略异常
+    }
+  } else {
+    const clean = url.trim().replace(/\/+$/, '');
+    memoryActiveServerUrl = clean;
+    try {
+      localStorage.setItem(ACTIVE_SERVER_URL_KEY, clean);
+      localStorage.setItem(SERVER_URL_KEY, clean);
+    } catch {
+      // 忽略异常
+    }
+  }
+}
+
+export function readServerUrl(): string {
+  return getActiveServerUrl();
+}
+
+export function writeServerUrl(url: string | null): void {
+  if (url === null || url.trim() === '') {
+    writeServerUrls([]);
+  } else {
+    const existing = readServerUrls().filter((u) => u !== url.trim());
+    writeServerUrls([url.trim(), ...existing]);
+  }
+}
+
+/**
+ * 测试单个服务端地址连通性（带超时控制，默认 2500ms）。
+ */
+export async function probeServerUrl(
+  url: string,
+  timeoutMs = 2500,
+): Promise<{ ok: boolean; status?: number; latencyMs?: number; error?: string }> {
+  const clean = url.trim().replace(/\/+$/, '');
+  const testUrl = `${clean}/api/health`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const start = Date.now();
+  try {
+    const resp = await fetch(testUrl, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const latencyMs = Date.now() - start;
+    if (resp.status >= 200 && resp.status < 500) {
+      return { ok: true, status: resp.status, latencyMs };
+    }
+    return { ok: false, status: resp.status, latencyMs, error: `HTTP ${resp.status}` };
+  } catch (err) {
+    clearTimeout(timer);
+    const latencyMs = Date.now() - start;
+    const msg =
+      err instanceof Error && err.name === 'AbortError' ? '连接超时' : '无法连通';
+    return { ok: false, latencyMs, error: msg };
+  }
+}
+
+/**
+ * 按服务端列表顺序（服务端 1 -> 服务端 2 -> 服务端 3）依次探测连通性，自动寻找并切换到第一个可用地址。
+ * 当需要联网时，优先看服务端 1（内网）是否可用，不可用时无缝切换到 2、3。
+ */
+export async function detectAndSwitchServer(
+  urls?: string[],
+  timeoutMs = 2500,
+): Promise<{ url: string | null; latencyMs?: number }> {
+  const candidateUrls = urls && urls.length > 0 ? urls : readServerUrls();
+  if (candidateUrls.length === 0) {
+    notifyConnectivity(false, null);
+    return { url: null };
+  }
+
+  for (const candidate of candidateUrls) {
+    const res = await probeServerUrl(candidate, timeoutMs);
+    if (res.ok) {
+      setActiveServerUrl(candidate);
+      notifyConnectivity(true, candidate);
+      return { url: candidate, latencyMs: res.latencyMs };
+    }
+  }
+
+  notifyConnectivity(false, null);
+  return { url: null };
+}
 
 export function readToken(): string | null {
   try {
@@ -61,19 +257,29 @@ interface RequestOptions {
   query?: Record<string, QueryValue>;
 }
 
-function buildUrl(path: string, query: Record<string, QueryValue> | undefined): string {
-  const url = new URL(path, window.location.origin);
+function buildUrlFor(
+  base: string,
+  path: string,
+  query: Record<string, QueryValue> | undefined,
+): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = new URL(normalizedPath, base.endsWith('/') ? base : `${base}/`);
 
   if (query !== undefined) {
     for (const [key, value] of Object.entries(query)) {
-      // 空值一律不发：既避免 `?month=` 这种空参数触发服务端的格式校验，
-      // 也让调用方可以直接写 `{ month: maybeMonth }` 而不必先过滤
       if (value === undefined || value === null || value === '') continue;
       url.searchParams.set(key, String(value));
     }
   }
 
   return url.toString();
+}
+
+/** 将相对路径基于当前激活的服务端基地址解析为绝对 URL */
+export function resolveUrl(path: string): string {
+  const base = getActiveServerUrl();
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return new URL(normalizedPath, base.endsWith('/') ? base : `${base}/`).toString();
 }
 
 /** 读出一个非 2xx 响应里的那句话，并转成 `ApiError`。 */
@@ -108,36 +314,65 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (token !== null) headers['authorization'] = `Bearer ${token}`;
   if (options.body !== undefined) headers['content-type'] = 'application/json';
 
-  let response: Response;
-  try {
-    response = await fetch(buildUrl(path, options.query), {
-      method: options.method ?? 'GET',
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
-  } catch {
-    throw new ApiError(0, '无法连接到服务器，请检查网络或服务端状态');
-  }
+  const bodyStr = options.body === undefined ? undefined : JSON.stringify(options.body);
 
-  // 204 没有响应体，直接返回
-  if (response.status === 204) return undefined as T;
+  // 候选地址列表：当前激活的排在最前，其余按配置顺序紧随其后
+  const configuredUrls = readServerUrls();
+  const currentActive = getActiveServerUrl();
+  const candidateUrls = configuredUrls.includes(currentActive)
+    ? [currentActive, ...configuredUrls.filter((u) => u !== currentActive)]
+    : [currentActive, ...configuredUrls];
 
-  const raw = await response.text();
-  let payload: unknown = null;
+  for (const baseUrl of candidateUrls) {
+    if (!baseUrl) continue;
+    const fullUrl = buildUrlFor(baseUrl, path, options.query);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
-  if (raw !== '') {
     try {
-      payload = JSON.parse(raw);
-    } catch {
-      // 反向代理的错误页是 HTML，走不到这里就会把「服务不可用」误报成「解析失败」
-      if (!response.ok) throw toApiError(response, '');
-      throw new ApiError(response.status, '服务器返回的内容无法解析');
+      const response = await fetch(fullUrl, {
+        method: options.method ?? 'GET',
+        headers,
+        body: bodyStr,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      // 请求成功送达（服务端有响应）
+      if (baseUrl !== currentActive) {
+        setActiveServerUrl(baseUrl);
+        notifyConnectivity(true, baseUrl);
+      }
+
+      if (response.status === 204) return undefined as T;
+
+      const raw = await response.text();
+      let payload: unknown = null;
+
+      if (raw !== '') {
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          if (!response.ok) throw toApiError(response, '');
+          throw new ApiError(response.status, '服务器返回的内容无法解析');
+        }
+      }
+
+      if (!response.ok) throw toApiError(response, raw);
+
+      return payload as T;
+    } catch (err) {
+      clearTimeout(timeout);
+      // 业务错误（非网络层错误，如 400/401/403/409）直接抛出，不切换服务器重试
+      if (err instanceof ApiError && err.status !== 0) {
+        throw err;
+      }
+      // 网络层失败（连不上、超时等）：如果有其它备选服务器，继续循环重试下一个
     }
   }
 
-  if (!response.ok) throw toApiError(response, raw);
-
-  return payload as T;
+  // 全部候选服务端均无法连通
+  throw new ApiError(0, '网络连接失败');
 }
 
 export interface DownloadedFile {
@@ -148,25 +383,10 @@ export interface DownloadedFile {
 /** 从 `content-disposition` 里抠文件名；抠不到就用调用方给的兜底名。 */
 function filenameFrom(header: string | null, fallback: string): string {
   if (header === null) return fallback;
-  // 服务端只发 ASCII 文件名（suenmoney-export-all-20260928.json），
-  // 所以不需要 RFC 5987 的 `filename*=UTF-8''…` 那一支
   const matched = /filename="?([^";]+)"?/.exec(header);
   return matched?.[1] ?? fallback;
 }
 
-/**
- * 下载一份文件（导出包 / 对账表 / 备份）。
- *
- * ## 为什么不能用 `<a href="/api/export">`
- *
- * 令牌存在 `localStorage` 里、走 `Authorization` 头，而 `<a>` 发出的请求
- * **不带这个头**。结果是：浏览器乖乖下载了一个文件，文件名也对，
- * 但内容是 401 的 JSON —— 用户会以为「导出成功了，只是文件坏了」，
- * 然后拿着它去导入。必须走 `fetch` + `Blob` + 临时 object URL。
- *
- * 失败时走与 `request` 相同的错误路径，界面拿到的仍然是服务端那句原话
- * （例如「scope=year 需要 period=YYYY」），而不是「下载失败」。
- */
 export async function downloadFile(
   path: string,
   query?: Record<string, QueryValue>,
@@ -175,19 +395,40 @@ export async function downloadFile(
   const token = readToken();
   if (token !== null) headers['authorization'] = `Bearer ${token}`;
 
-  let response: Response;
-  try {
-    response = await fetch(buildUrl(path, query), { headers });
-  } catch {
-    throw new ApiError(0, '无法连接到服务器，请检查网络或服务端状态');
+  const configuredUrls = readServerUrls();
+  const currentActive = getActiveServerUrl();
+  const candidateUrls = configuredUrls.includes(currentActive)
+    ? [currentActive, ...configuredUrls.filter((u) => u !== currentActive)]
+    : [currentActive, ...configuredUrls];
+
+  for (const baseUrl of candidateUrls) {
+    if (!baseUrl) continue;
+    const fullUrl = buildUrlFor(baseUrl, path, query);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(fullUrl, { headers, signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (baseUrl !== currentActive) {
+        setActiveServerUrl(baseUrl);
+        notifyConnectivity(true, baseUrl);
+      }
+
+      if (!response.ok) throw toApiError(response, await response.text());
+
+      return {
+        blob: await response.blob(),
+        filename: filenameFrom(response.headers.get('content-disposition'), 'suenmoney-download'),
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err instanceof ApiError && err.status !== 0) throw err;
+    }
   }
 
-  if (!response.ok) throw toApiError(response, await response.text());
-
-  return {
-    blob: await response.blob(),
-    filename: filenameFrom(response.headers.get('content-disposition'), 'suenmoney-download'),
-  };
+  throw new ApiError(0, '网络连接失败');
 }
 
 /** 把下载到的 Blob 交给浏览器存盘。 */

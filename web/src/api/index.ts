@@ -33,6 +33,7 @@ import type {
 
 export * from './client';
 export type * from './types';
+export * as updateApi from './update';
 
 // ---- 认证 -----------------------------------------------------------------
 
@@ -452,5 +453,54 @@ export const webdavBackup = {
     request<{ ok: boolean; filename: string; sizeBytes: number; uploadedAt: string }>('/api/backup/webdav/run', {
       method: 'POST',
     }),
+};
+
+// ---- 移动端与离线增量同步 -------------------------------------------------
+
+export interface PullChangesResult {
+  changes: Array<{
+    version: number;
+    entityType: 'expense' | 'category' | 'payment_method' | 'plan' | 'plan_todo';
+    entityId: string;
+    op: 'upsert' | 'delete';
+    actorId: string | null;
+    payload: Record<string, unknown>;
+    deviceId: string | null;
+    createdAt: string;
+  }>;
+  latestVersion: number;
+  hasMore: boolean;
+}
+
+export interface SyncPushInput {
+  expenses?: Array<{
+    id?: string;
+    amountCents: number;
+    categoryId: string;
+    paymentMethodId: string;
+    spendDate: string;
+    note?: string;
+  }>;
+  deviceId?: string;
+}
+
+export interface SyncPushResult {
+  pushedExpensesCount: number;
+  expenseIds: string[];
+  latestVersion: number;
+}
+
+export const sync = {
+  /** 增量拉取变更集 */
+  pull: (since: number = 0, limit: number = 200) =>
+    request<PullChangesResult>('/api/sync/pull', { query: { since, limit } }),
+
+  /** 离线变更补偿推送 */
+  push: (input: SyncPushInput) =>
+    request<SyncPushResult>('/api/sync/push', { method: 'POST', body: input }),
+
+  /** 获取服务端当前同步版本号 */
+  status: () =>
+    request<{ latestVersion: number }>('/api/sync/status'),
 };
 

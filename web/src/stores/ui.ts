@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 import type { Expense } from '@/api/types';
+import { useSyncStore } from './sync';
 
 /**
  * 全局界面状态。
@@ -43,6 +44,12 @@ export const useUiStore = defineStore('ui', () => {
 
   function markDataChanged(): void {
     dataVersion.value += 1;
+    try {
+      const syncStore = useSyncStore();
+      syncStore.scheduleSync(300);
+    } catch {
+      // 忽略 Pinia 未就绪阶段的调用
+    }
   }
 
   return {
