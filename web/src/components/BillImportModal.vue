@@ -48,8 +48,6 @@ const errorMessage = ref<string | null>(null);
 
 const parseResult = ref<ParseBillResult | null>(null);
 const filterDirection = ref<'all' | 'expense' | 'income'>('expense');
-/** 「缺就建」提示：自动新建了多少分类与支付方式 */
-const provisionNotice = ref<string | null>(null);
 
 // 批量兜底与配置
 const defaultCategoryId = ref<string | null>(null);
@@ -113,6 +111,8 @@ watch(
       rows.value = [];
       errorMessage.value = null;
       provisionNotice.value = null;
+      provisionPlan.value = null;
+      provisionDismissed.value = false;
       selectedSource.value = 'wechat';
       return;
     }
@@ -123,108 +123,186 @@ watch(
 );
 
 /**
- * 「缺就建」：导入时 CSV 里出现的分类与支付方式，本地没有就自动创建。
+ * 「缺就建」：对账 CSV 里出现的分类与支付方式，本地没有时经用户确认后自动创建。
  *
  * 预设分类/支付方式已移除，全新部署就是空库 —— 靠这一步让导入自给自足。
  * 只对 suenmoney 对账来源生效：只有它携带真实的分类名与账户名；
  * 微信/支付宝来源的原始文本是「商家名 + 渠道串」，建出来的是垃圾。
- * 全程串行 + 本地缓存，同一批 3228 行里的「信用卡」只创建一次。
+ * 流程：解析 → 列出缺失清单并弹确认 → 创建 → 就地刷新预览（不用关窗重导）。
+ * 同批同名只创建一次；二级名已存在（哪怕挂在别的一级下）直接认领，
+ * 不再重复建出同名的一级/二级两份。
  */
-async function provisionMissing(result: ParseBillResult): Promise<void> {
-  if (result.source !== 'suenmoney') return;
 
-  const localRoots = new Map<string, string>();
-  const localChildren = new Map<string, string>();
-  for (const c of dict.categories) {
-    if (c.parentId === null) localRoots.set(c.name, c.id);
-    else localChildren.set(`${c.parentId}:${c.name}`, c.id);
+interface ProvisionPlan {
+  categories: Array<{ parent: string; child: string }>;
+  methods: string[];
+}
+
+const provisionPlan = ref<ProvisionPlan | null>(null);
+const provisionDismissed = ref(false);
+const provisionBusy = ref(false);
+const provisionNotice = ref<string | null>(null);
+
+function computeProvisionPlan(result: ParseBillResult): void {
+  if (result.source !== 'suenmoney' || provisionDismissed.value) {
+    provisionPlan.value = null;
+    return;
   }
-  const localMethods = new Map<string, string>();
-  for (const m of dict.paymentMethods) localMethods.set(m.name, m.id);
 
-  let createdCategories = 0;
-  let createdMethods = 0;
-  const catCache = new Map<string, string | null>();
-  const methodCache = new Map<string, string | null>();
-  const provisionedCat = new Map<number, string>();
-  const provisionedMethod = new Map<number, string>();
-
-  const ensureCategory = async (parentName: string, childName: string): Promise<string | null> => {
-    const cacheKey = `${parentName}|${childName}`;
-    if (catCache.has(cacheKey)) return catCache.get(cacheKey) ?? null;
-
-    let rootId = localRoots.get(parentName);
-    if (rootId === undefined) {
-      const created = await categoriesApi.create({ name: parentName });
-      rootId = created.category.id;
-      localRoots.set(parentName, rootId);
-      createdCategories += 1;
+  const catMap = new Map<string, { parent: string; child: string }>();
+  const methodSet = new Set<string>();
+  for (const item of result.items) {
+    if (item.suggestedCategoryId === null) {
+      const parent = (item.categoryParentName ?? '').trim();
+      const child = (item.categoryChildName ?? '').trim();
+      if (parent !== '' || child !== '') {
+        const key = `${parent}|${child}`;
+        if (!catMap.has(key)) catMap.set(key, { parent, child });
+      }
     }
+    if (item.suggestedPaymentMethodId === null && item.paymentMethodRaw !== '') {
+      methodSet.add(item.paymentMethodRaw);
+    }
+  }
 
-    let childId: string | undefined;
-    let resultId: string | null = rootId;
-    if (childName !== '' && childName !== parentName) {
-      const childKey = `${rootId}:${childName}`;
-      childId = localChildren.get(childKey);
-      if (childId === undefined) {
-        const created = await categoriesApi.create({ name: childName, parentId: rootId });
-        childId = created.category.id;
-        localChildren.set(childKey, childId);
+  const plan = { categories: [...catMap.values()], methods: [...methodSet] };
+  provisionPlan.value = plan.categories.length > 0 || plan.methods.length > 0 ? plan : null;
+}
+
+async function confirmProvision(): Promise<void> {
+  const plan = provisionPlan.value;
+  if (plan === null || provisionBusy.value) return;
+
+  provisionBusy.value = true;
+  errorMessage.value = null;
+  try {
+    // 现有体系快照，创建过程就地更新 —— 同批同名只建一次
+    const roots = new Map<string, string>(); // 一级名 → id
+    const children = new Map<string, string>(); // 二级名 → id
+    const methods = new Map<string, string>(); // 支付方式名 → id
+    for (const c of dict.categories) {
+      if (c.parentId === null) roots.set(c.name, c.id);
+      else children.set(c.name, c.id);
+    }
+    for (const m of dict.paymentMethods) methods.set(m.name, m.id);
+
+    let createdCategories = 0;
+    let createdMethods = 0;
+    const resolved = new Map<string, string>(); // 'parent|child' → categoryId
+
+    const ensureRoot = async (name: string): Promise<string> => {
+      let id = roots.get(name);
+      if (id === undefined) {
+        const created = await categoriesApi.create({ name });
+        id = created.category.id;
+        roots.set(name, id);
         createdCategories += 1;
       }
-      resultId = childId;
-    }
-    catCache.set(cacheKey, resultId);
-    return resultId;
-  };
+      return id;
+    };
 
-  const ensureMethod = async (name: string): Promise<string | null> => {
-    if (methodCache.has(name)) return methodCache.get(name) ?? null;
-    // 名称含信用卡字样按信用卡建（默认 1 日出账 / 10 日还款，可在设置中调整账期）；
-    // 其余一律储蓄卡 —— 与其猜一个错的账期，不如给一个能改的起点
-    const isCredit = /信用卡|贷记|花呗/.test(name);
-    const created = await paymentMethodsApi.create({
-      name,
-      type: isCredit ? 'credit' : 'cash',
-      ...(isCredit ? { billingDay: 1, repaymentDay: 10 } : {}),
-    });
-    localMethods.set(name, created.paymentMethod.id);
-    methodCache.set(name, created.paymentMethod.id);
-    createdMethods += 1;
-    return created.paymentMethod.id;
-  };
+    for (const { parent, child } of plan.categories) {
+      const key = `${parent}|${child}`;
+      if (resolved.has(key)) continue;
 
-  for (const item of result.items) {
-    try {
-      if (item.suggestedCategoryId === null && (item.categoryParentName || item.categoryChildName)) {
-        const id = await ensureCategory(item.categoryParentName ?? '', item.categoryChildName ?? '');
-        if (id !== null) provisionedCat.set(item.rawIndex, id);
+      if (parent === '') {
+        // 只给了二级名：按名字认领现有分类（一级或二级均可），否则建为一级
+        const existing = children.get(child) ?? roots.get(child);
+        if (existing !== undefined) {
+          resolved.set(key, existing);
+          continue;
+        }
+        resolved.set(key, await ensureRoot(child));
+        continue;
       }
-      if (item.suggestedPaymentMethodId === null && item.paymentMethodRaw !== '') {
-        const id = await ensureMethod(item.paymentMethodRaw);
-        if (id !== null) provisionedMethod.set(item.rawIndex, id);
-      }
-    } catch {
-      // 单条建失败不阻塞导入（如同名并发冲突）：该行回落到「手动选择」路径
-    }
-  }
 
-  if (createdCategories > 0 || createdMethods > 0) {
+      const rootId = await ensureRoot(parent);
+      if (child === '' || child === parent) {
+        resolved.set(key, rootId);
+        continue;
+      }
+      // 二级名已存在（哪怕挂在别的一级下）直接认领，避免同名两份
+      const existingChild = children.get(child);
+      if (existingChild !== undefined) {
+        resolved.set(key, existingChild);
+        continue;
+      }
+      const created = await categoriesApi.create({ name: child, parentId: rootId });
+      children.set(child, created.category.id);
+      createdCategories += 1;
+      resolved.set(key, created.category.id);
+    }
+
+    for (const name of plan.methods) {
+      if (methods.has(name)) continue;
+      // 名称含信用卡字样按信用卡建（默认 1 日出账 / 10 日还款，可在设置中调整账期）；
+      // 其余一律储蓄卡 —— 与其猜一个错的账期，不如给一个能改的起点
+      const isCredit = /信用卡|贷记|花呗/.test(name);
+      const created = await paymentMethodsApi.create({
+        name,
+        type: isCredit ? 'credit' : 'cash',
+        ...(isCredit ? { billingDay: 1, repaymentDay: 10 } : {}),
+      });
+      methods.set(name, created.paymentMethod.id);
+      createdMethods += 1;
+    }
+
+    // 回填解析结果并重建预览行 —— 不再需要关掉窗口重导
+    const result = parseResult.value;
+    if (result !== null) {
+      for (const item of result.items) {
+        if (item.suggestedCategoryId === null) {
+          const parent = (item.categoryParentName ?? '').trim();
+          const child = (item.categoryChildName ?? '').trim();
+          const id = resolved.get(`${parent}|${child}`);
+          if (id !== undefined) item.suggestedCategoryId = id;
+        }
+        if (item.suggestedPaymentMethodId === null && item.paymentMethodRaw !== '') {
+          const id = methods.get(item.paymentMethodRaw);
+          if (id !== undefined) item.suggestedPaymentMethodId = id;
+        }
+      }
+      buildRows(result);
+    }
+
     await dict.load();
-    provisionNotice.value =
-      `已自动新建分类 ${createdCategories} 个、支付方式 ${createdMethods} 个` +
-      (createdMethods > 0 ? '（新建信用卡默认 1日出账/10日还款，可在设置中调整账期）' : '');
-  }
 
-  // 用新建好的 id 回填建议
-  if (provisionedCat.size > 0 || provisionedMethod.size > 0) {
-    for (const item of result.items) {
-      const catId = provisionedCat.get(item.rawIndex);
-      if (catId !== undefined) item.suggestedCategoryId = catId;
-      const methodId = provisionedMethod.get(item.rawIndex);
-      if (methodId !== undefined) item.suggestedPaymentMethodId = methodId;
-    }
+    provisionNotice.value =
+      `已新建分类 ${createdCategories} 个、支付方式 ${createdMethods} 个` +
+      (createdMethods > 0 ? '（新建信用卡默认 1日出账/10日还款，可在设置中调整账期）' : '');
+    provisionPlan.value = null;
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : '自动创建失败，请手动指定分类与支付方式';
+  } finally {
+    provisionBusy.value = false;
   }
+}
+
+function dismissProvision(): void {
+  provisionDismissed.value = true;
+  provisionPlan.value = null;
+}
+
+function buildRows(result: ParseBillResult): void {
+  rows.value = result.items.map((item: ParsedBillItem) => {
+    const categoryId = item.suggestedCategoryId ?? defaultCategoryId.value;
+    const paymentMethodId = item.suggestedPaymentMethodId ?? defaultPaymentMethodId.value;
+
+    return {
+      rawIndex: item.rawIndex,
+      spendDate: item.spendDate,
+      direction: item.direction,
+      amountCents: item.amountCents,
+      amountYuan: item.amountYuan,
+      counterparty: item.counterparty,
+      description: item.description,
+      paymentMethodRaw: item.paymentMethodRaw,
+      note: item.note,
+      categoryId,
+      paymentMethodId,
+      selected: item.direction === 'expense',
+    };
+  });
 }
 
 function runParse(source: 'wechat' | 'alipay' | 'suenmoney'): void {
@@ -235,50 +313,22 @@ function runParse(source: 'wechat' | 'alipay' | 'suenmoney'): void {
       throw new ApiError(0, '未在文件中检测到有效的交易记录，请检查格式选择是否与文件一致。');
     }
     parseResult.value = result;
-    rows.value = result.items.map((item: ParsedBillItem) => {
-      const categoryId = item.suggestedCategoryId ?? defaultCategoryId.value;
-      const paymentMethodId = item.suggestedPaymentMethodId ?? defaultPaymentMethodId.value;
-
-      return {
-        rawIndex: item.rawIndex,
-        spendDate: item.spendDate,
-        direction: item.direction,
-        amountCents: item.amountCents,
-        amountYuan: item.amountYuan,
-        counterparty: item.counterparty,
-        description: item.description,
-        paymentMethodRaw: item.paymentMethodRaw,
-        note: item.note,
-        categoryId,
-        paymentMethodId,
-        selected: item.direction === 'expense',
-      };
-    });
+    buildRows(result);
+    computeProvisionPlan(result);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '文件解析失败';
     parseResult.value = null;
     rows.value = [];
-  }
-}
-
-/** 缺就建需要打接口，解析主流程改为异步执行，失败回落为纯本地解析结果 */
-async function runParseWithProvision(source: 'wechat' | 'alipay' | 'suenmoney'): Promise<void> {
-  if (!rawCsvText.value) return;
-  runParse(source);
-  if (parseResult.value === null) return;
-  try {
-    await provisionMissing(parseResult.value);
-    runParse(source); // 带上新建的 id 重新构建预览行
-  } catch {
-    // 供给失败（网络/权限）不阻塞：用户仍可手动指定分类与支付方式
+    provisionPlan.value = null;
   }
 }
 
 function changeSource(s: 'wechat' | 'alipay' | 'suenmoney'): void {
   selectedSource.value = s;
   errorMessage.value = null;
+  provisionNotice.value = null;
   if (rawCsvText.value) {
-    runParseWithProvision(s);
+    runParse(s);
   }
 }
 
@@ -291,6 +341,7 @@ async function onFileSelected(event: Event): Promise<void> {
   file.value = picked;
   errorMessage.value = null;
   provisionNotice.value = null;
+  provisionDismissed.value = false;
   parsing.value = true;
 
   try {
@@ -303,7 +354,7 @@ async function onFileSelected(event: Event): Promise<void> {
       selectedSource.value = detected;
     }
 
-    runParseWithProvision(selectedSource.value);
+    runParse(selectedSource.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '文件解析失败';
     parseResult.value = null;
@@ -455,7 +506,34 @@ function close(): void {
           {{ errorMessage }}
         </p>
 
-        <!-- 「缺就建」提示 -->
+        <!-- 「缺就建」确认：列出将自动创建的分类与支付方式 -->
+        <div v-if="provisionPlan !== null" class="mb-4 rounded-sm bg-primary/10 p-3 text-xs text-primary-text">
+          <p class="font-semibold">检测到本机不存在的分类 / 支付方式：</p>
+          <p class="mt-1 leading-relaxed break-all">
+            <template v-if="provisionPlan.categories.length > 0">分类：{{ provisionPlan.categories.map((c) => (c.child !== '' && c.child !== c.parent) ? `${c.parent} · ${c.child}` : c.parent || c.child).join('、') }}</template>
+            <template v-if="provisionPlan.categories.length > 0 && provisionPlan.methods.length > 0">；</template>
+            <template v-if="provisionPlan.methods.length > 0">支付方式：{{ provisionPlan.methods.join('、') }}</template>
+          </p>
+          <div class="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              :disabled="provisionBusy"
+              class="rounded-sm bg-primary-fill px-3 py-1.5 font-bold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-40"
+              @click="confirmProvision"
+            >
+              {{ provisionBusy ? '创建中…' : '自动创建并填入' }}
+            </button>
+            <button
+              type="button"
+              class="font-semibold text-ink-muted hover:text-ink"
+              @click="dismissProvision"
+            >
+              不创建，手动指定
+            </button>
+          </div>
+        </div>
+
+        <!-- 「缺就建」完成提示 -->
         <p v-if="provisionNotice !== null" class="mb-4 rounded-sm bg-primary/10 p-3 text-xs text-primary-text">
           {{ provisionNotice }}
         </p>
