@@ -67,8 +67,8 @@ c10 = bleed.getpixel((W - 1, 0))
 c01 = bleed.getpixel((0, H - 1))
 c11 = bleed.getpixel((W - 1, H - 1))
 
-adaptive_base = Image.new("RGBA", (W, H))
-canv_pix = adaptive_base.load()
+adaptive_background = Image.new("RGBA", (W, H))
+canv_pix = adaptive_background.load()
 for y in range(H):
     fy = y / H
     for x in range(W):
@@ -81,7 +81,8 @@ for y in range(H):
 ox = (W - sw) // 2
 oy = (H - sh) // 2
 feather_mask = Image.new("L", (sw, sh), 255)
-for i in range(25):
+FEATHER = 80  # 羽化带宽度（约 8%）：让前景 squircle 边缘融入背景渐变，肉眼无接缝
+for i in range(FEATHER):
     alpha = int(255 * (i / 25.0))
     for x in range(sw):
         if i < sh:
@@ -92,7 +93,16 @@ for i in range(25):
             feather_mask.putpixel((i, y), min(feather_mask.getpixel((i, y)), alpha))
             feather_mask.putpixel((sw - 1 - i, y), min(feather_mask.getpixel((sw - 1 - i, y)), alpha))
 
+# 自适应图标的两个分层（Android 8+ adaptive icon）：
+#   background = 插值渐变画布（满幅），foreground = 缩放 squircle + 羽化边缘（四角透明）。
+# 两者合成与整体视觉完全一致 —— 之前把合成图直接当 foreground，
+# squircle 边缘落在 launcher 可视圈内、又与 XML 线性渐变背景色调不齐，
+# 于是桌面上看到「图标里套着一个渐变方块」。
+adaptive_base = adaptive_background.copy()
 adaptive_base.paste(scaled_bleed, (ox, oy), feather_mask)
+
+adaptive_foreground = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+adaptive_foreground.paste(scaled_bleed, (ox, oy), feather_mask)
 
 print("[3/5] Generating Android mipmap launcher icons...")
 densities = {
@@ -124,10 +134,14 @@ for density, sizes in densities.items():
     round_icon.paste(round_base, (0, 0), c_mask)
     round_icon.save(os.path.join(folder, "ic_launcher_round.png"))
     
-    # 3. ic_launcher_foreground.png (adaptive foreground)
+    # 3. ic_launcher_foreground.png（自适应前景：只含内容，四角透明）
     fg_size = sizes["foreground"]
-    fg_icon = adaptive_base.resize((fg_size, fg_size), Image.Resampling.LANCZOS)
+    fg_icon = adaptive_foreground.resize((fg_size, fg_size), Image.Resampling.LANCZOS)
     fg_icon.save(os.path.join(folder, "ic_launcher_foreground.png"))
+
+    # 4. ic_launcher_background.png（自适应背景：与前景同一取景的满幅渐变）
+    bg_icon = adaptive_background.resize((fg_size, fg_size), Image.Resampling.LANCZOS)
+    bg_icon.convert("RGB").save(os.path.join(folder, "ic_launcher_background.png"))
     
     print(f"  -> Generated {density}: sq={sq_size}, round={sq_size}, fg={fg_size}")
 
