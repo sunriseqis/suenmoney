@@ -61,7 +61,10 @@ cd suenmoney
 
 ### 4. 启动服务
 ```bash
-# 启动并在后台运行容器组
+# 拉取 GHCR 托管镜像并启动（推荐，无需本地构建）
+docker compose pull && docker compose up -d
+
+# 或直接本地构建启动
 docker compose up -d --build
 ```
 
@@ -70,7 +73,7 @@ docker compose up -d --build
 - 若已在 `docker-compose.yml` 中配置了初始管理员，直接登录即可开始记账；
 - 若未配置，可在容器内手动添加管理员：
 ```bash
-docker compose exec server npm run user:add -- --username admin --name 管理员 --password 你的安全口令 --admin
+docker compose exec suenmoney-server npm run user:add -- --username admin --name 管理员 --password 你的安全口令 --admin
 ```
 *(若不指定 `--password`，命令会自动随机生成一个高强度口令并打印)*
 
@@ -90,6 +93,7 @@ docker compose exec server npm run user:add -- --username admin --name 管理员
 | `SUENMONEY_ADMIN_USER` | 空 | 初始管理员登录名（仅库为空时生效） |
 | `SUENMONEY_ADMIN_PASSWORD` | 空 | 初始管理员口令（仅库为空时生效） |
 | `SUENMONEY_ADMIN_NAME` | 空 | 初始管理员显示名称 |
+| `TZ` | `Asia/Shanghai`（镜像内置） | 容器时区：影响备份调度时刻与日志时间戳；业务日期不受影响（客户端传入） |
 
 ---
 
@@ -107,7 +111,7 @@ SuenMoney 采用区分用户与运维的双层备份策略：
 若遇到数据库意外损坏或误操作，可从快照快速恢复：
 ```bash
 # 1. 停止运行中的容器
-docker compose stop server
+docker compose stop suenmoney-server
 
 # 2. 找到需要恢复的快照文件并覆盖主库
 # (可通过 docker volume inspect suenmoney-data 查看实际挂载路径)
@@ -117,7 +121,7 @@ docker run --rm -v suenmoney-data:/data alpine sh -c "
 "
 
 # 3. 重新启动服务
-docker compose start server
+docker compose start suenmoney-server
 ```
 
 ### 3. 用户侧跨版本逻辑备份（JSON 数据包）
@@ -130,10 +134,10 @@ docker compose start server
 
 ```bash
 # 查看服务端实时日志
-docker compose logs -f server
+docker compose logs -f suenmoney-server
 
 # 查看前端反代实时日志
-docker compose logs -f web
+docker compose logs -f suenmoney-web
 
 # 备份整个 Docker Volume 到当前目录压缩包
 docker run --rm -v suenmoney-data:/data -v $(pwd):/backup alpine tar czvf /backup/suenmoney-data-backup-$(date +%Y%m%d).tar.gz /data
@@ -141,7 +145,7 @@ docker run --rm -v suenmoney-data:/data -v $(pwd):/backup alpine tar czvf /backu
 # 从压缩包恢复 Docker Volume
 docker run --rm -v suenmoney-data:/data -v $(pwd):/backup alpine sh -c "cd / && tar xzvf /backup/suenmoney-data-backup-20260929.tar.gz"
 
-# 升级镜像并重启
+# 升级镜像并重启（镜像由 CI 自动托管在 GHCR）
 git pull
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```

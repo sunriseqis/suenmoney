@@ -27,8 +27,12 @@ RUN npm run build
 # ---- 阶段 2：轻量级 Nginx 运行时 ----
 FROM nginx:alpine AS runner
 
+# tzdata：让 TZ 环境变量生效（访问日志等时间戳与东八区一致）
+RUN apk add --no-cache tzdata
+
 # 设置后端 API 默认地址（可由 docker-compose 或 -e BACKEND_URL 覆盖）
-ENV BACKEND_URL=http://suenmoney-server:3310
+ENV BACKEND_URL=http://suenmoney-server:3310 \
+    TZ=Asia/Shanghai
 
 # 复制 Nginx 配置模板（nginx:alpine 自带模板替换功能，启动时自动将 $BACKEND_URL 写入 default.conf）
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
