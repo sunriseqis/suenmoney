@@ -80,6 +80,8 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
       ownerId: auth.user.id,
       confirmFirst: optionalBool(body, 'confirmFirst', false),
       confirmSpendDate: optionalString(body, 'confirmSpendDate', '') || undefined,
+      // 可选：把这条已有支出转成该计划（同事务内软删原支出），见 CreatePlanInput
+      consumeExpenseId: optionalString(body, 'consumeExpenseId', '') || undefined,
     });
 
     return reply.code(201).send({ plan });

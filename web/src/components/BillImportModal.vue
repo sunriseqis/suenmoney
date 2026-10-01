@@ -122,6 +122,7 @@ watch(
       provisionNotice.value = null;
       provisionPlan.value = null;
       provisionDismissed.value = false;
+      provisionProgress.value = null;
       selectedSource.value = 'wechat';
       return;
     }
@@ -151,6 +152,41 @@ const provisionPlan = ref<ProvisionPlan | null>(null);
 const provisionDismissed = ref(false);
 const provisionBusy = ref(false);
 const provisionNotice = ref<string | null>(null);
+/** 「自动创建」进度：done/total。用于把按钮文案变成「创建中 12/63」，让用户看到数字在动。 */
+const provisionProgress = ref<{ done: number; total: number } | null>(null);
+
+/**
+ * 并发创建的上限：6。
+ *
+ * 一次性把 63 个请求全发出去既没必要也危险 —— 移动端连接数有限、服务端也可能有速率限制，
+ * 打爆了反而更慢甚至互相拖垮。取 6 是「足够快」与「不压垮链路」的折中：
+ * 空库导入从 63 个串行波次降到约 11 个并发波次。
+ */
+const PROVISION_CONCURRENCY = 6;
+
+/**
+ * 极简并发池：最多同时跑 `limit` 个任务。
+ *
+ * 不引入依赖 —— 这里只需要「按上限消费一个任务列表」，十几行就够，
+ * 为此装一个 p-limit 之类的库不值得。
+ */
+async function runPool(tasks: Array<() => Promise<void>>, limit: number): Promise<void> {
+  let cursor = 0;
+  const workerCount = Math.min(limit, tasks.length);
+  const workers: Array<Promise<void>> = [];
+  for (let i = 0; i < workerCount; i++) {
+    workers.push(
+      (async () => {
+        while (cursor < tasks.length) {
+          const task = tasks[cursor];
+          cursor += 1;
+          if (task !== undefined) await task();
+        }
+      })(),
+    );
+  }
+  await Promise.all(workers);
+}
 
 function computeProvisionPlan(result: ParseBillResult): void {
   if (result.source !== 'suenmoney' || provisionDismissed.value) {
@@ -223,38 +259,21 @@ async function confirmProvision(): Promise<void> {
       }
     }
 
-    let createdCategories = 0;
-    let createdMethods = 0;
-    const resolved = new Map<string, string>(); // 'parent|child' → categoryId
-    // 因「完全没有任何层级证据」而兜底建成一级的名字，收集起来在完成提示里告知用户
-    const fallbackRoots = new Set<string>();
-
-    const ensureRoot = async (name: string): Promise<string> => {
-      let id = roots.get(name);
-      if (id === undefined) {
-        const created = await categoriesApi.create({ name });
-        id = created.category.id;
-        roots.set(name, id);
-        createdCategories += 1;
-      }
-      return id;
-    };
-
-    const ensureChild = async (parentId: string, name: string): Promise<string> => {
-      // 二级名已存在（哪怕挂在别的一级下）直接认领，避免同名两份
-      let id = children.get(name);
-      if (id === undefined) {
-        const created = await categoriesApi.create({ name, parentId });
-        id = created.category.id;
-        children.set(name, id);
-        createdCategories += 1;
-      }
-      return id;
-    };
+    // ---- 先把「落位决策」全部算出来（纯计算），再交给并发波次执行 ----
+    // 决策依赖的证据集合在本轮内固定不变，因此可以脱离创建顺序预先算好；
+    // 待建项按名字去重，语义与原串行版「同批同名只建一次」一致。
+    const rootsToCreate = new Set<string>(); // 待建一级名
+    const childSpecs = new Map<string, string>(); // 待建二级名 → 父名
+    const fallbackRoots = new Set<string>(); // 因无层级证据而兜底建成一级的名字
+    const resolved = new Map<string, string>(); // 'parent|child' → categoryId（仅已存在于字典的可立即定案）
+    // 需要等创建完成后才能定案的解析项
+    const pending: Array<
+      | { key: string; kind: 'root'; name: string }
+      | { key: string; kind: 'child'; parentName: string; childName: string }
+    > = [];
 
     for (const { parent, child } of plan.categories) {
       const key = `${parent}|${child}`;
-      if (resolved.has(key)) continue;
 
       // 按证据推断落位：能认领就认领、能证明是二级就挂到父下、否则才兜底建一级
       const placement = decidePlacement({
@@ -266,48 +285,184 @@ async function confirmProvision(): Promise<void> {
       });
 
       if (placement.kind === 'existing') {
-        const id = children.get(placement.categoryName) ?? roots.get(placement.categoryName);
+        const name = placement.categoryName;
+        const id = children.get(name) ?? roots.get(name);
         if (id !== undefined) {
           resolved.set(key, id);
           continue;
         }
         // 名字有证据但库里尚未存在（证据仅来自本批数据）：按证据落到父下，否则建根
-        const evidenceParent = knownChildToParent.get(placement.categoryName);
+        const evidenceParent = knownChildToParent.get(name);
         if (evidenceParent !== undefined) {
-          resolved.set(key, await ensureChild(await ensureRoot(evidenceParent), placement.categoryName));
+          if (!roots.has(evidenceParent)) rootsToCreate.add(evidenceParent);
+          if (!children.has(name)) childSpecs.set(name, evidenceParent);
+          pending.push({ key, kind: 'child', parentName: evidenceParent, childName: name });
         } else {
-          resolved.set(key, await ensureRoot(placement.categoryName));
+          if (!roots.has(name)) rootsToCreate.add(name);
+          pending.push({ key, kind: 'root', name });
         }
         continue;
       }
 
       if (placement.kind === 'createChild') {
-        resolved.set(key, await ensureChild(await ensureRoot(placement.parentName), placement.childName));
+        if (!roots.has(placement.parentName)) rootsToCreate.add(placement.parentName);
+        if (!children.has(placement.childName)) {
+          childSpecs.set(placement.childName, placement.parentName);
+        }
+        pending.push({
+          key,
+          kind: 'child',
+          parentName: placement.parentName,
+          childName: placement.childName,
+        });
         continue;
       }
 
       // createRoot：没有任何证据，只能建一级 —— 记下来让用户知晓并去设置里手改
       fallbackRoots.add(placement.name);
-      resolved.set(key, await ensureRoot(placement.name));
+      if (!roots.has(placement.name)) rootsToCreate.add(placement.name);
+      pending.push({ key, kind: 'root', name: placement.name });
     }
 
-    for (const name of plan.methods) {
-      if (methods.has(name)) continue;
-      // 名称含信用卡字样按信用卡建（默认 1 日出账 / 10 日还款，可在设置中调整账期）；
-      // 其余一律储蓄卡 —— 与其猜一个错的账期，不如给一个能改的起点
-      const isCredit = /信用卡|贷记|花呗/.test(name);
-      const created = await paymentMethodsApi.create({
-        name,
-        type: isCredit ? 'credit' : 'cash',
-        ...(isCredit ? { billingDay: 1, repaymentDay: 10 } : {}),
-      });
-      methods.set(name, created.paymentMethod.id);
-      createdMethods += 1;
-    }
+    const methodsToCreate = plan.methods.filter((name) => !methods.has(name));
+
+    // 进度总数 = 本轮计划创建的项（一级 + 二级 + 支付方式），不是全部 63 个估算值
+    const total = rootsToCreate.size + childSpecs.size + methodsToCreate.length;
+    let done = 0;
+    provisionProgress.value = { done, total };
+    const step = (): void => {
+      done += 1;
+      provisionProgress.value = { done, total };
+    };
+
+    let createdCategories = 0;
+    let createdMethods = 0;
+    // 409（同名已存在）不算失败 —— 视为「已存在、可以继续」：
+    // 并发或重试下重名很常见，若据此中断整段流程，用户会看到「部分建好、面板不消失」
+    // 只能反复点。先把名字记下，待 dict.load(true) 后从新字典里按名字取回 id 继续用。
+    const conflictRoots = new Set<string>();
+    const conflictChildren = new Set<string>();
+    const conflictMethods = new Set<string>();
+    // 真正失败（非 409）的项：不中断整段，收集起来在完成提示里如实列出
+    const failures: Array<{ label: string; reason: string }> = [];
+
+    // ---- 第一波：并行创建所有一级分类（二级依赖它们的 id，必须先完成）----
+    await runPool(
+      [...rootsToCreate].map((name) => async (): Promise<void> => {
+        try {
+          const created = await categoriesApi.create({ name });
+          roots.set(name, created.category.id);
+          createdCategories += 1;
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 409) {
+            conflictRoots.add(name);
+          } else {
+            failures.push({
+              label: `分类「${name}」`,
+              reason: error instanceof ApiError ? error.message : '创建失败',
+            });
+          }
+        } finally {
+          step();
+        }
+      }),
+      PROVISION_CONCURRENCY,
+    );
+
+    // ---- 第二波：并行创建二级分类（父 id 已在第一波拿到）+ 支付方式（彼此独立，同波发出）----
+    const categoryTasks = [...childSpecs.entries()].map(
+      ([childName, parentName]) => async (): Promise<void> => {
+        const parentId = roots.get(parentName);
+        if (parentId === undefined) {
+          // 父级本轮没建成（例如其创建也失败）：子级只能放弃并如实告知，避免静默丢项
+          failures.push({
+            label: `分类「${parentName} · ${childName}」`,
+            reason: '父级分类未能创建',
+          });
+          step();
+          return;
+        }
+        try {
+          const created = await categoriesApi.create({ name: childName, parentId });
+          children.set(childName, created.category.id);
+          createdCategories += 1;
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 409) {
+            conflictChildren.add(childName);
+          } else {
+            failures.push({
+              label: `分类「${parentName} · ${childName}」`,
+              reason: error instanceof ApiError ? error.message : '创建失败',
+            });
+          }
+        } finally {
+          step();
+        }
+      },
+    );
+
+    const methodTasks = methodsToCreate.map((name) => async (): Promise<void> => {
+      try {
+        // 名称含信用卡字样按信用卡建（默认 1 日出账 / 10 日还款，可在设置中调整账期）；
+        // 其余一律储蓄卡 —— 与其猜一个错的账期，不如给一个能改的起点
+        const isCredit = /信用卡|贷记|花呗/.test(name);
+        const created = await paymentMethodsApi.create({
+          name,
+          type: isCredit ? 'credit' : 'cash',
+          ...(isCredit ? { billingDay: 1, repaymentDay: 10 } : {}),
+        });
+        methods.set(name, created.paymentMethod.id);
+        createdMethods += 1;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          conflictMethods.add(name);
+        } else {
+          failures.push({
+            label: `支付方式「${name}」`,
+            reason: error instanceof ApiError ? error.message : '创建失败',
+          });
+        }
+      } finally {
+        step();
+      }
+    });
+
+    await runPool([...categoryTasks, ...methodTasks], PROVISION_CONCURRENCY);
 
     // 先强制刷新字典，再重建预览行 —— 顺序不能反：分类下拉（allSelectableCategories）
     // 是从 dict 计算出来的，字典没刷进来时新建的分类 id 不在选项里，行会显示成空白「无分类」。
     await dict.load(true);
+
+    // 409 的项此时从新字典里按名字找回 id（同名一定已存在），按「成功」继续使用。
+    for (const name of conflictRoots) {
+      const id = dict.categories.find((c) => c.parentId === null && c.name === name)?.id;
+      if (id !== undefined) roots.set(name, id);
+      else failures.push({ label: `分类「${name}」`, reason: '同名已存在，但未能取回其 id' });
+    }
+    for (const name of conflictChildren) {
+      let id: string | undefined;
+      for (const root of dict.categories) {
+        const found = root.children.find((c) => c.name === name);
+        if (found !== undefined) {
+          id = found.id;
+          break;
+        }
+      }
+      if (id !== undefined) children.set(name, id);
+      else failures.push({ label: `分类「${name}」`, reason: '同名已存在，但未能取回其 id' });
+    }
+    for (const name of conflictMethods) {
+      const id = dict.paymentMethods.find((m) => m.name === name)?.id;
+      if (id !== undefined) methods.set(name, id);
+      else failures.push({ label: `支付方式「${name}」`, reason: '同名已存在，但未能取回其 id' });
+    }
+
+    // 落定延后的解析结果
+    for (const item of pending) {
+      const id =
+        item.kind === 'root' ? roots.get(item.name) : children.get(item.childName);
+      if (id !== undefined) resolved.set(item.key, id);
+    }
 
     // 回填解析结果并重建预览行 —— 不再需要关掉窗口重导
     const result = parseResult.value;
@@ -327,13 +482,27 @@ async function confirmProvision(): Promise<void> {
       buildRows(result);
     }
 
+    // 完成提示：新建数 + 复用数 + 兜底建一级 + 真正的失败项
     let noticeText =
       `已新建分类 ${createdCategories} 个、支付方式 ${createdMethods} 个` +
       (createdMethods > 0 ? '（新建信用卡默认 1日出账/10日还款，可在设置中调整账期）' : '');
+    const reused = conflictRoots.size + conflictChildren.size + conflictMethods.size;
+    if (reused > 0) {
+      noticeText += `；另有 ${reused} 个同名项在服务端已存在，已直接复用（未重复创建）`;
+    }
     if (fallbackRoots.size > 0) {
       noticeText +=
         `；另有 ${fallbackRoots.size} 个名字缺少层级信息，已按一级创建：` +
         `${[...fallbackRoots].join('、')}，可在设置中调整到正确的一级分类下`;
+    }
+    if (failures.length > 0) {
+      noticeText +=
+        `；${failures.length} 个创建失败：` +
+        failures
+          .slice(0, 8)
+          .map((f) => `${f.label}（${f.reason}）`)
+          .join('、') +
+        (failures.length > 8 ? ` 等 ${failures.length} 项` : '');
     }
     provisionNotice.value = noticeText;
     provisionPlan.value = null;
@@ -341,6 +510,7 @@ async function confirmProvision(): Promise<void> {
     errorMessage.value = error instanceof ApiError ? error.message : '自动创建失败，请手动指定分类与支付方式';
   } finally {
     provisionBusy.value = false;
+    provisionProgress.value = null;
   }
 }
 
@@ -535,7 +705,14 @@ async function doImport(): Promise<void> {
       }),
     };
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '批量导入失败，请重试';
+    // status === 0 表示网络层失败/客户端超时 abort —— 此时服务端**可能已经把整批写完**，
+    // 只是响应没在超时前回来（历史上「界面报失败、刷新后数据已导入」正是如此）。
+    // 给一句可操作的指引，但**绝不自动重试**：重复导入会造重复数据。
+    if (error instanceof ApiError && error.status === 0) {
+      errorMessage.value = `${error.message}。若数据疑似已导入，请下拉刷新流水确认——批量导入可能已成功但响应超时。`;
+    } else {
+      errorMessage.value = error instanceof ApiError ? error.message : '批量导入失败，请重试';
+    }
   } finally {
     importing.value = false;
   }
@@ -616,7 +793,11 @@ function close(): void {
               class="rounded-sm bg-primary-fill px-3 py-1.5 font-bold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-40"
               @click="confirmProvision"
             >
-              {{ provisionBusy ? '创建中…' : '自动创建并填入' }}
+              {{ provisionBusy
+                ? provisionProgress !== null
+                  ? `创建中 ${provisionProgress.done}/${provisionProgress.total}`
+                  : '创建中…'
+                : '自动创建并填入' }}
             </button>
             <button
               type="button"
