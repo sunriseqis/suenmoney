@@ -171,6 +171,30 @@ describe('parseSuenmoneyBill', () => {
     assert.equal(res.items[1]!.suggestedPaymentMethodId, 'pm-bank', '「银行卡」应包含匹配到「工商银行卡」');
     assert.equal(res.items[2]!.suggestedPaymentMethodId, 'pm-cash', '精确名仍然优先');
   });
+
+  test('✱ 支付方式匹配不到时保持 null，不再兜底第一个可用方式', () => {
+    // 对账表里的账户名是干净的、可据以创建的，匹配不到就必须保持 null：
+    // 交给导入弹窗的「缺就建」按账户名创建，或让用户在预览里手选。
+    // 旧实现会静默兜底到「第一个可用支付方式」，把「没有匹配」伪装成「匹配成功」——
+    // 这笔会被挂到错误的支付方式上，账期归属（入账日/还款日）跟着算错且用户看不出；
+    // 同时 suggestedPaymentMethodId 被填上，「缺就建」永远提议不到缺失的支付方式。
+    const methods: PaymentMethod[] = [
+      { id: 'pm-bank', name: '工商银行卡', isEnabled: true, type: 'cash' },
+      { id: 'pm-cash', name: '现金', isEnabled: true, type: 'cash' },
+    ] as unknown as PaymentMethod[];
+
+    const csv = `\uFEFF消费日,入账日,还款日,金额,分类,二级分类,支付方式,记录人,备注,来源,计划,期次
+2026-09-25,,,45.50,餐饮美食,堂食外卖,某银行信用卡,,,
+`;
+
+    const res = detectAndParseBill(csv, [], methods);
+    assert.equal(res.totalParsed, 1);
+    assert.equal(
+      res.items[0]!.suggestedPaymentMethodId,
+      null,
+      '库里没有匹配的支付方式时应为 null，交由缺就建或用户手选',
+    );
+  });
 });
 
 describe('智能分类与渠道匹配', () => {
