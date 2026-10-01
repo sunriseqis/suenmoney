@@ -724,8 +724,14 @@ export function parseSuenmoneyBill(
     }
 
     // 支付方式匹配：精确名 → 包含名（对账表常来自其他记账工具，
-    // 写的是「信用卡」「银行卡」这类通用名，库里则是「中信信用卡」「工商银行卡」），
-    // 与微信/支付宝解析器的 suggestPaymentMethod 同策略，最后兜底第一个可用项
+    // 写的是「信用卡」「银行卡」这类通用名，库里则是「中信信用卡」「工商银行卡」）。
+    // 匹配不到就保持 null，交给导入弹窗的「缺就建」按 CSV 里的账户名创建，或让用户
+    // 在预览里手选。刻意不做「兜底第一个可用支付方式」：对账表里的账户名是干净的、
+    // 可据以创建的，静默兜底会把「没有匹配」伪装成「匹配成功」——这笔会被挂到错误的
+    // 支付方式上，账期归属（入账日/还款日）跟着算错且用户看不出；同时因为
+    // suggestedPaymentMethodId 被填上，「缺就建」永远提议不到缺失的支付方式。
+    // 注意：微信/支付宝解析器的 suggestPaymentMethod 仍保留原兜底（那是另一个议题，
+    // 其渠道串形如「招商银行储蓄卡(9776)」，去掉兜底会让这两类导入每行都要手选）。
     let suggestedPaymentMethodId: string | null = null;
     if (rawMethod) {
       const raw = rawMethod.toLowerCase();
@@ -735,10 +741,6 @@ export function parseSuenmoneyBill(
           (m) => m.isEnabled && (m.name.toLowerCase().includes(raw) || raw.includes(m.name.toLowerCase())),
         );
       if (match) suggestedPaymentMethodId = match.id;
-    }
-    if (!suggestedPaymentMethodId && paymentMethods.length > 0) {
-      const usable = paymentMethods.find((m) => m.isEnabled);
-      suggestedPaymentMethodId = usable?.id ?? null;
     }
 
     const counterparty = rawParent && rawChild ? `${rawParent} · ${rawChild}` : (rawChild || rawParent || '流水');
