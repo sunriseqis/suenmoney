@@ -387,6 +387,100 @@ function paymentBuckets(db: DatabaseSync, scope: PeriodScope): PaymentBucket[] {
   }));
 }
 
+/**
+ * 「尚未入账的计划期次」按支付方式分组。
+ *
+ * 待还口径必须同时看两处：
+ *   · `expenses` —— 已经入账、有明确还款日的钱（含计划确认后生成的 `source='plan'` 记录）；
+ *   · `plan_todos` 中 `status='pending'` 的期次 —— 已经安排在某天要还、
+ *     但**还没有**落成支出记录的钱。
+ * 只看前者，会让「刚转成分期的账」在下月待还里凭空消失：原支出被软删了，
+ * 期次又还没入账，于是那一期一份钱都不剩（用户报的正是这个 bug）。
+ *
+ * 只算 `pending` 是口径，必须同时满足 `expense_id IS NULL` 是防御：
+ *   · `confirmed` 的期次早已由 `confirmTodo` 生成了 expenses，再算一次就是重复计数；
+ *   · `skipped` / `cancelled` 是用户明确表示「这一期不记」，本就不该出现在待还里。
+ * 两个条件一起写，是为了万一将来出现「状态仍是 pending 却已挂支出」的脏数据，
+ * 也不会把同一笔钱算两遍。
+ *
+ * 期次的支付方式来自它所属的计划（`plan_todos` 本身不带支付方式），
+ * 所以要 JOIN `plans` 再 JOIN `payment_methods`。计划被软删（`deleted_at` 非空）
+ * 或已终止（`state != 'active'`）时，它的期次不再是「待还」，一律不计入。
+ */
+function pendingTodoBuckets(db: DatabaseSync, scope: PeriodScope): PaymentBucket[] {
+  const where: string[] = [
+    't.deleted_at IS NULL',
+    "t.status = 'pending'",
+    't.expense_id IS NULL',
+    'p.deleted_at IS NULL',
+    "p.state = 'active'",
+  ];
+  const params: string[] = [];
+  if (scope.prefix !== '') {
+    where.push("t.repayment_date LIKE ? || '%'");
+    params.push(scope.prefix);
+  }
+  if (scope.ownerId !== undefined) {
+    where.push('p.owner_id = ?');
+    params.push(scope.ownerId);
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT m.id AS id, m.name AS name, m.type AS type,
+              SUM(t.amount_cents) AS cents,
+              COUNT(*) AS cnt,
+              MIN(t.repayment_date) AS repayment_date
+         FROM plan_todos t
+         JOIN plans p ON p.id = t.plan_id
+         JOIN payment_methods m ON m.id = p.payment_method_id
+        WHERE ${where.join(' AND ')}
+        GROUP BY m.id
+        ORDER BY cents DESC`,
+    )
+    .all(...params) as unknown as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    paymentMethodId: String(row['id']),
+    name: String(row['name']),
+    type: row['type'] === 'credit' ? 'credit' : 'cash',
+    cents: Number(row['cents']),
+    count: Number(row['cnt']),
+    repaymentDate: row['repayment_date'] === null ? null : String(row['repayment_date']),
+  }));
+}
+
+/** 取两个日期里更早的一个；null 表示「没有」。合并桶时用它对齐还款日。 */
+function earliestDate(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a <= b ? a : b;
+}
+
+/**
+ * 按支付方式合并两组桶：金额与笔数相加，还款日取更早的那个。
+ *
+ * 必须合并成一行而不是并列两行：同一张卡可能既有已入账的支出、又有未入账的期次，
+ * 界面上「招行信用卡」出现两次会让人以为是两张不同的账单。
+ */
+function mergeBuckets(base: PaymentBucket[], extra: PaymentBucket[]): PaymentBucket[] {
+  const merged = new Map<string, PaymentBucket>();
+  for (const item of base) merged.set(item.paymentMethodId, { ...item });
+
+  for (const item of extra) {
+    const found = merged.get(item.paymentMethodId);
+    if (found === undefined) {
+      merged.set(item.paymentMethodId, { ...item });
+      continue;
+    }
+    found.cents += item.cents;
+    found.count += item.count;
+    found.repaymentDate = earliestDate(found.repaymentDate, item.repaymentDate);
+  }
+
+  return [...merged.values()].sort((a, b) => b.cents - a.cents);
+}
+
 function memberBuckets(db: DatabaseSync, scope: PeriodScope): MemberBucket[] {
   const where = scopeClause(scope);
 
@@ -527,8 +621,16 @@ function nextMonthCreditBuckets(
 } {
   const nextMonth = shiftMonthString(month, 1);
   const scope: PeriodScope = ownerId === undefined ? { prefix: nextMonth } : { prefix: nextMonth, ownerId };
-  const allBuckets = paymentBuckets(db, scope);
-  const credits = allBuckets.filter((item) => item.type === 'credit');
+  /**
+   * 次月待还 = 已入账支出 + 尚未入账的计划期次。
+   *
+   * **只有待还口径走这个合并**：`paymentMethods`（本月各方式支出明细）必须保持
+   * 「只算已入账」—— 期次是「将要花的钱」，混进支出构成会把占比算虚，
+   * 而月报 `totalCents` 也不该因为一笔还没发生的消费而变大。
+   */
+  const credits = mergeBuckets(paymentBuckets(db, scope), pendingTodoBuckets(db, scope)).filter(
+    (item) => item.type === 'credit',
+  );
   const sum = credits.reduce((acc, c) => acc + c.cents, 0);
   return { items: credits, totalCents: sum };
 }

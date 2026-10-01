@@ -661,6 +661,13 @@ async function save(): Promise<void> {
       const planName =
         note.value.trim() !== '' ? note.value.trim() : `${categoryLabel.value}分期`;
       const firstDueDate = previewDates.value?.repaymentDate || spendDate.value;
+      /**
+       * 把已有普通支出改为分期时，**在同一次请求**里建计划 + 软删原单。
+       *
+       * 以前是 `create` 之后再 `remove` 两步：弱网下第一步成功、第二步失败，
+       * 就会留下「计划已建、原支出还在」的中间态 —— 同一笔钱在待还里
+       * 同时以原全额和分期期次出现，而且不报错。现在交给服务端一个事务兜住。
+       */
       await plansApi.create({
         name: planName,
         categoryId: categoryId.value,
@@ -674,12 +681,8 @@ async function save(): Promise<void> {
         autoPost: false,
         note: note.value.trim(),
         confirmFirst: false,
+        ...(props.expense !== null ? { consumeExpenseId: props.expense.id } : {}),
       });
-
-      // 将已有普通支出改为分期时，原记录由新创建的分期计划接管，移除原单笔记录避免重账
-      if (props.expense !== null) {
-        await expensesApi.remove(props.expense.id);
-      }
 
       await plansStore.refresh();
     } else if (props.expense === null) {

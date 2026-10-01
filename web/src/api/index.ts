@@ -236,6 +236,11 @@ export const expenses = {
     }>('/api/expenses/batch', {
       method: 'POST',
       body: { items },
+      // 批量导入是**长事务型请求**，必须单独放宽超时：几千行 / 数百 KB 的提交
+      // 在手机或慢网络上可能远超默认 4s。用默认值会 abort 掉请求，而服务端其实
+      // 已把整批写完 —— 历史故障「界面报失败、刷新后数据却已导入」正是如此。
+      // 60s 给足慢网络与大数据量，且仍是有限等待，不会真把界面卡死。
+      timeoutMs: 60000,
     }),
 
   /** 把某分类下的全部记录转移到另一个分类（停用分类前用） */
@@ -268,6 +273,13 @@ export interface PlanCreateInput {
   /** 是否在创建后立即确认第一期（用于记账抽屉顺手分期：创建计划同时首期直接入账） */
   confirmFirst?: boolean;
   confirmSpendDate?: string;
+  /**
+   * 把一条**已有支出**转成这个计划：服务端会在同一个事务里软删它。
+   *
+   * 用它取代「先 create 再 remove」两步调用 —— 两步之间任何一次失败都会留下
+   * 「计划已建、原支出还在」的中间态（同一笔钱在待还里出现两次）。
+   */
+  consumeExpenseId?: string;
 }
 
 export interface PlanUpdateInput {

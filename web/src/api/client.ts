@@ -54,7 +54,15 @@ export function notifyConnectivity(isOnline: boolean, activeUrl: string | null):
 let offlineUntil = 0;
 const OFFLINE_COOLDOWN_MS = 10000;
 
-/** 单次候选地址的请求超时：首个 4s、其余 2.5s，且全部候选合计不超过 6s。 */
+/**
+ * 单次候选地址的请求超时：首个 4s、其余 2.5s，且全部候选合计不超过 6s。
+ *
+ * 这么短是**刻意为离线场景**设计的：手机在多个候选地址间逐个空等会让界面像卡死，
+ * 宁可立刻失败、让操作落本地。但它只适合短小的读写请求 —— 长事务型请求
+ * （如数行/数百 KB 的批量导入）本身就可能跑几十秒，默认值会在服务端其实已写入时
+ * abort 掉请求，表现为「界面报失败、数据却已进库」。这类请求用 `RequestOptions.timeoutMs`
+ * 单独放宽，不要改这里的默认值。
+ */
 const REQUEST_FIRST_TIMEOUT_MS = 4000;
 const REQUEST_RETRY_TIMEOUT_MS = 2500;
 const REQUEST_TOTAL_BUDGET_MS = 6000;
@@ -282,6 +290,16 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, QueryValue>;
+  /**
+   * 单次请求的超时覆盖（毫秒）。
+   *
+   * 传入后，它同时作为**单次尝试的等待上限**与**该次请求的总预算** ——
+   * 即首个候选就有这么长的等待时间，且一旦超时，后续候选不会再被尝试
+   * （`remaining <= 0` 会立即 break）。离线闸门与候选地址轮换逻辑不受影响。
+   *
+   * 仅长事务型请求需要它（见上方默认超时的说明），普通请求不要传。
+   */
+  timeoutMs?: number;
 }
 
 function buildUrlFor(
@@ -358,17 +376,21 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   // 总预算：全候选合计不超过 6s，超预算就不再尝试后续候选。
   // 首个候选给 4s（内网/公网首次握手可能稍慢），其余 2.5s，再长就没意义了。
+  // 调用方传入 timeoutMs 时，用它统一覆盖首/重试等待上限与总预算（长事务型请求专用）。
+  const firstTimeoutMs = options.timeoutMs ?? REQUEST_FIRST_TIMEOUT_MS;
+  const retryTimeoutMs = options.timeoutMs ?? REQUEST_RETRY_TIMEOUT_MS;
+  const totalBudgetMs = options.timeoutMs ?? REQUEST_TOTAL_BUDGET_MS;
   const budgetStart = Date.now();
   for (let i = 0; i < candidateUrls.length; i++) {
     const baseUrl = candidateUrls[i];
     if (!baseUrl) continue;
-    const remaining = REQUEST_TOTAL_BUDGET_MS - (Date.now() - budgetStart);
+    const remaining = totalBudgetMs - (Date.now() - budgetStart);
     if (i > 0 && remaining <= 0) break;
     const fullUrl = buildUrlFor(baseUrl, path, options.query);
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
-      Math.min(i === 0 ? REQUEST_FIRST_TIMEOUT_MS : REQUEST_RETRY_TIMEOUT_MS, remaining),
+      Math.min(i === 0 ? firstTimeoutMs : retryTimeoutMs, remaining),
     );
 
     try {

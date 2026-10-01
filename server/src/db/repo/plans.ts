@@ -25,7 +25,13 @@ import { badRequest, conflict, forbidden, notFound } from '../../lib/http-error.
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange } from '../sync.ts';
 import { requireUsableCategory } from './categories.ts';
-import { insertPlanExpense, findExpenseRow, toSyncExpense, type ExpenseRow } from './expenses.ts';
+import {
+  insertPlanExpense,
+  findExpenseRow,
+  softDeleteExpense,
+  toSyncExpense,
+  type ExpenseRow,
+} from './expenses.ts';
 import { requireUsablePaymentMethod, toPaymentCycle } from './payment-methods.ts';
 
 export type PlanSource = 'manual' | 'installment';
@@ -549,6 +555,14 @@ export interface CreatePlanInput {
   /** 是否在创建后立即确认第一期（用于记账抽屉顺手分期：创建计划同时首期直接入账） */
   confirmFirst?: boolean | undefined;
   confirmSpendDate?: string | undefined;
+  /**
+   * 把一条**已有支出**转成这个计划：在同一个事务里顺带软删它。
+   *
+   * 记账抽屉里的「把这条记录改成 X 期分期」= 建计划 + 删原支出。
+   * 二者必须原子，否则两步之间失败（弱网下极常见）会留下「计划已建、原支出还在」
+   * 的中间态 —— 同一笔钱在报表里同时以「原全额」和「分期期次」出现，且不报错。
+   */
+  consumeExpenseId?: string | undefined;
 }
 
 export function createPlan(db: DatabaseSync, input: CreatePlanInput): PlanApi {
@@ -664,6 +678,20 @@ export function createPlan(db: DatabaseSync, input: CreatePlanInput): PlanApi {
           input.confirmSpendDate ?? purchaseDate ?? input.firstDueDate,
         );
       }
+    }
+
+    /**
+     * 「把已有支出转成计划」的收尾：在**同一个事务**里软删原支出。
+     *
+     * 顺序放在最后、且失败即抛出，是为了让整个 `inTransaction` 回滚 ——
+     * 删支出既然失败（不是自己的、已被计划生成、不存在……），刚插入的计划与
+     * 全部期待办也要一起撤掉，绝不留下「计划已建、原支出还在」的中间态。
+     *
+     * 直接复用 `softDeleteExpense`：它自带「只能删自己的」「计划生成的记录
+     * 不能这样删」两条校验，语义与普通删除完全一致，不另写一套。
+     */
+    if (input.consumeExpenseId !== undefined) {
+      softDeleteExpense(db, input.consumeExpenseId, input.ownerId);
     }
   });
 
