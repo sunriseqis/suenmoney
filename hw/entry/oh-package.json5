@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "SuenMoney HarmonyOS NEXT Entry HAP",
+  "main": "",
+  "author": "SuenMoney Team",
+  "license": "MIT",
+  "dependencies": {}
+}

@@ -16,7 +16,8 @@
     "cap": "cap",
     "cap:sync": "npm run build && cap sync",
     "android:sync": "npm run build && cap sync android",
-    "ios:sync": "npm run build && cap sync ios"
+    "ios:sync": "npm run build && cap sync ios",
+    "hw:sync": "npm run build && node ../scripts/sync-hw.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

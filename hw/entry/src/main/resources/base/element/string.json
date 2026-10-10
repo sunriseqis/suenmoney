@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "SuenMoney 鸿蒙客户端模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "SuenMoney 主入口"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "SuenMoney"
+    },
+    {
+      "name": "permission_internet_reason",
+      "value": "用于连接服务端同步账单、数据备份与检查更新"
+    }
+  ]
+}
