@@ -111,6 +111,7 @@ jobs:
             -w /workspace/hw \
             ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
             bash -c '
+              set -eo pipefail
               set -x
               ohpm install --all || true
 
@@ -131,6 +132,9 @@ jobs:
               else
                 echo "未在 /workspace/hw 找到 .hap，检索工作区:"
                 find /workspace -type f -name "*.hap" || true
+                echo "=== 输出构建日志末尾 120 行 ==="
+                tail -n 120 /workspace/build.log 2>/dev/null || true
+                exit 1
               fi
               chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build /workspace/build.log 2>/dev/null || true
             '
