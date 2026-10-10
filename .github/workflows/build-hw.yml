@@ -2,6 +2,16 @@ name: Build HarmonyOS HAP
 
 on:
   push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'hw/**'
+      - 'web/**'
+      - 'VERSION'
+      - 'scripts/build-hw.mjs'
+      - 'scripts/sync-hw.mjs'
+      - '.github/workflows/build-hw.yml'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -76,12 +86,6 @@ jobs:
 
           echo "✔ 目标版本: ${VERSION} (VersionCode: ${VERSION_CODE})"
 
-      - name: Setup OpenHarmony SDK (API 12 / 5.0.0)
-        uses: openharmony-rs/setup-ohos-sdk@v1.0.0
-        with:
-          version: '5.0.0'
-          cache: true
-
       - name: Build Web Assets and Sync to HarmonyOS
         run: |
           cd web
@@ -90,25 +94,29 @@ jobs:
           cd ..
           node scripts/sync-hw.mjs
 
-      - name: Install HarmonyOS Dependencies
-        run: |
-          cd hw
-          chmod +x hvigorw
-          if command -v ohpm >/dev/null 2>&1; then
-            ohpm install --all || true
-          fi
-
       - name: Build HarmonyOS Unsigned HAP
         run: |
-          cd hw
-          ./hvigorw assembleHap \
-            --mode module \
-            -p module=entry@default \
-            -p product=default \
-            -p versionName="${{ env.VERSION_NAME }}" \
-            -p versionCode=${{ env.VERSION_CODE }} \
-            --no-daemon \
-            --accept-license
+          echo "=== 启动 HarmonyOS 云端构建容器 (API 26r / command-line-tools) ==="
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace/hw \
+            ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
+            bash -c "
+              # 容器内为 API 26 正式版工具链，动态对齐编译配置
+              sed -i 's/\"compileSdkVersion\": 12/\"compileSdkVersion\": 26/g' build-profile.json5 || true
+              sed -i 's/\"compatibleSdkVersion\": 11/\"compatibleSdkVersion\": 26/g' build-profile.json5 || true
+              ohpm install --all || true
+              hvigorw assembleHap \
+                --mode module \
+                -p module=entry@default \
+                -p product=default \
+                -p buildMode=debug \
+                -p versionName='${{ env.VERSION_NAME }}' \
+                -p versionCode=${{ env.VERSION_CODE }} \
+                --no-daemon \
+                --stacktrace
+              chmod -R 777 /workspace/hw/entry/build /workspace/hw/build 2>/dev/null || true
+            "
 
       # 产物统一归口到 app/ 目录
       - name: Collect and Verify Artifact
