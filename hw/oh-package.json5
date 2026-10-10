@@ -1,4 +1,5 @@
 {
+  "modelVersion": "5.0.0",
   "name": "suenmoney-hw",
   "version": "1.0.0",
   "description": "SuenMoney 鸿蒙 NEXT 客户端工程（ArkTS / ArkUI Web 容器壳应用）",
