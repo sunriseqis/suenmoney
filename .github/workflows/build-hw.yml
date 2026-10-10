@@ -127,8 +127,7 @@ jobs:
               FOUND_HAP=$(find /workspace/hw -type f -name "*.hap" | head -n 1)
               if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
                 echo "找到产物: $FOUND_HAP"
-                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-unsigned.hap
-                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-release.hap
+                cp -v "$FOUND_HAP" "/workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
               else
                 echo "未在 /workspace/hw 找到 .hap，检索工作区:"
                 find /workspace -type f -name "*.hap" || true
@@ -140,10 +139,6 @@ jobs:
       - name: Verify Artifact
         run: |
           mkdir -p app
-          if [ -f "app/SuenMoney-unsigned.hap" ]; then
-            cp "app/SuenMoney-unsigned.hap" "app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
-            cp "app/SuenMoney-release.hap" "app/SuenMoney-${{ env.VERSION }}-release.hap"
-          fi
           ls -lh app/ 2>/dev/null || true
           HAP="app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
           if [ ! -f "$HAP" ]; then
@@ -156,23 +151,63 @@ jobs:
           unzip -t "$HAP" > /dev/null || { echo "✖ HAP 完整性校验失败"; exit 1; }
           echo "✔ HAP 完整性校验通过（包含 $(unzip -l "$HAP" | tail -1 | awk '{print $2}') 个条目）"
 
-      - name: Upload Build Log to Release on Failure
-        if: failure()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.VERSION }}
-          name: SuenMoney ${{ env.VERSION }} 移动端
-          files: |
-            build.log
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload HAP Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SuenMoney-${{ env.VERSION }}-hap
-          path: app/*.hap
+          path: app/SuenMoney-${{ env.VERSION }}-unsigned.hap
           retention-days: 30
+
+      # 清理 Release 上的冗余历史资产（如 build.log、无版本号或重复命名产物）
+      - name: Clean Up Redundant Release Assets
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        run: |
+          node -e '
+            const token = process.env.GITHUB_TOKEN;
+            const repo = process.env.GITHUB_REPOSITORY;
+            const tag = process.env.VERSION;
+            const headers = {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+              "User-Agent": "SuenMoney-CI"
+            };
+
+            async function cleanup() {
+              const res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
+              if (!res.ok) {
+                console.log(`Release ${tag} 暂不存在或未创建，跳过清理`);
+                return;
+              }
+              const release = await res.json();
+              // 规范产物名单：Android release.apk / iOS release.ipa / 鸿蒙 unsigned.hap
+              const allowedPatterns = [
+                /^SuenMoney-v[\d.]+-release\.apk$/,
+                /^SuenMoney-v[\d.]+-release\.ipa$/,
+                /^SuenMoney-v[\d.]+-unsigned\.hap$/
+              ];
+
+              for (const asset of release.assets || []) {
+                const isAllowed = allowedPatterns.some(re => re.test(asset.name));
+                if (!isAllowed) {
+                  console.log(`正在从 Release 清理冗余资产: ${asset.name} (ID: ${asset.id})...`);
+                  const delRes = await fetch(`https://api.github.com/repos/${repo}/releases/assets/${asset.id}`, {
+                    method: "DELETE",
+                    headers
+                  });
+                  if (delRes.status === 204) {
+                    console.log(`✔ 已成功清理: ${asset.name}`);
+                  } else {
+                    console.warn(`✖ 清理失败 ${asset.name}: HTTP ${delRes.status}`);
+                  }
+                }
+              }
+            }
+            cleanup().catch(err => {
+              console.error("清理冗余资产异常:", err);
+            });
+          '
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
@@ -196,6 +231,6 @@ jobs:
             > 由 GitHub Actions 自动化流水线构建。
             ${{ inputs.release_notes && format('#### 📝 更新说明：\n{0}', inputs.release_notes) || '' }}
           files: |
-            app/*.hap
+            app/SuenMoney-${{ env.VERSION }}-unsigned.hap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

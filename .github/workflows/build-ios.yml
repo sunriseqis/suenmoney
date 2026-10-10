@@ -135,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SuenMoney-${{ env.VERSION }}-ipa
-          path: app/*.ipa
+          path: app/SuenMoney-${{ env.VERSION }}-release.ipa
           retention-days: 30
 
       - name: Publish GitHub Release
@@ -160,6 +160,6 @@ jobs:
             > 由 GitHub Actions 自动化流水线构建。
             ${{ inputs.release_notes && format('#### 📝 更新说明：\n{0}', inputs.release_notes) || '' }}
           files: |
-            app/*.ipa
+            app/SuenMoney-${{ env.VERSION }}-release.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
