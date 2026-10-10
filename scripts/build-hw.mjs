@@ -116,10 +116,8 @@ async function assembleHap(versionName, versionCode) {
 
   await mkdir(OUTPUT_DIR, { recursive: true });
   const targetHap = join(OUTPUT_DIR, `SuenMoney-v${versionName}-unsigned.hap`);
-  const targetReleaseHap = join(OUTPUT_DIR, `SuenMoney-v${versionName}-release.hap`);
 
   await copyFile(foundHap, targetHap);
-  await copyFile(foundHap, targetReleaseHap);
 
   const { size } = await stat(targetHap);
   log(`✔ HAP 打包成功！产物：${targetHap}`);
