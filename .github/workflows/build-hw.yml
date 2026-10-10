@@ -93,6 +93,15 @@ jobs:
           npm run build
           cd ..
           node scripts/sync-hw.mjs
+          # 注入版本号至 AppScope/app.json5
+          node -e '
+            const fs = require("fs");
+            const p = "hw/AppScope/app.json5";
+            let c = fs.readFileSync(p, "utf8");
+            c = c.replace(/"versionName":\s*"[^"]*"/, `"versionName": "${process.env.VERSION_NAME}"`);
+            c = c.replace(/"versionCode":\s*\d+/, `"versionCode": ${process.env.VERSION_CODE}`);
+            fs.writeFileSync(p, c, "utf8");
+          '
 
       - name: Build HarmonyOS Unsigned HAP
         run: |
@@ -101,13 +110,11 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace/hw \
             ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
-            bash -c "
+            bash -c '
               set -x
-              sed -i 's/"versionName": "[^"]*"/"versionName": "${{ env.VERSION_NAME }}"/g' AppScope/app.json5 || true
-              sed -i 's/"versionCode": [0-9]*/"versionCode": ${{ env.VERSION_CODE }}/g' AppScope/app.json5 || true
               ohpm install --all || true
 
-              echo '--- 开始执行 Hvigor 构建 ---'
+              echo "--- 开始执行 Hvigor 构建 ---"
               hvigorw assembleHap \
                 --mode module \
                 -p product=default \
@@ -115,23 +122,28 @@ jobs:
                 --no-daemon \
                 --stacktrace 2>&1 | tee /workspace/build.log
 
-              echo '--- 查找构建产物 ---'
+              echo "--- 查找构建产物 ---"
               mkdir -p /workspace/app
-              FOUND_HAP=$(find /workspace/hw -type f -name '*.hap' | head -n 1)
+              FOUND_HAP=$(find /workspace/hw -type f -name "*.hap" | head -n 1)
               if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
                 echo "找到产物: $FOUND_HAP"
-                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap
-                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-${{ env.VERSION }}-release.hap
+                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-unsigned.hap
+                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-release.hap
               else
                 echo "未在 /workspace/hw 找到 .hap，检索工作区:"
-                find /workspace -type f -name '*.hap' || true
+                find /workspace -type f -name "*.hap" || true
               fi
               chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build /workspace/build.log 2>/dev/null || true
-            "
+            '
 
       # 产物校验
       - name: Verify Artifact
         run: |
+          mkdir -p app
+          if [ -f "app/SuenMoney-unsigned.hap" ]; then
+            cp "app/SuenMoney-unsigned.hap" "app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
+            cp "app/SuenMoney-release.hap" "app/SuenMoney-${{ env.VERSION }}-release.hap"
+          fi
           ls -lh app/ 2>/dev/null || true
           HAP="app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
           if [ ! -f "$HAP" ]; then
