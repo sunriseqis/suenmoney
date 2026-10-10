@@ -1,9 +1,12 @@
 import { webview } from '@kit.ArkWeb';
-// WebResourceResponse 只能从 @kit.ArkWeb 的 webview 命名空间取：new webview.WebResourceResponse(...)
-// 旧模块 @ohos.web.webview 的默认导出是 webview 命名空间对象本身（不是那个类，new 它会报
-// 10505001「This expression is not constructable. Type 'typeof webview' has no construct
-// signatures」），且它并不导出具名成员 WebResourceResponse（报「has no exported member」）。
-// 故此处不再从 @ohos.web.webview 导入任何东西；webview 命名空间同时用于 WebviewController。
+// WebResourceResponse 是 SDK 顶层 `declare class` 的全局类（ets/component/web.d.ts:2828），
+// 不从任何模块导入，代码里直接写裸类名 `WebResourceResponse`。
+// 前后三轮踩坑沉淀：
+//   - `webview.WebResourceResponse`（webview 来自 @kit.ArkWeb）→ 命名空间里没有这个成员；
+//   - `import { WebResourceResponse } from '@ohos.web.webview'` → 该模块不导出具名成员；
+//   - `import WebResourceResponse from '@ohos.web.webview'` → 默认导出是 webview 命名空间
+//     对象本身，not constructable（报 10505001 has no construct signatures）。
+// 因此本文件不导入该类；webview 命名空间仍保留，只用于 WebviewController。
 import { bundleManager } from '@kit.AbilityKit';
 import { common } from '@kit.AbilityKit';
 import { Want } from '@kit.AbilityKit';
@@ -295,16 +298,16 @@ struct Index {
   }
 
   // 从 rawfile 读取本地资源构建 WebResourceResponse
-  // 类型与构造都走 @kit.ArkWeb 的 webview 命名空间（见文件头 import 处注释）：
-  // 该类不是旧模块 @ohos.web.webview 的默认导出，只能写成 webview.WebResourceResponse。
-  private loadRawFile(rawPath: string): webview.WebResourceResponse | null {
+  // 类型与构造都用裸的全局类名 WebResourceResponse（见文件头 import 处注释）：
+  // 它是 SDK 顶层 declare class，不从任何模块导入。
+  private loadRawFile(rawPath: string): WebResourceResponse | null {
     try {
       // getContext 已废弃（API 18 起），改用 this.getUIContext().getHostContext()。
       // 这里在 try 内，取不到 context 会抛，行为与原先的 getContext 失败路径一致（返回 null）。
       const hostCtx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const resMgr = hostCtx.resourceManager;
       const content = resMgr.getRawFileContentSync(rawPath);
-      const response: webview.WebResourceResponse = new webview.WebResourceResponse();
+      const response: WebResourceResponse = new WebResourceResponse();
       response.setResponseData(content.buffer as ArrayBuffer);
       response.setResponseMimeType(this.getMimeType(rawPath));
       response.setResponseEncoding('utf-8');
@@ -362,14 +365,14 @@ struct Index {
 
           // 1. 优先尝试直接从 rawfile 读取文件
           // 显式标注类型：ArkTS 不接受推断出的 any/unknown（arkts-no-any-unknown）
-          const directFile: webview.WebResourceResponse | null = this.loadRawFile(relativePath);
+          const directFile: WebResourceResponse | null = this.loadRawFile(relativePath);
           if (directFile) {
             return directFile;
           }
 
           // 2. SPA 路由回退：非静态文件请求（无文件扩展名，如 /ledger, /login, /dashboard）回退返回 index.html
           if (!relativePath.includes('.')) {
-            const spaIndex: webview.WebResourceResponse | null = this.loadRawFile('index.html');
+            const spaIndex: WebResourceResponse | null = this.loadRawFile('index.html');
             if (spaIndex) {
               return spaIndex;
             }
