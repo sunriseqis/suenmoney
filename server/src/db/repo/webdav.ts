@@ -292,6 +292,42 @@ export async function runWebdavBackup(
 
 let webdavSchedulerTimer: NodeJS.Timeout | null = null;
 
+/**
+ * 取「服务器本地时区」的今天，格式 YYYY-MM-DD。
+ *
+ * 为什么不能用 `new Date().toISOString().slice(0, 10)`：那是 **UTC** 日期。
+ * 容器时区固定为东八区（`server/Dockerfile` 的 `TZ=Asia/Shanghai`），比 UTC 快 8 小时，
+ * 于是北京时间 00:00–08:00 之间 UTC 还停在前一天，`todayStr` 会比本地日期晚一天。
+ * 「今天已备份」的判断就会把昨天的成功记录当成今天的 → 当天的定时备份被静默跳过，
+ * 且不报错（备份列表停在昨天，看起来像正常轮转）。
+ *
+ * 这里刻意用 Date 的本地 getter（`getFullYear`/`getMonth`/`getDate`）而不是把
+ * `Asia/Shanghai` 写死进代码：本地 getter 读的就是进程 TZ，与容器 `TZ` 保持同一口径，
+ * 将来改 `TZ` 不用改代码，也不会出现「代码写死 +08:00、容器换时区」两处打架。
+ * 每日物理快照调度（`snapshots.ts` 的 `todaySnapshotPrefix`）用的是同一套本地 getter，
+ * 两边口径一致。
+ */
+export function localDateString(d: Date = new Date()): string {
+  const yyyy = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${MM}-${dd}`;
+}
+
+/**
+ * 判断「今天是否已成功备份过」。
+ *
+ * `lastBackupAt` 存的是 UTC ISO 时间戳（`toISOString()`），所以不能直接拿它的日期前缀
+ * 和本地日期比 —— 那样等于把「UTC 的今天」和「本地的今天」混在一起。这里统一转成
+ * 本地日期再比较，两边同一口径。
+ */
+export function hasBackedUpToday(status: WebdavStatus, now: Date = new Date()): boolean {
+  if (!status.lastBackupAt || status.lastBackupStatus !== 'success') return false;
+  const lastBackupDate = new Date(status.lastBackupAt);
+  if (Number.isNaN(lastBackupDate.getTime())) return false;
+  return localDateString(lastBackupDate) === localDateString(now);
+}
+
 /** 检查今天是否已有 WebDAV 备份，若无且已启用则执行 */
 export async function runDailyWebdavBackupCheck(db: DatabaseSync): Promise<void> {
   try {
@@ -300,9 +336,7 @@ export async function runDailyWebdavBackupCheck(db: DatabaseSync): Promise<void>
       return;
     }
 
-    const status = getWebdavStatus(db);
-    const todayStr = new Date().toISOString().slice(0, 10);
-    if (status.lastBackupAt && status.lastBackupAt.startsWith(todayStr) && status.lastBackupStatus === 'success') {
+    if (hasBackedUpToday(getWebdavStatus(db))) {
       return;
     }
 

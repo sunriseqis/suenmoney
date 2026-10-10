@@ -216,9 +216,12 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
       paymentMethods.value = methodResult.paymentMethods;
       loaded.value = true;
 
-      // 异步持久化到本地 IndexedDB
-      void saveCachedCategories(categoryResult.categories);
-      void saveCachedPaymentMethods(methodResult.paymentMethods);
+      // 异步持久化到本地 IndexedDB。
+      // 这里吞掉写失败是有意的：主流程（服务端已返回、内存已填充）已经完成，
+      // 缓存只是副本，写不进去最坏结果是下次打开没有秒开，不该把整次 load 变成失败。
+      // 真正不能静默的离线记账写入在 stores/sync.ts —— 那里失败会照实往上抛。
+      void saveCachedCategories(categoryResult.categories).catch(() => {});
+      void saveCachedPaymentMethods(methodResult.paymentMethods).catch(() => {});
     } catch (err) {
       // 如果本地已经有可用缓存，静默降级，不阻断界面使用
       if (categories.value.length > 0 && paymentMethods.value.length > 0) {

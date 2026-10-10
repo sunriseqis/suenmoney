@@ -1,4 +1,4 @@
-import { getCapacitorPlugin } from './env.ts';
+import { getCapacitorPlugin, whenNativeBridgeReady } from './env.ts';
 
 type AppResumeListener = () => void;
 
@@ -56,8 +56,26 @@ export function onAppResume(callback: AppResumeListener): () => void {
       });
   });
 
+  // 3. 鸿蒙壳的原生前后台事件
+  //
+  // 为什么在已有 visibilitychange / pageshow 之外还要订阅它：
+  // ArkWeb 在若干场景（从后台卡片恢复、Ability 切换、锁屏解锁）下 visibilitychange
+  // 并不可靠，会漏触发，导致「切回前台不刷新」。壳的 onAppState 直接来自
+  // 原生 Ability 生命周期，是这里唯一准确的前后台信号。
+  // 壳未提供 onAppState 时什么都不做 —— 上面两条 Web 标准监听继续兜底。
+  const cancelBridgeWait = whenNativeBridgeReady((bridge) => {
+    bridge.onAppState?.((state) => {
+      // 复用同一个回调，避免三处各写一遍业务逻辑
+      if (cleanedUp) return;
+      if (state === 'active') {
+        callback();
+      }
+    });
+  });
+
   return () => {
     cleanedUp = true;
+    cancelBridgeWait();
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }

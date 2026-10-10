@@ -40,6 +40,7 @@ import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
 import { categoryColorVar } from '@/utils/category-colors';
 import { getCachedExpenses, saveCachedExpenses } from '@/utils/idb';
+import { createLatestGuard } from '@/utils/latest-request';
 import {
   buildMonthlyReportFallback,
   buildSummaryReportFallback,
@@ -210,6 +211,24 @@ const loadingCard = ref(false);
 const PAGE_SIZE = 100;
 const today = todayLocal();
 
+/**
+ * 「只认最新一次」守卫 —— 流水页有四个独立的取数通道，各配一个。
+ *
+ * 触发源很多：切scope/month/year、ui.dataVersion、网络恢复、搜索防抖、筛选变化。
+ * 每个都会发请求，而响应顺序不保证 —— 慢网下先发的旧请求后到，
+ * 会把后发请求的新数据覆盖掉，用户看到流水列表与顶卡金额对不上、
+ * 或者刚翻到的月份被上一个月的内容顶掉。序号守卫让旧响应整段丢弃。
+ *
+ * 列表与下钻卡**必须各用一个**：它们并行取数（refresh 同时调 loadTopCardData 与 reloadList），
+ * 共用一个序号会互相把对方判成「过期」。
+ */
+const listGuard = createLatestGuard();
+const yearGuard = createLatestGuard();
+const monthDetailGuard = createLatestGuard();
+const yearDetailGuard = createLatestGuard();
+const summaryGuard = createLatestGuard();
+const topCardGuard = createLatestGuard();
+
 // ---------------------------------------------------------------------------
 // 月档：流水加载
 // ---------------------------------------------------------------------------
@@ -231,7 +250,14 @@ async function loadCachedForScope(): Promise<Expense[]> {
   return all;
 }
 
-async function fetchPage(cursor: string | null): Promise<void> {
+/**
+ * 取一页流水并写入列表。
+ *
+ * token 由调用方（reloadList / loadMore）从 listGuard 取 —— 这里只负责比对：
+ * 期间若发生了刷新（切档、记一笔、搜索词变化），这一页就是旧数据，整段丢弃。
+ * 丢弃时**不动items** —— 否则「加载更多」的结果会被追加到已经换掉的列表后面。
+ */
+async function fetchPage(cursor: string | null, token: number): Promise<void> {
   try {
     // 搜索范围随档位：月=当月，年=全年，全部=全库历史
     const base = {
@@ -250,16 +276,21 @@ async function fetchPage(cursor: string | null): Promise<void> {
           : base,
     );
 
+    // 离线待发记录要从本地缓存里捞，这一步也是 await —— 再判一次序号。
+    const cached = cursor === null ? await loadCachedForScope() : null;
+    if (!listGuard.isLatest(token)) return;
+
     if (cursor === null) {
       // 检查本地是否有尚未同步至服务端的离线待发记录，融合展示在顶部
-      const cached = await loadCachedForScope();
       const existingIds = new Set(page.items.map((i) => i.id));
-      const pendingLocal = cached.filter(
+      const pendingLocal = (cached ?? []).filter(
         (c) => (c as { isOfflinePending?: boolean }).isOfflinePending && !existingIds.has(c.id),
       );
       items.value = [...pendingLocal, ...page.items];
       if (page.items.length > 0) {
-        void saveCachedExpenses(page.items);
+        // 缓存副本写失败不阻断主流程：本页数据已渲染、写不进去最坏是断网时没有本地兜底。
+        // 真正不能吞的是离线记账写入（stores/sync.ts），那里失败会抛给记账面板提示用户。
+        void saveCachedExpenses(page.items).catch(() => {});
       }
     } else {
       items.value = [...items.value, ...page.items];
@@ -271,6 +302,7 @@ async function fetchPage(cursor: string | null): Promise<void> {
     // 离线容灾：如果网络断开且为首屏加载，优先从本地 IndexedDB 恢复展示
     if (cursor === null) {
       const cached = await loadCachedForScope();
+      if (!listGuard.isLatest(token)) return;
       if (cached.length > 0) {
         items.value = cached;
         nextCursor.value = null;
@@ -278,6 +310,7 @@ async function fetchPage(cursor: string | null): Promise<void> {
         return;
       }
     }
+    if (!listGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       items.value = [];
       nextCursor.value = null;
@@ -289,33 +322,39 @@ async function fetchPage(cursor: string | null): Promise<void> {
 }
 
 async function reloadList(): Promise<void> {
+  const token = listGuard.begin();
   loading.value = true;
   errorMessage.value = null;
   try {
-    await fetchPage(null);
+    await fetchPage(null, token);
   } catch (error) {
+    if (!listGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       // 离线状态静默降级，不展示错误横幅
       return;
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载失败';
   } finally {
-    loading.value = false;
+    // loading 判序号：被丢弃的旧请求提前收尾，会在数据还没到时就把列表显示成空态。
+    if (listGuard.isLatest(token)) loading.value = false;
   }
 }
 
 async function loadMore(): Promise<void> {
   if (!hasMore.value || loadingMore.value || nextCursor.value === null) return;
+  // 同样取序号：加载更多期间若发生刷新（切月/改筛选），追加结果已无处可放。
+  const token = listGuard.begin();
   loadingMore.value = true;
   try {
-    await fetchPage(nextCursor.value);
+    await fetchPage(nextCursor.value, token);
   } catch (error) {
+    if (!listGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       return;
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载更多失败';
   } finally {
-    loadingMore.value = false;
+    if (listGuard.isLatest(token)) loadingMore.value = false;
   }
 }
 
@@ -324,10 +363,12 @@ async function loadMore(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function loadYearData(): Promise<void> {
+  const token = yearGuard.begin();
   loading.value = true;
   errorMessage.value = null;
   try {
     const res = await reportsApi.yearly(year.value);
+    if (!yearGuard.isLatest(token)) return;
     yearlyReportData.value = res.report;
 
     const currentM = currentMonth();
@@ -335,9 +376,11 @@ async function loadYearData(): Promise<void> {
     selectedCalendarKey.value = candidateMonth;
     await loadSelectedMonthDetail(candidateMonth);
   } catch (error) {
+    if (!yearGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       // 离线兜底：用本地缓存流水聚合出年档日历与选中月详情。
       const cached = await getCachedExpenses();
+      if (!yearGuard.isLatest(token)) return;
       yearlyReportData.value = buildYearlyReportFallback(cached, year.value);
 
       const currentM = currentMonth();
@@ -348,29 +391,35 @@ async function loadYearData(): Promise<void> {
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载年档日历失败';
   } finally {
-    loading.value = false;
+    if (yearGuard.isLatest(token)) loading.value = false;
   }
 }
 
 async function loadSelectedMonthDetail(m: string): Promise<void> {
+  // 快速连点日历格时，只有最后一次点选的月份该留下 —— 年份/月份快速切换会连发多次。
+  const token = monthDetailGuard.begin();
   loadingCard.value = true;
   try {
     const res = await reportsApi.monthly(m);
+    if (!monthDetailGuard.isLatest(token)) return;
     selectedMonthReport.value = res.report;
   } catch {
     // 离线兜底：下钻卡也要能显示缓存数据，而不是空白。
     const cached = await getCachedExpenses();
+    if (!monthDetailGuard.isLatest(token)) return;
     selectedMonthReport.value = buildMonthlyReportFallback(cached, m);
   } finally {
-    loadingCard.value = false;
+    if (monthDetailGuard.isLatest(token)) loadingCard.value = false;
   }
 }
 
 async function loadSummaryData(): Promise<void> {
+  const token = summaryGuard.begin();
   loading.value = true;
   errorMessage.value = null;
   try {
     const res = await reportsApi.summary();
+    if (!summaryGuard.isLatest(token)) return;
     summaryReportData.value = res.report;
 
     const years = res.report.years;
@@ -380,9 +429,11 @@ async function loadSummaryData(): Promise<void> {
       await loadSelectedYearDetail(latestYear);
     }
   } catch (error) {
+    if (!summaryGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       // 离线兜底：用本地缓存流水聚合出全部档日历与选中年详情。
       const cached = await getCachedExpenses();
+      if (!summaryGuard.isLatest(token)) return;
       const fallback = buildSummaryReportFallback(cached);
       summaryReportData.value = fallback;
 
@@ -395,37 +446,47 @@ async function loadSummaryData(): Promise<void> {
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载汇总日历失败';
   } finally {
-    loading.value = false;
+    if (summaryGuard.isLatest(token)) loading.value = false;
   }
 }
 
 async function loadSelectedYearDetail(y: string): Promise<void> {
+  const token = yearDetailGuard.begin();
   loadingCard.value = true;
   try {
     const res = await reportsApi.yearly(y);
+    if (!yearDetailGuard.isLatest(token)) return;
     selectedYearReport.value = res.report;
   } catch {
     // 离线兜底：下钻年概况卡也要能显示缓存数据。
     const cached = await getCachedExpenses();
+    if (!yearDetailGuard.isLatest(token)) return;
     selectedYearReport.value = buildYearlyReportFallback(cached, y);
   } finally {
-    loadingCard.value = false;
+    if (yearDetailGuard.isLatest(token)) loadingCard.value = false;
   }
 }
 
+/**
+ * 顶卡（本月支出 + 待办）。与列表并行取数，所以它**必须用自己的序号**：
+ * 共用 listGuard 会让两者互相把对方判成过期，顶卡金额会停在旧值上。
+ */
 async function loadTopCardData(): Promise<void> {
+  const token = topCardGuard.begin();
   try {
     const targetM = scope.value === 'month' ? month.value : currentMonth();
     const [mRes] = await Promise.all([
       reportsApi.monthly(targetM),
       plansStore.loadDueTodos(),
     ]);
+    if (!topCardGuard.isLatest(token)) return;
     currentMonthlyReport.value = mRes.report;
     currentMonthTotalCents.value = mRes.report.totalCents;
   } catch {
     // 离线兜底：顶卡金额不能显示 0 —— 用本地缓存流水聚合出当月报表。
     const targetM = scope.value === 'month' ? month.value : currentMonth();
     const cached = await getCachedExpenses();
+    if (!topCardGuard.isLatest(token)) return;
     const fallback = buildMonthlyReportFallback(cached, targetM);
     currentMonthlyReport.value = fallback;
     currentMonthTotalCents.value = fallback.totalCents;
@@ -548,6 +609,33 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
   const utc2 = Date.UTC(y2, m2 - 1, d2);
   return Math.max(0, Math.round((utc2 - utc1) / (24 * 60 * 60 * 1000)));
 }
+
+/**
+ * 分类名 / 支付方式名为空时的占位。
+ *
+ * 离线写入与同步失败重试时，名字可能取不到（字典里没有这一项）。
+ * 这里**只做显示层兜底**：给一个占位词，而不是自己伪造一个名字 ——
+ * 伪造的名字会被用户当成真实分类去对账，比空白更难查。
+ * 空白单元格在密集列表里等于「这里少渲染了东西」，所以至少要有个字。
+ */
+function categoryNameOf(item: { categoryName: string }): string {
+  return item.categoryName.trim() === '' ? '未分类' : item.categoryName;
+}
+
+function paymentNameOf(item: { paymentMethodName: string }): string {
+  return item.paymentMethodName.trim() === '' ? '—' : item.paymentMethodName;
+}
+
+/** 一级 · 二级 的完整分类名；缺哪一级就只显示有名字的那一级 */
+function fullCategoryName(item: {
+  categoryName: string;
+  parentCategoryName: string | null;
+}): string {
+  const child = categoryNameOf(item);
+  const parent = item.parentCategoryName;
+  if (parent === null || parent.trim() === '' || parent === child) return child;
+  return `${parent} · ${child}`;
+}
 </script>
 
 <template>
@@ -644,7 +732,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 </div>
 
                 <div v-if="scope === 'month' && largestExpense" class="text-[11px] opacity-75 truncate max-w-[150px] shrink-0 text-right">
-                  最高: {{ largestExpense.categoryName }} {{ formatCompact(largestExpense.cents) }}
+                  最高: {{ categoryNameOf(largestExpense) }} {{ formatCompact(largestExpense.cents) }}
                 </div>
               </div>
 
@@ -1124,18 +1212,14 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 <td class="py-2.5 pr-3 align-middle">
                   <span class="flex items-center gap-2">
                     <CategoryIcon
-                      :name="row.categoryName"
+                      :name="categoryNameOf(row)"
                       :icon="row.categoryIcon"
                       :color="row.parentCategoryColor ?? row.categoryColor"
-                      :color-name="row.parentCategoryName ?? row.categoryName"
+                      :color-name="row.parentCategoryName ?? categoryNameOf(row)"
                       :size="18"
                     />
                     <span class="truncate text-sm font-medium text-ink">
-                      {{
-                        row.parentCategoryName === null
-                          ? row.categoryName
-                          : `${row.parentCategoryName} · ${row.categoryName}`
-                      }}
+                      {{ fullCategoryName(row) }}
                     </span>
                   </span>
                 </td>
@@ -1146,8 +1230,8 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
 
                 <td class="whitespace-nowrap py-2.5 pr-3 text-xs text-ink-muted">
                   <span class="inline-flex items-center gap-1.5">
-                    <PaymentIcon :name="row.paymentMethodName" :size="13" />
-                    <span>{{ row.paymentMethodName }}</span>
+                    <PaymentIcon :name="paymentNameOf(row)" :size="13" />
+                    <span>{{ paymentNameOf(row) }}</span>
                   </span>
                 </td>
 
@@ -1196,10 +1280,10 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                 <!-- 图标 -->
                 <span class="shrink-0 text-ink-muted">
                   <CategoryIcon
-                    :name="row.categoryName"
+                    :name="categoryNameOf(row)"
                     :icon="row.categoryIcon"
                     :color="row.parentCategoryColor ?? row.categoryColor"
-                    :color-name="row.parentCategoryName ?? row.categoryName"
+                    :color-name="row.parentCategoryName ?? categoryNameOf(row)"
                     :size="20"
                   />
                 </span>
@@ -1209,7 +1293,7 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                   <!-- 主行：分类名（左） + 金额（右） -->
                   <div class="flex items-baseline justify-between gap-2">
                     <span class="truncate text-sm font-medium text-ink">
-                      {{ row.parentCategoryName === null ? row.categoryName : `${row.parentCategoryName} · ${row.categoryName}` }}
+                      {{ fullCategoryName(row) }}
                     </span>
                     <span
                       class="shrink-0 text-sm font-bold tabular-nums text-right whitespace-nowrap"
@@ -1223,8 +1307,8 @@ function billingGraceDays(spendDate: string, repaymentDate: string): number {
                   <div class="flex items-center justify-between gap-2 text-xs text-ink-muted">
                     <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
                       <span class="inline-flex items-center gap-1 shrink-0">
-                        <PaymentIcon :name="row.paymentMethodName" :size="12" />
-                        <span>{{ row.paymentMethodName }}</span>
+                        <PaymentIcon :name="paymentNameOf(row)" :size="12" />
+                        <span>{{ paymentNameOf(row) }}</span>
                       </span>
                       <template v-if="row.note">
                         <span class="text-ink-muted/40 shrink-0">·</span>

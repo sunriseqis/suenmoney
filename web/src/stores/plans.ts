@@ -40,7 +40,9 @@ export const usePlansStore = defineStore('plans', () => {
     try {
       const result = await plansApi.list();
       plans.value = result.plans;
-      void saveCachedPlans(result.plans);
+      // 缓存副本写失败不阻断主流程：服务端数据已到手，写不进去最坏是下次没有离线兜底。
+      // 真正不能吞的是离线记账写入（stores/sync.ts），那里失败会照实抛给用户。
+      void saveCachedPlans(result.plans).catch(() => {});
     } catch (err) {
       if (isIdbSupported()) {
         const cached = await getCachedPlans();
@@ -78,7 +80,7 @@ export const usePlansStore = defineStore('plans', () => {
       });
 
       dueTodos.value = result.todos;
-      void saveCachedPlanTodos(result.todos);
+      void saveCachedPlanTodos(result.todos).catch(() => {});
       return result.settled;
     } catch (err) {
       if (isIdbSupported()) {

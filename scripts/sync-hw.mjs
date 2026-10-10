@@ -21,10 +21,14 @@ function log(msg) {
   console.log(`[sync-hw] ${msg}`);
 }
 
+// Windows 下 npm 的可执行入口是 npm.cmd，直接 execFileSync('npm') 会 ENOENT。
+// CI 只在 ubuntu 上验证过，所以这个 win32 分支必须在本地显式处理，不能指望 CI 兜住。
+const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
 // 1. 若 web/dist 不存在或包含未编译代码，先编译 Web
 if (!existsSync(join(DIST_DIR, 'index.html'))) {
   log('web/dist 产物不存在，开始执行 npm run build...');
-  execFileSync('npm', ['run', 'build'], { cwd: WEB_DIR, stdio: 'inherit' });
+  execFileSync(NPM_BIN, ['run', 'build'], { cwd: WEB_DIR, stdio: 'inherit' });
 }
 
 // 2. 准备目标 rawfile 目录

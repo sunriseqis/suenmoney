@@ -18,6 +18,10 @@ const HW_DIR = join(ROOT, 'hw');
 const OUTPUT_DIR = join(ROOT, 'app');
 const SYNC_ONLY = process.argv.includes('--sync-only');
 
+// Windows 的可执行入口带 .exe/.cmd 后缀，直接 execFileSync('git') 会 ENOENT。
+// CI 只在 ubuntu 上验证过，所以这个 win32 分支必须在本地显式处理，不能指望 CI 兜住。
+const GIT_BIN = process.platform === 'win32' ? 'git.exe' : 'git';
+
 function log(msg) {
   console.log(`[build-hw] ${msg}`);
 }
@@ -46,7 +50,7 @@ async function readVersionName() {
 
 function readVersionCode(versionName) {
   try {
-    const count = Number(output('git', ['rev-list', '--count', 'HEAD'], { cwd: ROOT }));
+    const count = Number(output(GIT_BIN, ['rev-list', '--count', 'HEAD'], { cwd: ROOT }));
     if (Number.isInteger(count) && count > 0) {
       return { code: 10000 + count, source: `10000 + git 提交数 ${count}` };
     }

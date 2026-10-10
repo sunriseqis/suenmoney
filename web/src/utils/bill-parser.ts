@@ -118,6 +118,12 @@ export function detectBillSource(text: string): BillSource {
 
 /**
  * 解码 ArrayBuffer。自动探测 UTF-8 与 GBK。
+ *
+ * 判定依据是「字节序列本身是否合法 UTF-8」，而不是文件内容里有没有某些词。
+ * 早先这里用的是关键词启发式（出现「微信支付」「支付宝」「交易时间」「收/支」
+ * 才认为是 UTF-8，否则退回 GBK），那是拿内容词汇替代编码判定：一份完全合法的
+ * UTF-8 中文表只要没出现这四个词（例如自家对账表导出、用户自己整理的表），
+ * 就会被判成 GBK，整表乱码、金额解析不出来，而且解析器不报错。
  */
 export function decodeCsvBuffer(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -126,28 +132,18 @@ export function decodeCsvBuffer(buffer: ArrayBuffer): string {
     return new TextDecoder('utf-8').decode(bytes);
   }
 
-  // 先尝试 UTF-8 解码
-  const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
-  const utf8Text = utf8Decoder.decode(bytes);
-
-  // 如果包含大量替换字符 \uFFFD 或没有匹配到常见关键词，退回 GBK
-  const hasReplacement = utf8Text.includes('\uFFFD');
-  const hasKeywords =
-    utf8Text.includes('微信支付') ||
-    utf8Text.includes('支付宝') ||
-    utf8Text.includes('交易时间') ||
-    utf8Text.includes('收/支');
-
-  if (hasReplacement || !hasKeywords) {
+  // 先用严格模式试 UTF-8：fatal:true 遇到非法字节序列直接抛错，
+  // 抛错即证明这不是 UTF-8，此时才按 GBK 解；解成功就直接用。
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
     try {
-      const gbkDecoder = new TextDecoder('gbk', { fatal: false });
-      return gbkDecoder.decode(bytes);
+      return new TextDecoder('gbk', { fatal: false }).decode(bytes);
     } catch {
-      return utf8Text;
+      // 环境不支持 gbk 解码器时，退回宽松 UTF-8，至少不丢数据
+      return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
     }
   }
-
-  return utf8Text;
 }
 
 // 常用关键词到分类名称的模糊映射字典

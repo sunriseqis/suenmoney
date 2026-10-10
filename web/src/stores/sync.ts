@@ -15,6 +15,7 @@ import {
   deleteCachedExpense,
   getDeviceId,
   getMeta,
+  getOutboxDeadLetters,
   getOutboxItems,
   getCachedPlanTodos,
   isIdbSupported,
@@ -23,6 +24,8 @@ import {
   setMeta,
   updateCachedExpense,
   updateCachedPlanTodo,
+  OfflineStorageError,
+  type DeadLetterSummary,
   type OutboxItem,
 } from '@/utils/idb';
 import { ulid } from '@/utils/ulid';
@@ -36,6 +39,43 @@ import { usePlansStore } from './plans';
  */
 const OUTBOX_MAX_RETRY = 3;
 
+/**
+ * 离线写入失败时抛给上层的错误。
+ *
+ * 为什么必须冒泡：离线写路径是「先落本地、再排队、后同步」，任何一步写失败都意味着
+ * 这一笔操作既没进本地缓存、也没进待发队列。若这里假装成功，UI 会照常提示「记好了」，
+ * 用户以为账记上了，实际设备上根本不存在这笔账 —— 无感知丢账。
+ *
+ * 消息写成人话是为了让组件层直接展示（组件层负责弹提示，本层不弹）。
+ */
+export class OfflineWriteError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'OfflineWriteError';
+  }
+}
+
+/** 把底层存储异常统一转成可直接展示给用户的文案 */
+function toOfflineWriteError(action: string, err: unknown): OfflineWriteError {
+  const detail =
+    err instanceof OfflineStorageError ? err.message : '存储空间不足或被系统清理，请检查设备存储后重试';
+  return new OfflineWriteError(`${action}失败：${detail}`, { cause: err });
+}
+
+/**
+ * 包裹离线写路径：写入失败时抛出可展示的错误，且不触发 scheduleSync。
+ *
+ * 不做「写失败也照样调度同步」是因为队列里根本没有这笔操作，
+ * 调度同步只会做一次无意义的网络往返，并让 UI 误以为已入队。
+ */
+async function writeOffline(action: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    throw toOfflineWriteError(action, err);
+  }
+}
+
 export const useSyncStore = defineStore('sync', () => {
   // 必须基于实际服务端探测，不能仅凭 navigator.onLine 判定连通
   const isOnline = ref(false);
@@ -47,7 +87,18 @@ export const useSyncStore = defineStore('sync', () => {
   const lastError = ref<string | null>(null);
   const initialized = ref(false);
 
+  /**
+   * 死信条目（服务端多次拒绝、已不再自动重试的离线操作）摘要，只读供 UI 展示。
+   *
+   * 语义：这些条目既不会被 pushOutbox 推送（已被 retryCount 过滤），
+   * 也不会计入 pendingCount（那会让「待同步」数字虚高、且暗示还在重试）。
+   * 但它们是用户真实存在、且永远同步不上去的账，绝不能悄悄藏起来 ——
+   * 所以单独计数、单独暴露，让用户至少知道有这么几笔需要手工处理。
+   */
+  const deadLetters = ref<DeadLetterSummary[]>([]);
+
   const hasPending = computed(() => pendingCount.value > 0);
+  const deadLetterCount = computed(() => deadLetters.value.length);
 
   let syncDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -122,11 +173,17 @@ export const useSyncStore = defineStore('sync', () => {
     }, delayMs);
   }
 
-  /** 刷新待发送 Outbox 队列条数（死信隔离中的条目不计入） */
+  /**
+   * 刷新待发送 Outbox 队列条数与死信列表。
+   *
+   * pendingCount 刻意排除死信：它们不会再被推送，算进去会让「待同步 N 条」虚高，
+   * 让人误以为还有 N 笔在排队。死信改由 deadLetterCount 独立呈现。
+   */
   async function refreshPendingCount(): Promise<void> {
     if (!isIdbSupported()) return;
     const items = await getOutboxItems();
     pendingCount.value = items.filter((i) => i.retryCount <= OUTBOX_MAX_RETRY).length;
+    deadLetters.value = await getOutboxDeadLetters(OUTBOX_MAX_RETRY);
   }
 
   /**
@@ -202,6 +259,9 @@ export const useSyncStore = defineStore('sync', () => {
    * 离线记账暂存：
    * 生成全局唯一 ULID，先落库 IndexedDB 支出明细（标记 isOfflinePending），
    * 同时写入 Outbox 待发队列。
+   *
+   * 任一步写入失败都直接抛出，绝不返回成功：这笔账若没落盘又没入队，
+   * 用户看到的「记好了」就是假的。
    */
   async function addOfflineExpense(input: {
     amountCents: number;
@@ -225,13 +285,16 @@ export const useSyncStore = defineStore('sync', () => {
       ownerName: auth.user?.displayName ?? '我',
       amountCents: input.amountCents,
       categoryId: input.categoryId,
-      categoryName: cat?.name ?? '未知分类',
+      // 查不到字典项时留空，不要伪造「未知分类」之类的名字：
+      // 这些字段会随同步扩散到其他设备、进入报表，形成永久的分类黑洞（见 docs/decisions.md）。
+      // 空名由渲染层兜底显示为「未分类」，语义正确且不会脏化数据。
+      categoryName: cat?.name ?? '',
       categoryIcon: cat?.icon ?? '',
       categoryColor: cat?.color ?? '',
       parentCategoryColor: parentCat?.color ?? null,
       parentCategoryName: parentCat?.name ?? null,
       paymentMethodId: input.paymentMethodId,
-      paymentMethodName: pm?.name ?? '未知支付方式',
+      paymentMethodName: pm?.name ?? '',
       paymentMethodType: pm?.type ?? 'cash',
       spendDate: input.spendDate,
       postingDate: input.spendDate,
@@ -244,25 +307,27 @@ export const useSyncStore = defineStore('sync', () => {
       updatedAt: nowIso,
     };
 
-    if (isIdbSupported()) {
-      await saveSingleCachedExpense(localRecord, true);
-      await addOutboxItem({
-        id: ulid(),
-        action: 'create_expense',
-        entityId: expenseId,
-        payload: {
-          id: expenseId,
-          amountCents: input.amountCents,
-          categoryId: input.categoryId,
-          paymentMethodId: input.paymentMethodId,
-          spendDate: input.spendDate,
-          note: input.note ?? '',
-        },
-        createdAt: nowIso,
-        retryCount: 0,
-      });
-      await refreshPendingCount();
-    }
+    await writeOffline('离线保存', async () => {
+      if (isIdbSupported()) {
+        await saveSingleCachedExpense(localRecord, true);
+        await addOutboxItem({
+          id: ulid(),
+          action: 'create_expense',
+          entityId: expenseId,
+          payload: {
+            id: expenseId,
+            amountCents: input.amountCents,
+            categoryId: input.categoryId,
+            paymentMethodId: input.paymentMethodId,
+            spendDate: input.spendDate,
+            note: input.note ?? '',
+          },
+          createdAt: nowIso,
+          retryCount: 0,
+        });
+        await refreshPendingCount();
+      }
+    });
 
     // 主动触发 300ms 防抖同步
     scheduleSync(300);
@@ -275,6 +340,8 @@ export const useSyncStore = defineStore('sync', () => {
    * 立即更新本地 IndexedDB 缓存（支持离线即刻呈现），
    * 若该记录仅存在于本地离线待发队列中，直接更新该队列项；
    * 若为已同步记录，则写入 update_expense 暂存队列。
+   *
+   * 写入失败直接抛出：本地缓存与待发队列必须同时更新，只成功一半等于数据不一致。
    */
   async function updateOfflineExpense(
     id: string,
@@ -294,6 +361,7 @@ export const useSyncStore = defineStore('sync', () => {
       partial.categoryId = input.categoryId;
       const cat = dict.findCategory(input.categoryId);
       const parentCat = cat?.parentId ? dict.findCategory(cat.parentId) : null;
+      // 同 addOfflineExpense：查不到就留空，不伪造会被同步扩散的名字
       partial.categoryName = cat?.name ?? '';
       partial.categoryIcon = cat?.icon ?? '';
       partial.categoryColor = cat?.color ?? '';
@@ -313,39 +381,41 @@ export const useSyncStore = defineStore('sync', () => {
     }
     if (input.note !== undefined) partial.note = input.note;
 
-    if (isIdbSupported()) {
-      await updateCachedExpense(id, partial, true);
+    await writeOffline('离线修改', async () => {
+      if (isIdbSupported()) {
+        await updateCachedExpense(id, partial, true);
 
-      const items = await getOutboxItems();
-      const existingCreate = items.find(
-        (item) => item.action === 'create_expense' && item.entityId === id,
-      );
+        const items = await getOutboxItems();
+        const existingCreate = items.find(
+          (item) => item.action === 'create_expense' && item.entityId === id,
+        );
 
-      if (existingCreate) {
-        // 如果这笔账还在离线新建队列里，直接合并修改该新建项
-        await addOutboxItem({
-          ...existingCreate,
-          payload: {
-            ...existingCreate.payload,
-            ...input,
-          },
-        });
-      } else {
-        // 已经推送到服务端的记录，写入一条 update_expense
-        await addOutboxItem({
-          id: ulid(),
-          action: 'update_expense',
-          entityId: id,
-          payload: {
-            id,
-            ...input,
-          },
-          createdAt: new Date().toISOString(),
-          retryCount: 0,
-        });
+        if (existingCreate) {
+          // 如果这笔账还在离线新建队列里，直接合并修改该新建项
+          await addOutboxItem({
+            ...existingCreate,
+            payload: {
+              ...existingCreate.payload,
+              ...input,
+            },
+          });
+        } else {
+          // 已经推送到服务端的记录，写入一条 update_expense
+          await addOutboxItem({
+            id: ulid(),
+            action: 'update_expense',
+            entityId: id,
+            payload: {
+              id,
+              ...input,
+            },
+            createdAt: new Date().toISOString(),
+            retryCount: 0,
+          });
+        }
+        await refreshPendingCount();
       }
-      await refreshPendingCount();
-    }
+    });
 
     scheduleSync(300);
   }
@@ -354,55 +424,62 @@ export const useSyncStore = defineStore('sync', () => {
    * 离线删除账单：
    * 本地立即移除（秒删），若是离线新建队列中的记录，直接作废该创建队列项；
    * 若是服务端历史记录，写入 delete_expense 队列待补偿。
+   *
+   * 写入失败直接抛出：否则本地已删、队列里却没有 delete，
+   * 服务端会把这笔账一直留着，而用户以为已经删了。
    */
   async function deleteOfflineExpense(id: string): Promise<void> {
-    if (isIdbSupported()) {
-      await deleteCachedExpense(id);
+    await writeOffline('离线删除', async () => {
+      if (isIdbSupported()) {
+        await deleteCachedExpense(id);
 
-      const items = await getOutboxItems();
-      const localRelated = items.filter((item) => item.entityId === id);
+        const items = await getOutboxItems();
+        const localRelated = items.filter((item) => item.entityId === id);
 
-      const wasPendingCreate = localRelated.some((item) => item.action === 'create_expense');
-      if (wasPendingCreate) {
-        // 该记录还从未同步上云，直接撤销相关的所有离线队列项
-        await removeOutboxItems(localRelated.map((i) => i.id));
-      } else {
-        // 已存在于服务端的记录，写入 delete_expense
-        await addOutboxItem({
-          id: ulid(),
-          action: 'delete_expense',
-          entityId: id,
-          payload: { id },
-          createdAt: new Date().toISOString(),
-          retryCount: 0,
-        });
+        const wasPendingCreate = localRelated.some((item) => item.action === 'create_expense');
+        if (wasPendingCreate) {
+          // 该记录还从未同步上云，直接撤销相关的所有离线队列项
+          await removeOutboxItems(localRelated.map((i) => i.id));
+        } else {
+          // 已存在于服务端的记录，写入 delete_expense
+          await addOutboxItem({
+            id: ulid(),
+            action: 'delete_expense',
+            entityId: id,
+            payload: { id },
+            createdAt: new Date().toISOString(),
+            retryCount: 0,
+          });
+        }
+        await refreshPendingCount();
       }
-      await refreshPendingCount();
-    }
+    });
 
     scheduleSync(300);
   }
 
   /**
-   * 离线确认待办（confirm_todo）
+   * 离线确认待办（confirm_todo）：写失败直接抛出，避免服务端状态与本地不一致
    */
   async function confirmOfflineTodo(todoId: string, spendDate?: string): Promise<void> {
-    if (isIdbSupported()) {
-      await updateCachedPlanTodo(todoId, {
-        status: 'confirmed',
-        postedDate: spendDate,
-        confirmedAt: new Date().toISOString(),
-      });
-      await addOutboxItem({
-        id: ulid(),
-        action: 'confirm_todo',
-        entityId: todoId,
-        payload: { id: todoId, spendDate },
-        createdAt: new Date().toISOString(),
-        retryCount: 0,
-      });
-      await refreshPendingCount();
-    }
+    await writeOffline('离线确认待办', async () => {
+      if (isIdbSupported()) {
+        await updateCachedPlanTodo(todoId, {
+          status: 'confirmed',
+          postedDate: spendDate,
+          confirmedAt: new Date().toISOString(),
+        });
+        await addOutboxItem({
+          id: ulid(),
+          action: 'confirm_todo',
+          entityId: todoId,
+          payload: { id: todoId, spendDate },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+        await refreshPendingCount();
+      }
+    });
     scheduleSync(300);
   }
 
@@ -410,18 +487,20 @@ export const useSyncStore = defineStore('sync', () => {
    * 离线跳过待办（skip_todo）
    */
   async function skipOfflineTodo(todoId: string): Promise<void> {
-    if (isIdbSupported()) {
-      await updateCachedPlanTodo(todoId, { status: 'skipped' });
-      await addOutboxItem({
-        id: ulid(),
-        action: 'skip_todo',
-        entityId: todoId,
-        payload: { id: todoId },
-        createdAt: new Date().toISOString(),
-        retryCount: 0,
-      });
-      await refreshPendingCount();
-    }
+    await writeOffline('离线跳过待办', async () => {
+      if (isIdbSupported()) {
+        await updateCachedPlanTodo(todoId, { status: 'skipped' });
+        await addOutboxItem({
+          id: ulid(),
+          action: 'skip_todo',
+          entityId: todoId,
+          payload: { id: todoId },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+        await refreshPendingCount();
+      }
+    });
     scheduleSync(300);
   }
 
@@ -429,18 +508,20 @@ export const useSyncStore = defineStore('sync', () => {
    * 离线知晓待办（ack_todo）
    */
   async function ackOfflineTodo(todoId: string): Promise<void> {
-    if (isIdbSupported()) {
-      await updateCachedPlanTodo(todoId, { ackAt: new Date().toISOString() });
-      await addOutboxItem({
-        id: ulid(),
-        action: 'ack_todo',
-        entityId: todoId,
-        payload: { id: todoId },
-        createdAt: new Date().toISOString(),
-        retryCount: 0,
-      });
-      await refreshPendingCount();
-    }
+    await writeOffline('离线知晓待办', async () => {
+      if (isIdbSupported()) {
+        await updateCachedPlanTodo(todoId, { ackAt: new Date().toISOString() });
+        await addOutboxItem({
+          id: ulid(),
+          action: 'ack_todo',
+          entityId: todoId,
+          payload: { id: todoId },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+        await refreshPendingCount();
+      }
+    });
     scheduleSync(300);
   }
 
@@ -448,31 +529,33 @@ export const useSyncStore = defineStore('sync', () => {
    * 离线撤销确认（revert_todo）：待办回 pending，本地缓存的生成支出软删
    */
   async function revertOfflineTodo(todoId: string): Promise<void> {
-    if (isIdbSupported()) {
-      // 先读缓存待办拿到 expenseId，把本地已入账的支出移除（服务端 push 时会软删）
-      const todos = await getCachedPlanTodos();
-      const todo = todos.find((t) => t.id === todoId);
-      if (todo?.expenseId) {
-        await deleteCachedExpense(todo.expenseId);
+    await writeOffline('离线撤销确认', async () => {
+      if (isIdbSupported()) {
+        // 先读缓存待办拿到 expenseId，把本地已入账的支出移除（服务端 push 时会软删）
+        const todos = await getCachedPlanTodos();
+        const todo = todos.find((t) => t.id === todoId);
+        if (todo?.expenseId) {
+          await deleteCachedExpense(todo.expenseId);
+        }
+        await updateCachedPlanTodo(todoId, {
+          status: 'pending',
+          postedDate: null,
+          confirmedBy: null,
+          confirmedAt: null,
+          expenseId: null,
+          holdAutoPost: true,
+        });
+        await addOutboxItem({
+          id: ulid(),
+          action: 'revert_todo',
+          entityId: todoId,
+          payload: { id: todoId },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+        await refreshPendingCount();
       }
-      await updateCachedPlanTodo(todoId, {
-        status: 'pending',
-        postedDate: null,
-        confirmedBy: null,
-        confirmedAt: null,
-        expenseId: null,
-        holdAutoPost: true,
-      });
-      await addOutboxItem({
-        id: ulid(),
-        action: 'revert_todo',
-        entityId: todoId,
-        payload: { id: todoId },
-        createdAt: new Date().toISOString(),
-        retryCount: 0,
-      });
-      await refreshPendingCount();
-    }
+    });
     scheduleSync(300);
   }
 
@@ -480,18 +563,20 @@ export const useSyncStore = defineStore('sync', () => {
    * 离线恢复跳过（restore_todo）：skipped → pending
    */
   async function restoreOfflineTodo(todoId: string): Promise<void> {
-    if (isIdbSupported()) {
-      await updateCachedPlanTodo(todoId, { status: 'pending', holdAutoPost: true });
-      await addOutboxItem({
-        id: ulid(),
-        action: 'restore_todo',
-        entityId: todoId,
-        payload: { id: todoId },
-        createdAt: new Date().toISOString(),
-        retryCount: 0,
-      });
-      await refreshPendingCount();
-    }
+    await writeOffline('离线恢复待办', async () => {
+      if (isIdbSupported()) {
+        await updateCachedPlanTodo(todoId, { status: 'pending', holdAutoPost: true });
+        await addOutboxItem({
+          id: ulid(),
+          action: 'restore_todo',
+          entityId: todoId,
+          payload: { id: todoId },
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+        await refreshPendingCount();
+      }
+    });
     scheduleSync(300);
   }
 
@@ -758,6 +843,8 @@ export const useSyncStore = defineStore('sync', () => {
     isSyncing,
     pendingCount,
     hasPending,
+    deadLetters,
+    deadLetterCount,
     lastSyncedAt,
     lastSyncVersion,
     lastError,
