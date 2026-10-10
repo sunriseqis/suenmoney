@@ -103,6 +103,8 @@ jobs:
             ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
             bash -c "
               set -x
+              sed -i 's/"versionName": "[^"]*"/"versionName": "${{ env.VERSION_NAME }}"/g' AppScope/app.json5 || true
+              sed -i 's/"versionCode": [0-9]*/"versionCode": ${{ env.VERSION_CODE }}/g' AppScope/app.json5 || true
               ohpm install --all || true
 
               echo '--- 开始执行 Hvigor 构建 ---'

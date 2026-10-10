@@ -67,20 +67,12 @@ async function syncWeb() {
 
 async function injectVersion(versionName, versionCode) {
   log(`2/3 注入版本号至鸿蒙工程: ${versionName} (${versionCode})...`);
-  const profilePath = join(HW_DIR, 'build-profile.json5');
-  if (existsSync(profilePath)) {
-    let content = await readFile(profilePath, 'utf8');
-    // 在 app 配置中更新 versionName / versionCode
-    if (!content.includes('"versionName"')) {
-      content = content.replace(
-        '"signingConfigs": [],',
-        `"signingConfigs": [],\n    "versionName": "${versionName}",\n    "versionCode": ${versionCode},`,
-      );
-    } else {
-      content = content.replace(/"versionName":\s*"[^"]*"/, `"versionName": "${versionName}"`);
-      content = content.replace(/"versionCode":\s*\d+/, `"versionCode": ${versionCode}`);
-    }
-    await writeFile(profilePath, content, 'utf8');
+  const appJsonPath = join(HW_DIR, 'AppScope/app.json5');
+  if (existsSync(appJsonPath)) {
+    let content = await readFile(appJsonPath, 'utf8');
+    content = content.replace(/"versionName":\s*"[^"]*"/, `"versionName": "${versionName}"`);
+    content = content.replace(/"versionCode":\s*\d+/, `"versionCode": ${versionCode}`);
+    await writeFile(appJsonPath, content, 'utf8');
   }
 }
 
