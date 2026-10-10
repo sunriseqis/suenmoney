@@ -8,6 +8,6 @@
   "dependencies": {},
   "devDependencies": {
     "@ohos/hypium": "1.0.18",
-    "@ohos/hvigor-ohos-plugin": "5.0.2"
+    "@ohos/hvigor-ohos-plugin": "6.26.8"
   }
 }
