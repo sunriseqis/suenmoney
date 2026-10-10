@@ -121,8 +121,15 @@ jobs:
 
               echo '--- 查找构建产物 ---'
               mkdir -p /workspace/app
-              find /workspace/hw -type f -name '*.hap' -path '*/outputs/*' -exec cp -v {} /workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap \;
-              find /workspace/hw -type f -name '*.hap' -path '*/outputs/*' -exec cp -v {} /workspace/app/SuenMoney-${{ env.VERSION }}-release.hap \;
+              FOUND_HAP=$(find /workspace/hw -type f -name '*.hap' | head -n 1)
+              if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
+                echo "找到产物: $FOUND_HAP"
+                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap
+                cp -v "$FOUND_HAP" /workspace/app/SuenMoney-${{ env.VERSION }}-release.hap
+              else
+                echo "未在 /workspace/hw 找到 .hap，检索工作区:"
+                find /workspace -type f -name '*.hap' || true
+              fi
               chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build /workspace/build.log 2>/dev/null || true
             "
 
