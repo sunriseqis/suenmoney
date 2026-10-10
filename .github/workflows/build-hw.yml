@@ -103,12 +103,6 @@ jobs:
             ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
             bash -c "
               set -x
-              # 动态对齐 SDK 26.0.0 正式版
-              sed -i '/\"signingConfig\":/d' build-profile.json5 || true
-              sed -i 's/\"compileSdkVersion\": [0-9]*/\"compileSdkVersion\": \"26.0.0\"/g' build-profile.json5 || true
-              sed -i 's/\"compatibleSdkVersion\": [0-9]*/\"compatibleSdkVersion\": \"26.0.0\"/g' build-profile.json5 || true
-              sed -i '/\"hvigorVersion\":/d' hvigor/hvigor-config.json5 || true
-
               ohpm install --all || true
 
               echo '--- 开始执行 Hvigor 构建 ---'
