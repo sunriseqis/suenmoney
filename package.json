@@ -19,6 +19,7 @@
     "ios:sync": "node scripts/build-ios.mjs --sync-only",
     "build:ios": "node scripts/build-ios.mjs --unsigned",
     "hw:sync": "node scripts/sync-hw.mjs",
+    "build:hw": "node scripts/build-hw.mjs",
     "check": "npm run typecheck && npm test && npm run build:web"
   }
 }
