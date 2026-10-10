@@ -104,12 +104,12 @@ struct Index {
   }
 
   // 从 rawfile 读取本地资源构建 WebResourceResponse
-  private loadRawFile(rawPath: string): webview.WebResourceResponse | null {
+  private loadRawFile(rawPath: string): WebResourceResponse | null {
     try {
       const resMgr = getContext(this).resourceManager;
       const content = resMgr.getRawFileContentSync(rawPath);
-      const response = new webview.WebResourceResponse();
-      response.setResponseData(content.buffer);
+      const response = new WebResourceResponse();
+      response.setResponseData(content.buffer as ArrayBuffer);
       response.setResponseMimeType(this.getMimeType(rawPath));
       response.setResponseEncoding('utf-8');
       response.setResponseCode(200);
