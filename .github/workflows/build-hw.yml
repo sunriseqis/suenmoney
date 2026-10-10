@@ -139,6 +139,36 @@ jobs:
               chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build /workspace/build.log 2>/dev/null || true
             '
 
+      # 把构建日志尾部写进 Job Summary，作为「匿名可读」的失败诊断通道。
+      # 为什么要这么做：ArkTS 编译器只报首个致命错误（COMPILE RESULT:FAIL {ERROR:2} 仅列 1 条），
+      # 改一处才能暴露下一处；而 Actions step 日志与 harmony-build-log artifact 对本机匿名访问
+      # 均返回 401/403，check-run annotations 只有一句 "Process completed with exit code 255."，
+      # 导致只能盲改、每轮 4 分钟且无信息。Job Summary 可通过公开 check-runs API 的
+      # output.summary 匿名读取，写入后下一次失败无需人工贴日志即可定位。
+      - name: Append Build Log Tail to Job Summary
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          # 容器内 /workspace 挂载的是 ${GITHUB_WORKSPACE}，故日志真实路径为工作区根目录 build.log
+          LOG="build.log"
+          {
+            echo "### 鸿蒙构建日志尾部"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$LOG" ]; then
+            # 只截尾部 200 行：Job Summary 上限 1MB，全量日志会导致本步骤失败
+            {
+              echo '```'
+              tail -n 200 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "无构建日志文件（$LOG 不存在，构建可能在容器启动阶段即失败）。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # 产物校验
       - name: Verify Artifact
         run: |
