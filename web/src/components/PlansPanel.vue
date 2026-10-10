@@ -57,6 +57,22 @@ const busy = ref(false);
 const errorMessage = ref<string | null>(null);
 const notice = ref<string | null>(null);
 
+/**
+ * in-flight 守卫：所有会发请求的动作共用这一个锁。
+ *
+ * 之前只有「把 busy 置 true」，没有入口处的判空 —— 连点「确认 / 入账 / 忽略」
+ * 会连发两次请求，而这几个动作都是**不可逆的状态迁移**（入账、撤销、跳过）：
+ * 第二次请求要么撞409 要么在第一次的结果上再改一次，
+ * 用户看到的是「界面卡住 / 状态自己又变回去」，比慢一点糟得多。
+ *
+ * 注意锁是**同步**置位的（第一个 await 之前），所以第二次点击一定撞得进来。
+ */
+function beginAction(): boolean {
+  if (busy.value) return false;
+  busy.value = true;
+  return true;
+}
+
 /** 按客户端本地时区算出的「今天」，用于新建计划表单的日期默认值 */
 const today = todayLocal();
 
@@ -96,8 +112,8 @@ async function onTodoChanged(): Promise<void> {
  * 真逾期了到上面的待办卡片处理。
  */
 async function confirmFromDetail(todo: PlanTodo): Promise<void> {
+  if (!beginAction()) return;
   clearMessages();
-  busy.value = true;
 
   try {
     await plansStore.confirmTodo(todo.id);
@@ -186,6 +202,8 @@ function closeSwipe(): void {
  * 也是系统级的，反而更醒目。
  */
 async function revertTodo(todo: PlanTodo): Promise<void> {
+  // 守卫放在 confirm 之前：确认框是模态的，用户在框上点两下是常事。
+  if (!beginAction()) return;
   clearMessages();
 
   const month = todo.repaymentDate.slice(0, 7);
@@ -194,11 +212,13 @@ async function revertTodo(todo: PlanTodo): Promise<void> {
       `这笔已计入 ${formatMonthLabel(month)}。撤销后该月合计将减少 ${formatYuan(todo.amountCents)}，`
         + `「${todo.planName}」第 ${todo.periodSeq} 期回到待办。确定撤销吗？`,
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      busy.value = false;
+      return;
+    }
   }
 
   closeSwipe();
-  busy.value = true;
   try {
     await plansStore.revertTodo(todo.id);
     ui.markDataChanged();
@@ -213,9 +233,9 @@ async function revertTodo(todo: PlanTodo): Promise<void> {
 
 /** 恢复一个被跳过的期次。它同样不会再自动入账 —— 要用户自己确认。 */
 async function restoreTodo(todo: PlanTodo): Promise<void> {
+  if (!beginAction()) return;
   clearMessages();
   closeSwipe();
-  busy.value = true;
   try {
     await plansStore.restoreTodo(todo.id);
     ui.markDataChanged();
@@ -272,21 +292,23 @@ function startEdit(plan: Plan): void {
 }
 
 async function submitEdit(plan: Plan): Promise<void> {
+  if (!beginAction()) return;
   clearMessages();
 
   const amountCents = parseYuanToCents(editForm.value.amountYuan);
   if (amountCents <= 0) {
     errorMessage.value = '每期金额必须大于 0';
+    busy.value = false;
     return;
   }
 
   const remainingPeriods = Number(editForm.value.remainingPeriods);
   if (!Number.isInteger(remainingPeriods) || remainingPeriods < 0) {
     errorMessage.value = '剩余期数必须是不小于 0 的整数（0 = 只保留已还的历史）';
+    busy.value = false;
     return;
   }
 
-  busy.value = true;
   try {
     await plansApi.update(plan.id, {
       amountCents,
@@ -308,8 +330,8 @@ async function submitEdit(plan: Plan): Promise<void> {
 }
 
 async function submitEnd(plan: Plan): Promise<void> {
+  if (!beginAction()) return;
   clearMessages();
-  busy.value = true;
   try {
     await plansStore.endPlan(plan.id);
     notice.value = `已终止「${plan.name}」，未执行的期数已作废，已还的历史保留`;
@@ -323,11 +345,12 @@ async function submitEnd(plan: Plan): Promise<void> {
 }
 
 async function submitDelete(plan: Plan): Promise<void> {
+  if (!beginAction()) return;
   if (!confirm(`确定彻底删除计划「${plan.name}」吗？已生成的历史记账记录将完整保留，该计划及相关待办将被移除。`)) {
+    busy.value = false;
     return;
   }
   clearMessages();
-  busy.value = true;
   try {
     await plansStore.deletePlan(plan.id);
     notice.value = `已删除计划「${plan.name}」`;
@@ -391,15 +414,18 @@ function resetCreateForm(): void {
 }
 
 async function submitCreate(): Promise<void> {
+  if (!beginAction()) return;
   clearMessages();
 
   const periods = Number(createForm.value.periods);
   if (!Number.isInteger(periods) || periods < 1 || periods > 600) {
     errorMessage.value = '期数必须是 1–600 之间的整数';
+    busy.value = false;
     return;
   }
   if (createForm.value.categoryId === '' || createForm.value.paymentMethodId === '') {
     errorMessage.value = '请选择分类与支付方式';
+    busy.value = false;
     return;
   }
 
@@ -421,7 +447,6 @@ async function submitCreate(): Promise<void> {
     payload.amountCents = parseYuanToCents(createForm.value.amountYuan);
   }
 
-  busy.value = true;
   try {
     await plansApi.create(payload);
     showCreate.value = false;

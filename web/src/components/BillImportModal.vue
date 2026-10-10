@@ -57,6 +57,99 @@ const importNotice = ref<{
 const parseResult = ref<ParseBillResult | null>(null);
 const filterDirection = ref<'all' | 'expense' | 'income'>('expense');
 
+/**
+ * 重复导入防呆：记住最近导入过的文件指纹。
+ *
+ * ## 为什么必须有
+ * 服务端 `POST /api/expenses/batch` **没有客户端指纹去重** —— 每一行都是新 ULID，
+ * 同一份 CSV 导入两次就会得到两套一模一样的流水。所以「重导一遍」在这里不是安全兜底，
+ * 而是**制造双倍数据**的手段。（JSON 数据包的合并导入才是幂等的，CSV 不是。）
+ *
+ * ## 指纹怎么算
+ * `文件名 | 字节长度 | 解析出的行数 | 全部行金额合计（分）`。
+ * 前两项来自 File 本体，后两项来自真实解析结果 —— 比只比文件名字符串严得多，
+ * 又不需要真的算一遍内容哈希（大文件在主线程上哈希会卡住选文件后的第一屏）。
+ *
+ * ## 误判成本：只多问一句，从不拦人
+ * 用户复制一份改名再导 → 文件名不同 → 指纹不匹配 → 静默放行；
+ * 同一文件改了金额再导 → 金额合计不同 → 静默放行。两种都属正常用法，不该被拦。
+ * 反过来「同一份文件想导两次」（比如上次只勾了一部分）会被问一次，
+ * 点「继续导入」即可 —— 代价是一次点击，收益是拦住一次双倍数据。
+ */
+const IMPORT_FINGERPRINTS_KEY = 'suenmoney:import-fingerprints';
+/** 只留最近 5 条：够覆盖「刚才导过的那份」，又不至于让 localStorage 无限长。 */
+const IMPORT_FINGERPRINT_LIMIT = 5;
+
+interface ImportFingerprint {
+  /** 指纹本体（拼好的字符串） */
+  key: string;
+  fileName: string;
+  rowCount: number;
+  totalCents: number;
+  importedAt: number;
+}
+
+function readFingerprints(): ImportFingerprint[] {
+  try {
+    const raw = localStorage.getItem(IMPORT_FINGERPRINTS_KEY);
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is ImportFingerprint =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as ImportFingerprint).key === 'string' &&
+        typeof (item as ImportFingerprint).importedAt === 'number',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function rememberFingerprint(fp: ImportFingerprint): void {
+  try {
+    // 同key 只保留最新一条：重复导入成功后旧记录没有意义，还会让列表虚增。
+    const kept = readFingerprints().filter((item) => item.key !== fp.key);
+    kept.unshift(fp);
+    localStorage.setItem(IMPORT_FINGERPRINTS_KEY, JSON.stringify(kept.slice(0, IMPORT_FINGERPRINT_LIMIT)));
+  } catch {
+    // 隐私模式下写不进去：防呆退化为「不拦」，不导入失败
+  }
+}
+
+/** 用已解析结果算指纹（必须在解析之后调用 —— 行数与金额合计来自解析产物） */
+function fingerprintOf(picked: File, result: ParseBillResult): ImportFingerprint {
+  const totalCents = result.items.reduce((sum, item) => sum + item.amountCents, 0);
+  return {
+    key: `${picked.name}|${picked.size}|${result.items.length}|${totalCents}`,
+    fileName: picked.name,
+    rowCount: result.items.length,
+    totalCents,
+    importedAt: 0,
+  };
+}
+
+/** 命中重复时弹的确认块；非 null 时底部「确认导入」禁用，必须先表态 */
+const duplicateFingerprint = ref<ImportFingerprint | null>(null);
+
+/** 用户坚持要重复导入：清掉提示，解析结果原样留在页面上继续走 */
+function proceedDespiteDuplicate(): void {
+  duplicateFingerprint.value = null;
+}
+
+/** 用户改主意了：连文件一起丢掉，回到「未选择文件」那一屏 */
+function abortDuplicate(): void {
+  duplicateFingerprint.value = null;
+  file.value = null;
+  rawCsvText.value = null;
+  parseResult.value = null;
+  rows.value = [];
+  errorMessage.value = null;
+  provisionPlan.value = null;
+  provisionNotice.value = null;
+}
+
 // 批量兜底与配置
 const defaultCategoryId = ref<string | null>(null);
 const defaultPaymentMethodId = ref<string | null>(null);
@@ -123,6 +216,7 @@ watch(
       provisionPlan.value = null;
       provisionDismissed.value = false;
       provisionProgress.value = null;
+      duplicateFingerprint.value = null;
       selectedSource.value = 'wechat';
       return;
     }
@@ -578,6 +672,7 @@ async function onFileSelected(event: Event): Promise<void> {
   errorMessage.value = null;
   provisionNotice.value = null;
   provisionDismissed.value = false;
+  duplicateFingerprint.value = null;
   parsing.value = true;
 
   try {
@@ -591,6 +686,16 @@ async function onFileSelected(event: Event): Promise<void> {
     }
 
     runParse(selectedSource.value);
+
+    // 解析成功后才比指纹：指纹里的行数与金额合计来自解析结果。
+    // 命中就把导入按钮锁住，先问一句 —— 重复导入不会被拦死，但必须让用户自己决定。
+    const result = parseResult.value;
+    if (result !== null) {
+      const fp = fingerprintOf(picked, result);
+      if (readFingerprints().some((item) => item.key === fp.key)) {
+        duplicateFingerprint.value = fp;
+      }
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '文件解析失败';
     parseResult.value = null;
@@ -645,6 +750,8 @@ function applyDefaultPaymentMethodToSelected(): void {
 
 async function doImport(): Promise<void> {
   if (selectedCount.value === 0 || importing.value) return;
+  // 指纹命中且用户还没表态：不给导。必须先在弹窗里选「继续导入」或「取消」。
+  if (duplicateFingerprint.value !== null) return;
 
   errorMessage.value = null;
   importNotice.value = null;
@@ -681,10 +788,21 @@ async function doImport(): Promise<void> {
     await dict.load(true);
 
     // 成功的那部分必须照常生效：即便有行被跳过，也不能把整批当失败。
-    // 本项目导入是幂等的（重复导入不会产生重复数据），但若整体报失败，用户会以为一笔没进
-    // 而重导一遍，白白多一次操作；况且成功的笔数确已落库，父组件/列表侧必须收到通知去刷新。
+    // 但**不要**在这里引导用户「重导一遍」—— 服务端 /api/expenses/batch 没有
+    // 客户端指纹去重，每一行都是新 ULID，同一份 CSV 再导一次就是**再插一遍**，
+    // 重复流水会直接翻倍。幂等的是 JSON 数据包的合并导入，不是 CSV。
+    // （JSON 合并导入之所以幂等，是按业务主键 upsert；这里没有主键可依。）
+    // 所以失败时的正确指引只有一条：去流水页确认现状，绝不自动重试。
     ui.markDataChanged();
     emit('imported', result.createdCount);
+
+    // 导入成功（哪怕只成功一部分）才记指纹：一笔没进的批次不该被标记成「导过了」，
+    // 否则用户修正后重导会被自己的记录拦住。
+    if (result.createdCount > 0 && parseResult.value !== null && file.value !== null) {
+      const fp = fingerprintOf(file.value, parseResult.value);
+      rememberFingerprint({ ...fp, importedAt: Date.now() });
+      duplicateFingerprint.value = null;
+    }
 
     if (result.failed.length === 0) {
       emit('close');
@@ -813,6 +931,39 @@ function close(): void {
         <p v-if="provisionNotice !== null" class="mb-4 rounded-sm bg-primary/10 p-3 text-xs text-primary-text">
           {{ provisionNotice }}
         </p>
+
+        <!--
+          重复导入确认：指纹命中最近导入过的文件。
+          措辞必须说清后果（会产生重复流水），且给出「继续导入」——
+          用户确实可能只想重导勾选的那几行，直接禁死会逼他去翻流水页手工核对。
+        -->
+        <div
+          v-if="duplicateFingerprint !== null"
+          class="mb-4 rounded-sm bg-danger/10 p-3 text-xs text-danger-text"
+        >
+          <p class="font-semibold">这份文件看起来已经导入过一次。</p>
+          <p class="mt-1 leading-relaxed">
+            「{{ duplicateFingerprint.fileName }}」上次已解析出 {{ duplicateFingerprint.rowCount }} 笔、
+            合计 {{ formatYuan(duplicateFingerprint.totalCents) }}。
+            <strong>重复导入不会合并，而是会再插入一批一模一样的流水</strong>（导入不做去重）。
+          </p>
+          <div class="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              class="rounded-sm bg-danger-fill px-3 py-1.5 font-bold text-on-danger transition-opacity hover:opacity-90"
+              @click="proceedDespiteDuplicate"
+            >
+              确定要重复导入
+            </button>
+            <button
+              type="button"
+              class="font-semibold text-ink-muted hover:text-ink"
+              @click="abortDuplicate"
+            >
+              取消，不导入
+            </button>
+          </div>
+        </div>
 
         <!-- 部分失败提示：成功部分已入账，被跳过的行逐条列出（最多 5 条） -->
         <div
@@ -1054,15 +1205,21 @@ function close(): void {
           >
             取消
           </button>
-          <button
-            type="button"
-            :disabled="selectedCount === 0 || importing"
-            class="inline-flex items-center gap-1.5 rounded-sm bg-primary-fill px-4 py-1.5 text-xs font-bold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-40"
-            @click="doImport"
-          >
-            <Check v-if="!importing" class="h-3.5 w-3.5" />
-            <span>{{ importing ? '正在导入中…' : `确认导入 ${selectedCount} 笔` }}</span>
-          </button>
+<button
+          type="button"
+          :disabled="selectedCount === 0 || importing || duplicateFingerprint !== null"
+          class="inline-flex items-center gap-1.5 rounded-sm bg-primary-fill px-4 py-1.5 text-xs font-bold text-on-primary transition-opacity hover:opacity-90 disabled:opacity-40"
+          @click="doImport"
+        >
+          <Check v-if="!importing" class="h-3.5 w-3.5" />
+          <span>{{
+            importing
+              ? '正在导入中…'
+              : duplicateFingerprint !== null
+                ? '请先确认是否重复导入'
+                : `确认导入 ${selectedCount} 笔`
+          }}</span>
+        </button>
         </div>
       </footer>
     </div>

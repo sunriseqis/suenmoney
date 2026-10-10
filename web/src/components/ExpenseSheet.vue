@@ -8,7 +8,7 @@
  * 3. 弹层解耦：分类与支付方式采用独立 Sheet 面板，选完即走，彻底移除横向滚动条；
  * 4. 底部：去除横向摘要滑块，紧凑状态条 + 固定数字键盘。
  */
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
   Calendar,
   ChevronRight,
@@ -35,7 +35,9 @@ import type { KeypadKey } from '@/components/keypad';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useSyncStore } from '@/stores/sync';
+import { BEFORE_BACK_EVENT } from '@/platform';
 import { currentMonth, formatMonthDay, formatMonthLabel, todayLocal } from '@/utils/dates';
+import { clearDraft, isDraftMeaningful, readDraft, writeDraft } from '@/utils/draft';
 import {
   centsToInput,
   formatCents,
@@ -537,14 +539,188 @@ function fillFrom(expense: Expense): void {
   confirmingDelete.value = false;
 }
 
+// ---------------------------------------------------------------------------
+// 草稿：切后台/进程被回收后不丢「记一半的账」
+// ---------------------------------------------------------------------------
+
+/**
+ * 草稿分桶：`expense` 用途 + 上下文，**在打开面板那一刻定死**（不是 computed）。
+ * - 新建 → `new:<账期>`：切到别的月再记是另一笔半成品，不该互相顶掉；
+ * - 编辑 → `edit:<expenseId>`：编辑 A 笔时绝不能把编辑 B 笔的草稿恢复进来。
+ *
+ * 定死而不是跟着 spendDate 变：编辑中途改日期不该把草稿换到另一个 key 去，
+ * 否则旧 key 留下一份「僵尸草稿」，下次同账期打开时凭空多问一次。
+ */
+const DRAFT_SCOPE = 'expense';
+
+const draftContext = ref('');
+
+/** 打开面板时检测到的可恢复草稿；非 null 时在表单上方给「恢复 / 丢弃」两个动作 */
+const pendingDraft = ref<ExpenseDraft | null>(null);
+
+/** 打开时的初始形态：用来判断「用户到底改没改」（没改就不该存草稿） */
+let baselineCategoryId: string | null = null;
+let baselinePaymentMethodId: string | null = null;
+
+const DRAFT_DEBOUNCE_MS = 400;
+
+interface ExpenseDraft {
+  parts: number[];
+  input: string;
+  isRefund: boolean;
+  categoryId: string | null;
+  paymentMethodId: string | null;
+  spendDate: string;
+  note: string;
+  /** 打开面板时的初始分类/支付方式：与它相同即视为「用户没动过这一项」 */
+  baseCategoryId: string | null;
+  basePaymentMethodId: string | null;
+}
+
+let draftTimer: ReturnType<typeof setTimeout> | undefined;
+
+function currentDraft(): ExpenseDraft {
+  return {
+    parts: [...parts.value],
+    input: input.value,
+    isRefund: isRefund.value,
+    categoryId: categoryId.value,
+    paymentMethodId: paymentMethodId.value,
+    spendDate: spendDate.value,
+    note: note.value,
+    baseCategoryId: baselineCategoryId,
+    basePaymentMethodId: baselinePaymentMethodId,
+  };
+}
+
+function isDraftMeaningfulDraft(draft: ExpenseDraft): boolean {
+  return isDraftMeaningful({
+    totalCents: draft.parts.reduce((sum, p) => sum + p, 0) + parseYuanToCents(draft.input),
+    note: draft.note,
+    categoryChanged: draft.categoryId !== draft.baseCategoryId,
+    paymentMethodChanged: draft.paymentMethodId !== draft.basePaymentMethodId,
+  });
+}
+
+/** 记一份防抖快照。没动过的表单不写 —— 否则每次打开记账都会留下一份空草稿。 */
+function scheduleDraftWrite(): void {
+  if (draftTimer !== undefined) clearTimeout(draftTimer);
+  draftTimer = setTimeout(writeDraftNow, DRAFT_DEBOUNCE_MS);
+}
+
+/**
+ * 立即落盘（防抖到期、或保存失败时同步补写一份，保证「草稿已保留」这句提示是真的）。
+ *
+ * 刻意**不检查 props.open**：防抖窗口里用户可能刚好把面板关了（保存成功的正常路径），
+ * 那一刻草稿已经被 dropDraft 清过；反过来，切后台/关面板时正在防抖窗口内，
+ * 定时器仍会在面板关闭后才触发 —— 此时内容还没提交，必须写下去，否则等于白做草稿。
+ * 判据用 draftContext 是否为空：没打开过面板就没有可写的上下文。
+ */
+/**
+ * 立即落盘（防抖到期、或保存失败时同步补写一份，保证「草稿已保留」这句提示是真的）。
+ *
+ * 刻意**不检查 props.open**：防抖窗口里用户可能刚好把面板关了（保存成功的正常路径），
+ * 那一刻草稿已经被 dropDraft 清过；反过来，切后台/关面板时正处于防抖窗口内，
+ * 定时器仍会在面板关闭后才触发 —— 此时内容还没提交，必须写下去，否则等于白做草稿。
+ * 判据用 draftContext 是否为空：没打开过面板就没有可写的上下文。
+ */
+function writeDraftNow(): void {
+  if (draftTimer !== undefined) {
+    clearTimeout(draftTimer);
+    draftTimer = undefined;
+  }
+  if (draftContext.value === '') return;
+  const draft = currentDraft();
+  if (!isDraftMeaningfulDraft(draft)) {
+    clearDraft(DRAFT_SCOPE, draftContext.value);
+    return;
+  }
+  writeDraft(DRAFT_SCOPE, draftContext.value, draft);
+}
+
+function dropDraft(): void {
+  if (draftTimer !== undefined) {
+    clearTimeout(draftTimer);
+    draftTimer = undefined;
+  }
+  clearDraft(DRAFT_SCOPE, draftContext.value);
+  pendingDraft.value = null;
+}
+
+function restoreDraft(draft: ExpenseDraft): void {
+  parts.value = [...draft.parts];
+  input.value = draft.input;
+  isRefund.value = draft.isRefund;
+  categoryId.value = draft.categoryId;
+  paymentMethodId.value = draft.paymentMethodId;
+  spendDate.value = draft.spendDate;
+  note.value = draft.note;
+  pendingDraft.value = null;
+  if (paymentMethodId.value !== null) void refreshPreview();
+}
+
+// ---------------------------------------------------------------------------
+// 草稿：返回键（鸿蒙/安卓）的脏表单拦截
+// ---------------------------------------------------------------------------
+
+/** 按返回键被拦下时的就地提示；面板关闭时清空 */
+const backInterceptHint = ref<string | null>(null);
+
+/**
+ * 声明「面板里有未提交内容，别退」。
+ *
+ * 为什么必须由 Web 侧主动声明：返回键是**原生**事件，原生无从得知页面里有没有半截表单。
+ * 不声明就等于默认「没有未保存内容」→ 用户一按返回，正在记的半笔账连面板一起消失，
+ * 而「切后台顺手记一笔」恰恰是本应用最高频的动作。
+ * hardware.ts 的 askBeforeBack() 在返回键时同步派发 BEFORE_BACK_EVENT，
+ * 这里 preventDefault() 即是应答（同步，不需要 await）。
+ *
+ * 判据复用草稿工具的 isDraftMeaningful，不另造状态：
+ * 有金额、有备注、改过分类或支付方式，才算「用户真的输入过」。
+ * 刚打开的空表单不拦 —— 否则用户按返回永远退不出记账面板。
+ * 注意只依据**当前面板**的输入判断：localStorage 里那份 pendingDraft 已经落盘了，
+ * 按返回不会丢它，为它拦一次只会白白卡住用户。
+ */
+function onBeforeBack(event: Event): void {
+  if (!props.open) return;
+  if (!isDraftMeaningfulDraft(currentDraft())) return;
+
+  event.preventDefault();
+  // 此刻多半还在 400ms 防抖窗口内，磁盘上的草稿还是上一次的内容。
+  // 同步补写一次，提示里那句「已保留草稿」才是真的。
+  writeDraftNow();
+  backInterceptHint.value = '这笔还没记上，内容已保留为草稿。确认不记了请点右上角关闭。';
+}
+
+let backGuardAttached = false;
+
+function attachBackGuard(): void {
+  if (typeof window === 'undefined' || backGuardAttached) return;
+  window.addEventListener(BEFORE_BACK_EVENT, onBeforeBack);
+  backGuardAttached = true;
+}
+
+/** 面板关闭/提交成功后必须摘掉：监听器留在 window 上会跨面板累积，返回键被上一笔的脏状态卡住。 */
+function detachBackGuard(): void {
+  if (typeof window === 'undefined' || !backGuardAttached) return;
+  window.removeEventListener(BEFORE_BACK_EVENT, onBeforeBack);
+  backGuardAttached = false;
+}
+
+onBeforeUnmount(detachBackGuard);
+
 watch(
   () => props.open,
   async (open) => {
     if (!open) {
       categoryPickerOpen.value = false;
       paymentPickerOpen.value = false;
+      backInterceptHint.value = null;
+      detachBackGuard();
       return;
     }
+
+    attachBackGuard();
 
     errorMessage.value = null;
     saving.value = false;
@@ -557,6 +733,21 @@ watch(
 
     if (props.expense === null) resetForm();
     else fillFrom(props.expense);
+
+    // 上下文在打开这一刻定死：新开面板先给上下文，再谈恢复 —— 否则读草稿的 key 是空的。
+    draftContext.value =
+      props.expense === null ? `new:${spendDate.value.slice(0, 7)}` : `edit:${props.expense.id}`;
+    baselineCategoryId = categoryId.value;
+    baselinePaymentMethodId = paymentMethodId.value;
+
+    // 恢复提示：只在「有实质内容且还没过期」时弹。空表单不该打扰用户，
+    // 否则几次之后用户就会闭眼点「丢弃」，真出事时也一起点掉。
+    const existing = readDraft<ExpenseDraft>(DRAFT_SCOPE, draftContext.value);
+    pendingDraft.value =
+      existing !== null &&
+      isDraftMeaningfulDraft({ ...existing, baseCategoryId: baselineCategoryId, basePaymentMethodId: baselinePaymentMethodId })
+        ? existing
+        : null;
 
     void refreshMonthSpent();
     await refreshPreview();
@@ -571,6 +762,15 @@ watch(
 
 watch([paymentMethodId, spendDate], () => {
   if (props.open) void refreshPreview();
+});
+
+// 任何字段变更都留一份草稿：移动端切后台被系统回收时，全内存的表单会直接归零，
+// 而「切后台顺手记一笔」是这个应用最高频的动作。防抖 400ms 避免每按一个键写一次。
+watch([parts, input, isRefund, categoryId, paymentMethodId, spendDate, note], () => {
+  if (!props.open) return;
+  // 用户已经在改了，之前的「按返回被拦下」提示立刻撤掉，避免与新内容对不上。
+  backInterceptHint.value = null;
+  scheduleDraftWrite();
 });
 
 function appendInput(key: string): void {
@@ -630,7 +830,28 @@ function handlePaymentMethodSelected(id: string): void {
   paymentMethodId.value = id;
 }
 
+/**
+ * 把保存失败翻译成用户能据以行动的一句话。
+ *
+ * 分三档是因为三种失败的下一步完全不同：
+ * - 在线接口报错 → 服务端给了原因（分类被删、字段非法等），照实说；
+ * - 离线暂存失败 → 网络已经不通了，用户只能稍后重试，必须说清「这笔**还没记上**」；
+ * - 完全不认识 → 说「已保留草稿」，并告诉用户草稿在哪（下次打开记账可恢复）。
+ */
+function describeSaveError(error: unknown): string {
+  if (error instanceof ApiError && error.status === 0) {
+    return '连不上服务器，这笔账还没记上。草稿已保留，恢复网络后再点一次保存即可。';
+  }
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  // 离线写入路径抛出来的都是非ApiError（IndexedDB / Outbox 层）
+  return '保存失败，这笔账还没记上。草稿已保留，可稍后重试；若反复失败请检查本机存储空间。';
+}
+
 async function save(): Promise<void> {
+  // in-flight 守卫：连点「保存」只发一次请求，否则会记两笔。
+  // saving 是同步置位的（下面第一个 await 之前），所以第二次点击一定进得来这道判。
   if (!canSave.value || saving.value) return;
 
   if (categoryId.value === null) {
@@ -758,10 +979,17 @@ async function save(): Promise<void> {
     });
     recordUsage(categoryId.value, paymentMethodId.value);
 
+    // 提交成功才清草稿：失败时草稿必须留着，否则用户重试要重新敲一遍金额与备注。
+    dropDraft();
+
     emit('saved');
     emit('close');
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '保存失败，请重试';
+    // 离线写入（sync.ts / idb.ts）失败现在会往上抛，这里必须接住并说人话 ——
+    // 否则只剩一个静默失败的记账面板，用户以为记上了，实际没有。
+    // 同时补写一份草稿：提示里说了「草稿已保留」，就得真的留得住（防抖可能还没到点）。
+    writeDraftNow();
+    errorMessage.value = describeSaveError(error);
   } finally {
     saving.value = false;
   }
@@ -793,7 +1021,10 @@ async function confirmDelete(): Promise<void> {
     emit('saved');
     emit('close');
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '删除失败，请重试';
+    // 删除失败不写草稿：草稿里是一笔「待保存的修改」，而这笔已经被删了 ——
+    // 留着会让下次打开弹出一个恢复不回来的编辑草稿。
+    dropDraft();
+    errorMessage.value = describeSaveError(error);
     confirmingDelete.value = false;
   } finally {
     saving.value = false;
@@ -862,6 +1093,40 @@ function close(): void {
 
       <!-- 中间可滚动表单区 -->
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6 space-y-4">
+        <!--
+          草稿恢复提示。
+          只在检测到未过期且有实质内容的草稿时出现；空表单不打扰用户。
+          默认**不自动恢复** —— 自动恢复会把用户没打算提交的东西带进去，
+          也说不清当前屏幕上的数字是他自己刚输的还是上次留下的。
+        -->
+        <div v-if="pendingDraft !== null" class="rounded-md border border-primary/40 bg-primary/10 p-3">
+          <p class="text-xs font-bold text-primary-text">上次有未提交的记账草稿</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-primary-text/90">
+            草稿里有：
+            <strong>{{ formatCents(
+              pendingDraft.parts.reduce((sum, p) => sum + p, 0) + parseYuanToCents(pendingDraft.input),
+            ) }}</strong>
+            <template v-if="pendingDraft.note !== ''"> · 备注「{{ pendingDraft.note }}」</template>
+            · {{ formatMonthDay(pendingDraft.spendDate) }}。要恢复吗？
+          </p>
+          <div class="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              class="rounded-sm bg-primary-fill px-3 py-1.5 text-xs font-bold text-on-primary transition-opacity hover:opacity-90"
+              @click="restoreDraft(pendingDraft!)"
+            >
+              恢复草稿
+            </button>
+            <button
+              type="button"
+              class="text-xs font-semibold text-ink-muted hover:text-ink"
+              @click="dropDraft"
+            >
+              丢弃，重新记
+            </button>
+          </div>
+        </div>
+
         <!-- ① 金额与支出/退款切换 -->
         <div class="rounded-xl border border-line/60 bg-canvas/70 p-4 text-center shadow-xs">
           <!-- 连加算式提示 -->
@@ -1117,6 +1382,14 @@ function close(): void {
 
         <p v-if="errorMessage !== null" class="mt-2 text-center text-xs font-semibold text-danger-text">
           {{ errorMessage }}
+        </p>
+
+        <!-- 返回键被拦下时的提示：就地说明「内容没丢」，而不是让用户以为返回键坏了 -->
+        <p
+          v-if="backInterceptHint !== null"
+          class="mt-2 rounded-md bg-sunken/70 px-3 py-2 text-center text-xs font-semibold text-ink-muted"
+        >
+          {{ backInterceptHint }}
         </p>
       </div>
 

@@ -30,6 +30,7 @@ import { categoryColorVar } from '@/utils/category-colors';
 import { currentMonth, elapsedDays, formatMonthDay, formatMonthLabel } from '@/utils/dates';
 import { buildDonutArcs, DONUT_RADIUS } from '@/utils/donut';
 import { getCachedExpenses } from '@/utils/idb';
+import { createLatestGuard } from '@/utils/latest-request';
 import { formatCompact, formatYuan } from '@/utils/money';
 import {
   buildMonthlyReportFallback,
@@ -78,7 +79,18 @@ const expandedCategoryIds = ref<Set<string>>(new Set());
 // 按天节奏中被选中的点
 const selectedDailyPoint = ref<{ day: number; date: string; cents: number; count: number } | null>(null);
 
+/**
+ * 「只认最新一次」守卫。
+ *
+ * 报表的刷新入口有四个（切 scope/month/year、ui.dataVersion、网络恢复），
+ * 它们都会发请求，而 HTTP 不保证返回顺序：慢网下先发的旧请求后到，
+ * 会把后发请求拿到的新分类/新金额覆盖掉 —— 用户看到数字「跳回去」，
+ * 而且合计与构成来自两个不同的响应，比单纯的慢更难解释。
+ */
+const loadGuard = createLatestGuard();
+
 async function load(): Promise<void> {
+  const token = loadGuard.begin();
   loading.value = true;
   errorMessage.value = null;
   selectedDailyPoint.value = null;
@@ -86,16 +98,20 @@ async function load(): Promise<void> {
   try {
     if (scope.value === 'month') {
       const res = await reportsApi.monthly(month.value);
+      if (!loadGuard.isLatest(token)) return;
       monthly.value = res.report;
     } else if (scope.value === 'year') {
       const res = await reportsApi.yearly(year.value);
+      if (!loadGuard.isLatest(token)) return;
       yearly.value = res.report;
     } else {
       const res = await reportsApi.summary();
+      if (!loadGuard.isLatest(token)) return;
       summary.value = res.report;
     }
     isOffline.value = false;
   } catch (error) {
+    if (!loadGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       // 离线：在线报表不可用，改用本地缓存流水聚合的报表。
       // 这样离线记一笔后，ui.dataVersion 变化触发重算，分类/支付/总额立刻刷新。
@@ -105,7 +121,8 @@ async function load(): Promise<void> {
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载报表失败，请重试';
   } finally {
-    loading.value = false;
+    // loading 也要判序号：被丢弃的旧请求提前收尾，会让界面在数据还没到时就不转了。
+    if (loadGuard.isLatest(token)) loading.value = false;
   }
 }
 
@@ -118,6 +135,16 @@ async function loadOfflineReports(): Promise<void> {
   monthly.value = buildMonthlyReportFallback(cached, month.value);
   yearly.value = buildYearlyReportFallback(cached, year.value);
   summary.value = buildSummaryReportFallback(cached);
+}
+
+/**
+ * 「单笔最高」旁边的分类名。
+ *
+ * 离线口径下这个名字可能取不到（字典里查不到对应分类），此时给「未分类」占位 ——
+ * 只做显示层兜底，不自己编一个名字：编出来的名字会被用户当成真实分类去对账。
+ */
+function largestCategoryLabel(largest: { categoryName: string }): string {
+  return largest.categoryName.trim() === '' ? '未分类' : largest.categoryName;
 }
 
 onMounted(() => {
@@ -245,7 +272,7 @@ const comparisonMetrics = computed<Metric[]>(() => {
       {
         label: '单笔最高',
         value: data.largest ? formatCompact(data.largest.cents) : '—',
-        hint: data.largest ? `${data.largest.categoryName} · ${formatMonthDay(data.largest.repaymentDate)}` : '本月无记录',
+        hint: data.largest ? `${largestCategoryLabel(data.largest)} · ${formatMonthDay(data.largest.repaymentDate)}` : '本月无记录',
         tone: 'text-ink',
       },
     ];
@@ -280,7 +307,7 @@ const comparisonMetrics = computed<Metric[]>(() => {
       {
         label: '单笔最高',
         value: data.largest ? formatCompact(data.largest.cents) : '—',
-        hint: data.largest ? `${data.largest.categoryName} · ${formatMonthDay(data.largest.repaymentDate)}` : '本年无记录',
+        hint: data.largest ? `${largestCategoryLabel(data.largest)} · ${formatMonthDay(data.largest.repaymentDate)}` : '本年无记录',
         tone: 'text-ink',
       },
     ];
@@ -424,7 +451,7 @@ const insights = computed<string[]>(() => {
     // 规则 1: 单笔最大支出
     if (data.largest && data.largest.cents > 0) {
       list.push(
-        `单笔最大支出为【${data.largest.categoryName}】${formatYuan(data.largest.cents)}，记于 ${formatMonthDay(data.largest.repaymentDate)}。`,
+        `单笔最大支出为【${largestCategoryLabel(data.largest)}】${formatYuan(data.largest.cents)}，记于 ${formatMonthDay(data.largest.repaymentDate)}。`,
       );
     } else {
       list.push('本月暂无单笔大额支出记录。');

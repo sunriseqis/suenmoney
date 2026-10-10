@@ -69,6 +69,9 @@ export const useUpdateStore = defineStore('update', () => {
     // 平台门禁：纯 Web / Docker 部署没有「客户端」可更新。
     if (!isSupported.value) return;
 
+    // 只有 iOS / Android 有可比较的版本与可安装的产物。
+    // 鸿蒙在服务端没有对应的安装包渠道，且壳可能注入 version: null（读不到就是读不到），
+    // 这里直接安静返回：不发请求、不弹窗、不写 message，避免在鸿蒙端弹出无法处理的更新提示。
     const currentPlatform = getPlatform();
     if (currentPlatform !== 'android' && currentPlatform !== 'ios') return;
 
@@ -80,7 +83,16 @@ export const useUpdateStore = defineStore('update', () => {
 
     try {
       const nativeVer = await getNativeAppVersion();
-      appVersion.value = nativeVer ?? appVersion.value ?? { versionName: '1.0.0', versionCode: 1 };
+      // 「读不到原生版本」和「版本是 1.0.0」必须严格区分。
+      // 旧实现会在这里兜一个 { versionName: '1.0.0', versionCode: 1 } 再去和服务端比版本，
+      // 服务端当然判定「有更新」→ 鸿蒙端反复弹假更新提示，用户点进去发现装不了。
+      // 这里读不到就直接放弃本次检查：宁可说不知道，也不要报一个假版本。
+      if (!nativeVer) {
+        appVersion.value = null;
+        if (!silent) message.value = '无法获取当前版本，请稍后再试';
+        return;
+      }
+      appVersion.value = nativeVer;
 
       const checked = await updateApi.checkUpdate(appVersion.value, {
         force: !silent,

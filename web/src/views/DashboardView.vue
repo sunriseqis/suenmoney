@@ -33,6 +33,7 @@ import {
   shiftMonth,
 } from '@/utils/dates';
 import { getCachedExpenses } from '@/utils/idb';
+import { createLatestGuard } from '@/utils/latest-request';
 import { adaptiveAmountStyle, formatCompact, formatYuan } from '@/utils/money';
 import {
   buildMonthlyReportFallback,
@@ -64,6 +65,17 @@ const summary = ref<SummaryReport | null>(null);
 
 const loading = ref(true);
 const errorMessage = ref<string | null>(null);
+
+/**
+ * 「只认最新一次」守卫。
+ *
+ * 概况有多个刷新触发源（切月、切档、ui.dataVersion、网络恢复），
+ * 慢网下先发的请求可能后到并**覆盖**后发请求拿到的新数据 ——
+ * 用户看到 hero 金额「跳回去」，还会以为是自己记错了。
+ * 发请求前取序号，回来时不是最新就整段丢弃（含 loading 收尾，交给最新那次）。
+ */
+const loadGuard = createLatestGuard();
+
 /**
  * 是否处于「离线本地口径」：最近一次请求因网络不可达（status 0）失败。
  * 为 true 时 monthly/yearly/summary 展示的是本地缓存流水聚合的结果。
@@ -122,6 +134,7 @@ onUnmounted(() => {
 });
 
 async function load(): Promise<void> {
+  const token = loadGuard.begin();
   loading.value = true;
   errorMessage.value = null;
 
@@ -136,11 +149,15 @@ async function load(): Promise<void> {
       reportsApi.summary(),
     ]);
 
+    // 期间又发生了刷新（切月/ 记了一笔 / 网络恢复）：这一份已经是旧数据，整段丢弃。
+    if (!loadGuard.isLatest(token)) return;
+
     monthly.value = monthlyRes.report;
     yearly.value = yearlyRes.report;
     summary.value = summaryRes.report;
     isOffline.value = false;
   } catch (error) {
+    if (!loadGuard.isLatest(token)) return;
     if (error instanceof ApiError && error.status === 0) {
       // 离线：在线报表不可用，改用本地缓存流水聚合的报表。
       // 这样离线记一笔后 ui.dataVersion 变化触发重算，hero 数字立刻刷新。
@@ -150,7 +167,8 @@ async function load(): Promise<void> {
     }
     errorMessage.value = error instanceof ApiError ? error.message : '加载失败，请重试';
   } finally {
-    loading.value = false;
+    // loading 也判序号：被丢弃的旧请求提前关掉加载态，界面会在数据还没到时就不转了。
+    if (loadGuard.isLatest(token)) loading.value = false;
   }
 }
 

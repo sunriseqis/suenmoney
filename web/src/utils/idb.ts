@@ -32,6 +32,29 @@ export interface OutboxItem {
   lastError?: string;
 }
 
+/**
+ * 本地存储写入失败错误。
+ *
+ * 为什么写类函数必须抛出而不能静默吞掉：写入失败（配额耗尽、权限受限、隐私模式）
+ * 若被吞掉，上层会以为「离线记账成功」，而这笔账既没进本地缓存、也没进待发队列，
+ * 用户完全无感知地丢账。读类函数则保持静默降级 —— 读不到只是退化为空数据，
+ * 隐私模式下的只读降级是可以接受的。
+ */
+export class OfflineStorageError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'OfflineStorageError';
+  }
+}
+
+/** 把底层 IDB 异常统一转成可向用户展示的写入失败错误 */
+function storageWriteError(op: string, cause: unknown): OfflineStorageError {
+  return new OfflineStorageError(
+    `本地存储写入失败（${op}）：存储空间不足或被系统清理，请检查设备存储后重试`,
+    { cause },
+  );
+}
+
 export function isIdbSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
 }
@@ -132,15 +155,15 @@ export async function setMeta<T>(key: string, value: T): Promise<void> {
   if (!isIdbSupported()) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('meta', 'readwrite');
-      const store = tx.objectStore('meta');
-      const req = store.put({ key, value });
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      tx.objectStore('meta').put({ key, value });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('元信息', err);
   }
 }
 
@@ -177,7 +200,7 @@ export async function saveCachedCategories(categories: Category[]): Promise<void
   if (!isIdbSupported() || categories.length === 0) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('categories', 'readwrite');
       const store = tx.objectStore('categories');
       store.clear();
@@ -186,9 +209,10 @@ export async function saveCachedCategories(categories: Category[]): Promise<void
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('分类字典缓存', err);
   }
 }
 
@@ -212,7 +236,7 @@ export async function saveCachedPaymentMethods(methods: PaymentMethod[]): Promis
   if (!isIdbSupported() || methods.length === 0) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('payment_methods', 'readwrite');
       const store = tx.objectStore('payment_methods');
       store.clear();
@@ -221,9 +245,10 @@ export async function saveCachedPaymentMethods(methods: PaymentMethod[]): Promis
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('支付方式字典缓存', err);
   }
 }
 
@@ -271,7 +296,7 @@ export async function saveCachedExpenses(items: Expense[]): Promise<void> {
   if (!isIdbSupported() || items.length === 0) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('expenses', 'readwrite');
       const store = tx.objectStore('expenses');
       for (const item of items) {
@@ -280,9 +305,10 @@ export async function saveCachedExpenses(items: Expense[]): Promise<void> {
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('流水本地副本', err);
   }
 }
 
@@ -290,16 +316,19 @@ export async function saveSingleCachedExpense(item: Expense, isOfflinePending = 
   if (!isIdbSupported()) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('expenses', 'readwrite');
       const store = tx.objectStore('expenses');
       const month = item.spendDate ? item.spendDate.slice(0, 7) : '';
-      const req = store.put({ ...item, month, isOfflinePending });
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      store.put({ ...item, month, isOfflinePending });
+      // 以事务提交完成为准而不是单条 request 成功：
+      // 配额不足等错误常在事务提交阶段才抛出，只等 onsuccess 会把「写失败」误判成「写成功」。
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('流水本地副本', err);
   }
 }
 
@@ -327,12 +356,13 @@ export async function updateCachedExpense(
   if (!isIdbSupported()) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('expenses', 'readwrite');
       const store = tx.objectStore('expenses');
       const req = store.get(id);
       req.onsuccess = () => {
         const existing = req.result as (Expense & { month?: string; isOfflinePending?: boolean }) | undefined;
+        // 本地没有这条记录（只存在于服务端）时无需改缓存，不算写入失败
         if (!existing) {
           resolve();
           return;
@@ -347,12 +377,14 @@ export async function updateCachedExpense(
           updated.month = updates.spendDate.slice(0, 7);
         }
         store.put(updated);
-        resolve();
       };
-      req.onerror = () => resolve();
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('流水本地副本', err);
   }
 }
 
@@ -360,15 +392,15 @@ export async function deleteCachedExpense(id: string): Promise<void> {
   if (!isIdbSupported()) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('expenses', 'readwrite');
-      const store = tx.objectStore('expenses');
-      const req = store.delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      tx.objectStore('expenses').delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('流水本地副本', err);
   }
 }
 
@@ -396,7 +428,7 @@ export async function saveCachedPlans(plans: Plan[]): Promise<void> {
   try {
     const db = await openOfflineDb();
     if (!db.objectStoreNames.contains('plans')) return;
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('plans', 'readwrite');
       const store = tx.objectStore('plans');
       store.clear();
@@ -405,9 +437,10 @@ export async function saveCachedPlans(plans: Plan[]): Promise<void> {
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('计划本地副本', err);
   }
 }
 
@@ -440,7 +473,7 @@ export async function saveCachedPlanTodos(todos: PlanTodo[]): Promise<void> {
   try {
     const db = await openOfflineDb();
     if (!db.objectStoreNames.contains('plan_todos')) return;
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('plan_todos', 'readwrite');
       const store = tx.objectStore('plan_todos');
       for (const t of todos) {
@@ -448,9 +481,10 @@ export async function saveCachedPlanTodos(todos: PlanTodo[]): Promise<void> {
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('待办本地副本', err);
   }
 }
 
@@ -462,23 +496,26 @@ export async function updateCachedPlanTodo(
   try {
     const db = await openOfflineDb();
     if (!db.objectStoreNames.contains('plan_todos')) return;
-    return new Promise((resolve) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('plan_todos', 'readwrite');
       const store = tx.objectStore('plan_todos');
       const req = store.get(id);
       req.onsuccess = () => {
         const existing = req.result as PlanTodo | undefined;
+        // 本地无此待办缓存时无需更新，不算写入失败
         if (!existing) {
           resolve();
           return;
         }
         store.put({ ...existing, ...updates, updatedAt: new Date().toISOString() });
-        resolve();
       };
-      req.onerror = () => resolve();
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('待办本地副本', err);
   }
 }
 
@@ -504,19 +541,69 @@ export async function getOutboxItems(): Promise<OutboxItem[]> {
   }
 }
 
+/**
+ * 死信（毒丸隔离）条目摘要：服务端多次拒绝、已不再自动重试的离线操作。
+ *
+ * 与 `getOutboxItems` 的区别：只返回重试超限的条目，并裁掉 payload 等大字段，
+ * 供 UI 直接展示「哪几笔怎么都同步不上去」。
+ */
+export interface DeadLetterSummary {
+  entityId: string;
+  action: OutboxItem['action'];
+  retryCount: number;
+  lastError: string;
+  createdAt: string;
+}
+
+/**
+ * 读取死信条目摘要。
+ *
+ * 与写函数不同，这里保持静默降级：读不到死信只是「没有可展示的失败条目」，
+ * 不该因此打断同步流程（写失败才必须让用户知道）。
+ */
+export async function getOutboxDeadLetters(maxRetry: number): Promise<DeadLetterSummary[]> {
+  if (!isIdbSupported()) return [];
+  try {
+    const db = await openOfflineDb();
+    return await new Promise<DeadLetterSummary[]>((resolve) => {
+      const tx = db.transaction('outbox', 'readonly');
+      const store = tx.objectStore('outbox');
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const list = (req.result as OutboxItem[]) ?? [];
+        const dead = list
+          .filter((i) => i.retryCount > maxRetry)
+          .map((i) => ({
+            entityId: i.entityId,
+            action: i.action,
+            retryCount: i.retryCount,
+            lastError: i.lastError ?? '',
+            createdAt: i.createdAt,
+          }));
+        dead.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        resolve(dead);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function addOutboxItem(item: OutboxItem): Promise<void> {
   if (!isIdbSupported()) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('outbox', 'readwrite');
-      const store = tx.objectStore('outbox');
-      const req = store.put(item);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      tx.objectStore('outbox').put(item);
+      // 必须等事务提交成功才算写成功：离线记账的「待发队列」丢了等于账没记
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('离线待发队列', err);
   }
 }
 
@@ -524,17 +611,17 @@ export async function removeOutboxItems(ids: string[]): Promise<void> {
   if (!isIdbSupported() || ids.length === 0) return;
   try {
     const db = await openOfflineDb();
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('outbox', 'readwrite');
-      const store = tx.objectStore('outbox');
       for (const id of ids) {
-        store.delete(id);
+        tx.objectStore('outbox').delete(id);
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('离线待发队列', err);
   }
 }
 
@@ -546,15 +633,16 @@ export async function clearAllOfflineData(): Promise<void> {
     if (db.objectStoreNames.contains('plans')) stores.push('plans');
     if (db.objectStoreNames.contains('plan_todos')) stores.push('plan_todos');
 
-    return new Promise((resolve, reject) => {
+    return await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(stores, 'readwrite');
       for (const s of stores) {
         tx.objectStore(s).clear();
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('事务被中止'));
     });
-  } catch {
-    // 忽略异常
+  } catch (err) {
+    throw storageWriteError('离线数据清理', err);
   }
 }

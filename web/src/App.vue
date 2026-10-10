@@ -147,6 +147,8 @@ let resumeCleaner: (() => void) | null = null;
 
 onMounted(() => {
   void syncStore.init();
+  // 更新检查：平台门禁在 store 内。鸿蒙下会在那里安静返回（不发请求、不弹窗），
+  // 所以这里无需为鸿蒙单独分支，保持一处判断。
   void updateStore.check(true);
 
   resumeCleaner = onAppResume(() => {
