@@ -14,6 +14,7 @@ import * as updateApi from '@/api/update';
 import {
   downloadAndInstallUpdate,
   getNativeAppVersion,
+  getPlatform,
   isNativeUpdateSupported,
   type AppVersion,
 } from '@/platform';
@@ -50,16 +51,26 @@ export const useUpdateStore = defineStore('update', () => {
   const available = computed(() => result.value?.available === true);
   const latest = computed(() => result.value?.latest ?? null);
 
+  // 初始化尝试读取本地原生应用版本
+  void (async () => {
+    try {
+      const ver = await getNativeAppVersion();
+      if (ver) appVersion.value = ver;
+    } catch {
+      // 忽略启动时读取错误
+    }
+  })();
+
   /**
    * 检查更新。
    * @param silent 是否为静默检查（启动时使用：无更新或网络故障时不打扰，被忽略过的版本不再弹）
    */
   async function check(silent = false): Promise<void> {
     // 平台门禁：纯 Web / Docker 部署没有「客户端」可更新。
-    // 少了这道门禁时，getNativeAppVersion() 返回 null，下面会兜底成 1.0.0 的安卓包，
-    // 再硬编码 platform:'android' 去和服务端比 —— 只要服务端有更高的 APK 就误弹「更新客户端」。
-    // 非原生环境直接返回：不请求、不弹窗，也不会污染 appVersion / result 状态。
     if (!isSupported.value) return;
+
+    const currentPlatform = getPlatform();
+    if (currentPlatform !== 'android' && currentPlatform !== 'ios') return;
 
     if (checking.value) return;
 
@@ -69,15 +80,15 @@ export const useUpdateStore = defineStore('update', () => {
 
     try {
       const nativeVer = await getNativeAppVersion();
-      appVersion.value = nativeVer ?? { versionName: '1.0.0', versionCode: 1 };
+      appVersion.value = nativeVer ?? appVersion.value ?? { versionName: '1.0.0', versionCode: 1 };
 
       const checked = await updateApi.checkUpdate(appVersion.value, {
         force: !silent,
-        platform: 'android',
+        platform: currentPlatform,
       });
       result.value = checked;
 
-      if (!checked.available) {
+      if (!checked.available || !checked.latest) {
         if (!silent) message.value = '当前已是最新版本';
         return;
       }
@@ -123,7 +134,8 @@ export const useUpdateStore = defineStore('update', () => {
     error.value = '';
 
     try {
-      const url = updateApi.getFullDownloadUrl(checked, 'android');
+      const currentPlatform = getPlatform() === 'ios' ? 'ios' : 'android';
+      const url = updateApi.getFullDownloadUrl(checked, currentPlatform);
       const token = readToken() || '';
 
       const outcome = await downloadAndInstallUpdate({
@@ -136,7 +148,7 @@ export const useUpdateStore = defineStore('update', () => {
       });
 
       if (outcome.status === 'unsupported') {
-        error.value = '当前环境不支持直接安装，请在 Android 客户端内使用';
+        error.value = '当前环境不支持直接安装，请在移动端客户端内使用';
         return;
       }
 
@@ -144,9 +156,11 @@ export const useUpdateStore = defineStore('update', () => {
       autoPrompt.value = false;
 
       message.value =
-        outcome.status === 'install_permission_required'
-          ? '请允许本应用安装未知来源应用，然后再次点击更新'
-          : '已打开系统安装界面，请按提示完成安装';
+        currentPlatform === 'ios'
+          ? '已在浏览器中打开 IPA 下载，请使用自签工具完成安装'
+          : outcome.status === 'install_permission_required'
+            ? '请允许本应用安装未知来源应用，然后再次点击更新'
+            : '已打开系统安装界面，请按提示完成安装';
     } catch (e) {
       error.value = e instanceof Error ? e.message : '更新下载失败，请稍后重试';
     } finally {

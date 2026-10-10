@@ -14,7 +14,7 @@ export interface UpdateArtifact {
 export interface UpdateCheckResult {
   available: boolean;
   current: { versionName: string; versionCode: number };
-  latest: UpdateArtifact;
+  latest: UpdateArtifact | null;
   downloadPath: string;
   downloadToken: string;
 }

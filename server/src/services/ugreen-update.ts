@@ -260,14 +260,14 @@ async function collectCandidates(
 export async function getLatestUpdateArtifact(
   platform: UpdatePlatform = 'android',
   force = false,
-): Promise<UpdateArtifact> {
+): Promise<UpdateArtifact | null> {
   configured();
   const hit = cached[platform];
   if (!force && hit && hit.expiresAt > Date.now()) return hit.artifact;
 
   const candidates = await collectCandidates(platform);
   if (candidates.length === 0) {
-    throw new Error(`更新目录中没有有效的 SuenMoney release ${ARTIFACT_LABEL[platform]}`);
+    return null;
   }
 
   const selected = candidates[0]!;
@@ -298,6 +298,9 @@ export async function openUpdateDownload(
   platform: UpdatePlatform = 'android',
 ): Promise<{ response: Response; artifact: UpdateArtifact }> {
   const artifact = await getLatestUpdateArtifact(platform, true);
+  if (!artifact) {
+    throw new Error(`更新目录中未找到 ${ARTIFACT_LABEL[platform]} 文件`);
+  }
   const cookie = await verifyShare();
   const addRes = await requestUgreen(apiUrl('/filemgr/addPathsByShareId'), {
     method: 'POST',
