@@ -41,6 +41,18 @@ ios/**/*.ipa
 ios/**/*.xcarchive
 ios/App/App/public/
 
+# ---- hw：HarmonyOS NEXT DevEco 与 Hvigor 打包产物 ----
+hw/.hvigor/
+hw/.idea/
+hw/oh_modules/
+hw/build/
+hw/entry/build/
+hw/local.properties
+hw/**/*.hap
+hw/**/*.hsp
+hw/**/*.har
+hw/entry/src/main/resources/rawfile/
+
 # ---- 通用 ----
 *.log
 .DS_Store

@@ -8,11 +8,19 @@
 
 export function isNativePlatform(): boolean {
   if (typeof window === 'undefined') return false;
-  const win = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } };
-  return Boolean(win.Capacitor?.isNativePlatform?.());
+  const win = window as unknown as {
+    Capacitor?: { isNativePlatform?: () => boolean };
+    SuenHarmony?: { isNativePlatform?: () => boolean };
+    __HARMONY_NEXT__?: boolean;
+  };
+  return Boolean(
+    win.Capacitor?.isNativePlatform?.() ||
+    win.SuenHarmony?.isNativePlatform?.() ||
+    win.__HARMONY_NEXT__,
+  );
 }
 
-export type PlatformType = 'android' | 'ios' | 'web';
+export type PlatformType = 'android' | 'ios' | 'harmony' | 'web';
 
 export function getPlatform(): PlatformType {
   if (typeof window === 'undefined') return 'web';
@@ -21,7 +29,14 @@ export function getPlatform(): PlatformType {
       getPlatform?: () => string;
       isNativePlatform?: () => boolean;
     };
+    SuenHarmony?: {
+      getPlatform?: () => string;
+    };
+    __HARMONY_NEXT__?: boolean;
   };
+
+  if (win.__HARMONY_NEXT__ || win.SuenHarmony) return 'harmony';
+
   const capPlatform = win.Capacitor?.getPlatform?.();
   if (capPlatform === 'ios') return 'ios';
   if (capPlatform === 'android') return 'android';
@@ -40,6 +55,10 @@ export function isIos(): boolean {
 
 export function isAndroid(): boolean {
   return getPlatform() === 'android';
+}
+
+export function isHarmony(): boolean {
+  return getPlatform() === 'harmony';
 }
 
 /** 动态安全加载 Capacitor 原生模块（纯 Web 运行时安全降级为 null） */

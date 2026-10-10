@@ -1,0 +1,13 @@
+{
+  "name": "suenmoney-hw",
+  "version": "1.0.0",
+  "description": "SuenMoney 鸿蒙 NEXT 客户端工程（ArkTS / ArkUI Web 容器壳应用）",
+  "main": "",
+  "author": "SuenMoney Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.18",
+    "@ohos/hvigor-ohos-plugin": "5.0.2"
+  }
+}

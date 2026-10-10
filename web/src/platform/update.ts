@@ -39,11 +39,34 @@ interface CapacitorAppPlugin {
 export function isNativeUpdateSupported(): boolean {
   if (!isNativePlatform()) return false;
   const platform = getPlatform();
-  return platform === 'android' || platform === 'ios';
+  return platform === 'android' || platform === 'ios' || platform === 'harmony';
 }
 
 export async function getNativeAppVersion(): Promise<AppVersion | null> {
-  // 1. 优先尝试跨平台官方 App 插件（iOS 原生 CFBundleShortVersionString 与 Android versionName 统一标准）
+  // 1. 鸿蒙 NEXT 平台：通过 ArkTS 注入的 SuenHarmony JSBridge 接口读取
+  if (typeof window !== 'undefined') {
+    const win = window as unknown as {
+      SuenHarmony?: {
+        getAppVersion?: () => string;
+      };
+    };
+    if (win.SuenHarmony?.getAppVersion) {
+      try {
+        const raw = win.SuenHarmony.getAppVersion();
+        const parsed = JSON.parse(raw) as { versionName?: string; versionCode?: number };
+        if (parsed?.versionName) {
+          return {
+            versionName: String(parsed.versionName),
+            versionCode: Number(parsed.versionCode) || 0,
+          };
+        }
+      } catch {
+        // 忽略解析错误
+      }
+    }
+  }
+
+  // 2. 优先尝试跨平台官方 App 插件（iOS 原生 CFBundleShortVersionString 与 Android versionName 统一标准）
   try {
     const appPlugin = await getCapacitorPlugin<CapacitorAppPlugin>('App');
     if (appPlugin) {
@@ -60,7 +83,7 @@ export async function getNativeAppVersion(): Promise<AppVersion | null> {
     // 降级尝试 Android 专用原生插件
   }
 
-  // 2. Android 特定的 SuenUpdate 原生插件兜底
+  // 3. Android 特定的 SuenUpdate 原生插件兜底
   try {
     const plugin = await getCapacitorPlugin<SuenUpdateNativePlugin>('SuenUpdate');
     if (plugin) {
@@ -77,6 +100,24 @@ export async function downloadAndInstallUpdate(
   options: DownloadAndInstallOptions,
 ): Promise<UpdateInstallResult> {
   const platform = getPlatform();
+
+  // 鸿蒙 NEXT 平台：通过系统浏览器打开下载
+  if (platform === 'harmony') {
+    if (typeof window !== 'undefined') {
+      const win = window as unknown as {
+        SuenHarmony?: { openInBrowser?: (url: string) => boolean };
+      };
+      if (win.SuenHarmony?.openInBrowser && options.url) {
+        win.SuenHarmony.openInBrowser(options.url);
+        return { status: 'installer_opened' };
+      }
+      if (options.url) {
+        window.open(options.url, '_blank');
+        return { status: 'installer_opened' };
+      }
+    }
+    return { status: 'unsupported' };
+  }
 
   // iOS 平台：由于系统沙盒与安装限制，IPA 包通过浏览器调起下载并引导自签安装
   if (platform === 'ios') {
