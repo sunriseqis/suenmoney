@@ -1,4 +1,7 @@
 import { webview } from '@kit.ArkWeb';
+// WebResourceResponse 不是 webview 命名空间的成员（webview.WebResourceResponse 会报
+// 10505001），只能从定义它的模块顶层具名导入。webview 命名空间仍用于 WebviewController。
+import { WebResourceResponse } from '@ohos.web.webview';
 import { bundleManager } from '@kit.AbilityKit';
 import { common } from '@kit.AbilityKit';
 import { Want } from '@kit.AbilityKit';
@@ -113,6 +116,13 @@ struct Index {
   // 这里随之收到新值并回调 onSafeAreaChange，从而把避让区实时推给 Web。
   @StorageProp('topAvoidHeight') @Watch('onSafeAreaChange') topAvoidHeight: number = 0;
   @StorageProp('bottomAvoidHeight') @Watch('onSafeAreaChange') bottomAvoidHeight: number = 0;
+  // 这里保留已废弃的 getContext(this)，不迁移到 this.getUIContext()。
+  // 原因：这是**成员变量初始化器**，不是成员方法也不是生命周期回调，
+  // 而 getUIContext() 按 ArkUI 约定只在成员方法/生命周期回调里才保证可用 ——
+  // 构造期组件的原生实例尚未就绪，取到的 UIContext 可能为空。
+  // 一旦 bridge 构造失败，本文件下方那段注释描述的三个降级会**静默**同时发生
+  // （平台认不出、版本号读不到、前后台事件退化），且不带任何日志。
+  // 拿一个不阻塞构建的弃用 WARN 去换这种风险不划算，故维持现状。
   private bridge: HarmonyBridge = new HarmonyBridge(getContext(this) as common.UIAbilityContext);
 
   // 避让区防抖句柄。旋转屏幕/键盘弹出时 avoidAreaChange 会连续触发多次，
@@ -121,8 +131,11 @@ struct Index {
   // 页面是否已完成一次 onPageEnd。未加载完时不能调 runJavaScript，否则会抛错。
   private pageReady: boolean = false;
 
+  // bridge 在成员初始化阶段构建（见下方字段声明），此处不用它。
+  // getContext 已废弃（API 18 起），改用 this.getUIContext().getHostContext()；
+  // 两者拿到的都是当前 Ability 的 UIAbilityContext，isDebugPackage 的判定结果不变。
   aboutToAppear(): void {
-    const context = getContext(this) as common.UIAbilityContext;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (!isDebugPackage(context)) {
       return;
     }
@@ -137,10 +150,14 @@ struct Index {
   // 把当前避让区高度写进 Web 的 CSS 变量。
   // 单位换算说明：ArkUI 的避让区是 px，Web 的 --safe-top/--safe-bottom 按 px 使用
   // （web/src/styles/tokens.css 里就是拿它做 calc(var(--safe-bottom) + ...)），
-  // 因此这里 px2vp 后仍以 'px' 结尾 —— Web 侧只认 CSS px，写 vp 会被当成另一个数。
+  // 因此这里换算后仍以 'px' 结尾 —— Web 侧只认 CSS px，写 vp 会被当成另一个数。
+  //
+  // 全局 px2vp() 已废弃，改用绑定到本组件的 this.getUIContext().px2vp()。
+  // 两者换算结果完全相同（同一个 px→vp 公式，只是不再依赖隐式的全局 UI 上下文），
+  // 因此 CSS 变量的值不变，避让区注入行为不受影响。
   private injectSafeArea(): void {
-    const topPx = px2vp(this.topAvoidHeight);
-    const bottomPx = px2vp(this.bottomAvoidHeight);
+    const topPx = this.getUIContext().px2vp(this.topAvoidHeight);
+    const bottomPx = this.getUIContext().px2vp(this.bottomAvoidHeight);
     const script = `
       document.documentElement.style.setProperty('--safe-top', '${topPx}px');
       document.documentElement.style.setProperty('--safe-bottom', '${bottomPx}px');
@@ -276,13 +293,16 @@ struct Index {
   }
 
   // 从 rawfile 读取本地资源构建 WebResourceResponse
-  // 显式写成 webview.WebResourceResponse：不带命名空间的话依赖的是 ArkTS 的
-  // 全局 ambient 声明，那个声明在 SDK 升级时可能就没了，届时整包编译失败。
-  private loadRawFile(rawPath: string): webview.WebResourceResponse | null {
+  // 类型用顶层 import 进来的 WebResourceResponse（不带 webview. 前缀）：
+  // 它不是 webview 命名空间的导出成员，写成 webview.WebResourceResponse 会编译失败（10505001）。
+  private loadRawFile(rawPath: string): WebResourceResponse | null {
     try {
-      const resMgr = getContext(this).resourceManager;
+      // getContext 已废弃（API 18 起），改用 this.getUIContext().getHostContext()。
+      // 这里在 try 内，取不到 context 会抛，行为与原先的 getContext 失败路径一致（返回 null）。
+      const hostCtx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const resMgr = hostCtx.resourceManager;
       const content = resMgr.getRawFileContentSync(rawPath);
-      const response = new webview.WebResourceResponse();
+      const response: WebResourceResponse = new WebResourceResponse();
       response.setResponseData(content.buffer as ArrayBuffer);
       response.setResponseMimeType(this.getMimeType(rawPath));
       response.setResponseEncoding('utf-8');
@@ -339,14 +359,15 @@ struct Index {
           }
 
           // 1. 优先尝试直接从 rawfile 读取文件
-          const directFile = this.loadRawFile(relativePath);
+          // 显式标注类型：ArkTS 不接受推断出的 any/unknown（arkts-no-any-unknown）
+          const directFile: WebResourceResponse | null = this.loadRawFile(relativePath);
           if (directFile) {
             return directFile;
           }
 
           // 2. SPA 路由回退：非静态文件请求（无文件扩展名，如 /ledger, /login, /dashboard）回退返回 index.html
           if (!relativePath.includes('.')) {
-            const spaIndex = this.loadRawFile('index.html');
+            const spaIndex: WebResourceResponse | null = this.loadRawFile('index.html');
             if (spaIndex) {
               return spaIndex;
             }
