@@ -155,6 +155,19 @@ jobs:
           unzip -t "$HAP" > /dev/null || { echo "✖ HAP 完整性校验失败"; exit 1; }
           echo "✔ HAP 完整性校验通过（包含 $(unzip -l "$HAP" | tail -1 | awk '{print $2}') 个条目）"
 
+      # 构建失败时也上传日志：本次鸿蒙构建失败后，本机没有 token 拿不到 Actions 日志本体
+      # （匿名下载被拒），无法定位问题。always() 保证失败路径下也能下载完整 build.log。
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmony-build-log
+          # 容器内通过 -v "${GITHUB_WORKSPACE}:/workspace" 挂载，日志写在 /workspace/build.log，
+          # 即宿主工作目录下的 build.log，无需额外 cp。
+          path: build.log
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Upload HAP Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -164,7 +177,10 @@ jobs:
 
       # 清理 Release 上的冗余历史资产（如 build.log、无版本号或重复命名产物）
       - name: Clean Up Redundant Release Assets
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        # 与发布同策略：只有 v* tag 才允许改动 Release。
+        # 原因：push main 时产物版本号来自 VERSION 文件，常与已发布 Release 同名，
+        # 此时清理/覆盖会造成已发布内容被静默改动或混版。
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           node -e '
             const token = process.env.GITHUB_TOKEN;
@@ -213,8 +229,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 上面的 Upload Build Log / Upload HAP Artifact 均无 main/master 判断，
+      # push main 时照常上传 Actions artifact，保持「随时下载最新包测试」的能力。
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        # 只有推送 v* tag 才允许创建/更新 Release。
+        # 原因：若允许 push main 发版，当 VERSION 文件未变时，新产物会覆盖同名已发布
+        # Release 里的旧产物（曾发生 v1.1.5 APK 被静默替换）；若此时另一端构建失败，
+        # 同一个 Release 就会混版。Release 是对外发布物，必须由不可变的 tag 触发。
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}

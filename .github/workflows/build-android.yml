@@ -137,8 +137,14 @@ jobs:
           path: app/SuenMoney-${{ env.VERSION }}-release.apk
           retention-days: 30
 
+      # 上面的 Upload APK Artifact 无 if，push main 时照常上传 Actions artifact，
+      # 保证「随时能下载最新包测试」的能力不受影响。
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        # 只有推送 v* tag 才允许创建/更新 Release。
+        # 原因：若允许 push main 发版，当 VERSION 文件未变时，新产物会覆盖同名已发布
+        # Release 里的旧产物（曾发生 v1.1.5 APK 被静默替换）；若此时另一端构建失败，
+        # 同一个 Release 就会混版。Release 是对外发布物，必须由不可变的 tag 触发。
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
