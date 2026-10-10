@@ -102,11 +102,12 @@ jobs:
             -w /workspace/hw \
             ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
             bash -c "
-              set -eu
-              # 容器内为 API 26 正式版工具链，动态移除本地签名并对齐配置
+              set -x
+              # 动态对齐 SDK 26.0.0 正式版
               sed -i '/\"signingConfig\":/d' build-profile.json5 || true
-              sed -i 's/\"compileSdkVersion\": 12/\"compileSdkVersion\": 26/g' build-profile.json5 || true
-              sed -i 's/\"compatibleSdkVersion\": 11/\"compatibleSdkVersion\": 26/g' build-profile.json5 || true
+              sed -i 's/\"compileSdkVersion\": [0-9]*/\"compileSdkVersion\": \"26.0.0\"/g' build-profile.json5 || true
+              sed -i 's/\"compatibleSdkVersion\": [0-9]*/\"compatibleSdkVersion\": \"26.0.0\"/g' build-profile.json5 || true
+              sed -i '/\"hvigorVersion\":/d' hvigor/hvigor-config.json5 || true
 
               ohpm install --all || true
 
@@ -116,29 +117,40 @@ jobs:
                 -p product=default \
                 -p buildMode=debug \
                 --no-daemon \
-                --stacktrace
+                --stacktrace 2>&1 | tee /workspace/build.log
 
               echo '--- 查找构建产物 ---'
               mkdir -p /workspace/app
               find /workspace/hw -type f -name '*.hap' -path '*/outputs/*' -exec cp -v {} /workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap \;
               find /workspace/hw -type f -name '*.hap' -path '*/outputs/*' -exec cp -v {} /workspace/app/SuenMoney-${{ env.VERSION }}-release.hap \;
-              chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build 2>/dev/null || true
+              chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build /workspace/build.log 2>/dev/null || true
             "
 
       # 产物校验
       - name: Verify Artifact
         run: |
-          ls -lh app/
+          ls -lh app/ 2>/dev/null || true
           HAP="app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
           if [ ! -f "$HAP" ]; then
-            echo "✖ 未找到 $HAP！" >&2
-            find hw -type f -name "*.hap" || true
+            echo "✖ 未找到 $HAP！输出构建日志末尾 120 行：" >&2
+            tail -n 120 build.log 2>/dev/null || true
             exit 1
           fi
 
           # 校验 HAP 文件完整性（HAP 本质是 ZIP 包容器）
           unzip -t "$HAP" > /dev/null || { echo "✖ HAP 完整性校验失败"; exit 1; }
           echo "✔ HAP 完整性校验通过（包含 $(unzip -l "$HAP" | tail -1 | awk '{print $2}') 个条目）"
+
+      - name: Upload Build Log to Release on Failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: SuenMoney ${{ env.VERSION }} 移动端
+          files: |
+            build.log
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload HAP Artifact
         uses: actions/upload-artifact@v4
