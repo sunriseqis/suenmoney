@@ -6,6 +6,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'SuenMoney_IndexPage';
 const DOMAIN = 0x0000;
+const LOCAL_ORIGIN = 'http://localhost';
 
 class HarmonyBridge {
   private context: common.UIAbilityContext;
@@ -67,6 +68,15 @@ struct Index {
   @StorageProp('bottomAvoidHeight') bottomAvoidHeight: number = 0;
   private bridge: HarmonyBridge = new HarmonyBridge(getContext(this) as common.UIAbilityContext);
 
+  aboutToAppear(): void {
+    try {
+      // 开启 ArkWeb 调试模式（支持通过 Chrome DevTools inspect 调试）
+      webview.WebviewController.setWebDebuggingAccess(true);
+    } catch (err) {
+      hilog.warn(DOMAIN, TAG, 'Failed to set web debugging: %{public}s', JSON.stringify(err));
+    }
+  }
+
   // 拦截系统返回手势/返回键：优先让网页后退
   onBackPress(): boolean {
     if (this.webviewController.accessBackward()) {
@@ -76,10 +86,45 @@ struct Index {
     return false;
   }
 
+  // 辅助函数：根据文件后缀匹配 MIME 类型
+  private getMimeType(filePath: string): string {
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html';
+    if (lower.endsWith('.js') || lower.endsWith('.mjs')) return 'application/javascript';
+    if (lower.endsWith('.css')) return 'text/css';
+    if (lower.endsWith('.json')) return 'application/json';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.svg')) return 'image/svg+xml';
+    if (lower.endsWith('.ico')) return 'image/x-icon';
+    if (lower.endsWith('.woff')) return 'font/woff';
+    if (lower.endsWith('.woff2')) return 'font/woff2';
+    if (lower.endsWith('.ttf')) return 'font/ttf';
+    return 'application/octet-stream';
+  }
+
+  // 从 rawfile 读取本地资源构建 WebResourceResponse
+  private loadRawFile(rawPath: string): webview.WebResourceResponse | null {
+    try {
+      const resMgr = getContext(this).resourceManager;
+      const content = resMgr.getRawFileContentSync(rawPath);
+      const response = new webview.WebResourceResponse();
+      response.setResponseData(content.buffer);
+      response.setResponseMimeType(this.getMimeType(rawPath));
+      response.setResponseEncoding('utf-8');
+      response.setResponseCode(200);
+      response.setReasonMessage('OK');
+      response.setResponseIsReady(true);
+      return response;
+    } catch (err) {
+      return null;
+    }
+  }
+
   build() {
     Column() {
       Web({
-        src: $rawfile('index.html'),
+        src: `${LOCAL_ORIGIN}/index.html`,
         controller: this.webviewController
       })
         .domStorageAccess(true)
@@ -93,6 +138,66 @@ struct Index {
           name: 'SuenHarmony',
           methodList: ['getAppVersion', 'openInBrowser', 'isNativePlatform', 'getPlatform'],
           controller: this.webviewController
+        })
+        .onInterceptRequest((event) => {
+          if (!event) return null;
+          const reqUrl = event.request.getRequestUrl();
+
+          // 仅拦截指向 http://localhost 的本地静态资源请求
+          if (!reqUrl.startsWith(`${LOCAL_ORIGIN}/`) && reqUrl !== LOCAL_ORIGIN) {
+            return null;
+          }
+
+          let relativePath = reqUrl.substring(LOCAL_ORIGIN.length);
+          if (relativePath.startsWith('/')) {
+            relativePath = relativePath.substring(1);
+          }
+          relativePath = relativePath.split('?')[0].split('#')[0];
+
+          try {
+            relativePath = decodeURIComponent(relativePath);
+          } catch (e) {
+            // 忽略 URI 解码异常
+          }
+
+          if (!relativePath || relativePath === '') {
+            relativePath = 'index.html';
+          }
+
+          // 1. 优先尝试直接从 rawfile 读取文件
+          const directFile = this.loadRawFile(relativePath);
+          if (directFile) {
+            return directFile;
+          }
+
+          // 2. SPA 路由回退：非静态文件请求（无文件扩展名，如 /ledger, /login, /dashboard）回退返回 index.html
+          if (!relativePath.includes('.')) {
+            const spaIndex = this.loadRawFile('index.html');
+            if (spaIndex) {
+              return spaIndex;
+            }
+          }
+
+          hilog.warn(DOMAIN, TAG, 'Rawfile resource not found: %{public}s', relativePath);
+          return null;
+        })
+        .onConsole((event) => {
+          if (event) {
+            hilog.info(DOMAIN, TAG, 'WebConsole: %{public}s', event.message.getMessage());
+          }
+          return false;
+        })
+        .onErrorReceive((event) => {
+          if (event) {
+            hilog.error(DOMAIN, TAG, 'WebError: %{public}s, code: %{public}d',
+              event.error.getErrorInfo(), event.error.getErrorCode());
+          }
+        })
+        .onHttpErrorReceive((event) => {
+          if (event) {
+            hilog.error(DOMAIN, TAG, 'WebHttpError: %{public}s, status: %{public}d',
+              event.request.getRequestUrl(), event.response.getResponseCode());
+          }
         })
         .onPageEnd(() => {
           // 注入安全区高度与平台全局标记
