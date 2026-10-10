@@ -90,5 +90,18 @@ describe('Update API Routes (Fastify 路由级测试)', () => {
     });
     assert.strictEqual(res.statusCode, 401);
   });
+
+  it('iOS 平台参数正确校验且版本号 1.5 被合法识别', async () => {
+    const { buildServer } = await import('../../src/http/server.ts');
+    const app = await buildServer({ logger: false });
+    await app.ready();
+
+    // 当更新源未配置时返回 503，但表明已经通过了 platform 和 version 的 400 校验
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/update/check?version_name=1.5&version_code=10023&platform=ios',
+    });
+    assert.notStrictEqual(res.statusCode, 400);
+  });
 });
 

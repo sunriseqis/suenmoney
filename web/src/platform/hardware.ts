@@ -1,4 +1,4 @@
-import { getCapacitorPlugin, isNativePlatform } from './env';
+import { getCapacitorPlugin, isNativePlatform } from './env.ts';
 
 export interface HardwareBackOptions {
   onBack: (canGoBack: boolean) => boolean | void; // 返回 true 表示已由业务消费拦截，不退出应用

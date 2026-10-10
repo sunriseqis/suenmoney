@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Readable } from 'node:stream';
 
 import { config } from '../config.ts';
-import { badGateway, badRequest, serviceUnavailable } from '../lib/http-error.ts';
+import { badGateway, badRequest, notFound, serviceUnavailable } from '../lib/http-error.ts';
 import { signUpdateToken, verifyUpdateToken } from '../lib/update-token.ts';
 import {
   getLatestUpdateArtifact,
@@ -75,6 +75,16 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
       return updateError(err);
     }
 
+    if (!artifact) {
+      return {
+        available: false,
+        current: { versionName: currentName, versionCode: currentCode },
+        latest: null,
+        downloadPath: '',
+        downloadToken: '',
+      };
+    }
+
     const available =
       artifact.versionCode > 0 && currentCode > 0
         ? artifact.versionCode > currentCode
@@ -102,6 +112,9 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
     try {
       result = await openUpdateDownload(target);
     } catch (err) {
+      if (err instanceof Error && err.message.includes('未找到')) {
+        throw notFound(err.message);
+      }
       return updateError(err);
     }
 

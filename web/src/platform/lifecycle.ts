@@ -1,4 +1,4 @@
-import { getCapacitorPlugin } from './env';
+import { getCapacitorPlugin } from './env.ts';
 
 type AppResumeListener = () => void;
 
