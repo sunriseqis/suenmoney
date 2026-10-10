@@ -1,7 +1,7 @@
 import { webview } from '@kit.ArkWeb';
-// WebResourceResponse 不是 webview 命名空间的成员（webview.WebResourceResponse 会报
-// 10505001），只能从定义它的模块顶层具名导入。webview 命名空间仍用于 WebviewController。
-import { WebResourceResponse } from '@ohos.web.webview';
+// WebResourceResponse 只有默认导入这一种写法：具名导入与 webview. 命名空间访问
+// 都会报 10505001「has no exported member」。webview 命名空间仍用于 WebviewController。
+import WebResourceResponse from '@ohos.web.webview';
 import { bundleManager } from '@kit.AbilityKit';
 import { common } from '@kit.AbilityKit';
 import { Want } from '@kit.AbilityKit';
@@ -293,7 +293,7 @@ struct Index {
   }
 
   // 从 rawfile 读取本地资源构建 WebResourceResponse
-  // 类型用顶层 import 进来的 WebResourceResponse（不带 webview. 前缀）：
+  // 类型用默认导入进来的 WebResourceResponse（不带 webview. 前缀）：
   // 它不是 webview 命名空间的导出成员，写成 webview.WebResourceResponse 会编译失败（10505001）。
   private loadRawFile(rawPath: string): WebResourceResponse | null {
     try {
