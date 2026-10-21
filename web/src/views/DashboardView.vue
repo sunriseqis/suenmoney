@@ -393,7 +393,7 @@ async function handleSkip(todoId: string): Promise<void> {
           <p
             v-else
             ref="heroAmountTextRef"
-            class="font-extrabold leading-none tracking-tight tabular-nums whitespace-nowrap"
+            class="font-extrabold leading-none tracking-tight tabular-nums whitespace-nowrap text-tertiary"
             :style="heroAmountStyle"
           >
             {{ heroFormattedAmount }}
