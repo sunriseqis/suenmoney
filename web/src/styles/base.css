@@ -44,6 +44,84 @@
 
   html {
     background: var(--bg) var(--circuit-bg);
+    background-size: auto, 50px 50px;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     v4 全局设计语言 —— 到达每一个元素，不是只换颜色
+     ═══════════════════════════════════════════════════════════ */
+
+  /* ── 深色 · Cyberpunk ──
+     全局：等宽、大写标题、切角卡、霓虹描边、辉光 hover、终端输入框 */
+  :root:not([data-theme='light']) {
+    --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
+  }
+  :root:not([data-theme='light']) {
+    /* 标题全大写宽字距 */
+    h1, h2, h3 { font-family: var(--font-head); text-transform: uppercase;
+                 letter-spacing: 0.08em; }
+    /* 所有按钮：等宽、大写、宽字距、细描边、辉光 hover */
+    button, .btn { font-family: var(--font-head); text-transform: uppercase;
+                   letter-spacing: 0.1em; }
+    /* 卡片容器：切角 + 1px 技术边框（无圆角） */
+    .card, [class*='rounded-2xl'], [class*='rounded-xl'] {
+      border-radius: 0;
+      clip-path: var(--chamfer-sm);
+      border-color: var(--outline);
+    }
+    /* 图标：细描边 + hover 辉光 */
+    svg { stroke-width: 1.5; }
+    /* 输入框：等宽 + accent 字色 */
+    input, select, textarea {
+      font-family: var(--font-sans);
+      background: var(--surface-container);
+      border-color: var(--outline);
+    }
+    input:focus { border-color: var(--primary); box-shadow: var(--el-neon); }
+  }
+
+  /* ── 浅色 · Playful Geometric ──
+     全局：Outfit 粗标题、2px 深边框、硬阴影、糖果 hover */
+  :root[data-theme='light'] {
+    --font-head: 'Outfit Variable', 'MiSans VF', sans-serif;
+  }
+  :root[data-theme='light'] {
+    /* 卡片：贴纸化 —— 2px 深边框 + 硬阴影 + hover 摇摆 */
+    .card, [class*='rounded-2xl'], [class*='rounded-xl'] {
+      border: 2px solid #1E293B;
+      border-radius: 16px;
+      box-shadow: 8px 8px 0px 0px #E2E8F0;
+      transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+    .card:hover, [class*='rounded-2xl']:hover { transform: rotate(-1deg) scale(1.01); }
+    /* 按钮：糖果化 —— 2px 深边框 + 硬阴影位移（btn-v4 已有，此处兜底全局 button） */
+    button { border-radius: var(--radius-pill); font-weight: 700; }
+    /* 输入框：白底 + 2px 边框 + focus 硬阴影染色 */
+    input, select, textarea {
+      background: #FFFFFF;
+      border: 2px solid #CBD5E1;
+      border-radius: 8px;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 4px 4px 0px 0px var(--primary);
+      outline: none;
+    }
+    /* 图标：粗描边 2.5 */
+    svg { stroke-width: 2.5; }
+  }
+
+  /* 动效：两套各自的语言 */
+  @keyframes cyber-glitch {
+    0%,100% { transform: translate(0); }
+    20% { transform: translate(-2px,2px); }
+    40% { transform: translate(2px,-2px); }
+    60% { transform: translate(-1px,-1px); }
+    80% { transform: translate(1px,1px); }
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: no-preference) {
+    :root:not([data-theme='light']) h1 { animation: cyber-glitch 6s infinite; }
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) body::after {
