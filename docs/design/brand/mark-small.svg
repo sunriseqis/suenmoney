@@ -1,28 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（小尺寸）">
-  <!-- v3 小尺寸版｜<32px：键位改成正圆点（方块在 16px 会糊成一片），显示屏保留 —— 
-       宁可牺牲键形，也不能丢掉「计算器」这个识别物 -->
+  <!-- v3 小尺寸版｜<32px：LED 段加粗（13→22），键位改圆点，**屏幕与 8888.88 保留**。
+       宁可牺牲键形，也不能丢掉「这是一台计算器」。 -->
   <rect width="1024" height="1024" fill="#141222"/>
   <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
-  <rect x="212" y="112" width="600" height="176" rx="48" fill="#141222"/>
-  <circle cx="790" cy="200" r="26" fill="#4DFFD2"/>
-  <circle cx="279" cy="382" r="26" fill="#4DFFD2"/>
-  <circle cx="434" cy="382" r="26" fill="#4DFFD2"/>
-  <circle cx="589" cy="382" r="26" fill="#4DFFD2"/>
-  <circle cx="744" cy="382" r="26" fill="#282740"/>
-  <circle cx="279" cy="510" r="26" fill="#B388FF"/>
-  <circle cx="434" cy="510" r="26" fill="#282740"/>
-  <circle cx="589" cy="510" r="26" fill="#282740"/>
-  <circle cx="744" cy="510" r="26" fill="#282740"/>
-  <circle cx="279" cy="638" r="26" fill="#5DB8FF"/>
-  <circle cx="434" cy="638" r="26" fill="#5DB8FF"/>
-  <circle cx="589" cy="638" r="26" fill="#5DB8FF"/>
-  <circle cx="744" cy="638" r="26" fill="#282740"/>
-  <circle cx="279" cy="766" r="26" fill="#282740"/>
-  <circle cx="434" cy="766" r="26" fill="#282740"/>
-  <circle cx="589" cy="766" r="26" fill="#282740"/>
-  <circle cx="744" cy="766" r="26" fill="#E5FF41"/>
-  <circle cx="279" cy="894" r="26" fill="#282740"/>
-  <circle cx="434" cy="894" r="26" fill="#FF7AB8"/>
-  <circle cx="589" cy="894" r="26" fill="#FF7AB8"/>
-  <circle cx="744" cy="894" r="26" fill="#FF7AB8"/>
+  <rect x="212" y="104" width="600" height="184" rx="48" fill="#141222"/>
+  <use href="#led-sm" filter="url(#ledglow)" opacity=".5"/>
+  <use href="#led-sm"/>
+  <g fill="#282740">
+    <circle cx="279" cy="377" r="26"/>
+    <circle cx="432" cy="377" r="26"/>
+    <circle cx="585" cy="377" r="26"/>
+    <circle cx="738" cy="377" r="26"/>
+    <circle cx="279" cy="501" r="26"/>
+    <circle cx="432" cy="501" r="26"/>
+    <circle cx="585" cy="501" r="26"/>
+    <circle cx="738" cy="501" r="26"/>
+    <circle cx="279" cy="625" r="26"/>
+    <circle cx="432" cy="625" r="26"/>
+    <circle cx="585" cy="625" r="26"/>
+    <circle cx="738" cy="625" r="26"/>
+    <circle cx="279" cy="749" r="26"/>
+    <circle cx="432" cy="749" r="26"/>
+    <circle cx="585" cy="749" r="26"/>
+    <circle cx="738" cy="749" r="26"/>
+    <circle cx="279" cy="873" r="26"/>
+    <circle cx="432" cy="873" r="26"/>
+    <circle cx="585" cy="873" r="26"/>
+    <circle cx="738" cy="873" r="26"/>
+  </g>
+  <g fill="#4DFFD2"><circle cx="274" cy="377" r="26"/><circle cx="410" cy="377" r="26"/><circle cx="546" cy="377" r="26"/></g>
+  <g fill="#B388FF"><circle cx="274" cy="503" r="26"/></g>
+  <g fill="#5DB8FF"><circle cx="274" cy="629" r="26"/><circle cx="410" cy="629" r="26"/><circle cx="546" cy="629" r="26"/></g>
+  <g fill="#E5FF41"><circle cx="682" cy="755" r="26"/></g>
+  <g fill="#FF7AB8"><circle cx="410" cy="881" r="26"/><circle cx="546" cy="881" r="26"/><circle cx="682" cy="881" r="26"/></g>
 </svg>

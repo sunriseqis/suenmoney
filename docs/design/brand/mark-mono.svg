@@ -1,30 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（单色）">
-  <!-- v3 单色版：显示屏 + 键位都留，靠明暗而不是颜色区分（通知栏 / monochrome / 分层前景） -->
+  <!-- v3 单色版：屏幕+LED 亮、键位亮/暗分明（通知栏 / monochrome / 分层前景） -->
   <rect width="1024" height="1024" fill="#141222"/>
   <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
-  <rect x="212" y="112" width="600" height="176" rx="48" fill="#F2EFFA" opacity=".85"/>
-  <g fill="#F2EFFA">
-    <rect x="212" y="328" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="367" y="328" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="522" y="328" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="212" y="456" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="212" y="584" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="367" y="584" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="522" y="584" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="677" y="712" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="367" y="840" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="522" y="840" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="677" y="840" width="135" height="108" rx="34" fill="#F2EFFA"/>
-  </g>
-  <g fill="#F2EFFA" opacity=".30">
-    <rect x="677" y="328" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="367" y="456" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="522" y="456" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="677" y="456" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="677" y="584" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="212" y="712" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="367" y="712" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="522" y="712" width="135" height="108" rx="34" fill="#F2EFFA"/>
-    <rect x="212" y="840" width="135" height="108" rx="34" fill="#F2EFFA"/>
-  </g>
+  <rect x="212" y="104" width="600" height="184" rx="48" fill="#F2EFFA" opacity=".92"/>
+  <use href="#led-mono"/>
+  <use href="#mono-dim"/>
+  <use href="#mono-lit"/>
 </svg>
