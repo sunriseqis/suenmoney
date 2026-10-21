@@ -267,6 +267,20 @@ function lightBlock(L) {
 ` + rows.map(([k, v]) => `  ${k}: ${v};`).join('\n') + `\n}\n`;
 }
 
+
+// ── 分类/图表 16 色槽（tokens.json → chart.slots）──────────────────────────
+function chartCss(slots, theme) {
+  // 浅色主题：同色相压深（分类色在白卡上要 ≥3:1），深色主题直接用
+  const DARK = { 1:'#6E9EEA',2:'#5C9E78',3:'#C0894A',4:'#9A8AC9',5:'#C4737E',6:'#5FA0A7',
+    7:'#B85C50',8:'#7E8FC9',9:'#A0A050',10:'#4FA8A0',11:'#B06A9E',12:'#8A9A55',
+    13:'#C98B5F',14:'#7A6FC9',15:'#5C8AB0',16:'#8C8C8C' };
+  const LIGHT = { 1:'#2E5FB8',2:'#2F6D4E',3:'#8A5A20',4:'#6B5CA5',5:'#A63A55',6:'#2F6D74',
+    7:'#8F3E33',8:'#4F5FA5',9:'#5C5300',10:'#1F6D66',11:'#7E3A68',12:'#556430',
+    13:'#8A5A30',14:'#4F46A0',15:'#2E5A80',16:'#6B6B6B' };
+  const pick = theme === 'light' ? LIGHT : DARK;
+  return slots.map((s) => `  --chart-${s.index}: ${pick[s.index] ?? s.value};`).join('\n');
+}
+
 // ── write / check ──────────────────────────────────────────────────────────
 const outputs = [
   [join(OUT_DIR, 'DesignTokens.swift'), swift],
@@ -274,11 +288,24 @@ const outputs = [
 ];
 
 
-// ── 4) 浅色主题（data-theme="light"）───────────────────────────────────────
-// 同产品不同光：结构/圆角/字号完全一致，只换色阶。刻意不复用旧扁平浅色。
+let cssWithExtras = css;
+
+// 浅色主题追加到 CSS
 const light = tokens.theme?.light;
 if (light) {
-  outputs.push([OUT_CSS, css + lightBlock(light)]);
+  cssWithExtras += lightBlock(light);
+}
+
+// chart 色槽追加到 CSS（浅色主题同生成）
+const chartSlots = tokens.chart?.slots ?? [];
+if (chartSlots.length > 0) {
+  const chartCssFull =
+    `\n/* ==== 分类/图表 16 色槽（v3 账本色，深底全部 ≥3.69:1） ==== */\n:root {\n` +
+    chartCss(chartSlots, 'dark') +
+    `\n}\n:root[data-theme='light'] {\n` +
+    chartCss(chartSlots, 'light') +
+    `\n}\n`;
+  cssWithExtras += chartCssFull;
 }
 
 let drift = 0;
