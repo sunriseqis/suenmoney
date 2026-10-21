@@ -1,5 +1,6 @@
 # ==============================================================================
-# SuenMoney Docker Compose 生产部署编排
+# SuenMoney Docker Compose 生产部署编排（单容器 / 单端口）
+#
 # 镜像托管于 GitHub Container Registry (ghcr.io)，本文件为**纯拉取部署**，
 # 不含 build 段 —— 部署机上不需要仓库源码，只要这一个 yml 即可。
 # 本地开发构建请叠加覆写文件：docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
@@ -8,45 +9,34 @@
 #   启动运行：docker compose up -d
 #   停止服务：docker compose down
 #   更新版本：docker compose pull && docker compose up -d
+#
+# **只有一个端口 5310**：它同时是页面地址与接口地址 —— 服务端自己托管前端产物，
+# 前端只走同源相对路径。浏览器、App、原生客户端填的都是 http://<宿主机IP>:5310，
+# 没有第二个端口要记，也没有 BACKEND_URL 要配。
 # ==============================================================================
 
 services:
-  suenmoney-server:
-    image: ghcr.io/sunriseqis/suenmoney-server:latest
-    container_name: suenmoney-server
+  suenmoney:
+    image: ghcr.io/sunriseqis/suenmoney:latest
+    container_name: suenmoney
     restart: unless-stopped
-    # 后端**不映射到宿主机**：它只在本 compose 内部网络（服务名 suenmoney-server:3310）
-    # 被 Web 容器的 Nginx 反向代理访问（见下方 BACKEND_URL）。
-    # 对外暴露 3310 没有用途，反而会让用户误把「后端端口」当成访问地址填进 App ——
-    # 直连后端会绕过 Nginx 的 /api 反代与静态资源一体入口，等于绕开了正常的访问路径。
-    # 本地开发或需要直连后端调试时，临时加回下面两行即可：
-    # ports:
-    #   - "3310:3310"
+    ports:
+      - "5310:5310"
     environment:
-      - SUENMONEY_HOST=0.0.0.0
-      - SUENMONEY_PORT=3310
+      - SUENMONEY_PORT=5310
+      - SUENMONEY_WEB_ROOT=/app/web/dist
       - SUENMONEY_DB_PATH=/app/data/suenmoney.sqlite
       - SUENMONEY_BACKUP_DIR=/app/data/backups
       - SUENMONEY_BACKUP_KEEP=14
+      # 前面没有反向代理时**不要**打开：开了等于允许客户端伪造 X-Forwarded-For，
+      # 登录限流（按 IP 计数）会被绕过。用户自建 Caddy/nginx 做 TLS 时才改成 true。
+      - SUENMONEY_TRUST_PROXY=false
       # 时区：镜像默认已是 Asia/Shanghai；宿主机若在他处可在此覆盖
       # - TZ=Asia/Shanghai
       # 可选：开放自动注册（默认仅允许管理员建号）
       # - SUENMONEY_ALLOW_REGISTRATION=false
     volumes:
       - suenmoney-data:/app/data
-
-  suenmoney-web:
-    image: ghcr.io/sunriseqis/suenmoney-web:latest
-    container_name: suenmoney-web
-    restart: unless-stopped
-    ports:
-      - "5310:80"
-    environment:
-      - BACKEND_URL=http://suenmoney-server:3310
-      # 时区：镜像默认已是 Asia/Shanghai（影响 Nginx 访问日志时间戳）
-      # - TZ=Asia/Shanghai
-    depends_on:
-      - suenmoney-server
 
 volumes:
   suenmoney-data:

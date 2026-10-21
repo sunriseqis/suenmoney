@@ -5,15 +5,13 @@
 # 叠加本覆写文件：
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# 构建上下文是**仓库根目录**：前端与服务端要一起打进同一个镜像，
+# 所以根 Dockerfile 必须同时看得到 server/ 与 web/ 两侧的源码。
 # ==============================================================================
 
 services:
-  suenmoney-server:
+  suenmoney:
     build:
-      context: ./server
-      dockerfile: Dockerfile
-
-  suenmoney-web:
-    build:
-      context: ./web
+      context: .
       dockerfile: Dockerfile

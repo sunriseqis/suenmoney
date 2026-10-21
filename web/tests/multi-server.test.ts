@@ -202,3 +202,81 @@ describe('多服务端配置与按优先级自动切换', () => {
     }
   });
 });
+
+/**
+ * 单服务形态下的地址口径（计划一 P1）。
+ *
+ * 服务端自己托管前端之后，浏览器里**只有一个正确答案：当前页面的源**。
+ * 这里用假的 `window` 模拟浏览器与原生壳两种环境 —— Node 里没有 window，
+ * 所以上面那组用例走的仍是「纯配置」分支，两者互不影响。
+ */
+describe('浏览器里同源永远优先于历史配置', () => {
+  type FakeWindow = {
+    location: { origin: string; protocol: string };
+    Capacitor?: { isNativePlatform?: () => boolean };
+    SuenHarmony?: unknown;
+    __HARMONY_NEXT__?: boolean;
+  };
+
+  const installWindow = (fake: FakeWindow): void => {
+    (globalThis as unknown as { window?: FakeWindow }).window = fake;
+  };
+  const removeWindow = (): void => {
+    delete (globalThis as unknown as { window?: FakeWindow }).window;
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    setActiveServerUrl(null);
+  });
+
+  test('用户存了旧地址，候选列表仍把同源排在第一位', () => {
+    writeServerUrls(['http://192.168.1.100:3310', 'https://money.example.com']);
+    installWindow({ location: { origin: 'https://nas.local:5310', protocol: 'https:' } });
+    try {
+      assert.deepEqual(readServerUrls(), [
+        'https://nas.local:5310',
+        'http://192.168.1.100:3310',
+        'https://money.example.com',
+      ]);
+      // 历史「激活地址」不再采信：同源才是唯一的正确答案
+      assert.equal(getActiveServerUrl(), 'https://nas.local:5310');
+    } finally {
+      removeWindow();
+    }
+  });
+
+  test('同源与已存地址重复时只保留一份', () => {
+    writeServerUrls(['https://nas.local:5310/']);
+    installWindow({ location: { origin: 'https://nas.local:5310', protocol: 'https:' } });
+    try {
+      assert.deepEqual(readServerUrls(), ['https://nas.local:5310']);
+    } finally {
+      removeWindow();
+    }
+  });
+
+  test('原生壳（Capacitor / 鸿蒙）不把本地虚拟域名当候选', () => {
+    writeServerUrls(['http://192.168.1.100:3310']);
+    installWindow({
+      location: { origin: 'http://localhost', protocol: 'http:' },
+      Capacitor: { isNativePlatform: () => true },
+    });
+    try {
+      assert.deepEqual(readServerUrls(), ['http://192.168.1.100:3310']);
+      assert.equal(getActiveServerUrl(), 'http://192.168.1.100:3310');
+    } finally {
+      removeWindow();
+    }
+
+    installWindow({
+      location: { origin: 'http://localhost', protocol: 'http:' },
+      __HARMONY_NEXT__: true,
+    });
+    try {
+      assert.deepEqual(readServerUrls(), ['http://192.168.1.100:3310']);
+    } finally {
+      removeWindow();
+    }
+  });
+});

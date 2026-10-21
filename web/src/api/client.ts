@@ -76,33 +76,79 @@ function isConnectivityProbe(path: string): boolean {
 }
 
 /**
- * 读取配置的服务端地址列表（按优先级由高到低排序，通常服务端 1 为内网，2 为 Tailscale/异地，3 为公网域名）。
+ * 「当前页面是从哪来的」—— 浏览器里就是同源地址；原生壳里返回 null。
+ *
+ * 原生壳的 `document.origin` 是本地虚拟域名（Capacitor 与鸿蒙壳都是 `http://localhost`），
+ * 它背后没有服务端，把它当候选只会让每次请求先白等一轮超时。所以那里必须由用户
+ * 显式配置地址；而浏览器里**永远同源**（服务端自己就托管着这份前端）。
+ *
+ * 这里刻意不去 import `@/platform`：本模块是纯逻辑、要被 Node 测试直接加载，
+ * 而 `@/` 别名只有 Vite 认识。判断条件也就「桥上有没有东西」两条，重复三行比
+ * 引入一个运行时依赖划算。
+ */
+function currentSameOrigin(): string | null {
+  if (typeof window === 'undefined') return null;
+  const loc = window.location;
+  if (!loc || (loc.protocol !== 'http:' && loc.protocol !== 'https:')) return null;
+  const win = window as unknown as {
+    Capacitor?: { isNativePlatform?: () => boolean };
+    SuenHarmony?: unknown;
+    __HARMONY_NEXT__?: boolean;
+  };
+  if (win.Capacitor?.isNativePlatform?.() || win.SuenHarmony || win.__HARMONY_NEXT__) return null;
+  return loc.origin.replace(/\/+$/, '');
+}
+
+/**
+ * 合并候选地址：**同源永远排第一**，其余按用户配置的顺序跟上。
+ *
+ * 为什么同源要压过用户配置：用户可能在旧版本里填过一个错地址（或旧的 3310 端口），
+ * 那条记录会一直躺在 localStorage 里。合并成单服务之后同源一定能连上，
+ * 若还按存储顺序试，每次启动都要先白等一轮超时才落到正确的那个。
+ */
+function mergeServerCandidates(stored: string[]): string[] {
+  const merged: string[] = [];
+  const push = (raw: string): void => {
+    const cleaned = raw.trim().replace(/\/+$/, '');
+    if (cleaned !== '' && !merged.includes(cleaned)) merged.push(cleaned);
+  };
+
+  const sameOrigin = currentSameOrigin();
+  if (sameOrigin) push(sameOrigin);
+  for (const url of stored) push(url);
+  if (merged.length === 0) merged.push('http://localhost');
+  return merged;
+}
+
+/**
+ * 读取配置的服务端地址列表（按优先级由高到低排序）。
+ *
+ * 浏览器里第一个永远是同源（服务端自己托管前端）；原生壳里按用户配置的顺序，
+ * 通常服务端 1 为内网、2 为 Tailscale/异地、3 为公网域名。
  */
 export function readServerUrls(): string[] {
+  const stored: string[] = [];
   try {
     const raw = localStorage.getItem(SERVER_URLS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        const cleaned = parsed
-          .map((u) => String(u).trim().replace(/\/+$/, ''))
-          .filter(Boolean);
-        if (cleaned.length > 0) return cleaned;
+        for (const item of parsed) {
+          const cleaned = String(item).trim().replace(/\/+$/, '');
+          if (cleaned !== '') stored.push(cleaned);
+        }
       }
     }
     // 兼容旧版单地址配置
-    const legacy = localStorage.getItem(SERVER_URL_KEY);
-    if (legacy && legacy.trim() !== '') {
-      return [legacy.trim().replace(/\/+$/, '')];
+    if (stored.length === 0) {
+      const legacy = localStorage.getItem(SERVER_URL_KEY);
+      if (legacy && legacy.trim() !== '') stored.push(legacy.trim().replace(/\/+$/, ''));
     }
   } catch {
     // 隐私模式或解析失败
   }
-  const defaultOrigin =
-    typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : 'http://localhost';
-  return [defaultOrigin];
+  return mergeServerCandidates(stored);
+
 }
 
 /**
@@ -134,8 +180,15 @@ export function writeServerUrls(urls: string[]): void {
 
 /**
  * 读取当前激活使用的服务端地址（首选已激活的，否则退回列表第一个）。
+ *
+ * 浏览器里只有一个正确答案：**当前页面的源**。历史上存下的「激活地址」
+ * （旧版本让用户在 Web 端手填后端地址留下的）在这里一律不再采信，
+ * 否则升级到单服务形态后，用户会被一个早就废弃的 3310 地址反复拖住。
  */
 export function getActiveServerUrl(): string {
+  const sameOrigin = currentSameOrigin();
+  if (sameOrigin) return sameOrigin;
+
   if (memoryActiveServerUrl) return memoryActiveServerUrl;
   try {
     const saved = localStorage.getItem(ACTIVE_SERVER_URL_KEY);

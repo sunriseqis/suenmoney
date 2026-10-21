@@ -1,5 +1,8 @@
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { config } from '../config.ts';
 import { HttpError } from '../lib/http-error.ts';
@@ -16,15 +19,30 @@ import { updateRoutes } from './update.ts';
 import { userRoutes } from './users.ts';
 import { webdavRoutes } from './webdav.ts';
 
-export async function buildServer(options: { logger?: boolean } = {}): Promise<FastifyInstance> {
+/**
+ * 找出可用的前端产物目录。
+ *
+ * 判据只有一条：**有没有 `index.html`**。没有就当这个进程只是一台 API 服务器 ——
+ * 测试、只跑接口的开发场景都走这条路，所以「产物不存在」不是错误。
+ */
+export function resolveWebRoot(candidate: string = config.webRoot): string | null {
+  const indexPath = join(candidate, 'index.html');
+  return existsSync(indexPath) ? candidate : null;
+}
+
+export async function buildServer(
+  options: { logger?: boolean; webRoot?: string } = {},
+): Promise<FastifyInstance> {
+  const webRoot = resolveWebRoot(options.webRoot ?? config.webRoot);
+
   const app = Fastify({
     logger: options.logger === false ? false : { level: 'info' },
     /**
-     * 信任反向代理传来的 X-Forwarded-For。
-     * 部署形态是 nginx / Docker 反代在前面，不设这个的话所有请求的 ip
-     * 都是 127.0.0.1，登录限流会把所有人算作同一个来源而互相误伤。
+     * 只有确实挂在一层反代后面才信任 `X-Forwarded-For`（默认关）。
+     * 直连形态下信任它 = 任何客户端都能伪造来源 IP，登录限流形同虚设。
+     * 反代部署时用 `SUENMONEY_TRUST_PROXY=true` 显式打开。
      */
-    trustProxy: true,
+    trustProxy: config.trustProxy,
     // 客户端会提交带备注的记录，默认 1MB 够用；收紧一点减少被灌包的面积
     bodyLimit: 512 * 1024,
   });
@@ -47,6 +65,34 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
+
+  /**
+   * 静态资源：同一个端口同时扮演「页面服务器」。
+   *
+   * `index.html` 启动时读一次：它是 SPA 的入口，缓存了也无所谓（它自己带 `no-cache`，
+   * 浏览器每次都会回来问）。要换前端就重启服务 —— 这比每次请求都读盘便宜得多。
+   */
+  const indexHtml = webRoot === null ? null : readFileSync(join(webRoot, 'index.html'));
+
+  if (webRoot !== null) {
+    await app.register(fastifyStatic, { root: webRoot });
+  }
+
+  /**
+   * 缓存策略：`/assets/*` 是 Vite 打了内容 hash 的产物，可以永久缓存；
+   * HTML 一律 `no-cache` —— 否则用户会拿着旧的 index.html 去引用已经不存在的
+   * hash 文件名，表现为白屏。
+   *
+   * 用 `onSend` 而不是 @fastify/static 的 `setHeaders`：后者的头会被 send 覆盖。
+   */
+  app.addHook('onSend', async (request, reply) => {
+    if (request.url.startsWith('/assets/')) {
+      reply.header('Cache-Control', 'public, max-age=2592000, immutable');
+    } else if (request.url === '/' || request.url.endsWith('.html')) {
+      reply.header('Cache-Control', 'no-cache');
+    }
+  });
+
 
   /**
    * 统一错误处理。
@@ -72,11 +118,27 @@ export async function buildServer(options: { logger?: boolean } = {}): Promise<F
     reply.code(500).send({ error: '服务器内部错误' });
   });
 
-  app.setNotFoundHandler((_request, reply) => {
-    reply.code(404).send({ error: '接口不存在' });
+  /**
+   * 404 分流 —— 这条边界不许含糊：
+   *   `/api/*` 未命中 → **JSON** 404（前端解析错误时会说「接口不存在」，不会误判成登录失败）
+   *   其余路径      → **HTML**（SPA 回退，用户直接访问 `/ledger` 也能进）
+   * 两者混一次，前端就会把一坨 HTML 当 JSON 解析，故障现象与真实原因完全对不上。
+   */
+  app.setNotFoundHandler((request, reply) => {
+    if (request.url.startsWith('/api/') || indexHtml === null) {
+      reply.code(404).send({ error: '接口不存在' });
+      return;
+    }
+    reply.code(200).type('text/html; charset=utf-8').header('Cache-Control', 'no-cache');
+    reply.send(indexHtml);
   });
 
-  app.get('/api/health', async () => ({ ok: true, service: 'suenmoney' }));
+  app.get('/api/health', async () => ({
+    ok: true,
+    service: 'suenmoney',
+    version: config.version,
+  }));
+
 
   await app.register(authRoutes);
   await app.register(categoryRoutes);

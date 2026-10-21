@@ -5,6 +5,17 @@
 
 错误响应统一为 `{ "error": "人话描述", "details": null }`。
 
+**一个端口既是页面又是接口**：服务端同时托管 `web/dist`，`/api/*` 之外的未命中回 SPA 外壳（HTML），
+`/api/*` 的未命中回 JSON 404 —— 两者绝不混用。
+
+---
+
+## 健康检查（无需登录）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/health` | `{ ok: true, service: "suenmoney", version: "1.1.6" }`。原生客户端探活要校验 `service` 与 `version`（防门户劫持/连错服务） |
+
 ---
 
 ## 认证

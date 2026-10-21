@@ -13,7 +13,8 @@ Android / iOS 复用同一份前端代码。
 
 ### 方式一：Docker Compose（推荐，自托管生产环境）
 
-镜像已自动托管在 GitHub Container Registry（`ghcr.io/sunriseqis/suenmoney-server` / `ghcr.io/sunriseqis/suenmoney-web`，多架构 amd64/arm64，每次推送 main 自动重建）：
+镜像已自动托管在 GitHub Container Registry（`ghcr.io/sunriseqis/suenmoney`，多架构 amd64/arm64，每次推送 main 自动重建）。
+**一个镜像、一个容器、一个端口**：服务端自己托管前端产物，页面与 `/api` 同源同端口：
 
 ```bash
 # 拉取镜像并启动（无需本地构建）
@@ -25,16 +26,16 @@ docker compose pull && docker compose up -d
 # 或不拉镜像、直接本地构建（需要完整仓库源码）
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-# （可选）若未在环境变量预设管理员，可在容器内手动添加首个管理员：
-docker compose exec suenmoney-server npm run user:add -- --username admin --name 管理员 --admin
+# （可选）也可以直接在容器内创建首个管理员（不传 --password 会随机生成并打印）：
+docker compose exec suenmoney node scripts/node-run.mjs src/cli/user-add.ts --username admin --name 管理员 --admin
 ```
 
 在部署机上打开 `http://127.0.0.1:5310`（局域网内其它设备用 `http://<宿主机IP>:5310`）即可开始使用。
 
-> **访问入口只有前端 5310**：后端 3310 仅在 Docker 内部网络被 Nginx 反向代理（`/api`），**不映射到宿主机**，
-> 因此 App 的「后端服务器设置」或浏览器地址一律填前端地址（`http://<宿主机IP>:5310`），**不要填 3310**。
+> **只有一个端口 5310**：它同时是页面地址与接口地址，没有第二个端口、也没有「后端地址」要配。
+> 浏览器里前端永远同源；原生客户端（iOS / 鸿蒙）在登录页填 `http://<宿主机IP>:5310` 即可。
 
-> **时区**：两个镜像默认 `TZ=Asia/Shanghai`（影响备份调度时刻与容器日志时间戳）。
+> **时区**：镜像默认 `TZ=Asia/Shanghai`（影响备份调度时刻与容器日志时间戳）。
 > 业务日期不受容器时区影响——客户端按本地时区判定后传入 `YYYY-MM-DD`。
 > 宿主机在其他时区时，在 `docker-compose.yml` 里覆盖 `TZ` 即可。
 > 详细运维与备份请阅读 [部署与运维指南](docs/deploy.md)。
@@ -52,11 +53,14 @@ npm --prefix server run db:init                      # 建库并写入默认分�
 npm --prefix server run user:add -- --username 你的登录名 --name 显示名
                                                      # 不传 --password 会随机生成并打印
 
-npm run dev:server           # 后端，默认 127.0.0.1:3310
-npm run dev:web              # 前端，默认 127.0.0.1:5310
+npm run dev:server           # 后端，默认 127.0.0.1:3310（仅本机，供 vite 代理用）
+npm run dev:web              # 前端，默认 127.0.0.1:5310（开发时由 vite 托管，带 HMR）
 ```
 
 打开 `http://127.0.0.1:5310` 即可。第一个账号会自动成为管理员。
+
+> 开发时是「vite 5310 + 后端 3310」两个进程，但**对外只有 5310 一个入口**（vite 把 `/api` 代理到 3310）。
+> 生产镜像里只有一个进程：服务端既供页面也供接口，见 `Dockerfile`。
 
 > 上面的 `127.0.0.1:3310` 是**本地开发**时后端进程的监听地址（仅本机可达，仅供 `dev:web` 开发代理使用）；
 > App / 浏览器填写的访问入口仍然是前端 `127.0.0.1:5310`。
@@ -104,7 +108,7 @@ SUENMONEY_API=http://127.0.0.1:3400 SUENMONEY_WEB_PORT=5410 npm --prefix web run
 
 ```
 suenmoney/
-├── server/      后端：Fastify + node:sqlite + 手写 SQL（无构建步骤，直接跑 .ts）
+├── server/      后端：Fastify + node:sqlite + 手写 SQL（无构建步骤，直接跑 .ts）；同时托管 web/dist
 ├── web/         前端：Vue 3 + Vite + Tailwind v4 —— Web 与移动端共用
 ├── android/     安卓原生工程（预留，由 web 的 Capacitor 驱动）
 ├── ios/         iOS 原生工程（预留，同上）
@@ -125,6 +129,7 @@ suenmoney/
 | [`docs/deploy.md`](docs/deploy.md) | **部署与运维指南** —— Docker Compose 一键部署、环境变量与物理快照容灾 |
 | [`docs/decisions.md`](docs/decisions.md) | **设计决定与理由** —— 改设计前先读这份 |
 | [`docs/plan.md`](docs/plan.md) | 路线图、当前进度、待决事项 |
+| [`docs/plan/`](docs/plan/) | **三大结构性计划的方案文档**（单一服务项合并 / 飞牛 fnOS 套件 / 客户端全原生化） |
 | [`docs/api.md`](docs/api.md) | 接口清单 |
 | [`docs/conventions.md`](docs/conventions.md) | 目录与产物约定 |
 | [`docs/design/flat-design.md`](docs/design/flat-design.md) | 设计系统、令牌推导、与原始设计系统的偏离 |
