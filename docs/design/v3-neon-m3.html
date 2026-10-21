@@ -79,7 +79,7 @@ h2{font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
   transition:background var(--d1) var(--ease),color var(--d1) var(--ease)}
 .iconbtn:hover{background:rgba(179,136,255,.08);color:var(--on)}
 .iconbtn:active{background:rgba(179,136,255,.12)}
-.iconbtn:focus-visible,.fab:focus-visible,button:focus-visible{
+.iconbtn:focus-visible,button:focus-visible{
   outline:2px solid var(--blue); outline-offset:2px}
 
 /* ============================ 卡片骨架 ============================ */
@@ -144,7 +144,7 @@ h2{font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
 .bud .track i{display:block;height:100%;border-radius:var(--r-pill);background:var(--lemon);
   width:0;animation:fill var(--d3) var(--ease) forwards}
 .bud.over .track{background:rgba(255,122,184,.15)}
-.bud.over .track i{background:repeating-linear-gradient(115deg,var(--pink) 0 8px,rgba(255,122,184,.55) 8px 14px)}
+.bud.over .track i{background:var(--pink)}
 @keyframes fill{to{width:var(--w)}}
 .bud .meta{display:flex;justify-content:space-between;font-size:11px;color:var(--on-var);margin-top:6px}
 .bud .pct{font-weight:500}
@@ -168,25 +168,39 @@ h2{font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
 .lrow .val.out{color:var(--pink)} .lrow .val.in{color:var(--mint)}
 .lrow .val .sign{opacity:.9;margin-right:1px}
 
-/* FAB */
-.fab{position:absolute;right:24px;bottom:92px;width:56px;height:56px;border:0;
-  border-radius:var(--r-fab);background:var(--pink);color:var(--on-pink);display:grid;
-  place-items:center;cursor:pointer;box-shadow:var(--el2);
-  transition:transform var(--d1) var(--ease),box-shadow var(--d1) var(--ease)}
-.fab:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(255,122,184,.28)}
-.fab:active{transform:scale(.97)}
-.fab svg{width:22px;height:22px}
 
-/* 底部导航 */
-.botnav{display:flex;justify-content:center;gap:6px;margin:0 -20px;padding:14px 20px 16px;
-  background:var(--surface-high);border-radius:0 0 28px 28px}
-.botnav a{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--on-var);
-  font-size:12.5px;padding:9px 16px;border-radius:var(--r-pill);
-  transition:background var(--d1) var(--ease),color var(--d1) var(--ease)}
-.botnav a svg{width:18px;height:18px}
-.botnav a:hover{background:rgba(242,239,250,.06)}
-.botnav a.on{background:var(--primary-c);color:var(--primary);font-weight:500}
 
+/* 顶栏导航（桌面端唯一导航形态） */
+.navitems{display:flex;gap:2px;margin-right:10px}
+.navitems a{text-decoration:none;color:var(--on-var);font-size:13.5px;padding:7px 14px;
+  border-radius:var(--r-pill);transition:background var(--d1) var(--ease),color var(--d1) var(--ease)}
+.navitems a:hover{background:rgba(242,239,250,.08);color:var(--on)}
+.navitems a.on{background:var(--primary-c);color:var(--primary);font-weight:500}
+.addbtn{border:0;background:var(--primary);color:var(--on-primary);font:inherit;font-size:13.5px;
+  font-weight:500;padding:9px 18px;border-radius:var(--r-pill);cursor:pointer;
+  transition:transform var(--d1) var(--ease),filter var(--d1) var(--ease)}
+.addbtn:hover{filter:brightness(1.08)}
+.addbtn:active{transform:scale(.97)}
+/* 移动端：无导航栏；顶卡 + 控制行 */
+.pullhint{display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 0 10px;
+  font-size:10.5px;color:var(--on-var);letter-spacing:.06em}
+.pullhint span{width:36px;height:3px;border-radius:2px;background:var(--outline-strong)}
+.topcard{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.topcard>div{background:var(--surface-cont);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--el1)}
+.topcard .big{display:flex;align-items:baseline;gap:4px;margin-top:2px}
+.topcard .big .cur{font-size:18px;color:var(--pink);opacity:.85}
+.topcard .big .val{font-size:36px;font-weight:500;letter-spacing:-.02em;color:var(--pink)}
+.topcard .remind{display:flex;align-items:center;gap:7px;font-size:12.5px;margin-top:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topcard .remind .mk{width:3px;height:15px;border-radius:2px;background:var(--pink);flex:none}
+.topcard .remindsub{font-size:11px;color:var(--pink);margin-top:4px}
+.ctrlrow{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}
+.ctrlrow .period{font-size:15px;font-weight:500}
+.ctrlrow .caret{color:var(--on-var);font-size:11px}
+.ctrlrow .entries{display:flex;gap:4px}
+.ctrlrow .entries a{text-decoration:none;color:var(--on-var);font-size:12.5px;padding:6px 11px;
+  border-radius:var(--r-pill);transition:background var(--d1) var(--ease),color var(--d1) var(--ease)}
+.ctrlrow .entries a:hover{background:rgba(242,239,250,.08);color:var(--on)}
 /* ============================ 移动端 ============================ */
 .mobile{width:390px;background:var(--surface);border-radius:34px;padding:10px 0 0;overflow:hidden;
   position:relative;box-shadow:0 24px 70px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06)}
@@ -196,9 +210,6 @@ h2{font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
 .mobile .card{padding:18px;margin-bottom:12px}
 .mobile .grid2{grid-template-columns:1fr;gap:12px}
 .mobile .lrow{height:64px;padding:0 6px;gap:12px}
-.mobile .botnav{margin:6px 0 0;padding:12px 10px 16px;border-radius:0}
-.mobile .botnav a{flex:1;flex-direction:column;gap:3px;padding:8px 6px;font-size:10.5px}
-.mobile .fab{right:16px;bottom:96px;width:56px;height:56px}
 .mobile .topbar{padding:6px 4px 14px}
 .mobile .month{margin-left:auto}
 
@@ -359,10 +370,12 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
   <p class="lede">
     页面里所有图形都是内联 <code>&lt;symbol&gt;</code>，单文件零依赖；悬停 / 按下 / 焦点态可以直接上手试。
   </p>
-  <p class="lede" style="color:var(--lemon)">
-    ⚠ 本页用的是<b>「你的规格 + 我的三条建议」</b>混合版：卡片换成「本月构成 / 计划与还款」是**数据约束**
-    （只记支出，结余与预算算不出来）；而<b>「支出金额不染色」和「逾期用条纹」是我的建议，不是你的规格</b> ——
-    两处争议在 <a href="#dispute" style="color:var(--blue)">§4·5 并排可看</a>，撤回后回退成什么见设计系统 §3.3。
+  <p class="lede" style="color:var(--mint)">
+    ✓ 本页已<b>完全回退到你给的规格</b>（2026-10-21 裁决）：流水 <code>−</code> 用霓虹粉、超支用霓虹粉实心、
+    底栏与 FAB 一并撤掉。<span style="color:var(--on)">两处按应用实情修正，不是偏好</span>：
+    ① 只记支出 → 结余/收入支出双数值/预算卡算不出来，换成「本月构成 / 计划与还款」；
+    ② 本应用没有导航栏 → 桌面用顶栏导航（概况·流水·报表·设置·记一笔），移动端无顶栏无底栏，
+    三个入口在流水页控制行右端、记账只有下拉手势。
   </p>
 
   <!-- ======================= 1. 桌面端 ======================= -->
@@ -379,8 +392,11 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
         <button aria-label="下个月">›</button>
       </div>
       <div class="spacer"></div>
-      <button class="iconbtn" aria-label="搜索"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#i-search"/></svg></button>
-      <button class="iconbtn" aria-label="设置"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#i-set"/></svg></button>
+      <!-- 桌面端导航：按现有 IA 就在顶栏（概况·流水·报表·设置），不是底部 tab -->
+      <nav class="navitems">
+        <a href="#" class="on">概况</a><a href="#">流水</a><a href="#">报表</a><a href="#">设置</a>
+      </nav>
+      <button class="addbtn">记一笔</button>
     </div>
 
     <!-- 总资产 -->
@@ -389,7 +405,7 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
         <div class="label">本月支出 · 10 月</div>
         <div class="big num">
           <span class="cur">¥</span>
-          <span class="val" data-count="16220.5" style="color:var(--on)">0.00</span>
+          <span class="val" data-count="16220.5">0.00</span>
         </div>
         <div style="margin-top:12px">
           <span class="chip" style="background:var(--pink-c);color:var(--pink)">
@@ -479,15 +495,6 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
         <div class="val out num"><span class="sign">−</span>15.00</div>
       </div>
     </div>
-
-    <button class="fab" aria-label="记一笔"><svg viewBox="0 0 24 24"><use href="#i-add"/></svg></button>
-
-    <nav class="botnav">
-      <a href="#" class="on"><svg viewBox="0 0 24 24"><use href="#i-home"/></svg>总览</a>
-      <a href="#"><svg viewBox="0 0 24 24"><use href="#i-list"/></svg>流水</a>
-      <a href="#"><svg viewBox="0 0 24 24"><use href="#i-budget"/></svg>计划</a>
-      <a href="#"><svg viewBox="0 0 24 24"><use href="#i-set"/></svg>设置</a>
-    </nav>
   </div>
   <p class="note">
     骨架按你第 8 条，只把两张卡的**内容**换成了算得出来的那两张：顶栏（LOGO + 月份切换）→ 本月支出横幅 → 本月构成 + 计划与还款两列 → 流水长卡 → FAB → 底部导航。
@@ -499,48 +506,31 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
   <h2>二 · 移动端（390）</h2>
   <div class="mobile">
     <div class="inner">
-      <div class="topbar">
-        <div class="brand">
-          <svg class="mark" viewBox="0 0 1024 1024" role="img" aria-label="SuenMoney"><use href="#brand-sm"/></svg>
-        </div>
-        <div class="month">
-          <button aria-label="上个月">‹</button>
-          <span class="cur num">10 月</span>
-          <button aria-label="下个月">›</button>
-        </div>
-      </div>
+      <!-- 移动端**没有导航栏**（无顶栏导航、无底部 tab）：落地就是流水页 -->
+      <div class="pullhint"><span></span>下拉记一笔</div>
 
-      <div class="hero">
-        <div>
+      <!-- 顶卡：本月支出与处理提醒同一行（有未处理两列 / 无则独占） -->
+      <div class="topcard">
+        <div class="left">
           <div class="label">本月支出</div>
-          <div class="big num"><span class="cur">¥</span><span class="val" data-count="16220.5" style="color:var(--on)">0.00</span></div>
-          <div style="margin-top:10px">
+          <div class="big num"><span class="cur">¥</span><span class="val" data-count="16220.5">0.00</span></div>
+          <div style="margin-top:8px">
             <span class="chip" style="background:var(--pink-c);color:var(--pink)"><span class="arw">▲</span> 较上月 +12.4%</span>
           </div>
         </div>
+        <div class="right">
+          <div class="label">该处理了</div>
+          <div class="remind">
+            <span class="mk"></span>车贷 第 5 期 ¥1,280
+          </div>
+          <div class="remindsub">逾期 2 天 · 需手动</div>
+        </div>
       </div>
 
-      <div class="card">
-        <div class="cardhead"><h3>本月构成</h3><span class="chip" style="background:var(--primary-c);color:var(--primary)">10 月</span></div>
-        <div class="bar" style="margin:2px 0 12px">
-          <i style="background:var(--primary);width:32%"></i>
-          <i style="background:var(--blue);width:17%"></i>
-          <i style="background:var(--lemon);width:12%"></i>
-          <i style="background:var(--outline);width:39%"></i>
-        </div>
-        <div class="catrow"><span><span class="dot8" style="background:var(--primary)"></span>餐饮</span><span class="num">32% · ¥5,240</span></div>
-        <div class="catrow"><span><span class="dot8" style="background:var(--blue)"></span>住房</span><span class="num">17% · ¥2,800</span></div>
-      </div>
-
-      <div class="card">
-        <div class="cardhead"><h3>计划与还款</h3>
-          <span class="chip" style="background:var(--pink-c);color:var(--pink)">1 期逾期</span>
-        </div>
-        <div class="bud">
-          <div class="row"><span class="nm">房贷 · 第 3/12 期</span><span class="amt num">¥2,800</span></div>
-          <div class="track"><i style="--w:25%"></i></div>
-          <div class="meta"><span>已还 3 期</span><span class="pct ok num">25%</span></div>
-        </div>
+      <!-- 控制行：期间靠左 + 三个入口靠右（同一行） -->
+      <div class="ctrlrow">
+        <span class="period">2026 年 10 月 <span class="caret">▾</span></span>
+        <span class="entries"><a href="#">概况</a><a href="#">报表</a><a href="#">设置</a></span>
       </div>
 
       <div class="card ledger" style="padding:8px 0 0">
@@ -561,17 +551,13 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
           <div class="mid"><div class="who">盒马鲜生</div><div class="sub">日用 · 10 月 19 日</div></div>
           <div class="val out num"><span class="sign">−</span>248.50</div>
         </div>
+        <div class="lrow">
+          <div class="ava" style="background:var(--mint-c);color:var(--mint)"><svg viewBox="0 0 24 24"><use href="#i-ticket"/></svg></div>
+          <div class="mid"><div class="who">电影票 · 退款</div><div class="sub">娱乐 · 10 月 18 日</div></div>
+          <div class="val in num"><span class="sign">+</span>60.00</div>
+        </div>
       </div>
     </div>
-
-    <button class="fab" aria-label="记一笔"><svg viewBox="0 0 24 24"><use href="#i-add"/></svg></button>
-
-    <nav class="botnav">
-      <a href="#" class="on"><svg viewBox="0 0 24 24"><use href="#i-home"/></svg>总览</a>
-      <a href="#"><svg viewBox="0 0 24 24"><use href="#i-list"/></svg>流水</a>
-      <a href="#"><svg viewBox="0 0 24 24"><use href="#i-budget"/></svg>计划</a>
-      <a href="#"><svg viewBox="0 0 24 24"><use href="#i-set"/></svg>设置</a>
-    </nav>
   </div>
 
   <!-- ======================= 3. Logo ======================= -->
@@ -702,11 +688,11 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     <div class="sw-card"><div class="dot" style="background:#B388FF"></div>
       <div class="n">primary 电紫</div><div class="h">#B388FF</div><div class="u">on #2A1065 · 5.79:1</div></div>
     <div class="sw-card"><div class="dot" style="background:#4DFFD2"></div>
-      <div class="n">secondary 荧光薄荷</div><div class="h">#4DFFD2</div><div class="u">on #00352E · 10.69:1<br>钱回来了：退款 / 支出下降</div></div>
+      <div class="n">secondary 荧光薄荷</div><div class="h">#4DFFD2</div><div class="u">on #00352E · 10.69:1<br>退款冲销的 + 金额</div></div>
     <div class="sw-card"><div class="dot" style="background:#FF7AB8"></div>
-      <div class="n">tertiary 霓虹粉</div><div class="h">#FF7AB8</div><div class="u">on #5F1606 · 5.44:1<br>上涨 / 逾期 / FAB</div></div>
+      <div class="n">tertiary 霓虹粉</div><div class="h">#FF7AB8</div><div class="u">on #5F1606 · 5.44:1<br>支出金额 / 超支 / 警示</div></div>
     <div class="sw-card"><div class="dot" style="background:#E5FF41"></div>
-      <div class="n">荧光柠</div><div class="h">#E5FF41</div><div class="u">on #3F2E00 · 11.68:1<br>进度（必带数字）</div></div>
+      <div class="n">荧光柠</div><div class="h">#E5FF41</div><div class="u">on #3F2E00 · 11.68:1<br>进度填充</div></div>
     <div class="sw-card"><div class="dot" style="background:#5DB8FF"></div>
       <div class="n">电光蓝</div><div class="h">#5DB8FF</div><div class="u">on #00344F · 6.09:1<br>信息 / 链接 / 焦点</div></div>
     <div class="sw-card"><div class="dot" style="background:rgba(179,136,255,.12);box-shadow:inset 0 0 0 1px rgba(179,136,255,.3)"></div>
@@ -729,63 +715,25 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     <tr><td><b>outline #3A3852 当输入框边界</b></td><td><b>可交互控件</b></td><td>3.0</td><td class="num">1.64:1</td><td class="warn">不达标 → 见 §5</td></tr>
   </table>
 
-  <!-- ======================= 4.5 两处争议 ======================= -->
-  <h2 id="dispute">四·五 · 两处争议：你的规格 vs 我的建议（并排看）</h2>
+  <!-- ======================= 4.5 已撤回的建议 ======================= -->
+  <h2 id="dispute">四·五 · 已撤回的三条建议（2026-10-21 裁决）</h2>
   <p class="note" style="margin-top:0">
-    这两处是<b>我的偏好</b>覆盖了你的规格，不是规范推导出来的。回退成本极低（只改用法，不改色值），
-    你说一句我就换回去。
+    这三条是我提的、被否决的。留在这里只是为了记录「为什么曾经想改」，
+    <b>样张里已经没有它们</b>。教训：把自己的取舍写成「铁律」＝用文档结构替你做决定；加导航前没读产品既有 IA。
   </p>
-  <div class="row" style="margin-top:16px">
-
-    <div class="panel" style="flex:1 1 470px">
-      <div class="cap" style="color:var(--on-var)">你的规格（基线）</div>
-      <div class="lrow" style="border-top:0">
-        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-coffee"/></svg></div>
-        <div class="mid"><div class="who">星巴克</div><div class="sub">餐饮 · 09:12</div></div>
-        <div class="val out num"><span class="sign">−</span>28.00</div>
-      </div>
-      <div class="lrow">
-        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-house"/></svg></div>
-        <div class="mid"><div class="who">房贷 · 第 3 期</div><div class="sub">住房 · 10 月 20 日</div></div>
-        <div class="val out num"><span class="sign">−</span>2,800.00</div>
-      </div>
-      <div class="bud over" style="margin-top:18px">
-        <div class="row"><span class="nm">娱乐 · 订阅</span><span class="amt num">¥432 / ¥400</span></div>
-        <div class="track"><i style="--w:100%;background:var(--pink)"></i></div>
-        <div class="meta"><span>已超支 ¥32</span><span class="pct over num">108%</span></div>
-      </div>
-      <p class="note" style="margin-top:14px;color:var(--on-var)">
-        `−` 金额＝霓虹粉 · 超支＝霓虹粉实心填充。**整块都是警报色**，但语义单一、执行简单。
-      </p>
-    </div>
-
-    <div class="panel" style="flex:1 1 470px">
-      <div class="cap" style="color:var(--on-var)">我的建议（B1 + B2）</div>
-      <div class="lrow" style="border-top:0">
-        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-coffee"/></svg></div>
-        <div class="mid"><div class="who">星巴克</div><div class="sub">餐饮 · 09:12</div></div>
-        <div class="val num" style="color:var(--on)"><span class="sign">−</span>28.00</div>
-      </div>
-      <div class="lrow">
-        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-house"/></svg></div>
-        <div class="mid"><div class="who">房贷 · 第 3 期</div><div class="sub">住房 · 10 月 20 日</div></div>
-        <div class="val num" style="color:var(--on)"><span class="sign">−</span>2,800.00</div>
-      </div>
-      <div class="bud over" style="margin-top:18px">
-        <div class="row"><span class="nm">娱乐 · 订阅</span><span class="amt num">¥432 / ¥400</span></div>
-        <div class="track"><i style="--w:100%"></i></div>
-        <div class="meta"><span>已超支 ¥32</span><span class="pct over num">108%</span></div>
-      </div>
-      <p class="note" style="margin-top:14px;color:var(--on-var)">
-        `−` 金额＝白，只有「退款 +」「上涨」「逾期」才染色 · 超支＝粉白条纹。
-        **颜色变少了，但每次出现都在报警。**
-      </p>
-    </div>
-
-  </div>
+  <table>
+    <tr><th>#</th><th>建议</th><th>裁决</th><th>回退成什么</th></tr>
+    <tr><td>B1</td><td>支出金额不染色（`−` 用白、hero 白数字 + 彩色胶囊）</td>
+      <td class="warn">撤回</td><td>流水 `−` = 霓虹粉；hero 大数字 = 霓虹粉（支出色）；环比胶囊用同色 12% 底</td></tr>
+    <tr><td>B2</td><td>逾期 / 超支用 45° 条纹，不新增色相</td>
+      <td class="warn">撤回</td><td>超支 = 霓虹粉实心填充；逾期没有独立定义，暂按超支同一处理（实心粉）</td></tr>
+    <tr><td>B3</td><td>桌面导航移顶栏、移动端保留底栏</td>
+      <td class="warn">撤回（且我判断错了产品）</td>
+      <td>本应用<b>没有导航栏</b>：桌面顶栏导航「概况·流水·报表·设置·记一笔」；移动端无顶栏无底栏，三个入口在流水页控制行右端，记账只有下拉手势</td></tr>
+  </table>
 
   <!-- ======================= 5. 三处规格修订 ======================= -->
-  <h2>五 · 我在规格上改了三处（请你裁决）</h2>
+  <h2>五 · 规格与无障碍备注</h2>
 
   <div class="panel" style="margin-bottom:14px">
     <p class="note" style="margin:0"><b class="badge">1</b> <b>可交互边界不能用 outline</b></p>
@@ -809,13 +757,12 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
   </div>
 
   <div class="panel">
-    <p class="note" style="margin:0"><b class="badge">3</b> <b>霓虹粉同时承担「支出」与「超支/危险」，强度会打架</b></p>
+    <p class="note" style="margin:0"><b class="badge">3</b> <b>超支/逾期：按你的规格用霓虹粉实心（已撤回条纹建议）</b></p>
     <p class="note" style="margin:8px 0 0">
-      规格里粉同时是「支出」与「警示」。在这个<span style="color:var(--on)">只记支出</span>的账本里，
-      那等于<b>每一笔都是警报</b> —— 荧光粉大面积出现会立刻失去警示力。定稿两条一起改：
-      ① <b>支出金额不染色</b>（流水行里的 <code>−</code> 用 <code>on-surface</code> 白），粉只留给「上涨」与「逾期」；
-      ② 逾期/超支<b>不新增色相</b>，进度条填充改 45° 条纹 —— 色彩语义不变，「这一条在报警」一眼可分。
-      样张里计划卡的「车贷」就是逾期态。
+      你的规格写的是「填充荧光柠，超支变霓虹粉」，照办。我提的 45° 条纹方案<b>已撤回</b> ——
+      它只是担心「粉同时表支出与超支、警示会贬值」的想法，不是规范。<br>
+      唯一的留白是<b>逾期</b>：你的规格没有定义它，样张里暂按超支同一处理（实心粉 + 文字「逾期 2 天」），
+      要靠文字而不是靠新颜色来区分 —— 这也正好符合你第 7 条「语义不只靠颜色」。
     </p>
   </div>
 
