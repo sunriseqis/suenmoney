@@ -63,3 +63,14 @@ hw/entry/src/main/resources/rawfile/
 
 # ---- 私人账单导出（根目录，含隐私不入库） ----
 /*.csv
+
+# 飞牛套件构建产物与暂存目录（不入库）
+fn/app/bin/
+fn/app/server/
+fn/app/web/
+fn/*.fpk
+fn/app.tgz
+output/
+
+# 品牌渲染产物：由 npm run icons 从矢量母版重新生成，不入库
+docs/design/brand/dist/

@@ -1,0 +1,13 @@
+#!/bin/bash
+# 升级前：必须先停 —— 旧进程已经把代码读进内存，不停的话
+# 「升级成功但功能没变」是这类套件最典型的假故障。
+# 任何失败都不阻断升级（exit 0），但要等端口真的释放。
+set -o pipefail
+cd "$(dirname "$0")" || exit 0
+./main stop
+i=0
+while [ "${i}" -lt 20 ]; do
+    if ! timeout 2 bash -c "exec 3<>/dev/tcp/127.0.0.1/5310" 2>/dev/null; then break; fi
+    sleep 1; i=$((i + 1))
+done
+exit 0
