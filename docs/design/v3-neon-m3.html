@@ -262,45 +262,54 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     <g id="lit"><rect x="114" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="322" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="530" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="114" y="278" width="172" height="140" rx="52" fill="#B388FF"/><rect x="114" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="322" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="530" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="738" y="606" width="172" height="140" rx="52" fill="#E5FF41"/><rect x="322" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="530" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="738" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/></g>
     <g id="grid-dark"><rect x="738" y="114" width="172" height="140" rx="52" fill="#282740"/><rect x="322" y="278" width="172" height="140" rx="52" fill="#282740"/><rect x="530" y="278" width="172" height="140" rx="52" fill="#282740"/><rect x="738" y="278" width="172" height="140" rx="52" fill="#282740"/><rect x="738" y="442" width="172" height="140" rx="52" fill="#282740"/><rect x="114" y="606" width="172" height="140" rx="52" fill="#282740"/><rect x="322" y="606" width="172" height="140" rx="52" fill="#282740"/><rect x="530" y="606" width="172" height="140" rx="52" fill="#282740"/><rect x="114" y="770" width="172" height="140" rx="52" fill="#282740"/></g>
 
-    <!-- 优化版：逐格照抄原版矩阵，只改画布 / 描边 / 发光 / 圆角 -->
+    <!-- 计算器母版：显示屏 + 4×5 键盘，亮键拼出 S（≥32px） -->
+    <g id="calc-lit"><rect x="212" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="367" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="522" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="212" y="456" width="135" height="108" rx="34" fill="#B388FF"/><rect x="212" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="367" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="522" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="677" y="712" width="135" height="108" rx="34" fill="#E5FF41"/><rect x="367" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/><rect x="522" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/><rect x="677" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/></g>
+    <g id="calc-dim"><rect x="677" y="328" width="135" height="108" rx="34" fill="#282740"/><rect x="367" y="456" width="135" height="108" rx="34" fill="#282740"/><rect x="522" y="456" width="135" height="108" rx="34" fill="#282740"/><rect x="677" y="456" width="135" height="108" rx="34" fill="#282740"/><rect x="677" y="584" width="135" height="108" rx="34" fill="#282740"/><rect x="212" y="712" width="135" height="108" rx="34" fill="#282740"/><rect x="367" y="712" width="135" height="108" rx="34" fill="#282740"/><rect x="522" y="712" width="135" height="108" rx="34" fill="#282740"/><rect x="212" y="840" width="135" height="108" rx="34" fill="#282740"/></g>
+    <!-- 完整版 -->
     <symbol id="brand" viewBox="0 0 1024 1024">
       <rect width="1024" height="1024" fill="#141222"/>
-      <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
-      <use href="#grid-dark" xlink:href="#grid-dark"/>
-      <use href="#lit" filter="url(#neon-sm)" opacity=".40"/>
-      <use href="#lit"/>
+      <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
+      <rect x="212" y="112" width="600" height="176" rx="48" fill="#141222"/>
+      <circle cx="758" cy="152" r="20" fill="#4DFFD2"/>
+      <use href="#calc-dim"/>
+      <use href="#calc-lit" filter="url(#neon-sm)" opacity=".40"/>
+      <use href="#calc-lit"/>
     </symbol>
-
-    <!-- 小尺寸：只留 11 个亮格（S 的笔画），去空格与发光 -->
+    <!-- 小尺寸版：键位改圆点，屏幕保留（16px 下方块会糊成一片） -->
     <symbol id="brand-sm" viewBox="0 0 1024 1024">
       <rect width="1024" height="1024" fill="#141222"/>
-      <g id="lit-sm">
-        <rect x="114" y="114" width="172" height="140" rx="60" fill="#4DFFD2"/><rect x="322" y="114" width="172" height="140" rx="60" fill="#4DFFD2"/><rect x="530" y="114" width="172" height="140" rx="60" fill="#4DFFD2"/><rect x="114" y="278" width="172" height="140" rx="60" fill="#B388FF"/><rect x="114" y="442" width="172" height="140" rx="60" fill="#5DB8FF"/><rect x="322" y="442" width="172" height="140" rx="60" fill="#5DB8FF"/><rect x="530" y="442" width="172" height="140" rx="60" fill="#5DB8FF"/><rect x="738" y="606" width="172" height="140" rx="60" fill="#E5FF41"/><rect x="322" y="770" width="172" height="140" rx="60" fill="#FF7AB8"/><rect x="530" y="770" width="172" height="140" rx="60" fill="#FF7AB8"/><rect x="738" y="770" width="172" height="140" rx="60" fill="#FF7AB8"/>
-      </g>
+      <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
+      <rect x="212" y="112" width="600" height="176" rx="48" fill="#141222"/>
+      <circle cx="790" cy="200" r="26" fill="#4DFFD2"/>
+      <circle cx="279" cy="382" r="26" fill="#4DFFD2"/>
+      <circle cx="434" cy="382" r="26" fill="#4DFFD2"/>
+      <circle cx="589" cy="382" r="26" fill="#4DFFD2"/>
+      <circle cx="744" cy="382" r="26" fill="#282740"/>
+      <circle cx="279" cy="510" r="26" fill="#B388FF"/>
+      <circle cx="434" cy="510" r="26" fill="#282740"/>
+      <circle cx="589" cy="510" r="26" fill="#282740"/>
+      <circle cx="744" cy="510" r="26" fill="#282740"/>
+      <circle cx="279" cy="638" r="26" fill="#5DB8FF"/>
+      <circle cx="434" cy="638" r="26" fill="#5DB8FF"/>
+      <circle cx="589" cy="638" r="26" fill="#5DB8FF"/>
+      <circle cx="744" cy="638" r="26" fill="#282740"/>
+      <circle cx="279" cy="766" r="26" fill="#282740"/>
+      <circle cx="434" cy="766" r="26" fill="#282740"/>
+      <circle cx="589" cy="766" r="26" fill="#282740"/>
+      <circle cx="744" cy="766" r="26" fill="#E5FF41"/>
+      <circle cx="279" cy="894" r="26" fill="#282740"/>
+      <circle cx="434" cy="894" r="26" fill="#FF7AB8"/>
+      <circle cx="589" cy="894" r="26" fill="#FF7AB8"/>
+      <circle cx="744" cy="894" r="26" fill="#FF7AB8"/>
     </symbol>
-
-    <!-- 单色：实心 S 剪影（靠形状，不靠颜色） -->
+    <!-- 单色版：实心剪影 -->
     <symbol id="brand-mono" viewBox="0 0 1024 1024">
       <rect width="1024" height="1024" fill="#141222"/>
-      <g fill="#F2EFFA">
-        <rect x="114" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="322" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="530" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="114" y="278" width="172" height="140" rx="52" fill="#B388FF"/><rect x="114" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="322" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="530" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="738" y="606" width="172" height="140" rx="52" fill="#E5FF41"/><rect x="322" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="530" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="738" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
-      </g>
+      <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
+      <rect x="212" y="112" width="600" height="176" rx="48" fill="#141222"/>
+      <circle cx="758" cy="152" r="20" fill="#4DFFD2"/>
+      <g fill="#F2EFFA"><rect x="212" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="367" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="522" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="212" y="456" width="135" height="108" rx="34" fill="#B388FF"/><rect x="212" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="367" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="522" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="677" y="712" width="135" height="108" rx="34" fill="#E5FF41"/><rect x="367" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/><rect x="522" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/><rect x="677" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/></g>
     </symbol>
-
-    <!-- 带 header 的变体（建议 ≥48px 才用；网格 156×128、间距 32/20、720×720） -->
-    <symbol id="brand-hdr" viewBox="0 0 1024 1024">
-      <rect width="1024" height="1024" fill="#141222"/>
-      <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
-      <rect x="152" y="96" width="720" height="88" rx="32" fill="#141222"/>
-      <circle cx="836" cy="140" r="14" fill="#4DFFD2"/>
-      <use href="#dim-h" xlink:href="#dim-h"/>
-      <use href="#lit-h" filter="url(#neon-sm)" xlink:href="#lit-h" opacity=".40"/>
-      <use href="#lit-h" xlink:href="#lit-h"/>
-    </symbol>
-
-    <g id="dim-h-def"><g id="dim-h"><rect x="716" y="216" width="156" height="128" rx="46" fill="#282740"/><rect x="340" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="528" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="716" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="716" y="512" width="156" height="128" rx="46" fill="#282740"/><rect x="152" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="340" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="528" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="152" y="808" width="156" height="128" rx="46" fill="#282740"/></g></g>
-    <g id="lit-h-def"><g id="lit-h"><rect x="152" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="340" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="528" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="152" y="364" width="156" height="128" rx="46" fill="#B388FF"/><rect x="152" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="340" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="528" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="716" y="660" width="156" height="128" rx="46" fill="#E5FF41"/><rect x="340" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/><rect x="528" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/><rect x="716" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/></g></g>
-
     <!-- 你给的原版（原样内联，用于并排对照） -->
     <symbol id="brand-orig" viewBox="0 0 240 320">
       <rect width="240" height="320" rx="36" fill="#141222"/>
@@ -561,7 +570,7 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
   </div>
 
   <!-- ======================= 3. Logo ======================= -->
-  <h2>三 · LOGO：你给的版本 + 优化版</h2>
+  <h2>三 · LOGO：一台计算器，键位亮出 S</h2>
   <div class="logo-row">
     <div class="logo-cell">
       <svg width="180" height="240" viewBox="0 0 240 320" role="img" aria-label="原版"><use href="#brand-orig"/></svg>
@@ -579,20 +588,32 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
       <svg width="160" height="160" viewBox="0 0 1024 1024" role="img" aria-label="单色版"><use href="#brand-mono"/></svg>
       <small>单色版（通知栏 / 分层图标）</small>
     </div>
-    <div class="logo-cell">
-      <svg width="160" height="160" viewBox="0 0 1024 1024" role="img" aria-label="带 header 的变体"><use href="#brand-hdr"/></svg>
-      <small>带 header（建议 ≥48px）</small>
-    </div>
   </div>
 
-  <p class="note" style="margin-top:26px"><b>先纠正我上一版错的地方</b></p>
+  <p class="note" style="margin-top:26px"><b>我错了两版，这里是第二次纠正</b></p>
   <p class="note" style="margin:8px 0 0">
-    上一版我把你的格子矩阵换成了「4×3 + 右列金额柱」—— 那不是优化，是另画了一个图形。
-    <b>你的格子本身就是字形</b>：11 个亮格拼出一个 S，五段五个色。这一版<b>逐格照抄</b>，
-    只动四件技术问题（画布比例、三层描边、发光画法、圆角体系），字形一格没改。
+    <b>第一版</b>我把键位矩阵换成「4×3 + 右列金额柱」—— 另画了一个图形。<br>
+    <b>第二版</b>我把字形还回来了，却把<b>显示屏删掉</b>了（还写了个「header 变体，≥48px 才出现」的错误结论）。
+    屏幕一删，它就只剩一片发光的点阵 —— <b>「计算器」这个识别物没了</b>，等于把标记的语义主体扔了。<br>
+    本版结构照原样：<b>机身（圆角卡）＋ 显示屏（含薄荷指示灯）＋ 4×5 键盘</b>，亮键拼出 S。一格没动。
   </p>
 
-  <p class="note" style="margin-top:22px"><b>逐格对照（一个都没动）</b></p>
+  <p class="note" style="margin-top:22px"><b>结构对照（三个部件都在）</b></p>
+  <table>
+    <tr><th>部件</th><th>原版（240×320）</th><th>v3（1024 方形）</th><th>作用</th></tr>
+    <tr><td><b>机身</b></td><td>20,10 → 200×300，rx 28</td><td>48,48 → 928×928，rx 220</td>
+      <td>圆角卡，把「这是一个物件」立住</td></tr>
+    <tr><td><b>显示屏</b></td><td>36,26 → 168×54，rx 12，带描边</td><td>212,112 → 600×176，rx 48，<b>无描边</b></td>
+      <td><b>计算器的脸</b>。删掉它就只剩点阵 —— 这是我上一版最大的错</td></tr>
+    <tr><td><b>指示灯</b></td><td>圆点 r4 @ (190,53)，薄荷</td><td>圆点 r20 @ (758,152)，薄荷</td>
+      <td>让它像「正在显示数字」，而不是一块空白的灰条</td></tr>
+    <tr><td><b>键盘</b></td><td>4×5，格 36×30，rx 10</td><td>4×5，格 135×108，rx 34</td>
+      <td>键位比例 1.20 → 1.25，肉眼无差</td></tr>
+    <tr><td><b>亮键</b></td><td>11 亮 / 9 暗</td><td>11 亮 / 9 暗，位置与色序完全相同</td>
+      <td><b>S 藏在这里</b>：上横薄荷 → 左竖紫 → 中横蓝 → 右竖柠 → 下横粉</td></tr>
+  </table>
+
+  <p class="note" style="margin-top:22px"><b>亮键逐格对照（S 一个格没动）</b></p>
   <table>
     <tr><th>段</th><th>原版（4×5 矩阵）</th><th>v3（1024 方形）</th><th>色</th></tr>
     <tr><td>上横</td><td>第 1 行 · 第 1–3 列</td><td>同一位置，同 3 格</td>
@@ -608,8 +629,9 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     <tr><td>空格</td><td>9 个 #282740</td><td>9 个，同位置</td><td>—</td></tr>
   </table>
   <p class="note" style="margin-top:10px">
-    合计 <b>11 亮 + 9 空 = 20 格</b>，与原版完全一致。几何换算：你的格 36×30 / 间距 8、41.5 →
-    v3 的格 172×140 / 间距 36、24（等比放大 ≈4.8×，纵横比 1.20 → 1.23，肉眼无差）。
+    合计 <b>11 亮 + 9 空 = 20 键</b>，与原版完全一致。几何：格 36×30 → 135×108（×3.6），
+    间距 8/41.5 → 20/20，纵横比 1.20 → 1.25。屏幕与键盘**同宽**（600），与原版（168/168）一致 ——
+    这条不是审美，是「计算器」的形状特征：屏与键盘等宽，键盘不会比屏更宽。
   </p>
 
   <p class="note" style="margin-top:22px"><b>只改了这四件（都是技术问题，不动字形）</b></p>
@@ -617,20 +639,17 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     <tr><th>#</th><th>原版</th><th>v3</th><th>为什么</th></tr>
     <tr><td>1</td><td>240×320 竖长方形画布</td><td><b>1024×1024 方形</b>，字形原样居中</td>
       <td>iOS / 鸿蒙 / fnOS / 桌面图标全要 1:1。竖版只能硬裁，一裁就切掉上横或下横</td></tr>
-    <tr><td>2</td><td>三层描边（外框 2px + header 1.5px + 内框）</td><td><b>零描边</b>，靠 <code>#1E1D2E</code> 分层</td>
-      <td>32px 时三层线糊成灰框；也与你 UI 规格第 2 条「不用描边、靠 surface 色阶分层」一致</td></tr>
+    <tr><td>2</td><td>三层描边（机身 2px + 屏幕 1.5px）</td><td><b>零描边</b>，屏幕用更暗的 <code>#141222</code> 凹进去</td>
+      <td>32px 时描边糊成灰框；「屏幕比机身暗」本身就能表达凹陷，不需要描边</td></tr>
     <tr><td>3</td><td>每个亮格画两遍（0.4 透明 + 实色），各带一次 GaussianBlur</td><td><b>分组模糊一次 + 实色一次</b></td>
       <td>32 rect → 2 次 <code>&lt;use&gt;</code>；且不会出现「模糊层渗进实色格」的灰边</td></tr>
     <tr><td>4</td><td>圆角 36 / 28 / 12 / 10 四套</td><td>两档：卡 224 / 格 52（≈格宽的 30%，与原版 10/36 一致）</td>
       <td>四套混用在小尺寸互相抵消成方角；两档差距才立得住</td></tr>
   </table>
 
-  <p class="note" style="margin-top:22px"><b>另外两处我没动，但想问你</b></p>
+  <p class="note" style="margin-top:22px"><b>一处我没动，说明理由</b></p>
   <table>
     <tr><th>元素</th><th>现状</th><th>我的看法</th></tr>
-    <tr><td>顶部 header 条 + 薄荷小圆点</td><td>原版有，v3 母版里<b>暂时去掉</b>（下面有带 header 的对照）</td>
-      <td>它让图形像「一张卡片/一台收银机」，语义是加分项；但 16–24px 时会变成一条噪点。
-        <b>建议：≥48px 才出现 header，小尺寸自动隐藏</b> —— 需要你点头我才加进母版</td></tr>
     <tr><td>9 个空格的 #282740</td><td>保留（母版），小尺寸版里去掉</td>
       <td>空格是「结构」，让它像账本网格；但 16px 下空格与底色差几乎没有，只会让笔画变细。
         所以 <b>≥32px 带空格，&lt;32px 只留笔画</b></td></tr>
