@@ -391,10 +391,10 @@
        全 tabular。金额右对齐的物理来源就是这三个 span 的 baseline 对齐。
      ═══════════════════════════════════════════════════════════════ */
   .amount-v3 { display: inline-flex; align-items: baseline; white-space: nowrap; }
-  .amount-v3 .cur  { font-size: 0.62em; font-weight: 500; color: var(--on-surface-variant);
-                     margin-right: 2px; transform: translateY(-0.28em); }
+  .amount-v3 .cur  { font-size: 0.62em; font-weight: 500; color: inherit;
+                     opacity: 0.8; margin-right: 2px; transform: translateY(-0.28em); }
   .amount-v3 .int  { font-weight: 600; letter-spacing: -0.01em; }
-  .amount-v3 .dec  { font-size: 0.72em; color: var(--on-surface-variant); font-weight: 500; }
+  .amount-v3 .dec  { font-size: 0.72em; color: inherit; opacity: 0.7; font-weight: 500; }
   .amount-v3.lg .cur { font-size: 0.5em; transform: translateY(-0.35em); }
 
   /* 辅助标签：11px 全大写 + 0.5px 字距（M3 label） */
