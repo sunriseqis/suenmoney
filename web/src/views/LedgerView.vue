@@ -692,7 +692,7 @@ function fullCategoryName(item: {
 <template>
   <div class="pb-[calc(var(--bottom-bar-h)+var(--safe-bottom)+28px)]">
     <!-- 头部容器 -->
-    <header class="bg-canvas px-4 pt-[calc(var(--safe-top)+12px)] pb-3 lg:px-6">
+    <header class="ledger-header">
       <div class="mx-auto w-full max-w-[var(--content-max)] space-y-3">
         <!-- ===================================================================
              移动端顶卡（A20 · §6.6 三）：本月支出 + 处理提醒，逾期吸顶
@@ -1060,7 +1060,7 @@ function fullCategoryName(item: {
         <!-- ===================================================================
              桌面端顶栏控制（≥1024px）：期间选择 + 三档 Tabs + 搜索 + 排序
              =================================================================== -->
-        <div class="hidden lg:flex lg:flex-wrap lg:items-center lg:justify-between lg:gap-3">
+        <div class="ledger-controls hidden lg:flex">
           <div class="flex items-center gap-3">
             <PeriodPicker
               v-if="scope === 'month'"
