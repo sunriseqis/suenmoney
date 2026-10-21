@@ -129,6 +129,7 @@ suenmoney/
 
 | 文件 | 内容 |
 |---|---|
+| [`docs/ci.md`](docs/ci.md) | **CI 与发布构建** —— 自动构建已关闭，只保留手动派发；恢复方式与坑 |
 | [`docs/deploy.md`](docs/deploy.md) | **部署与运维指南** —— Docker Compose 一键部署、环境变量与物理快照容灾 |
 | [`docs/decisions.md`](docs/decisions.md) | **设计决定与理由** —— 改设计前先读这份 |
 | [`docs/plan.md`](docs/plan.md) | 路线图、当前进度、待决事项 |
