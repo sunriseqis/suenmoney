@@ -23,6 +23,7 @@
     'JetBrains Mono Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
     BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
     'Microsoft YaHei', monospace;
+  --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
 
   --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
 
@@ -59,6 +60,7 @@
     'Plus Jakarta Sans Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
     BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
     'Microsoft YaHei', sans-serif;
+  --font-head: 'Outfit Variable', 'MiSans VF', sans-serif;
 }
 
 @media (min-width: 1024px) {
