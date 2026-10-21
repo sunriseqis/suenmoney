@@ -39,6 +39,7 @@ import { usePlansStore } from '@/stores/plans';
 import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
 import { categoryColorVar } from '@/utils/category-colors';
+import CompositionCard from '@/components/CompositionCard.vue';
 import { getCachedExpenses, saveCachedExpenses } from '@/utils/idb';
 import { createLatestGuard } from '@/utils/latest-request';
 import {
@@ -205,6 +206,56 @@ const summaryReportData = ref<SummaryReport | null>(null);
 // 日历选中项
 const selectedCalendarKey = ref<string | null>(null);
 const selectedMonthReport = ref<MonthlyReport | null>(null);
+
+/**
+ * 构成卡三个非分类维度的聚合（v3 · 2026-10-21 用户新增）。
+ * 数据源是**当前流水列表 items**（月档），不是报表端点 —— 支付方式/记录人
+ * 的聚合服务端没有现成端点，而 items 就在手边，前端聚合零成本。
+ * 档位在年/全部且未搜索时 items 为空，构成卡会显示空态（由 total=0 兜底）。
+ */
+const paymentBuckets = computed(() => {
+  const map = new Map<string, { name: string; cents: number; count: number; kind: string }>();
+  for (const it of items.value) {
+    const name = it.paymentMethodName || '—';
+    const kind = /信用卡|贷记/.test(name) ? 'credit'
+      : /分期|花呗/.test(name) ? 'installment'
+      : /现金|工资卡|借记/.test(name) ? 'cash' : 'other';
+    const b = map.get(name) ?? { name, cents: 0, count: 0, kind };
+    b.cents += it.amountCents; b.count += 1;
+    map.set(name, b);
+  }
+  return [...map.values()];
+});
+
+const ownerBuckets = computed(() => {
+  const map = new Map<string, { name: string; cents: number; count: number; ownerIndex: number }>();
+  for (const it of items.value) {
+    const name = it.ownerName || '—';
+    const b = map.get(name) ?? { name, cents: 0, count: 0, ownerIndex: map.size };
+    b.cents += it.amountCents; b.count += 1;
+    map.set(name, b);
+  }
+  return [...map.values()];
+});
+
+const rhythmBuckets = computed(() => {
+  // 按 10 日一旬切三段 + 「最近 7 天」独立一段（slot 4 最深）
+  const today = new Date();
+  const buckets = [
+    { label: '上旬 (1-10)', cents: 0, count: 0, slot: 1 },
+    { label: '中旬 (11-20)', cents: 0, count: 0, slot: 2 },
+    { label: '下旬 (21-末)', cents: 0, count: 0, slot: 3 },
+  ];
+  const recent = { label: '最近 7 天', cents: 0, count: 0, slot: 4 };
+  for (const it of items.value) {
+    const day = Number(it.spendDate.slice(8, 10));
+    const b = day <= 10 ? buckets[0]! : day <= 20 ? buckets[1]! : buckets[2]!;
+    b.cents += it.amountCents; b.count += 1;
+    const d = new Date(it.spendDate + 'T00:00:00');
+    if ((today.getTime() - d.getTime()) / 86400000 <= 7) { recent.cents += it.amountCents; recent.count += 1; }
+  }
+  return [...buckets, recent];
+});
 const selectedYearReport = ref<YearlyReport | null>(null);
 const loadingCard = ref(false);
 
@@ -691,7 +742,7 @@ function fullCategoryName(item: {
                 <div class="amount-v3 lg whitespace-nowrap">
                   <span class="cur">¥</span>
                   <span
-                    class="int font-extrabold text-on-surface tracking-tight tabular-nums"
+                    class="int font-extrabold text-tertiary tracking-tight tabular-nums"
                     :style="adaptiveAmountStyle(formatCents(displayTotalCents), 'card')"
                   >
                     {{ formatCents(displayTotalCents) }}
@@ -1402,50 +1453,19 @@ function fullCategoryName(item: {
               加载中…
             </div>
             <div v-else-if="selectedMonthReport" class="mt-4 space-y-4">
-              <div class="grid grid-cols-3 gap-3">
-                <div class="rounded-sm bg-canvas/60 p-3">
-                  <span class="block text-xs text-ink-muted">本月支出</span>
-                  <b class="mt-1 block text-base font-bold text-ink tabular-nums">
-                    {{ formatYuan(selectedMonthReport.totalCents) }}
-                  </b>
-                </div>
-                <div class="rounded-sm bg-canvas/60 p-3">
-                  <span class="block text-xs text-ink-muted">记账笔数</span>
-                  <b class="mt-1 block text-base font-bold text-ink tabular-nums">
-                    {{ selectedMonthReport.count }} 笔
-                  </b>
-                </div>
-                <div class="rounded-sm bg-canvas/60 p-3">
-                  <span class="block text-xs text-ink-muted">日均消费</span>
-                  <b class="mt-1 block text-base font-bold text-ink tabular-nums">
-                    {{ formatYuan(Math.round(selectedMonthReport.totalCents / daysInMonth(selectedCalendarKey))) }}
-                  </b>
-                </div>
-              </div>
-
-              <!-- 分类分布 TOP 5 -->
-              <div v-if="selectedMonthReport.categories.length > 0">
-                <span class="block text-xs font-semibold text-ink-muted mb-2">主要支出分类</span>
-                <ul class="space-y-1.5">
-                  <li
-                    v-for="cat in selectedMonthReport.categories.slice(0, 5)"
-                    :key="cat.categoryId"
-                    class="flex items-center justify-between text-xs"
-                  >
-                    <span class="flex items-center gap-2">
-                      <span
-                        class="h-2 w-2 rounded-xs"
-                        :style="{ background: categoryColorVar(dict.colorOf(cat.categoryId, cat.name, cat.color)) }"
-                      />
-                      <span class="text-ink">{{ cat.name }}</span>
-                    </span>
-                    <div class="flex items-center gap-3">
-                      <span class="text-ink-muted tabular-nums">{{ (cat.ratio * 100).toFixed(0) }}%</span>
-                      <span class="font-bold text-ink tabular-nums">{{ formatYuan(cat.cents) }}</span>
-                    </div>
-                  </li>
-                </ul>
-              </div>
+              <CompositionCard
+                v-if="selectedMonthReport"
+                :total-cents="selectedMonthReport.totalCents"
+                :by-category="selectedMonthReport.categories.map((c) => ({
+                  name: c.name,
+                  cents: c.cents,
+                  count: c.count,
+                  colorIndex: dict.colorOf(c.categoryId, c.name, c.color),
+                }))"
+                :by-payment="paymentBuckets"
+                :by-owner="ownerBuckets"
+                :by-rhythm="rhythmBuckets"
+              />
             </div>
           </section>
         </div>
