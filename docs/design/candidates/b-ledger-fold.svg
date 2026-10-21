@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney 候选 B：账本折页">
+  <!-- 方向 B｜专属字形：一本被折起一角的账页，折角 = 家族切角语言 -->
+  <rect width="1024" height="1024" fill="#17181B"/>
+  <path d="M168 96 H928 V832 L832 928 H96 V192 Z" fill="none" stroke="#2A2C30" stroke-width="16"/>
+  <g>
+    <!-- 页：右上角折起 -->
+    <path d="M292 292 H600 L716 408 V732 H292 Z" fill="none" stroke="#E9E7E2" stroke-width="60" stroke-linejoin="miter"/>
+    <!-- 折角本身用账目蓝（"这一页还没结"） -->
+    <path d="M600 292 L716 408 H600 Z" fill="#4C8DFF"/>
+    <!-- 三条账目线：金额那条最实 -->
+    <rect x="376" y="472" width="256" height="36" fill="#6E6B66"/>
+    <rect x="376" y="556" width="188" height="52" fill="#E9E7E2"/>
+    <rect x="376" y="652" width="132" height="36" fill="#6E6B66"/>
+  </g>
+</svg>
