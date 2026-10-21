@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError, auth as authApi, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
 import { getPlatform } from '@/platform';
+import BrandMark from '@/components/BrandMark.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
@@ -113,7 +114,10 @@ onMounted(async () => {
     class="flex min-h-full items-center justify-center bg-canvas px-4 py-[var(--safe-top)] text-ink"
   >
     <div class="w-full max-w-[380px]">
-      <h1 class="text-3xl font-extrabold tracking-tight">SuenMoney</h1>
+      <div class="flex flex-col items-center gap-3">
+        <BrandMark :size="56" />
+      </div>
+      <h1 class="sr-only">SuenMoney</h1>
       <p class="mt-2 text-sm text-ink-muted">家庭共用记账 · 只记支出</p>
 
       <form class="mt-8 space-y-4" @submit.prevent="submit">

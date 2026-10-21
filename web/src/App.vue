@@ -11,6 +11,7 @@ import { ArrowDown, ChartColumn, House, Plus, ReceiptText } from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
+import BrandMark from '@/components/BrandMark.vue';
 import ExpenseSheet from '@/components/ExpenseSheet.vue';
 import UpdateDialog from '@/components/UpdateDialog.vue';
 import { exitNativeApp, onAppResume, setupHardwareBack, triggerHaptic } from '@/platform';
@@ -241,7 +242,9 @@ onUnmounted(() => {
         class="mx-auto flex h-16 w-full max-w-[var(--content-max)] items-center gap-1 px-6"
         aria-label="主导航"
       >
-        <span class="mr-5 text-base font-bold tracking-tight">SuenMoney</span>
+        <RouterLink :to="{ name: 'dashboard' }" class="mr-5" aria-label="SuenMoney 首页">
+          <BrandMark :size="34" />
+        </RouterLink>
 
         <RouterLink
           v-for="item in NAV"
