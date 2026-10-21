@@ -46,7 +46,7 @@ function close(): void {
 
     <!-- 弹层主体 -->
     <div
-      class="relative flex max-h-[70vh] w-full flex-col rounded-t-xl bg-surface shadow-2xl transition-transform lg:w-[460px] lg:rounded-xl"
+      class="relative flex max-h-[70vh] w-full flex-col rounded-t-[24px] bg-surface shadow-[var(--el-2)] transition-transform lg:w-[460px] lg:rounded-[24px]"
       role="dialog"
       aria-modal="true"
       @keydown.esc="close"
@@ -66,7 +66,7 @@ function close(): void {
 
       <!-- 支付方式列表 -->
       <div class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-        <div v-if="dict.usablePaymentMethods.length > 0" class="divide-y divide-line/40 rounded-lg border border-line/60 bg-canvas">
+        <div v-if="dict.usablePaymentMethods.length > 0" class="divide-y divide-outline/60 rounded-2xl border border-outline/60 bg-surface-container">
           <button
             v-for="method in dict.usablePaymentMethods"
             :key="method.id"
@@ -92,7 +92,7 @@ function close(): void {
             <!-- 选中对勾 -->
             <div
               v-if="method.id === activePaymentMethodId"
-              class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-white shadow-xs"
+              class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-xs"
             >
               <Check class="h-3.5 w-3.5 stroke-[3]" />
             </div>
