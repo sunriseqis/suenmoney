@@ -1,67 +1,63 @@
 /* ==========================================================================
-   SuenMoney 设计令牌 · v3（夜间霓虹 M3）
+   SuenMoney 设计令牌 · v4（双设计系统）
    --------------------------------------------------------------------------
-   **唯一真相源是 `docs/design/tokens.json`** —— 颜色、字号、圆角、动效全由
-   `npm run tokens` 生成为 `tokens.generated.css`。本文件只留三样东西：
-
-     1. 字体栈（跨端字体名，不属于令牌）
-     2. 布局与安全区（和平台相关）
-     3.（分类/图表 16 色槽由生成器产出，见 tokens.generated.css 末尾）
-     4.（浅色主题由生成器产出，见 tokens.generated.css 末尾）
-
-   主题机制（与旧版相反，注意）：
-     · 不写 data-theme → **深色（v3）**，不看系统偏好
-     · data-theme="light" → **v3 浅色**（暖纸白 + 同一套五色，2026-10-21 用户裁决）
-     · data-theme="dark"  → 深色（与默认一致）
-
-   旧六条铁律里的「零阴影 / 圆角 6–8px / 分区用色块」三条已作废（M3 用 elevation +
-   tonal surface 分层），保留的只有「强调色克制」。见
-   docs/design/suenmoney-v3-design-system.md §一。
+   颜色/圆角/阴影/动效全由 `npm run tokens` 生成为 tokens.generated.css：
+     深色（默认）= Cyberpunk：void 黑 + 霓虹三色 + 辉光 + 切角 + 扫描线
+     浅色（light）= Playful Geometric：纸白 + 糖果四色 + 硬阴影 + 2px 粗边框
+   本文件只留：字体栈（按主题切）+ 布局/安全区 + **兼容别名**（老组件在用）。
    ========================================================================== */
 
 @import './tokens.generated.css';
 
 :root {
-  /* ---- 布局尺寸 ---- */
-  --bottom-bar-h: 0px;      /* 移动端单页化，底栏高度归零 */
-  --content-max: 720px;     /* 手机/平板：记账是窄栏，不铺满 */
+  --bottom-bar-h: 0px;
+  --content-max: 720px;
 
-  /**
-   * 安全区（状态栏 / 手势条）。
-   * 安卓 WebView 在 edge-to-edge 下 env() 常为 0，内容会画到状态栏底下，
-   * 因此优先读原生侧注入的 --inset-top/bottom，取不到再退回 env()。
-   * （移动端阶段由 MainActivity 注入，Web 端两者都取不到，结果都是 0。）
-   */
   --safe-top: var(--inset-top, env(safe-area-inset-top, 0px));
   --safe-bottom: var(--inset-bottom, env(safe-area-inset-bottom, 0px));
 
-  /* ---- 字体 ----
-     Outfit 覆盖数字与拉丁字母，中文回落 MiSans。
-     写成这一串的目的：金额永远由 Outfit 绘制，中文字形由 MiSans 兜住，
-     不会出现「数字圆润、中文方正」两种气质打架。
-
-     名字必须和 main.ts 里实际引入的包**逐字一致**：
-       'Outfit Variable'  ← @fontsource-variable/outfit
-       'MiSans VF'        ← misans
-     写错一个字不会报错，只会静默回落到后面的系统字体 —— 这正是它曾经的状态。
-
-     字重上限的约束（重要）：
-       Outfit Variable 支持 100–900，MiSans VF 只到 700。
-       所以凡是**中英混排**的元素，字重不要超过 700，否则英文和数字会取 800/900、
-       中文被截断在 700，同一行里出现肉眼可见的粗细断层。
-       只有纯数字元素（首页「本月支出」、报表大数字）才允许用到 800。
-       —— 这也正好符合中文排版的常识：中文本来就不该用 900，会糊成一团。 */
+  /* ---- 字体（深色=等宽终端感；浅色=几何标题+人文正文）----
+     中文一律回落 MiSans VF：Cyberpunk 没有合适的中文等宽开源字体，
+     用 MiSans 的紧凑感兜住 JetBrains 的拉丁部分是当前最优解。 */
   --font-sans:
-    'Outfit Variable', 'MiSans VF', -apple-system, BlinkMacSystemFont, 'PingFang SC',
-    'HarmonyOS Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+    'JetBrains Mono Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
+    BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
+    'Microsoft YaHei', monospace;
+
+  /* ═══ 兼容别名（老组件仍用这些名字）═══ */
+  --bg: var(--surface);
+  --bg-subtle: var(--surface-container);
+  --bg-sunken: var(--surface-high);
+  --fg: var(--on-surface);
+  --fg-muted: var(--on-surface-variant);
+  --fg-faint: var(--on-surface-variant);
+  --border: var(--outline);
+  --border-strong: var(--outline-strong);
+  --primary-fill: var(--primary);
+  --primary-text: var(--primary);
+  --secondary-fill: var(--secondary);
+  --secondary-text: var(--secondary);
+  --accent: var(--tertiary);
+  --accent-fill: var(--tertiary);
+  --accent-text: var(--tertiary);
+  --on-accent: var(--on-tertiary);
+  --danger: var(--tertiary);
+  --danger-fill: var(--tertiary);
+  --danger-text: var(--tertiary);
+  --on-danger: var(--on-tertiary);
+  --r-sm: var(--radius-field);
+  --r-md: var(--radius-card);
+  --r-pill: var(--radius-pill);
+}
+
+:root[data-theme='light'] {
+  /* 浅色切回 Playful 字体栈：Jakarta 正文气质 */
+  --font-sans:
+    'Plus Jakarta Sans Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
+    BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
+    'Microsoft YaHei', sans-serif;
 }
 
 @media (min-width: 1024px) {
-  :root {
-    --content-max: 1200px;  /* v3 规格：最大内容宽 1200 */
-    --bottom-bar-h: 0px;
-  }
+  :root { --content-max: 1200px; --bottom-bar-h: 0px; }
 }
-
-
-
