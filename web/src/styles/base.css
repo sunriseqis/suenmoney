@@ -634,6 +634,10 @@
   }
   :root[data-theme='light'] .row-v5-td:hover { background: var(--tertiary); }
 
+  /* 移动端行列表（静态稿：行卡间距 12，不贴边） */
+  .rows-v5 { display: grid; gap: 12px; padding: 4px 0 8px; }
+  :root[data-theme='light'] .rows-v5 { padding: 4px 0 8px; }
+
   /* ═══════════ v5 流水行：深色切角+hover 辉光位移；浅色硬阴影+hover 粉影 ══ */
   .row-v5 {
     display: grid; grid-template-columns: 44px 1fr auto; gap: 16px; align-items: center;
