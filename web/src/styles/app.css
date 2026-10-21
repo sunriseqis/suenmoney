@@ -35,6 +35,17 @@
   /* 描边（Flat 少用，分区优先靠色块） */
   --color-line: var(--border);
 
+  /* v3 五色（tertiary=霓虹粉支出色 / secondary=薄荷退款色 / lemon=进度 / info=电光蓝） */
+  --color-tertiary: var(--tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-secondary: var(--secondary);
+  --color-secondary-container: var(--secondary-container);
+  --color-lemon: var(--lemon);
+  --color-info: var(--info);
+  --color-outline: var(--outline);
+  --color-outline-strong: var(--outline-strong);
+  --color-surface-high: var(--surface-high);
+
   /* 强调色：fill 用于填充块，*-text 用于文字，两者不可混用（对比度要求不同） */
   --color-primary: var(--primary);
   --color-primary-fill: var(--primary-fill);
