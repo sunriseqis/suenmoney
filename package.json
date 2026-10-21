@@ -20,9 +20,11 @@
     "build:ios": "node scripts/build-ios.mjs --unsigned",
     "hw:sync": "node scripts/sync-hw.mjs",
     "build:hw": "node scripts/build-hw.mjs",
-    "check": "npm run typecheck && npm test && npm run build:web",
+    "check": "npm run tokens:check && npm run typecheck && npm test && npm run build:web",
     "icons": "node scripts/gen-brand.mjs",
-    "fn:build": "node scripts/build-fn.mjs"
+    "fn:build": "node scripts/build-fn.mjs",
+    "tokens": "node scripts/gen-tokens.mjs",
+    "tokens:check": "node scripts/gen-tokens.mjs --check"
   },
   "devDependencies": {
     "sharp": "^0.34.0"

@@ -232,8 +232,8 @@ docs/plan.md:440   第四轮已落地：彻底移除移动底栏（--bottom-bar-
 | # | 做什么 | 验收 |
 |---|---|---|
 | 1 | 品牌：`brand/` 四形态 → `scripts/gen-brand.mjs`（sharp，无 Python 依赖）出全端图标 | `npm run icons` 一条命令；16px favicon 与 512px 同源同形；`logo.svg` 是**真矢量**（<3KB，无 base64） |
-| 2 | 令牌：`tokens.json` → `scripts/gen-tokens.mjs` 出 css/swift/ets | 三端产物 `git diff --exit-code` 为空；CI 加这一步 |
-| 3 | 换皮：全站令牌一次性替换（先「变暗」再调组件） | 每页截图：无浅灰底残留（`grep '#f3f4f6\|#ffffff' src` 归零） |
+| 2 | 令牌：`tokens.json` → `scripts/gen-tokens.mjs` 出 css/swift/ets | ✅ **已落地**：`npm run tokens:check` 已接进 `npm run check` 第一道 |
+| 3 | 换皮：全站令牌一次性替换（先「变暗」再调组件） | ✅ **已落地**：兼容别名让 `--bg/--fg/--r-*` 直接映射 v3；线上 CSS 实测 `--surface:#141222` |
 | 4 | 组件：本月支出卡 / 本月构成卡 / 计划还款卡 / 流水行 / 分段控件 / 顶栏导航 | 同数据下金额右对齐到同一 x（±1px）；`tabular-nums` 全站生效 |
 | 5 | 移动端外壳：**无顶栏无底栏** + 顶卡（支出/提醒同行）+ 控制行（期间 + 三入口）+ 下拉记账 | 390×844 与 1440×900 两侧截图；移动端 DOM 里 `nav` 数量为 0；Tab 焦点可见 |
 | 6 | 无障碍复核 | 对比度脚本全过；`prefers-reduced-motion` 下无动画 |
