@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuenMoney · 设计预览（Playful Geometric / Cyberpunk）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@400..900&family=Outfit:wght@400..800&family=Plus+Jakarta+Sans:wght@400..700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   令牌 · 两套设计语言
+   浅色 = Playful Geometric（糖果 / 硬阴影 / 贴纸）
+   深色 = Cyberpunk（霓虹 / 辉光 / 切角 / 扫描线）
+   ═══════════════════════════════════════════════════════════════════════ */
+:root, [data-theme="light"] {
+  --bg: #FFFDF5;  --fg: #1E293B;  --card: #FFFFFF;  --muted: #F1F5F9;  --muted-fg: #64748B;
+  --accent: #8B5CF6;  --accent-fg: #FFFFFF;
+  --secondary: #F472B6;  --tertiary: #FBBF24;  --quaternary: #34D399;
+  --border: #E2E8F0;  --input: #FFFFFF;  --input-border: #CBD5E1;  --ring: #8B5CF6;
+  --dot: #E2E8F0;  --grid-line: rgba(30,41,59,.05);
+
+  --bw: 2px;
+  --r-sm: 8px;  --r-md: 16px;  --r-lg: 24px;  --r-full: 9999px;
+  --r-card: 16px;  --r-input: 8px;  --r-btn: 9999px;
+  --font-head: 'Outfit', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Plus Jakarta Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur: 300ms;
+
+  --shadow-pop: 4px 4px 0px 0px #1E293B;
+  --shadow-pop-h: 6px 6px 0px 0px #1E293B;
+  --shadow-pop-a: 2px 2px 0px 0px #1E293B;
+  --shadow-card: 8px 8px 0px 0px #E2E8F0;
+  --shadow-card-pink: 8px 8px 0px 0px #F472B6;
+  --shadow-focus: 4px 4px 0px 0px var(--accent);
+  --shadow-star: 3px 3px 0px 0px #1E293B;
+  --glow: none;
+  --chamfer: none;
+  --scan: none;
+}
+[data-theme="dark"] {
+  --bg: #0a0a0f;  --fg: #e0e0e0;  --card: #12121a;  --muted: #1c1c2e;  --muted-fg: #6b7280;
+  --accent: #00ff88;  --accent-fg: #0a0a0f;
+  --secondary: #ff00ff;  --tertiary: #00d4ff;  --quaternary: #FBBF24;
+  --border: #2a2a3a;  --input: #12121a;  --input-border: #2a2a3a;  --ring: #00ff88;
+  --dot: #1c1c2e;  --grid-line: rgba(0,255,136,.04);
+
+  --bw: 1px;
+  --r-sm: 2px;  --r-md: 4px;  --r-lg: 4px;  --r-full: 0px;
+  --r-card: 0px;  --r-input: 4px;  --r-btn: 0px;
+  --font-head: 'Orbitron', 'PingFang SC', 'Microsoft YaHei', monospace;
+  --font-body: 'JetBrains Mono', 'PingFang SC', 'Microsoft YaHei', monospace;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur: 150ms;
+
+  --shadow-pop: none;
+  --shadow-card: none;
+  --shadow-focus: var(--glow-sm);
+  --shadow-star: none;
+  --glow: 0 0 5px #00ff88, 0 0 20px #00ff8860;
+  --glow-sm: 0 0 3px #00ff88, 0 0 8px #00ff8840;
+  --glow-magenta: 0 0 5px #ff00ff, 0 0 20px #ff00ff60;
+  --glow-cyan: 0 0 5px #00d4ff, 0 0 20px #00d4ff60;
+  --chamfer: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px,
+    100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
+  --chamfer-sm: polygon(0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px));
+  --scan: repeating-linear-gradient(0deg, transparent, transparent 2px,
+    rgba(0,0,0,.3) 2px, rgba(0,0,0,.3) 4px);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.65;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  overflow-x: hidden;
+}
+[data-theme="dark"] body {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+.scanlines { display: none; }
+[data-theme="dark"] .scanlines {
+  display: block; position: fixed; inset: 0; z-index: 9000; pointer-events: none;
+  background: var(--scan); opacity: .5;
+}
+::selection { background: var(--accent); color: var(--accent-fg); }
+
+/* ── 排版 ── */
+h1, h2, h3 { font-family: var(--font-head); margin: 0; }
+[data-theme="light"] h1 { font-weight: 800; letter-spacing: -.02em; }
+[data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3 {
+  text-transform: uppercase; letter-spacing: .1em; font-weight: 800;
+}
+.label {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted-fg);
+}
+.num { font-variant-numeric: tabular-nums; }
+.amount { display: inline-flex; align-items: baseline; white-space: nowrap; }
+.amount .cur { font-size: .42em; font-weight: 700; color: var(--muted-fg); margin-right: 4px; transform: translateY(-.45em); }
+.amount .int { font-weight: 800; letter-spacing: -.02em; }
+.amount .dec { font-size: .5em; font-weight: 700; color: var(--muted-fg); }
+
+/* ── 按钮 ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  font-family: var(--font-head); font-weight: 700; font-size: 15px;
+  border: var(--bw) solid var(--fg); border-radius: var(--r-btn);
+  padding: 12px 24px; min-height: 48px; cursor: pointer;
+  transition: all var(--dur) var(--ease);
+  text-decoration: none;
+}
+[data-theme="light"] .btn { box-shadow: var(--shadow-pop); }
+[data-theme="light"] .btn:hover { transform: translate(-2px,-2px); box-shadow: var(--shadow-pop-h); }
+[data-theme="light"] .btn:active { transform: translate(2px,2px); box-shadow: var(--shadow-pop-a); }
+.btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--fg); }
+.btn-secondary { background: transparent; color: var(--fg); }
+.btn-secondary:hover { background: var(--tertiary); }
+[data-theme="dark"] .btn {
+  text-transform: uppercase; letter-spacing: .14em; font-size: 13px;
+  background: transparent; color: var(--accent); border-color: var(--accent);
+  border-width: 2px; clip-path: var(--chamfer-sm); box-shadow: none;
+}
+[data-theme="dark"] .btn:hover { background: var(--accent); color: var(--accent-fg); box-shadow: var(--glow); }
+[data-theme="dark"] .btn:active { transform: translate(1px,1px); }
+[data-theme="dark"] .btn-secondary { color: var(--secondary); border-color: var(--secondary); }
+[data-theme="dark"] .btn-secondary:hover { background: var(--secondary); color: var(--accent-fg); box-shadow: var(--glow-magenta); }
+.btn-glitch {
+  position: relative; background: var(--accent); color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.btn-glitch::before, .btn-glitch::after {
+  content: attr(data-text); position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); opacity: 0;
+}
+[data-theme="dark"] .btn-glitch:hover::before { opacity: 1; color: #ff00ff; transform: translate(-2px,0); }
+[data-theme="dark"] .btn-glitch:hover::after { opacity: 1; color: #00d4ff; transform: translate(2px,0); }
+.btn .ic { width: 20px; height: 20px; }
+[data-theme="light"] .btn .ic { stroke-width: 2.5; }
+[data-theme="dark"] .btn .ic { stroke-width: 1.5; }
+
+/* ── 卡片 ── */
+.card {
+  background: var(--card); border: var(--bw) solid var(--fg);
+  border-radius: var(--r-card); padding: 24px;
+  transition: all var(--dur) var(--ease); position: relative;
+}
+[data-theme="light"] .card { box-shadow: var(--shadow-card); }
+[data-theme="light"] .card:hover { transform: rotate(-1deg) scale(1.02); }
+[data-theme="dark"] .card {
+  border-color: var(--border); border-width: 1px; clip-path: var(--chamfer);
+}
+[data-theme="dark"] .card:hover {
+  border-color: var(--accent); box-shadow: var(--glow); transform: translateY(-1px);
+}
+.card-pink { box-shadow: var(--shadow-card-pink) !important; }
+.ic-circle {
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  border: var(--bw) solid var(--fg); flex-shrink: 0;
+}
+[data-theme="light"] .ic-circle { box-shadow: 3px 3px 0px 0px #1E293B; }
+[data-theme="dark"] .ic-circle { border-radius: 0; clip-path: var(--chamfer-sm); border-color: var(--accent); box-shadow: var(--glow-sm); }
+.ic-circle svg { width: 20px; height: 20px; }
+[data-theme="light"] .ic-circle svg { stroke-width: 2.5; }
+[data-theme="dark"] .ic-circle svg { stroke-width: 1.5; }
+
+/* ── 输入 ── */
+.field label { display: block; margin-bottom: 8px; }
+.input-wrap { position: relative; display: flex; align-items: center; }
+[data-theme="dark"] .input-wrap::before {
+  content: '>'; position: absolute; left: 14px; color: var(--accent);
+  font-family: var(--font-body); font-weight: 700;
+}
+.input {
+  width: 100%; background: var(--input); border: var(--bw) solid var(--input-border);
+  border-radius: var(--r-input); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; padding: 12px 16px;
+  transition: all var(--dur) var(--ease);
+}
+[data-theme="dark"] .input { border-color: var(--input-border); color: var(--accent); padding-left: 34px; }
+.input::placeholder { color: var(--muted-fg); }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus); }
+
+/* ── 布局 ── */
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+section { padding: 72px 0; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+
+/* ── 顶栏 ── */
+header.top {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg); border-bottom: var(--bw) solid var(--fg);
+}
+[data-theme="dark"] header.top { border-bottom: 1px solid var(--border); }
+.top-in { display: flex; align-items: center; gap: 16px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--fg); }
+.brand-name { font-family: var(--font-head); font-weight: 800; font-size: 19px; letter-spacing: -.01em; }
+[data-theme="dark"] .brand-name { text-transform: uppercase; letter-spacing: .12em; font-size: 15px; }
+.nav { display: flex; gap: 4px; margin-left: auto; }
+.nav a {
+  font-family: var(--font-head); font-weight: 700; font-size: 13px; color: var(--muted-fg);
+  text-decoration: none; padding: 8px 14px; border-radius: var(--r-full);
+  transition: all var(--dur) var(--ease);
+}
+[data-theme="dark"] .nav a { text-transform: uppercase; letter-spacing: .1em; border-radius: 0; clip-path: var(--chamfer-sm); }
+.nav a:hover, .nav a.on { color: var(--fg); }
+[data-theme="light"] .nav a.on { background: var(--accent); color: #fff; box-shadow: 3px 3px 0px 0px #1E293B; }
+[data-theme="dark"] .nav a.on { background: var(--accent); color: var(--accent-fg); box-shadow: var(--glow-sm); }
+.theme-toggle { display: flex; gap: 6px; padding: 4px; border: var(--bw) solid var(--fg); border-radius: var(--r-full); }
+[data-theme="dark"] .theme-toggle { border-radius: 0; clip-path: var(--chamfer-sm); border-color: var(--border); }
+.theme-toggle button {
+  font-family: var(--font-head); font-weight: 700; font-size: 12px;
+  border: 0; background: transparent; color: var(--muted-fg);
+  padding: 6px 14px; border-radius: var(--r-full); cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+[data-theme="dark"] .theme-toggle button { border-radius: 0; text-transform: uppercase; letter-spacing: .1em; }
+.theme-toggle button.on { background: var(--accent); color: var(--accent-fg); }
+[data-theme="light"] .theme-toggle button.on { box-shadow: 2px 2px 0px 0px #1E293B; }
+
+/* ── Hero ── */
+.hero { position: relative; padding: 88px 0 72px; overflow: hidden; }
+.hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; position: relative; z-index: 2; }
+.hero h1 { font-size: clamp(40px, 5.4vw, 68px); line-height: 1.08; }
+.hero .sub { font-size: 17px; color: var(--muted-fg); margin: 20px 0 32px; max-width: 46ch; }
+.hero-cta { display: flex; gap: 16px; flex-wrap: wrap; }
+.w-candy { color: var(--accent); }
+.w-pink { color: var(--secondary); }
+.w-yellow { color: var(--tertiary); }
+.w-mint { color: var(--quaternary); }
+[data-theme="dark"] .w-candy { color: var(--accent); text-shadow: var(--glow-sm); }
+[data-theme="dark"] .w-pink { color: var(--secondary); text-shadow: var(--glow-magenta); }
+[data-theme="dark"] .w-yellow { color: var(--quaternary); }
+[data-theme="dark"] .w-mint { color: var(--tertiary); text-shadow: var(--glow-cyan); }
+/* 装饰：大黄圆 + 点阵（浅色） */
+.deco-circle {
+  position: absolute; width: 460px; height: 460px; border-radius: 50%;
+  background: var(--tertiary); opacity: .55; z-index: 0;
+}
+[data-theme="dark"] .deco-circle { display: none; }
+.deco-dots {
+  position: absolute; width: 220px; height: 220px; z-index: 0;
+  background-image: radial-gradient(var(--dot) 2px, transparent 2px);
+  background-size: 18px 18px; border-radius: 50%;
+}
+[data-theme="dark"] .deco-dots { display: none; }
+.confetti { position: absolute; z-index: 1; }
+[data-theme="dark"] .confetti { display: none; }
+.squiggle { display: block; margin-top: 6px; }
+[data-theme="dark"] .squiggle { display: none; }
+/* glitch 标题（深色） */
+[data-theme="dark"] .glitch { position: relative; }
+[data-theme="dark"] .glitch::before, [data-theme="dark"] .glitch::after {
+  content: attr(data-text); position: absolute; left: 0; top: 0; width: 100%;
+}
+[data-theme="dark"] .glitch::before { color: #ff00ff; animation: gl-a 2.8s infinite steps(2); clip-path: inset(0 0 62% 0); }
+[data-theme="dark"] .glitch::after { color: #00d4ff; animation: gl-b 3.4s infinite steps(2); clip-path: inset(58% 0 0 0); }
+@keyframes gl-a { 0%,88%,100% { transform: translate(0); } 90% { transform: translate(-4px,-2px); } 95% { transform: translate(3px,1px); } }
+@keyframes gl-b { 0%,82%,100% { transform: translate(0); } 86% { transform: translate(4px,2px); } 92% { transform: translate(-3px,-1px); } }
+.cursor { display: inline-block; width: .55em; height: 1em; background: var(--accent); margin-left: 4px; vertical-align: text-bottom; animation: blink 1s step-end infinite; box-shadow: var(--glow-sm); }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── 金额主卡 ── */
+.hero-card { position: relative; }
+[data-theme="light"] .hero-card { transform: rotate(1.5deg); }
+[data-theme="light"] .hero-card:hover { transform: rotate(-1deg) scale(1.02); }
+[data-theme="dark"] .hero-card { box-shadow: var(--glow); }
+.hero-card .big { font-size: clamp(44px, 4.6vw, 60px); margin: 6px 0 10px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-head);
+  font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: var(--r-full);
+  border: var(--bw) solid var(--fg);
+}
+[data-theme="dark"] .chip { border-radius: 0; clip-path: var(--chamfer-sm); border-width: 1px; text-transform: uppercase; letter-spacing: .1em; }
+.chip-up { background: var(--secondary); color: #fff; }
+[data-theme="dark"] .chip-up { background: var(--secondary); color: var(--accent-fg); box-shadow: var(--glow-magenta); }
+.chip-down { background: var(--quaternary); color: #1E293B; }
+[data-theme="dark"] .chip-down { background: var(--accent); color: var(--accent-fg); box-shadow: var(--glow-sm); }
+.terminal-head { display: none; }
+[data-theme="dark"] .terminal-head {
+  display: flex; gap: 7px; align-items: center; padding: 0 0 14px;
+  border-bottom: 1px solid var(--border); margin-bottom: 18px;
+}
+[data-theme="dark"] .terminal-head i { width: 10px; height: 10px; border-radius: 50%; }
+.corner { display: none; }
+[data-theme="dark"] .corner { display: block; position: absolute; width: 16px; height: 16px; border: 2px solid var(--accent); }
+[data-theme="dark"] .corner.tl { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+[data-theme="dark"] .corner.tr { top: -2px; right: -2px; border-left: 0; border-bottom: 0; }
+[data-theme="dark"] .corner.bl { bottom: -2px; left: -2px; border-right: 0; border-top: 0; }
+[data-theme="dark"] .corner.br { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+
+/* ── 指标格 ── */
+.metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+.metric .k { font-size: 12px; color: var(--muted-fg); margin-bottom: 4px; }
+.metric .v { font-family: var(--font-head); font-weight: 800; font-size: 26px; }
+[data-theme="dark"] .metric .v { text-transform: uppercase; font-size: 22px; color: var(--accent); }
+
+/* ── 构成 ── */
+.comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.bar { display: flex; height: 14px; border-radius: var(--r-full); overflow: hidden; border: var(--bw) solid var(--fg); }
+[data-theme="dark"] .bar { border-radius: 0; border-width: 1px; border-color: var(--border); }
+.bar i { display: block; height: 100%; }
+.legend { margin-top: 18px; display: grid; gap: 10px; }
+.legend-row { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.legend-row .dot { width: 14px; height: 14px; border-radius: 5px; border: var(--bw) solid var(--fg); flex-shrink: 0; }
+[data-theme="dark"] .legend-row .dot { border-radius: 0; border-width: 1px; }
+.legend-row .nm { flex: 1; }
+.legend-row .pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .legend-row .pct { color: var(--accent); }
+
+/* ── 流水行 ── */
+.rows { display: grid; gap: 12px; }
+.row {
+  display: grid; grid-template-columns: 44px 1fr auto; gap: 16px; align-items: center;
+  background: var(--card); border: var(--bw) solid var(--fg); border-radius: var(--r-md);
+  padding: 12px 18px; transition: all var(--dur) var(--ease); cursor: pointer;
+}
+[data-theme="light"] .row { box-shadow: 5px 5px 0px 0px #E2E8F0; }
+[data-theme="light"] .row:hover { transform: translate(-2px,-2px); box-shadow: 8px 8px 0px 0px #F472B6; }
+[data-theme="dark"] .row { border-color: var(--border); border-width: 1px; clip-path: var(--chamfer-sm); }
+[data-theme="dark"] .row:hover { border-color: var(--accent); box-shadow: var(--glow-sm); transform: translateX(4px); }
+.row .who { font-weight: 700; font-size: 15px; }
+.row .sub { font-size: 12px; color: var(--muted-fg); }
+.row .amt { font-family: var(--font-head); font-weight: 800; font-size: 19px; font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .row .amt { font-size: 17px; }
+.row .amt.out { color: var(--fg); }
+[data-theme="dark"] .row .amt.out { color: var(--accent); text-shadow: var(--glow-sm); }
+.row .amt.in { color: var(--quaternary); }
+[data-theme="dark"] .row .amt.in { color: var(--tertiary); text-shadow: var(--glow-cyan); }
+
+/* ── 组件展示台 ── */
+.demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.demo-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+
+/* ── 计划卡（pricing） ── */
+.plans { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; align-items: center; }
+.plan-featured { position: relative; }
+[data-theme="light"] .plan-featured { transform: scale(1.06); z-index: 2; }
+[data-theme="light"] .plan-featured:hover { transform: scale(1.09) rotate(-1deg); }
+[data-theme="dark"] .plan-featured { border-color: var(--accent); box-shadow: var(--glow); }
+.star-badge { display: none; }
+[data-theme="light"] .star-badge {
+  display: inline-flex; align-items: center; gap: 6px; position: absolute; top: -16px; right: 20px;
+  background: var(--tertiary); color: #1E293B; border: 2px solid #1E293B; border-radius: 999px;
+  font-family: var(--font-head); font-weight: 800; font-size: 12px; letter-spacing: .06em;
+  padding: 6px 14px; transform: rotate(15deg); box-shadow: var(--shadow-star);
+}
+.progress { height: 14px; border-radius: var(--r-full); background: var(--muted); border: var(--bw) solid var(--fg); overflow: hidden; }
+[data-theme="dark"] .progress { border-radius: 0; border-width: 1px; border-color: var(--border); background: var(--muted); }
+.progress i { display: block; height: 100%; background: var(--tertiary); }
+[data-theme="dark"] .progress i { background: var(--accent); box-shadow: var(--glow-sm); }
+
+/* ── Marquee ── */
+.marquee { overflow: hidden; border-top: var(--bw) solid var(--fg); border-bottom: var(--bw) solid var(--fg); padding: 14px 0; }
+[data-theme="dark"] .marquee { border-width: 1px; border-color: var(--border); }
+.marquee-track { display: flex; gap: 40px; width: max-content; animation: mq 22s linear infinite; }
+.marquee-track span { font-family: var(--font-head); font-weight: 800; font-size: 15px; white-space: nowrap; }
+[data-theme="dark"] .marquee-track span { text-transform: uppercase; letter-spacing: .2em; color: var(--accent); }
+@keyframes mq { to { transform: translateX(-50%); } }
+
+/* ── LOGO 实验台 ── */
+.logo-lab { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.logo-cell { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.logo-sizes { display: flex; gap: 22px; align-items: flex-end; }
+.logo-sizes figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.logo-sizes figcaption { font-size: 11px; color: var(--muted-fg); font-family: var(--font-body); }
+.logo-sizes svg { display: block; }
+
+/* ── 页脚 ── */
+footer { border-top: var(--bw) solid var(--fg); padding: 40px 0 56px; }
+[data-theme="dark"] footer { border-width: 1px; border-color: var(--border); }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted-fg); }
+
+/* ── 响应式 ── */
+@media (max-width: 960px) {
+  .hero-grid, .comp-grid, .demo-grid, .logo-lab { grid-template-columns: 1fr; }
+  .plans { grid-template-columns: 1fr; }
+  .metrics { grid-template-columns: 1fr 1fr; }
+  [data-theme="light"] .plan-featured { transform: none; }
+  section { padding: 56px 0; }
+  .nav { display: none; }
+  .deco-circle { width: 280px; height: 280px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+
+<!-- ══════════════════ 顶栏 ══════════════════ -->
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="#">
+      <span data-logo="head" data-size="34"></span>
+      <span class="brand-name">SuenMoney</span>
+    </a>
+    <nav class="nav">
+      <a href="#hero" class="on">概况</a>
+      <a href="#composition">构成</a>
+      <a href="#ledger">流水</a>
+      <a href="#components">组件</a>
+      <a href="#plans">计划</a>
+    </nav>
+    <div class="theme-toggle" role="group" aria-label="主题">
+      <button id="btn-light" class="on" type="button">浅色</button>
+      <button id="btn-dark" type="button">深色</button>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ══════════════════ Hero ══════════════════ -->
+<section class="hero" id="hero">
+  <div class="deco-circle" style="top:6%;left:-8%"></div>
+  <div class="deco-dots" style="bottom:8%;right:2%"></div>
+  <svg class="confetti" style="top:18%;right:12%" width="34" height="34" viewBox="0 0 34 34"><path d="M17 2 32 30H2Z" fill="#F472B6" stroke="#1E293B" stroke-width="2.5" stroke-linejoin="round"/></svg>
+  <svg class="confetti" style="top:64%;left:6%" width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="11" fill="#34D399" stroke="#1E293B" stroke-width="2.5"/></svg>
+  <svg class="confetti" style="bottom:12%;left:44%" width="30" height="30" viewBox="0 0 30 30"><rect x="3" y="3" width="24" height="24" rx="6" fill="#FBBF24" stroke="#1E293B" stroke-width="2.5" transform="rotate(12 15 15)"/></svg>
+
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg>
+        家庭共用 · 只记支出
+      </span>
+      <h1>
+        <span class="glitch" data-text="记账，也可以">记账，也可以</span><br>
+        <span class="w-candy">很好看</span><span class="w-pink">。</span>
+        <svg class="squiggle" width="220" height="14" viewBox="0 0 220 14" fill="none"><path d="M2 9c18-12 36 4 54-2s36-10 54 2 36 6 54-2 36-8 54 2" stroke="#8B5CF6" stroke-width="4" stroke-linecap="round"/></svg>
+      </h1>
+      <p class="sub" id="hero-sub">
+        这个月花了多少、花在什么上面 —— 两个问题，一屏答完。<span class="cursor"></span>
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#ledger">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          记一笔
+        </a>
+        <a class="btn btn-secondary" href="#composition">看构成</a>
+      </div>
+    </div>
+
+    <!-- 金额主卡 -->
+    <div class="card hero-card">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div class="terminal-head"><i style="background:#ff3366"></i><i style="background:#FBBF24"></i><i style="background:#00ff88"></i><span style="font-size:11px;color:var(--muted-fg);margin-left:6px">suenmoney — 2026-10</span></div>
+      <span class="label">本月支出</span>
+      <div class="amount big num">
+        <span class="cur">¥</span><span class="int">2,012</span><span class="dec">.80</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <span class="chip chip-down">▼ 较上月 −13.5%</span>
+        <span style="font-size:13px;color:var(--muted-fg)">21 笔 · 6 个分类</span>
+      </div>
+      <div class="bar" style="margin-top:22px">
+        <i style="width:71%;background:var(--accent)"></i>
+        <i style="width:11%;background:var(--secondary)"></i>
+        <i style="width:7%;background:var(--tertiary)"></i>
+        <i style="width:6%;background:var(--quaternary)"></i>
+        <i style="width:5%;background:var(--muted-fg)"></i>
+      </div>
+      <div class="legend" style="margin-top:14px">
+        <div class="legend-row"><span class="dot" style="background:var(--accent)"></span><span class="nm">餐饮</span><span class="pct">71%</span></div>
+        <div class="legend-row"><span class="dot" style="background:var(--secondary)"></span><span class="nm">医疗</span><span class="pct">11%</span></div>
+        <div class="legend-row"><span class="dot" style="background:var(--tertiary)"></span><span class="nm">购物</span><span class="pct">7%</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ Marquee ══════════════════ -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track" id="mq"></div>
+</div>
+
+<!-- ══════════════════ 指标 ══════════════════ -->
+<section id="metrics">
+  <div class="wrap">
+    <div class="metrics">
+      <div class="card">
+        <div class="ic-circle" style="background:var(--accent);color:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+        <div class="metric" style="margin-top:16px"><div class="k">日均支出</div><div class="v num">¥95.85</div></div>
+      </div>
+      <div class="card">
+        <div class="ic-circle" style="background:var(--secondary);color:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></div>
+        <div class="metric" style="margin-top:16px"><div class="k">已记笔数</div><div class="v num">21 笔</div></div>
+      </div>
+      <div class="card">
+        <div class="ic-circle" style="background:var(--tertiary);color:#1E293B"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 8h14M5 16h14"/></svg></div>
+        <div class="metric" style="margin-top:16px"><div class="k">退款冲销</div><div class="v num">¥96.00</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 构成 ══════════════════ -->
+<section id="composition">
+  <div class="wrap">
+    <span class="eyebrow label">本月构成</span>
+    <h2 style="font-size:34px;margin-bottom:36px">钱花在<span class="w-pink">什么上面</span></h2>
+    <div class="comp-grid">
+      <div class="card">
+        <div class="bar">
+          <i style="width:71%;background:var(--accent)"></i>
+          <i style="width:11%;background:var(--secondary)"></i>
+          <i style="width:7%;background:var(--tertiary)"></i>
+          <i style="width:6%;background:var(--quaternary)"></i>
+          <i style="width:5%;background:var(--muted-fg)"></i>
+        </div>
+        <div class="legend">
+          <div class="legend-row"><span class="dot" style="background:var(--accent)"></span><span class="nm">餐饮 / 外卖 · 咖啡</span><span class="pct">71% · ¥1,426</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--secondary)"></span><span class="nm">医疗 / 药品</span><span class="pct">11% · ¥227</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--tertiary)"></span><span class="nm">购物 / 日用</span><span class="pct">7% · ¥142</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--quaternary)"></span><span class="nm">娱乐 / 订阅</span><span class="pct">6% · ¥123</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--muted-fg)"></span><span class="nm">交通 / 通勤</span><span class="pct">5% · ¥95</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <span class="label">换个维度看</span>
+        <div class="legend" style="margin-top:16px">
+          <div class="legend-row"><span class="dot" style="background:var(--accent)"></span><span class="nm">信用卡（月内还）</span><span class="pct">62%</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--secondary)"></span><span class="nm">分期</span><span class="pct">21%</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--tertiary)"></span><span class="nm">即时结清</span><span class="pct">17%</span></div>
+        </div>
+        <div class="legend" style="margin-top:20px;padding-top:18px;border-top:var(--bw) solid var(--border)">
+          <div class="legend-row"><span class="dot" style="background:var(--quaternary)"></span><span class="nm">我</span><span class="pct">58%</span></div>
+          <div class="legend-row"><span class="dot" style="background:var(--tertiary)"></span><span class="nm">爱人</span><span class="pct">42%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 流水 ══════════════════ -->
+<section id="ledger">
+  <div class="wrap">
+    <span class="eyebrow label">交易流水 · 2026-10</span>
+    <h2 style="font-size:34px;margin-bottom:36px">每一笔都<span class="w-mint">看得见</span></h2>
+    <div class="rows">
+      <div class="row">
+        <span class="ic-circle" style="background:var(--tertiary);color:#1E293B"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg></span>
+        <span><span class="who">电影票退款</span><br><span class="sub">娱乐 / 电影 · 今天 09:12</span></span>
+        <span class="amt in num">+96.00</span>
+      </div>
+      <div class="row">
+        <span class="ic-circle" style="background:var(--secondary);color:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9h12l-1.2 9.6a2 2 0 0 1-2 1.8H9.2a2 2 0 0 1-2-1.8Z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/></svg></span>
+        <span><span class="who">优衣库 T 恤</span><br><span class="sub">购物 / 衣物 · 10 月 18 日</span></span>
+        <span class="amt out num">−149.00</span>
+      </div>
+      <div class="row">
+        <span class="ic-circle" style="background:var(--accent);color:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M7 9V7a5 5 0 0 1 10 0v2"/></svg></span>
+        <span><span class="who">Steam 秋促</span><br><span class="sub">娱乐 / 游戏 · 10 月 18 日</span></span>
+        <span class="amt out num">−132.00</span>
+      </div>
+      <div class="row">
+        <span class="ic-circle" style="background:var(--quaternary);color:#1E293B"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M7 12l3-7 4 14 3-7"/></svg></span>
+        <span><span class="who">游泳两次</span><br><span class="sub">娱乐 / 健身 · 10 月 18 日</span></span>
+        <span class="amt out num">−80.00</span>
+      </div>
+      <div class="row">
+        <span class="ic-circle" style="background:var(--tertiary);color:#1E293B"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg></span>
+        <span><span class="who">数据线</span><br><span class="sub">购物 / 数码 · 10 月 18 日</span></span>
+        <span class="amt out num">−39.90</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 组件 ══════════════════ -->
+<section id="components">
+  <div class="wrap">
+    <span class="eyebrow label">组件规范</span>
+    <h2 style="font-size:34px;margin-bottom:36px">按钮 · 输入 · <span class="w-candy">状态</span></h2>
+    <div class="demo-grid">
+      <div class="card">
+        <span class="label">按钮</span>
+        <div class="demo-row" style="margin-top:18px">
+          <button class="btn btn-primary" type="button">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>记一笔
+          </button>
+          <button class="btn btn-secondary" type="button">导出对账</button>
+          <button class="btn btn-glitch" type="button" data-text="同步">同步</button>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted-fg);margin:18px 0 0">
+          悬停看上移与阴影伸展；按下回落。
+        </p>
+      </div>
+      <div class="card">
+        <span class="label">输入</span>
+        <div class="field" style="margin-top:18px">
+          <label for="q">搜索</label>
+          <div class="input-wrap">
+            <input id="q" class="input" type="search" placeholder="搜索分类或备注…">
+          </div>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted-fg);margin:18px 0 0">
+          聚焦时边框染色 + 硬阴影 / 辉光。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 计划 ══════════════════ -->
+<section id="plans">
+  <div class="wrap">
+    <span class="eyebrow label">计划与还款</span>
+    <h2 style="font-size:34px;margin-bottom:44px">还要还<span class="w-pink">多久</span></h2>
+    <div class="plans">
+      <div class="card">
+        <span class="label">房贷</span>
+        <div style="font-family:var(--font-head);font-weight:800;font-size:28px;margin:10px 0 16px" class="num">第 3 / 12 期</div>
+        <div class="progress"><i style="width:25%"></i></div>
+        <p style="font-size:13px;color:var(--muted-fg);margin:14px 0 0">已还 3 期 · 下期 11 月 28 日</p>
+      </div>
+      <div class="card card-pink plan-featured">
+        <span class="star-badge">★ 该处理了</span>
+        <span class="label">车贷</span>
+        <div style="font-family:var(--font-head);font-weight:800;font-size:28px;margin:10px 0 16px" class="num">第 5 / 24 期</div>
+        <div class="progress"><i style="width:21%;background:var(--secondary)"></i></div>
+        <p style="font-size:13px;color:var(--muted-fg);margin:14px 0 0">逾期 2 天 · 需手动入账</p>
+      </div>
+      <div class="card">
+        <span class="label">京东分期</span>
+        <div style="font-family:var(--font-head);font-weight:800;font-size:28px;margin:10px 0 16px" class="num">第 8 / 12 期</div>
+        <div class="progress"><i style="width:67%"></i></div>
+        <p style="font-size:13px;color:var(--muted-fg);margin:14px 0 0">12 期免息 · 已自动入账</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ LOGO 实验台 ══════════════════ -->
+<section id="logos">
+  <div class="wrap">
+    <span class="eyebrow label">品牌标记</span>
+    <h2 style="font-size:34px;margin-bottom:36px">一台<span class="w-candy">计算器</span>，键位亮出 S</h2>
+    <div class="logo-lab">
+      <div class="card">
+        <span class="label">浅色 · Playful（贴纸 / 硬阴影 / 糖果四色）</span>
+        <div class="logo-sizes" style="margin-top:20px">
+          <figure><span data-logo="light" data-size="128"></span><figcaption>128</figcaption></figure>
+          <figure><span data-logo="light" data-size="64"></span><figcaption>64</figcaption></figure>
+          <figure><span data-logo="light" data-size="32"></span><figcaption>32</figcaption></figure>
+          <figure><span data-logo="light" data-size="16"></span><figcaption>16</figcaption></figure>
+        </div>
+      </div>
+      <div class="card">
+        <span class="label">深色 · Cyberpunk（霓虹环 / 辉光）</span>
+        <div class="logo-sizes" style="margin-top:20px">
+          <figure><span data-logo="dark" data-size="128"></span><figcaption>128</figcaption></figure>
+          <figure><span data-logo="dark" data-size="64"></span><figcaption>64</figcaption></figure>
+          <figure><span data-logo="dark" data-size="32"></span><figcaption>32</figcaption></figure>
+          <figure><span data-logo="dark" data-size="16"></span><figcaption>16</figcaption></figure>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>SuenMoney · 家庭共用记账系统</span>
+    <span>设计预览 · Playful Geometric × Cyberpunk</span>
+  </div>
+</footer>
+
+<script>
+/* ═══════════════ 主题切换 ═══════════════ */
+var root = document.documentElement;
+function setTheme(t) {
+  root.setAttribute('data-theme', t);
+  document.getElementById('btn-light').classList.toggle('on', t === 'light');
+  document.getElementById('btn-dark').classList.toggle('on', t === 'dark');
+  renderLogos();
+}
+document.getElementById('btn-light').onclick = function(){ setTheme('light'); };
+document.getElementById('btn-dark').onclick = function(){ setTheme('dark'); };
+
+/* ═══════════════ LOGO：一台计算器，键位亮出 S ═══════════════
+   几何（1024 方形，与线上母版一致）：
+     机身 48,48 928×928 r220 · 屏幕 212,104 600×184 r48
+     键盘 4×5 起(212,324) 格135×106 r34 间距18
+     亮键 11：上横3 左竖1 中横3 右竖1 下横3（右移）              */
+var GEO = {
+  body:{x:48,y:48,w:928,h:928,r:220},
+  screen:{x:212,y:104,w:600,h:184,r:48},
+  key:{x0:212,y0:324,cw:135,ch:106,gx:18,gy:18,r:34},
+  lit:[[0,0],[0,1],[0,2],[1,0],[2,0],[2,1],[2,2],[3,3],[4,1],[4,2],[4,3]]
+};
+function seg(x,y0,w,t){return x+','+(y0+t/2)+' '+(x+t/2)+','+y0+' '+(x+w-t/2)+','+y0+' '+x+w+','+(y0+t/2)+' '+(x+w-t/2)+','+(y0+t)+' '+(x+t/2)+','+(y0+t);}
+function vseg(x,y0,h,t,lower){
+  if(!lower)return (x+t/2)+','+y0+' '+x+t+','+(y0+t/2)+' '+(x+t)+','+(y0+h-t/2)+' '+(x+t/2)+','+(y0+h)+' '+x+','+(y0+h-t/2)+' '+x+','+(y0+t/2);
+  return x+','+y0+' '+x+t+','+y0+' '+x+t+','+(y0+h-t/2)+' '+(x+t/2)+','+(y0+h)+' '+x+','+(y0+h-t/2);
+}
+function digit(x,y,w,h,t,color){
+  var vh=(h-t)/2;
+  return '<polygon points="'+seg(x,y,w,t)+'" fill="'+color+'"/>'+
+         '<polygon points="'+vseg(x+w-t,y,vh,t)+'" fill="'+color+'"/>'+
+         '<polygon points="'+vseg(x+w-t,y+vh+t,vh,t,true)+'" fill="'+color+'"/>'+
+         '<polygon points="'+seg(x,y+h-t,w,t)+'" fill="'+color+'"/>'+
+         '<polygon points="'+vseg(x,y+vh+t,vh,t,true)+'" fill="'+color+'"/>'+
+         '<polygon points="'+vseg(x,y,vh,t)+'" fill="'+color+'"/>'+
+         '<polygon points="'+seg(x,y+vh,w,t)+'" fill="'+color+'"/>';
+}
+function keyRect(cx,cy,w,h,r,fill,stroke,sw){
+  return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'"'+
+         (stroke?' stroke="'+stroke+'" stroke-width="'+sw+'"':'')+'/>';
+}
+function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill){
+  var g=GEO, s='';
+  // 屏幕
+  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,screenFill);
+  // LED 88.88
+  var xs=[273,395,533,655], t=18, w=96, h=136, y=128;
+  var cols=[ledColors[0],ledColors[1],ledColors[2],ledColors[3]];
+  s+=digit(xs[0],y,w,h,t,cols[0]);
+  s+=digit(xs[1],y,w,h,t,cols[1]);
+  s+=keyRect(501,240,22,18,4,ledColors[2]);                       // 小数点（方段）
+  s+=digit(xs[2],y,w,h,t,ledColors[2]);
+  s+=digit(xs[3],y,w,h,t,ledColors[3]);
+  // 键盘 4×5
+  var k=g.key;
+  for(var r=0;r<5;r++)for(var c=0;c<4;c++){
+    var cx=k.x0+c*(k.cw+k.gx), cy=k.y0+r*(k.ch+k.gy);
+    var isLit=false;
+    for(var i=0;i<g.lit.length;i++) if(g.lit[i][0]===r&&g.lit[i][1]===c) isLit=true;
+    var row=r===0?0:(r===1?1:(r===2?2:(r===3?3:4)));
+    s+=isLit
+      ? keyRect(cx,cy,k.cw,k.ch,k.r,keyColors[row],keyStroke,keySW)
+      : keyRect(cx,cy,k.cw,k.ch,k.r,dimFill,keyStroke,keySW);
+  }
+  return s;
+}
+function arc(a0,a1,color){
+  var cx=512,cy=512,r=470,sw=44;
+  var x0=cx+r*Math.cos(a0*Math.PI/180), y0=cy+r*Math.sin(a0*Math.PI/180);
+  var x1=cx+r*Math.cos(a1*Math.PI/180), y1=cy+r*Math.sin(a1*Math.PI/180);
+  return '<path d="M '+x0.toFixed(0)+' '+y0.toFixed(0)+' A '+r+' '+r+' 0 0 1 '+x1.toFixed(0)+' '+y1.toFixed(0)+
+         '" stroke="'+color+'" stroke-width="'+sw+'" fill="none"/>';
+}
+function logoLight(size){
+  var g=GEO;
+  var s='<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 1024 1024" role="img" aria-label="SuenMoney">';
+  s+='<rect width="1024" height="1024" fill="#FFFDF5"/>';
+  s+=keyRect(104,104,928,928,220,'#1E293B');                                  // 硬阴影
+  s+=keyRect(g.body.x,g.body.y,g.body.w,g.body.h,g.body.r,'#FFFFFF','#1E293B',16);   // 白机身 + 2px(等效)深描边
+  s+=calculator(
+    ['#FBBF24','#F472B6','#34D399','#8B5CF6'],        // LED：黄 粉 (点) 绿 紫
+    ['#8B5CF6','#F472B6','#34D399','#FBBF24','#8B5CF6'], // 键位：紫 粉 绿 黄 紫
+    '#E2E8F0','#1E293B',8,'#1E293B');                  // 暗键 + 深描边 + 深屏
+  s+='</svg>';
+  return s;
+}
+function logoDark(size){
+  var g=GEO;
+  var ring=arc(-84,-6,'#00ff88')+arc(-6,72,'#00d4ff')+arc(96,174,'#ff00ff')+arc(186,276,'#FBBF24');
+  var s='<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 1024 1024" role="img" aria-label="SuenMoney">';
+  s+='<defs><filter id="ng" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter></defs>';
+  s+='<rect width="1024" height="1024" fill="#0a0a0f"/>';
+  s+='<g opacity=".5" filter="url(#ng)">'+ring+'</g>'+ring;                    // 霓虹环（发光+实色）
+  s+=keyRect(g.body.x+56,g.body.y+56,g.body.w-112,g.body.h-112,g.body.r-28,'#12121a','#2a2a3a',4);
+  s+=calculator(
+    ['#00ff88','#00d4ff','#FBBF24','#ff00ff'],        // LED：绿 青 (点) 黄 品红
+    ['#00ff88','#00d4ff','#ff00ff','#FBBF24','#00ff88'],
+    '#1c1c2e','#2a2a3a',2,'#0a0a0f');
+  s+='</svg>';
+  return s;
+}
+function renderLogos(){
+  var els=document.querySelectorAll('[data-logo]');
+  for(var i=0;i<els.length;i++){
+    var kind=els[i].getAttribute('data-logo');
+    var size=parseInt(els[i].getAttribute('data-size'),10);
+    var light = kind==='light' || (kind==='head' && root.getAttribute('data-theme')!=='dark');
+    els[i].innerHTML = light ? logoLight(size) : logoDark(size);
+  }
+}
+renderLogos();
+
+/* ═══════════════ Marquee ═══════════════ */
+(function(){
+  var words=['只记支出','月度总额','年度构成','分类穿透','账期归属','计划提醒','离线可写','双端同步','家庭共用','数据导出'];
+  var html='';
+  for(var k=0;k<2;k++) for(var i=0;i<words.length;i++) html+='<span>'+words[i]+' ✦</span>';
+  document.getElementById('mq').innerHTML=html;
+})();
+
+/* ═══════════════ 打字机副标题（深色）═══════════════ */
+(function(){
+  var el=document.getElementById('hero-sub');
+  var full=el.innerHTML;
+  var typing=false, timer=null;
+  function start(){
+    var text=full.replace(/<span class="cursor"><\/span>/,'');
+    var i=0; el.innerHTML='';
+    typing=true;
+    timer=setInterval(function(){
+      i+=2;
+      el.innerHTML=text.slice(0,i)+'<span class="cursor"></span>';
+      if(i>=text.length){ clearInterval(timer); typing=false; }
+    },40);
+  }
+  var obs=new MutationObserver(function(){
+    if(root.getAttribute('data-theme')==='dark'){ if(!typing){clearInterval(timer);start();} }
+    else { clearInterval(timer); typing=false; el.innerHTML=full; }
+  });
+  obs.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+  if(root.getAttribute('data-theme')==='dark') start(); else el.innerHTML=full;
+})();
+</script>
+</body>
+</html>
