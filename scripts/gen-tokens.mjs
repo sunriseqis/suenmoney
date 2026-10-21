@@ -282,10 +282,7 @@ function chartCss(slots, theme) {
 }
 
 // ── write / check ──────────────────────────────────────────────────────────
-const outputs = [
-  [join(OUT_DIR, 'DesignTokens.swift'), swift],
-  [join(OUT_DIR, 'Tokens.ets'), ets],
-];
+
 
 
 let cssWithExtras = css;
@@ -307,6 +304,12 @@ if (chartSlots.length > 0) {
     `\n}\n`;
   cssWithExtras += chartCssFull;
 }
+
+const outputs = [
+  [OUT_CSS, cssWithExtras],
+  [join(OUT_DIR, 'DesignTokens.swift'), swift],
+  [join(OUT_DIR, 'Tokens.ets'), ets],
+];
 
 let drift = 0;
 for (const [path, content] of outputs) {
