@@ -653,16 +653,16 @@ async function handleSkip(todoId: string): Promise<void> {
 
     <main class="mx-auto mt-6 w-full max-w-[var(--content-max)] space-y-6 px-4 lg:px-6">
       <!-- ② 第二行：本月要还 + 支出进度（双列等高卡片） -->
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-stretch" aria-label="当期事实">
+      <section class="facts-grid" aria-label="当期事实">
         <!-- 本月要还 -->
-        <div class="flex flex-col justify-between rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80 h-full">
+        <div class="card fact-card">
           <div>
             <div class="flex items-center justify-between">
               <h2 class="label-cn">本月要还</h2>
               <span class="text-xs text-ink-muted">信用卡账单</span>
             </div>
 
-            <p class="mt-2 text-2xl font-extrabold text-amber-700 dark:text-amber-400">
+            <p class="fact-amount num">
               {{ formatYuan(creditDueTotalCents) }}
             </p>
 
@@ -704,7 +704,7 @@ async function handleSkip(todoId: string): Promise<void> {
         </div>
 
         <!-- 支出进度卡 -->
-        <div class="flex flex-col justify-between rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80 h-full">
+        <div class="card fact-card">
           <div>
             <div class="flex items-center justify-between">
               <h2 class="label-cn">本月支出进度</h2>
@@ -759,7 +759,7 @@ async function handleSkip(todoId: string): Promise<void> {
       </section>
 
       <!-- ③ 第三行：月度支出热力（最近 12 个月滚动，通栏） -->
-      <section class="rounded-lg bg-surface p-5 shadow-none ring-1 ring-line/80" aria-label="月度支出热力">
+      <section class="card heat-section" aria-label="月度支出热力">
         <div class="flex items-center justify-between">
           <h2 class="label-cn">月度支出热力</h2>
           <span class="text-xs text-ink-muted">最近 12 个月 · 滚动</span>

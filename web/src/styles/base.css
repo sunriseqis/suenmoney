@@ -514,6 +514,18 @@
   }
   :root[data-theme='light'] .panel-v4 { border-color: var(--fg); }
 
+  /* 当期事实双列（静态稿卡片语言） */
+  .facts-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    max-width: var(--content-max); margin: 16px auto 0; padding: 0 24px;
+  }
+  .fact-card { padding: 22px 24px; }
+  .fact-amount { font-family: var(--font-head); font-size: 30px; font-weight: 800;
+                 letter-spacing: -.01em; margin: 6px 0 4px; color: var(--secondary); }
+  :root[data-theme='light'] .fact-amount { color: #B45309; }
+  .heat-section { max-width: var(--content-max); margin: 16px auto 0; }
+  @media (max-width: 960px) { .facts-grid { grid-template-columns: 1fr; } }
+
   /* 指标三格（静态稿：三张等宽卡片，彩圆 + label + 大数字） */
   .metrics-row {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
