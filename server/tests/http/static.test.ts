@@ -53,6 +53,12 @@ describe('静态托管：页面与接口同源同端口', () => {
     assert.match(res.body, /SUENMONEY_SPA_SHELL/);
   });
 
+  test('不存在的静态资源必须真 404，不能回 HTML（旧 bundle 被缓存引用时防语法错误雪崩）', async () => {
+    const res = await app.inject({ method: 'GET', url: '/assets/index-GONE.js' });
+    assert.equal(res.statusCode, 404);
+    assert.match(String(res.headers['content-type']), /application\/json/);
+  });
+
   test('前端路由（/ledger）走 SPA 回退，不是 404', async () => {
     const res = await app.inject({ method: 'GET', url: '/ledger' });
     assert.equal(res.statusCode, 200);

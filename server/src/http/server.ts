@@ -125,7 +125,14 @@ export async function buildServer(
    * 两者混一次，前端就会把一坨 HTML 当 JSON 解析，故障现象与真实原因完全对不上。
    */
   app.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith('/api/') || indexHtml === null) {
+    const url = String(request.url ?? '').split('?')[0] as string;
+    // 静态资源 404 必须是**真的 404**：旧 bundle 被浏览器/扩展缓存引用时，
+    // 如果回 HTML（且带 30 天 immutable），脚本会当 JS 解析 —— 报一堆语法错，
+    // 而且这个「假 200」会粘在缓存里。SPA 回退只对「无扩展名的路由」生效。
+    const isAsset =
+      /^\/assets\//.test(url) ||
+      /\.(js|mjs|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|webmanifest)$/.test(url);
+    if (isAsset || url.startsWith('/api/') || indexHtml === null) {
       reply.code(404).send({ error: '接口不存在' });
       return;
     }
