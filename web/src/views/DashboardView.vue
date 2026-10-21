@@ -340,10 +340,9 @@ async function handleSkip(todoId: string): Promise<void> {
     <!-- 概况一屏总览 -->
     <header class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-[calc(var(--safe-top)+20px)] lg:px-6 lg:pt-8">
       <!-- ① Hero 卡片：深蓝质感渐变 + 装饰光晕与水印（与流水顶卡对齐） -->
-      <div
-        class="relative overflow-hidden rounded-2xl bg-surface-container p-5 text-on-surface shadow-[var(--el-1)] lg:p-7"
-      >
-        <!-- v3：无光晕无水印 —— 质感来自 tonal surface；金额与环比胶囊承担颜色 -->
+      <div class="card relative overflow-hidden p-5 text-on-surface lg:p-7">
+        <!-- v5：Cyberpunk 终端卡头（交通灯） -->
+        <div class="terminal-head"><i></i><i></i><i></i><span>suenmoney · 2026</span></div>
 
         <div class="relative z-1">
           <div class="flex items-center justify-between gap-2">
@@ -393,7 +392,7 @@ async function handleSkip(todoId: string): Promise<void> {
           <p
             v-else
             ref="heroAmountTextRef"
-            class="font-extrabold leading-none tracking-tight tabular-nums whitespace-nowrap text-tertiary"
+            class="amount-hero font-extrabold leading-none tracking-tight tabular-nums whitespace-nowrap"
             :style="heroAmountStyle"
           >
             {{ heroFormattedAmount }}

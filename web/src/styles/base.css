@@ -103,6 +103,29 @@
     :root:not([data-theme='light']) h1 { animation: cyber-glitch 7s infinite; }
   }
 
+  /* 终端卡头（深色 Cyberpunk）：交通灯三点 + 等宽小字 */
+  .terminal-head { display: none; }
+  :root:not([data-theme='light']) .terminal-head {
+    display: flex; gap: 7px; align-items: center;
+    padding: 0 0 14px; margin-bottom: 16px;
+    border-bottom: 1px solid var(--outline);
+    font-family: var(--font-sans); font-size: 11px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-variant);
+  }
+  :root:not([data-theme='light']) .terminal-head i { width: 10px; height: 10px; border-radius: 50%; }
+  :root:not([data-theme='light']) .terminal-head i:nth-of-type(1) { background: #ff3366; }
+  :root:not([data-theme='light']) .terminal-head i:nth-of-type(2) { background: #FBBF24; }
+  :root:not([data-theme='light']) .terminal-head i:nth-of-type(3) { background: #00ff88; }
+
+  /* 桌面 Hero 大金额：深色霓虹粉发光 / 浅色深slate */
+  :root:not([data-theme='light']) .amount-hero { color: #FF6BB5; text-shadow: 0 0 16px rgba(255,0,255,.5); }
+  :root[data-theme='light'] .amount-hero { color: #1E293B; }
+
+  /* 支出大数字：深色=霓虹粉+辉光（Cyberpunk 金额是发光的）；
+     浅色=深slate（Playful 靠字重不靠颜色） */
+  :root:not([data-theme='light']) .amount-v3 .int { color: #FF6BB5; text-shadow: 0 0 12px rgba(255,0,255,.45); }
+  :root[data-theme='light'] .amount-v3 .int { color: #1E293B; }
+
   /* 辅助标签：11px 全大写 + 0.5px 字距（M3 label） */
   .label-v3 {
     font-size: 11px; font-weight: 500; letter-spacing: 0.5px;
