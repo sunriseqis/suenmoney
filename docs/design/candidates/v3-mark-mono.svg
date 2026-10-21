@@ -1,11 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（单色）">
-  <!-- v3 单色版｜通知栏小图标 / 安卓 monochrome / 鸿蒙分层前景（靠透明度而不是颜色区分） -->
+  <!-- v3 单色版｜通知栏 / 安卓 monochrome / 鸿蒙分层前景：实心 S 剪影，靠形状不靠颜色 -->
   <rect width="1024" height="1024" fill="#141222"/>
   <g fill="#F2EFFA">
-    <rect x="112" y="248" width="232" height="232" rx="68"/>
-    <rect x="376" y="248" width="232" height="232" rx="68" opacity=".38"/>
-    <rect x="112" y="512" width="232" height="232" rx="68" opacity=".38"/>
-    <rect x="376" y="512" width="232" height="232" rx="68"/>
-    <rect x="640" y="248" width="272" height="496" rx="90"/>
+    <rect x="114" y="114" width="172" height="140" rx="52" />
+    <rect x="322" y="114" width="172" height="140" rx="52" />
+    <rect x="530" y="114" width="172" height="140" rx="52" />
+    <rect x="114" y="278" width="172" height="140" rx="52" />
+    <rect x="114" y="442" width="172" height="140" rx="52" />
+    <rect x="322" y="442" width="172" height="140" rx="52" />
+    <rect x="530" y="442" width="172" height="140" rx="52" />
+    <rect x="738" y="606" width="172" height="140" rx="52" />
+    <rect x="322" y="770" width="172" height="140" rx="52" />
+    <rect x="530" y="770" width="172" height="140" rx="52" />
+    <rect x="738" y="770" width="172" height="140" rx="52" />
   </g>
 </svg>

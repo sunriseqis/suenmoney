@@ -245,55 +245,47 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     </filter>
 
     <!-- 点亮格（发光与实色共用同一组几何：只画两遍，不逐格画） -->
-    <g id="lit">
-      <rect x="100" y="208" width="176" height="176" rx="52" fill="#4DFFD2"/>
-      <rect x="316" y="208" width="176" height="176" rx="52" fill="#4DFFD2"/>
-      <rect x="100" y="424" width="176" height="176" rx="52" fill="#B388FF"/>
-      <rect x="532" y="424" width="176" height="176" rx="52" fill="#5DB8FF"/>
-      <rect x="100" y="640" width="176" height="176" rx="52" fill="#5DB8FF"/>
-      <rect x="316" y="640" width="176" height="176" rx="52" fill="#FF7AB8"/>
-      <rect x="748" y="208" width="176" height="176" rx="52" fill="#E5FF41"/>
-      <rect x="748" y="424" width="176" height="176" rx="52" fill="#E5FF41"/>
-      <rect x="748" y="640" width="176" height="176" rx="52" fill="#E5FF41"/>
-    </g>
-    <g id="grid-dark">
-      <rect x="532" y="208" width="176" height="176" rx="52" fill="#282740"/>
-      <rect x="316" y="424" width="176" height="176" rx="52" fill="#282740"/>
-      <rect x="532" y="640" width="176" height="176" rx="52" fill="#282740"/>
-    </g>
+    <g id="lit"><rect x="114" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="322" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="530" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="114" y="278" width="172" height="140" rx="52" fill="#B388FF"/><rect x="114" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="322" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="530" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="738" y="606" width="172" height="140" rx="52" fill="#E5FF41"/><rect x="322" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="530" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="738" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/></g>
+    <g id="grid-dark"><rect x="738" y="114" width="172" height="140" rx="52" fill="#282740"/><rect x="322" y="278" width="172" height="140" rx="52" fill="#282740"/><rect x="530" y="278" width="172" height="140" rx="52" fill="#282740"/><rect x="738" y="278" width="172" height="140" rx="52" fill="#282740"/><rect x="738" y="442" width="172" height="140" rx="52" fill="#282740"/><rect x="114" y="606" width="172" height="140" rx="52" fill="#282740"/><rect x="322" y="606" width="172" height="140" rx="52" fill="#282740"/><rect x="530" y="606" width="172" height="140" rx="52" fill="#282740"/><rect x="114" y="770" width="172" height="140" rx="52" fill="#282740"/></g>
 
-    <!-- 优化版 Logo（1024 方形母版，全出血） -->
+    <!-- 优化版：逐格照抄原版矩阵，只改画布 / 描边 / 发光 / 圆角 -->
     <symbol id="brand" viewBox="0 0 1024 1024">
       <rect width="1024" height="1024" fill="#141222"/>
-      <rect x="56" y="56" width="912" height="912" rx="200" fill="#1E1D2E"/>
+      <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
       <use href="#grid-dark" xlink:href="#grid-dark"/>
-      <use href="#lit" filter="url(#neon-sm)" opacity=".42"/>
+      <use href="#lit" filter="url(#neon-sm)" opacity=".40"/>
       <use href="#lit"/>
     </symbol>
 
-    <!-- 小尺寸简化版（<32px：2×2 格 + 金额柱，去掉细碎空隙） -->
+    <!-- 小尺寸：只留 11 个亮格（S 的笔画），去空格与发光 -->
     <symbol id="brand-sm" viewBox="0 0 1024 1024">
       <rect width="1024" height="1024" fill="#141222"/>
-      <g>
-        <rect x="112" y="248" width="232" height="232" rx="68" fill="#4DFFD2"/>
-        <rect x="376" y="248" width="232" height="232" rx="68" fill="#B388FF"/>
-        <rect x="112" y="512" width="232" height="232" rx="68" fill="#5DB8FF"/>
-        <rect x="376" y="512" width="232" height="232" rx="68" fill="#FF7AB8"/>
-        <rect x="640" y="248" width="272" height="496" rx="90" fill="#E5FF41"/>
+      <g id="lit-sm">
+        <rect x="114" y="114" width="172" height="140" rx="60" fill="#4DFFD2"/><rect x="322" y="114" width="172" height="140" rx="60" fill="#4DFFD2"/><rect x="530" y="114" width="172" height="140" rx="60" fill="#4DFFD2"/><rect x="114" y="278" width="172" height="140" rx="60" fill="#B388FF"/><rect x="114" y="442" width="172" height="140" rx="60" fill="#5DB8FF"/><rect x="322" y="442" width="172" height="140" rx="60" fill="#5DB8FF"/><rect x="530" y="442" width="172" height="140" rx="60" fill="#5DB8FF"/><rect x="738" y="606" width="172" height="140" rx="60" fill="#E5FF41"/><rect x="322" y="770" width="172" height="140" rx="60" fill="#FF7AB8"/><rect x="530" y="770" width="172" height="140" rx="60" fill="#FF7AB8"/><rect x="738" y="770" width="172" height="140" rx="60" fill="#FF7AB8"/>
       </g>
     </symbol>
 
-    <!-- 单色版（通知栏 / 安卓 monochrome / 鸿蒙分层） -->
+    <!-- 单色：实心 S 剪影（靠形状，不靠颜色） -->
     <symbol id="brand-mono" viewBox="0 0 1024 1024">
       <rect width="1024" height="1024" fill="#141222"/>
       <g fill="#F2EFFA">
-        <rect x="112" y="248" width="232" height="232" rx="68"/>
-        <rect x="376" y="248" width="232" height="232" rx="68" opacity=".38"/>
-        <rect x="112" y="512" width="232" height="232" rx="68" opacity=".38"/>
-        <rect x="376" y="512" width="232" height="232" rx="68"/>
-        <rect x="640" y="248" width="272" height="496" rx="90"/>
+        <rect x="114" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="322" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="530" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/><rect x="114" y="278" width="172" height="140" rx="52" fill="#B388FF"/><rect x="114" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="322" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="530" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/><rect x="738" y="606" width="172" height="140" rx="52" fill="#E5FF41"/><rect x="322" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="530" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/><rect x="738" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
       </g>
     </symbol>
+
+    <!-- 带 header 的变体（建议 ≥48px 才用；网格 156×128、间距 32/20、720×720） -->
+    <symbol id="brand-hdr" viewBox="0 0 1024 1024">
+      <rect width="1024" height="1024" fill="#141222"/>
+      <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
+      <rect x="152" y="96" width="720" height="88" rx="32" fill="#141222"/>
+      <circle cx="836" cy="140" r="14" fill="#4DFFD2"/>
+      <use href="#dim-h" xlink:href="#dim-h"/>
+      <use href="#lit-h" filter="url(#neon-sm)" xlink:href="#lit-h" opacity=".40"/>
+      <use href="#lit-h" xlink:href="#lit-h"/>
+    </symbol>
+
+    <g id="dim-h-def"><g id="dim-h"><rect x="716" y="216" width="156" height="128" rx="46" fill="#282740"/><rect x="340" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="528" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="716" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="716" y="512" width="156" height="128" rx="46" fill="#282740"/><rect x="152" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="340" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="528" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="152" y="808" width="156" height="128" rx="46" fill="#282740"/></g></g>
+    <g id="lit-h-def"><g id="lit-h"><rect x="152" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="340" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="528" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="152" y="364" width="156" height="128" rx="46" fill="#B388FF"/><rect x="152" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="340" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="528" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="716" y="660" width="156" height="128" rx="46" fill="#E5FF41"/><rect x="340" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/><rect x="528" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/><rect x="716" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/></g></g>
 
     <!-- 你给的原版（原样内联，用于并排对照） -->
     <symbol id="brand-orig" viewBox="0 0 240 320">
@@ -600,27 +592,61 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
       <svg width="160" height="160" viewBox="0 0 1024 1024" role="img" aria-label="单色版"><use href="#brand-mono"/></svg>
       <small>单色版（通知栏 / 分层图标）</small>
     </div>
+    <div class="logo-cell">
+      <svg width="160" height="160" viewBox="0 0 1024 1024" role="img" aria-label="带 header 的变体"><use href="#brand-hdr"/></svg>
+      <small>带 header（建议 ≥48px）</small>
+    </div>
   </div>
 
-  <p class="note" style="margin-top:26px"><b>改了什么（8 条）</b></p>
+  <p class="note" style="margin-top:26px"><b>先纠正我上一版错的地方</b></p>
+  <p class="note" style="margin:8px 0 0">
+    上一版我把你的格子矩阵换成了「4×3 + 右列金额柱」—— 那不是优化，是另画了一个图形。
+    <b>你的格子本身就是字形</b>：11 个亮格拼出一个 S，五段五个色。这一版<b>逐格照抄</b>，
+    只动四件技术问题（画布比例、三层描边、发光画法、圆角体系），字形一格没改。
+  </p>
+
+  <p class="note" style="margin-top:22px"><b>逐格对照（一个都没动）</b></p>
   <table>
-    <tr><th>#</th><th>你原版</th><th>优化</th><th>为什么</th></tr>
-    <tr><td>1</td><td>240×320 竖长方形</td><td><b>1024×1024 方形母版</b></td>
-      <td>iOS / 鸿蒙 / fnOS / 桌面图标全是 1:1，竖卡做图标只能硬裁。竖版构图保留在「品牌图形」里，图标取方形子集</td></tr>
-    <tr><td>2</td><td>三层描边（外框 2px + header 1.5px + 内框）</td><td><b>零描边</b>，靠 <code>#1E1D2E</code> 与 <code>#282740</code> 色阶分层</td>
-      <td>和你自己第 2 条「不用描边分隔、靠 5 级 surface 分层」对齐；描边在 32px 会糊成灰框</td></tr>
-    <tr><td>3</td><td>每格两次绘制（0.4 透明度 + 实色），各带 GaussianBlur</td><td><b>一次分组模糊 + 一次实色</b>（<code>&lt;use filter&gt;</code>）</td>
-      <td>38 个 rect → 12 个；模糊只算一遍，格子边缘不会出现「底色渗进实色」的灰边</td></tr>
-    <tr><td>4</td><td>header 区 + 一个绿点</td><td><b>删掉</b></td>
-      <td>那块深色 header 在 16px 时变成一条噪点；绿点语义不明（是状态还是装饰？）</td></tr>
-    <tr><td>5</td><td>5 列 × 6 行，20 个格子</td><td><b>4 列 × 3 行 + 右列金额柱</b></td>
-      <td>格子越少越大，方形构图才站得住；右列三格同色贯通，读作「金额列」——这才让图形像账本而不是彩虹矩阵</td></tr>
-    <tr><td>6</td><td>粉格散落在两行（收尾押韵）</td><td><b>粉只剩 1 格</b>（左下第二行）</td>
-      <td>粉=支出/警示，是语义色不是装饰色。留一格等于「有一笔要处理」，与界面里的逾期提醒同义</td></tr>
-    <tr><td>7</td><td>只有一种形态</td><td><b>三形态</b>：完整 / 简化（&lt;32px）/ 单色</td>
-      <td>favicon 16px、安卓 monochrome、鸿蒙分层图标都要各自的减法；单色版靠透明度区分格子，去色后仍可读</td></tr>
-    <tr><td>8</td><td>圆角 36 / 28 / 12 / 10 四套混用</td><td><b>角半径成体系</b>：卡 200（≈外框的 20%）、格 52</td>
-      <td>两档差距足够，32px 仍能看出「圆角格子」；四套混用在小尺寸会互相抵消成方角</td></tr>
+    <tr><th>段</th><th>原版（4×5 矩阵）</th><th>v3（1024 方形）</th><th>色</th></tr>
+    <tr><td>上横</td><td>第 1 行 · 第 1–3 列</td><td>同一位置，同 3 格</td>
+      <td><span class="sw" style="background:#4DFFD2"></span>荧光薄荷</td></tr>
+    <tr><td>左竖</td><td>第 2 行 · 第 1 列</td><td>同一位置，同 1 格</td>
+      <td><span class="sw" style="background:#B388FF"></span>电紫</td></tr>
+    <tr><td>中横</td><td>第 3 行 · 第 1–3 列</td><td>同一位置，同 3 格</td>
+      <td><span class="sw" style="background:#5DB8FF"></span>电光蓝</td></tr>
+    <tr><td>右竖</td><td>第 4 行 · 第 4 列</td><td>同一位置，同 1 格</td>
+      <td><span class="sw" style="background:#E5FF41"></span>荧光柠</td></tr>
+    <tr><td>下横</td><td>第 5 行 · 第 2–4 列（右移一格）</td><td>同一位置，同 3 格</td>
+      <td><span class="sw" style="background:#FF7AB8"></span>霓虹粉</td></tr>
+    <tr><td>空格</td><td>9 个 #282740</td><td>9 个，同位置</td><td>—</td></tr>
+  </table>
+  <p class="note" style="margin-top:10px">
+    合计 <b>11 亮 + 9 空 = 20 格</b>，与原版完全一致。几何换算：你的格 36×30 / 间距 8、41.5 →
+    v3 的格 172×140 / 间距 36、24（等比放大 ≈4.8×，纵横比 1.20 → 1.23，肉眼无差）。
+  </p>
+
+  <p class="note" style="margin-top:22px"><b>只改了这四件（都是技术问题，不动字形）</b></p>
+  <table>
+    <tr><th>#</th><th>原版</th><th>v3</th><th>为什么</th></tr>
+    <tr><td>1</td><td>240×320 竖长方形画布</td><td><b>1024×1024 方形</b>，字形原样居中</td>
+      <td>iOS / 鸿蒙 / fnOS / 桌面图标全要 1:1。竖版只能硬裁，一裁就切掉上横或下横</td></tr>
+    <tr><td>2</td><td>三层描边（外框 2px + header 1.5px + 内框）</td><td><b>零描边</b>，靠 <code>#1E1D2E</code> 分层</td>
+      <td>32px 时三层线糊成灰框；也与你 UI 规格第 2 条「不用描边、靠 surface 色阶分层」一致</td></tr>
+    <tr><td>3</td><td>每个亮格画两遍（0.4 透明 + 实色），各带一次 GaussianBlur</td><td><b>分组模糊一次 + 实色一次</b></td>
+      <td>32 rect → 2 次 <code>&lt;use&gt;</code>；且不会出现「模糊层渗进实色格」的灰边</td></tr>
+    <tr><td>4</td><td>圆角 36 / 28 / 12 / 10 四套</td><td>两档：卡 224 / 格 52（≈格宽的 30%，与原版 10/36 一致）</td>
+      <td>四套混用在小尺寸互相抵消成方角；两档差距才立得住</td></tr>
+  </table>
+
+  <p class="note" style="margin-top:22px"><b>另外两处我没动，但想问你</b></p>
+  <table>
+    <tr><th>元素</th><th>现状</th><th>我的看法</th></tr>
+    <tr><td>顶部 header 条 + 薄荷小圆点</td><td>原版有，v3 母版里<b>暂时去掉</b>（下面有带 header 的对照）</td>
+      <td>它让图形像「一张卡片/一台收银机」，语义是加分项；但 16–24px 时会变成一条噪点。
+        <b>建议：≥48px 才出现 header，小尺寸自动隐藏</b> —— 需要你点头我才加进母版</td></tr>
+    <tr><td>9 个空格的 #282740</td><td>保留（母版），小尺寸版里去掉</td>
+      <td>空格是「结构」，让它像账本网格；但 16px 下空格与底色差几乎没有，只会让笔画变细。
+        所以 <b>≥32px 带空格，&lt;32px 只留笔画</b></td></tr>
   </table>
 
   <p class="note" style="margin-top:22px"><b>尺寸梯度与真实位置</b></p>
@@ -758,7 +784,7 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
   <p class="note">
     这份样张可以直接当实现清单用：令牌、组件、状态、动效都在一个文件里，改一处就能看到全站反应。
     你看完给三件事的裁决即可 —— ① 桌面端底部导航是否移到顶栏；② §5 那三处修订是否接受（尤其超支用条纹）；
-    ③ LOGO 用优化版还是再调（比如「金额柱」要不要换成占位更明显的三格分离）。
+    ③ LOGO 这版字形是否就照原样、只走技术修正（另外问一句：header 条要不要在 ≥48px 时回来）。
   </p>
 
 </div>
