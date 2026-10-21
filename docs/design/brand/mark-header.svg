@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（带 header）">
+  <!-- v3 header 变体｜**只在 ≥48px 使用**：header 条 + 薄荷状态点在 16–32px 会变成噪点
+       网格 156×128、间距 32/20 → 720×720，与母版的 S 逐格一致 -->
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+    <g id="lit"><rect x="152" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="340" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="528" y="216" width="156" height="128" rx="46" fill="#4DFFD2"/><rect x="152" y="364" width="156" height="128" rx="46" fill="#B388FF"/><rect x="152" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="340" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="528" y="512" width="156" height="128" rx="46" fill="#5DB8FF"/><rect x="716" y="660" width="156" height="128" rx="46" fill="#E5FF41"/><rect x="340" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/><rect x="528" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/><rect x="716" y="808" width="156" height="128" rx="46" fill="#FF7AB8"/></g>
+    <g id="dim"><rect x="716" y="216" width="156" height="128" rx="46" fill="#282740"/><rect x="340" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="528" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="716" y="364" width="156" height="128" rx="46" fill="#282740"/><rect x="716" y="512" width="156" height="128" rx="46" fill="#282740"/><rect x="152" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="340" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="528" y="660" width="156" height="128" rx="46" fill="#282740"/><rect x="152" y="808" width="156" height="128" rx="46" fill="#282740"/></g>
+  </defs>
+  <rect width="1024" height="1024" fill="#141222"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
+  <rect x="152" y="96" width="720" height="88" rx="32" fill="#141222"/>
+  <circle cx="836" cy="140" r="14" fill="#4DFFD2"/>
+  <use href="#dim"/>
+  <use href="#lit" filter="url(#glow)" opacity=".40"/>
+  <use href="#lit"/>
+</svg>

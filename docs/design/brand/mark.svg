@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney">
+  <!-- v3 母版｜1024 方形全出血
+       字形 = 用户原版的 4×5 格子矩阵，逐格照抄（11 亮 / 9 空）：
+         上横 3 格（薄荷）→ 左竖 1 格（电紫）→ 中横 3 格（电光蓝）→ 右竖 1 格（荧光柠）→ 下横 3 格（霓虹粉）
+       只修四件事：画布改方形、去三层描边、发光由「逐格两次绘制」改为「分组模糊一次」、角半径成体系。 -->
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="24"/></filter>
+    <g id="lit">
+      <rect x="114" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/>
+      <rect x="322" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/>
+      <rect x="530" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/>
+      <rect x="114" y="278" width="172" height="140" rx="52" fill="#B388FF"/>
+      <rect x="114" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/>
+      <rect x="322" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/>
+      <rect x="530" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/>
+      <rect x="738" y="606" width="172" height="140" rx="52" fill="#E5FF41"/>
+      <rect x="322" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
+      <rect x="530" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
+      <rect x="738" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
+    </g>
+    <g id="dim">
+      <rect x="738" y="114" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="322" y="278" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="530" y="278" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="738" y="278" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="738" y="442" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="114" y="606" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="322" y="606" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="530" y="606" width="172" height="140" rx="52" fill="#282740"/>
+      <rect x="114" y="770" width="172" height="140" rx="52" fill="#282740"/>
+    </g>
+  </defs>
+  <rect width="1024" height="1024" fill="#141222"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
+  <use href="#dim"/>
+  <use href="#lit" filter="url(#glow)" opacity=".40"/>
+  <use href="#lit"/>
+</svg>
