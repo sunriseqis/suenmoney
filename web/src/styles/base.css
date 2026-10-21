@@ -48,70 +48,50 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     v4 全局设计语言 —— 到达每一个元素，不是只换颜色
+     v5 全局设计语言（对齐 docs/design/v5-design-preview.html）
      ═══════════════════════════════════════════════════════════ */
 
-  /* ── 深色 · Cyberpunk ──
-     全局：等宽、大写标题、切角卡、霓虹描边、辉光 hover、终端输入框 */
-  :root:not([data-theme='light']) {
-    --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
+  /* 标题字体：浅色 Outfit 粗体；深色 Orbitron 全大写宽字距 */
+  h1, h2, h3 { font-family: var(--font-head); }
+  :root:not([data-theme='light']) h1,
+  :root:not([data-theme='light']) h2,
+  :root:not([data-theme='light']) h3 {
+    text-transform: uppercase; letter-spacing: .1em; font-weight: 800;
   }
-  :root:not([data-theme='light']) {
-    /* 标题全大写宽字距 */
-    h1, h2, h3 { font-family: var(--font-head); text-transform: uppercase;
-                 letter-spacing: 0.08em; }
-    /* 所有按钮：等宽、大写、宽字距、细描边、辉光 hover */
-    button, .btn { font-family: var(--font-head); text-transform: uppercase;
-                   letter-spacing: 0.1em; }
-    /* 卡片容器：切角 + 1px 技术边框（无圆角） */
-    .card, [class*='rounded-2xl'], [class*='rounded-xl'] {
-      border-radius: 0;
-      clip-path: var(--chamfer-sm);
-      border-color: var(--outline);
-    }
-    /* 图标：细描边 + hover 辉光 */
-    svg { stroke-width: 1.5; }
-    /* 输入框：等宽 + accent 字色 */
-    input, select, textarea {
-      font-family: var(--font-sans);
-      background: var(--surface-container);
-      border-color: var(--outline);
-    }
-    input:focus { border-color: var(--primary); box-shadow: var(--el-neon); }
+  :root[data-theme='light'] h1,
+  :root[data-theme='light'] h2,
+  :root[data-theme='light'] h3 { font-weight: 800; letter-spacing: -.02em; }
+
+  /* 卡片语言：深色切角 + 霓虹 hover；浅色贴纸 + 硬阴影 + hover 摇摆 */
+  .card, [class*='rounded-2xl'], [class*='rounded-xl'] {
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-card);
+    clip-path: var(--chamfer-sm);
+    transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+                border-color var(--dur) var(--ease);
+  }
+  :root:not([data-theme='light']) .card:hover {
+    border-color: var(--primary); box-shadow: var(--el-glow); transform: translateY(-1px);
+  }
+  :root[data-theme='light'] .card {
+    box-shadow: var(--el-1);
+    border-color: var(--fg);
+    border-width: 2px;
+  }
+  :root[data-theme='light'] .card:hover { transform: rotate(-1deg) scale(1.02); }
+
+  /* 图标：深色 1.5 + 辉光；浅色 2.5 chunky */
+  svg { stroke-width: 1.5; }
+  :root[data-theme='light'] svg { stroke-width: 2.5; }
+
+  /* 扫描线（仅深色） */
+  :root:not([data-theme='light']) body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    background: var(--scanlines); opacity: .45;
   }
 
-  /* ── 浅色 · Playful Geometric ──
-     全局：Outfit 粗标题、2px 深边框、硬阴影、糖果 hover */
-  :root[data-theme='light'] {
-    --font-head: 'Outfit Variable', 'MiSans VF', sans-serif;
-  }
-  :root[data-theme='light'] {
-    /* 卡片：贴纸化 —— 2px 深边框 + 硬阴影 + hover 摇摆 */
-    .card, [class*='rounded-2xl'], [class*='rounded-xl'] {
-      border: 2px solid #1E293B;
-      border-radius: 16px;
-      box-shadow: 8px 8px 0px 0px #E2E8F0;
-      transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-    }
-    .card:hover, [class*='rounded-2xl']:hover { transform: rotate(-1deg) scale(1.01); }
-    /* 按钮：糖果化 —— 2px 深边框 + 硬阴影位移（btn-v4 已有，此处兜底全局 button） */
-    button { border-radius: var(--radius-pill); font-weight: 700; }
-    /* 输入框：白底 + 2px 边框 + focus 硬阴影染色 */
-    input, select, textarea {
-      background: #FFFFFF;
-      border: 2px solid #CBD5E1;
-      border-radius: 8px;
-    }
-    input:focus, select:focus, textarea:focus {
-      border-color: var(--primary);
-      box-shadow: 4px 4px 0px 0px var(--primary);
-      outline: none;
-    }
-    /* 图标：粗描边 2.5 */
-    svg { stroke-width: 2.5; }
-  }
-
-  /* 动效：两套各自的语言 */
+  /* 动效 */
   @keyframes cyber-glitch {
     0%,100% { transform: translate(0); }
     20% { transform: translate(-2px,2px); }
@@ -119,432 +99,8 @@
     60% { transform: translate(-1px,-1px); }
     80% { transform: translate(1px,1px); }
   }
-  @keyframes blink { 50% { opacity: 0; } }
   @media (prefers-reduced-motion: no-preference) {
-    :root:not([data-theme='light']) h1 { animation: cyber-glitch 6s infinite; }
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']) body::after {
-      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
-      background: var(--scanlines); opacity: 0.35;
-    }
-  }
-  :root[data-theme='dark'] body::after,
-  html:not([data-theme]) body::after {
-    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
-    background: var(--scanlines); opacity: 0.35;
-  }
-
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--fg);
-    font-family: var(--font-sans);
-    font-size: var(--fs-md);
-    line-height: var(--lh-normal);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-
-    /**
-     * 全局等宽数字。
-     * 这是记账应用，屏幕上的数字要能**竖直对齐**才能一眼扫出量级差异 ——
-     * 比例数字（1 比 0 窄）会让「¥1,111」和「¥9,999」位数错位，列表滚起来
-     * 数字左右跳。这条比任何视觉装饰都更影响实际使用。
-     */
-    font-variant-numeric: tabular-nums;
-    font-feature-settings: 'tnum' 1;
-
-    /* 移动端：禁用点击高亮，避免记账时误选文字 */
-    -webkit-tap-highlight-color: transparent;
-    text-rendering: optimizeLegibility;
-  }
-
-  /* ---- 排版默认值 ---- */
-  h1,
-  h2,
-  h3,
-  h4,
-  p {
-    margin: 0;
-  }
-
-  h1,
-  h2,
-  h3,
-  h4 {
-    font-weight: var(--fw-bold);
-    line-height: var(--lh-tight);
-    letter-spacing: -0.02em;
-  }
-
-  a {
-    color: var(--primary-text);
-    text-decoration: none;
-  }
-
-  a:hover {
-    text-decoration: underline;
-  }
-
-  /* ---- 表单元素继承字体（浏览器默认不复用） ---- */
-  button,
-  input,
-  select,
-  textarea {
-    font: inherit;
-    color: inherit;
-  }
-
-  button {
-    cursor: pointer;
-    border: 0;
-    background: none;
-    padding: 0;
-  }
-
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  /**
-   * 焦点态。
-   * Flat Design 没有阴影，所以焦点必须用**明确的外轮廓**表达，
-   * 不能靠发光或阴影扩散。
-   */
-  :focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
-  }
-
-  /* 鼠标点击不显示焦点环，键盘导航才显示 —— 否则每次点按钮都闪一圈 */
-  :focus:not(:focus-visible) {
-    outline: none;
-  }
-
-  ::selection {
-    background: var(--accent-fill);
-    color: var(--on-accent);
-  }
-
-  /* 尊重系统的「减少动态效果」 */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
-  }
-}
-
-/* ---- 骨架屏：Flat 下不能用阴影脉冲，改用透明度呼吸 ---- */
-@keyframes suen-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-
-@layer components {
-  .skeleton {
-    background: var(--bg-subtle);
-    border-radius: var(--r-sm);
-    animation: suen-breathe 1.6s var(--ease) infinite;
-  }
-
-  /* ---- 屏幕阅读器可见、视觉隐藏 ---- */
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  /* ---- 单行 / 两行省略 ---- */
-  .ellipsis {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-  }
-
-  .clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  /**
-   * 中文的「标签感」。
-   *
-   * 框架原本靠 UPPERCASE + 字距制造标签感，但**中文没有大小写**，那条路在
-   * 中文界面里走不通。替代方案是：小字号 + 加宽字距 + 半粗 + 次级色 ——
-   * 视觉上同样能把「标签」与「内容」区分开。
-   */
-  .label-cn {
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    letter-spacing: 0.08em;
-    color: var(--fg-muted);
-  }
-
-  /* ==========================================================================
-     一条提醒 / 提醒条（§6.5 三·补 · §〇.8 · §6.2.二）
-     --------------------------------------------------------------------------
-     这里的三组类各自解决一个**具体的**毛病，不是通用的「卡片样式」：
-
-       .reminder-row       —— 让「一条明细就是一行」成为结构事实，而不是一个愿望
-       .reminder-acts      —— 让动作在窄屏上退出排版、但不退出无障碍树
-       .reminder-swipe     —— 左右滑的舞台（左滑＝主操作、右滑＝忽略）
-
-     宽度纪律（`A29`）：金额 / 紧急度 / 状态 / 动作一律 `flex: 0 0 auto`
-     ——**永不截断**；唯一 `flex: 0 1 auto` 的是计划名。
-     为什么这么排：少知道「是哪一期」不影响你决定按哪个键，
-     但截断一个四字状态词会出现「自…」，比不显示更糟（§〇.8 第 2 处）。
-     ========================================================================== */
-
-  .reminder-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: var(--bg-subtle);
-    /* 一条就是一行：折行会让行高不定，一屏装多少条也就无从计算 */
-    white-space: nowrap;
-    /* 竖向滚动留给浏览器（否则列表滚不动），横向留给手势 */
-    touch-action: pan-y;
-  }
-
-  .reminder-row__amt {
-    flex: 0 0 auto;
-    font-weight: var(--fw-bold);
-  }
-
-  /* 唯一允许被压缩、被截断的一格 */
-  .reminder-row__plan {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .reminder-row__when {
-    flex: 0 0 auto;
-    font-size: var(--fs-xs);
-  }
-
-  .reminder-row__state {
-    flex: 0 0 auto;
-    font-size: var(--fs-xs);
-    color: var(--fg-muted);
-  }
-
-  .reminder-acts {
-    flex: 0 0 auto;
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /**
-   * 窄屏上动作按钮**不参与排版** —— 手指用左右滑，按钮只会把文字挤走
-   * （这正是第九次修正之前那个「显示不完全」的成因）。
-   *
-   * 但**不能直接 `display: none`**：那会让键盘用户与读屏用户彻底够不到
-   * 这三个动作，而滑动是鼠标/触屏专属的交互。所以把它留在无障碍树里，
-   * 只有里面某个按钮拿到焦点时才浮出来 —— 键盘 Tab 过来就能看见、就能按。
-   */
-  @media (max-width: 1023px) {
-    .reminder-acts {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      margin: -1px;
-      padding: 0;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-    }
-
-    .reminder-acts:focus-within {
-      position: static;
-      width: auto;
-      height: auto;
-      margin: 0 0 0 auto;
-      overflow: visible;
-      clip: auto;
-    }
-  }
-
-  /* ==========================================================================
-     卡片网格（A22 · §6.7）
-     --------------------------------------------------------------------------
-     **卡片按内容高，绝不为「看起来整齐」而拉高。**
-
-     `grid` 的 `align-items` 初值是 `normal`，在网格里表现为 `stretch` ——
-     它把同一行的卡片一律拉到行高，矮的那张多出来的空间全落在卡片底部，
-     于是卡片自己凹进去一块。项目里没有任何人「决定」要这么做，
-     所以修法也不是逐页调样式，而是在这里关掉它一次。
-
-     判据是能量出来的：**卡片里最后一行内容离底边 > 40px 就是错。**
-
-     ⚠️ 为什么**不是**改 Tailwind 的 `.grid`：
-     数字键盘的 `⌫ / ＋` 与跨两行的「保存」、期间选择器的三格，
-     都靠 `stretch` 撑满各自的格子 —— 把 `.grid` 一律改成 `start`，
-     它们的键会缩成内容高，键盘看起来就散架了。
-     「网格不该撑高」只对**卡片**成立，所以它是一条新的类，不是一条全局覆盖。
-     ========================================================================== */
-
-  .card-grid {
-    display: grid;
-    align-items: start;
-    gap: 12px;
-  }
-
-  /* ---- 累计条：只有一行数，压成通栏细条 ---- */
-  .strip {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 11px 14px;
-    background: var(--bg-subtle);
-    border-radius: var(--r-md);
-    font-size: 12px;
-    color: var(--fg-muted);
-  }
-
-  .strip__label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--fg-faint);
-    padding-right: 14px;
-    border-right: 1px solid var(--border);
-  }
-
-  .strip__items {
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    flex-wrap: wrap;
-  }
-
-  .strip__items b {
-    color: var(--fg);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .strip__note {
-    margin-left: auto;
-    font-size: 11px;
-    color: var(--fg-faint);
-  }
-
-  @media (max-width: 640px) {
-    .strip {
-      display: block;
-    }
-    .strip__label {
-      display: block;
-      border-right: 0;
-      padding: 0 0 6px;
-    }
-    .strip__items {
-      gap: 8px 14px;
-    }
-    .strip__note {
-      display: none;
-    }
-  }
-
-  /* ---- 桌面 Hero 底部提醒条 ---- */
-  /* ═══════════════════════════════════════════════════════════════
-     v3 组件：金额三级排版
-       ¥  小 2 档、上移、弱色；整数 = 主字；角分 = 小 1 档、弱色。
-       全 tabular。金额右对齐的物理来源就是这三个 span 的 baseline 对齐。
-     ═══════════════════════════════════════════════════════════════ */
-  .amount-v3 { display: inline-flex; align-items: baseline; white-space: nowrap; }
-  .amount-v3 .cur  { font-size: 0.62em; font-weight: 500; color: inherit;
-                     opacity: 0.8; margin-right: 2px; transform: translateY(-0.28em); }
-  .amount-v3 .int  { font-weight: 600; letter-spacing: -0.01em; }
-  .amount-v3 .dec  { font-size: 0.72em; color: inherit; opacity: 0.7; font-weight: 500; }
-  .amount-v3.lg .cur { font-size: 0.5em; transform: translateY(-0.35em); }
-
-  /* 输入框 v4：深色=终端（等宽字 + 霓虹 focus 辉光）；浅色=糖果（focus 硬阴影染色） */
-  .input-v4 {
-    width: 100%;
-    background: var(--surface-container);
-    border: var(--border-width) solid var(--outline);
-    border-radius: var(--radius-field);
-    color: var(--on-surface);
-    font-family: var(--font-sans);
-    transition: all var(--dur-fast) var(--ease);
-  }
-  .input-v4::placeholder { color: var(--on-surface-variant); }
-  .input-v4:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: var(--el-neon, 0 0 0 1px var(--primary));
-  }
-  :root[data-theme='light'] .input-v4:focus {
-    box-shadow: 4px 4px 0px 0px var(--primary);
-  }
-
-  /* ═════════ v4 双设计语言组件 ═════════════════════════════
-     深色（Cyberpunk）：弹层/卡片 clip-path 切角 + 霓虹边；
-     浅色（Playful）：糖果按钮（硬阴影 + 2px 深边框 + 弹性回弹）。
-     同一类名，变量驱动 —— 组件代码零改动。 */
-
-  /* 弹层/卡片：深色切角，浅色圆角+硬阴影 */
-  .panel-v4 {
-    background: var(--surface-container);
-    border: var(--border-width) solid var(--outline);
-    border-radius: var(--radius-card);
-    clip-path: var(--chamfer);
-    box-shadow: var(--el-1);
-  }
-
-  /* 糖果按钮（浅色生效：硬阴影位移）；深色自动变霓虹描边钮 */
-  .btn-v4 {
-    font-family: var(--font-sans);
-    font-weight: 700;
-    border: var(--border-width) solid var(--outline-strong);
-    border-radius: var(--radius-pill);
-    padding: 10px 22px;
-    cursor: pointer;
-    background: var(--primary);
-    color: var(--on-primary);
-    box-shadow: var(--el-pop);
-    transition: all var(--dur) var(--ease-pop);
-  }
-  .btn-v4:hover { box-shadow: var(--el-pop-hover); transform: translate(-2px,-2px); }
-  .btn-v4:active { box-shadow: var(--el-pop-active); transform: translate(2px,2px); }
-
-  :root:not([data-theme='light']) .btn-v4 {
-    background: transparent; color: var(--primary);
-    border-color: var(--primary);
-    clip-path: var(--chamfer-sm);
-    box-shadow: none; border-radius: 0;
-  }
-  :root:not([data-theme='light']) .btn-v4:hover {
-    background: var(--primary); color: var(--on-primary);
-    box-shadow: var(--el-neon); transform: none;
+    :root:not([data-theme='light']) h1 { animation: cyber-glitch 7s infinite; }
   }
 
   /* 辅助标签：11px 全大写 + 0.5px 字距（M3 label） */

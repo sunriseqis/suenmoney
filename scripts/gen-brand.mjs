@@ -3,9 +3,9 @@
  * 品牌资产生成 —— 一个矢量母版，出全端图标。
  *
  * 母版在 `docs/design/brand/`（手写矢量，零位图嵌入）：
- *   mark.svg         1024 方形，11 亮格 + 9 空格（≥32px 用）
- *   mark-small.svg   <32px：只留 11 个笔画（空格在 16px 等于不存在）
- *   mark-mono.svg    单色剪影（monochrome / 分层前景）
+ *   mark-dark.svg    深色母版（近黑底 + 霓虹环 + 点阵 88.88）
+ *   mark-light.svg   浅色母版（纸白底 + 硬阴影 + 糖果四色）
+
  *
  * 注意：**没有「header 变体」**。那条横条是计算器的显示屏 —— 它是标记的语义主体，
  * 不是「大尺寸才配的装饰」。曾把它当成可选项删掉，Logo 立刻只剩一片点阵。
@@ -38,15 +38,12 @@ const svg = (name) => readFileSync(join(BRAND, name), 'utf8');
 
 /** 母版缓存：同一份 SVG 反复用，不要每次都读盘 */
 const SRC = {
-  master: svg('mark.svg'),
-  small: svg('mark-small.svg'),
-  mono: svg('mark-mono.svg'),
-  colored: svg('mark-colored.svg'),
+  master: svg('mark-dark.svg'),
   light: svg('mark-light.svg'),
 };
 
 function pick(size) {
-  return size <= SMALL_MAX ? SRC.small : SRC.master;
+  return SRC.master;
 }
 
 /**
@@ -78,10 +75,10 @@ async function emit(source, size, relPath) {
 async function main() {
   // ── 1) 母版渲染全集（文档、外部使用、其它端取用） ──
   for (const size of [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512, 1024]) {
-    await emit(pick(size), size, `docs/design/brand/dist/mark-${size}.png`);
+    await emit(SRC.master, size, `docs/design/brand/dist/mark-${size}.png`);
   }
-  for (const size of [64, 256, 512, 1024]) {
-    await emit(SRC.mono, size, `docs/design/brand/dist/mark-mono-${size}.png`);
+  for (const size of [16, 24, 32, 48, 64, 128, 256, 512, 1024]) {
+    await emit(SRC.light, size, `docs/design/brand/dist/mark-light-${size}.png`);
   }
 
   // ── 2) Web / PWA ──
@@ -95,11 +92,9 @@ async function main() {
   if (!CHECK) {
     writeFileSync(join(ROOT, 'web/public/logo.svg'), SRC.master);
     writeFileSync(join(ROOT, 'web/public/mark-light.svg'), SRC.light);
-    writeFileSync(join(ROOT, 'web/public/mark-colored.svg'), SRC.colored);
   }
   written.push('web/public/logo.svg  (真矢量，' + (SRC.master.length / 1024).toFixed(1) + 'KB)');
   written.push('web/public/mark-light.svg  (浅色反色版)');
-  written.push('web/public/mark-colored.svg  (彩色粗边框版)');
 
   // ── 3) 飞牛 fnOS 套件（计划二直接消费） ──
   if (existsSync(join(ROOT, 'fn/manifest'))) {
@@ -112,16 +107,10 @@ async function main() {
   }
 
   // ── 3.5) 彩色边框版 / 反色浅色版 ──
-  for (const size of [64, 128, 256, 512, 1024]) {
-    await emit(SRC.colored, size, `docs/design/brand/dist/mark-colored-${size}.png`);
-  }
-  for (const size of [32, 64, 128, 256, 512, 1024]) {
-    await emit(SRC.light, size, `docs/design/brand/dist/mark-light-${size}.png`);
-  }
 
   // ── 4) iOS / 鸿蒙：计划三会重写工程，这里只出「可用的源图」，不动工程 ──
   await emit(SRC.master, 1024, 'docs/design/brand/dist/appicon-ios-1024.png');
-  await emit(SRC.mono, 1024, 'docs/design/brand/dist/appicon-layered-foreground-1024.png');
+  await emit(SRC.master, 1024, 'docs/design/brand/dist/appicon-layered-foreground-1024.png');
 
   console.log(CHECK ? '将写入以下文件：' : '已生成：');
   for (const w of written) console.log('  ' + w);

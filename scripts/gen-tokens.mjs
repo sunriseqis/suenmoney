@@ -29,6 +29,7 @@ const CHECK = process.argv.includes('--check');
 const tokens = JSON.parse(readFileSync(SRC, 'utf8'));
 const c = tokens.color;
 const a = c.accent;
+const d = tokens.shape ?? { chamferSm: 'polygon(0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px))' };
 
 const HEADER = `/* ==========================================================================
    ⚠ 本文件由 scripts/gen-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
@@ -39,12 +40,8 @@ const HEADER = `/* =============================================================
 const css = `${HEADER}
 
 /* ═══════════════════════════════════════════════════════════════
-   主题机制：不写 data-theme = 深色（Cyberpunk）；
-   data-theme="light" = 浅色（Playful Geometric）。
-   两套是**两种设计语言**，不是同一种颜色的两种明度。
+   深色 · Cyberpunk（默认，不写 data-theme 即此主题）
    ═══════════════════════════════════════════════════════════════ */
-
-/* ── 深色 · Cyberpunk（默认）────────────────────────────────── */
 :root {
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
   --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
@@ -53,6 +50,7 @@ const css = `${HEADER}
   --surface: ${c.surface.base.dark};
   --surface-container: ${c.surface.container.dark};
   --surface-high: ${c.surface.high.dark};
+  --surface-low: ${c.surface.low.dark};
   --on-surface: ${c.on.surface.dark};
   --on-surface-variant: ${c.on.surfaceVariant.dark};
   --outline: ${c.outline.default.dark};
@@ -77,46 +75,44 @@ const css = `${HEADER}
   --on-danger: ${a.destructive.on.dark};
 
   --focus: ${c.stateLayer.focus.dark};
-  --scrim: rgb(0 0 0 / 0.62);
+  --scrim: rgb(0 0 0 / 0.72);
+
+  /* 形状：切角，圆角归零 */
   --border-width: 1px;
-  --radius-card: 0px;
-  --radius-field: 4px;
-  --radius-pill: 0px;
-  --radius-keypad: 0px;
+  --radius-card: 0px; --radius-sheet: 0px; --radius-field: 4px;
+  --radius-pill: 0px; --radius-keypad: 0px;
   --r-sm: 2px; --r-md: 4px; --r-pill: 0px;
-
-  /* 霓虹辉光 */
-  --el-1: ${c.shadow.dark.neonSm};
-  --el-2: ${c.shadow.dark.neon};
-  --el-neon: ${c.shadow.dark.neon};
-  --el-neon-secondary: ${c.shadow.dark.neonSecondary};
-  --el-neon-tertiary: ${c.shadow.dark.neonTertiary};
-
-  /* 切角（Cyberpunk 标志性） */
   --chamfer: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px,
     100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
-  --chamfer-sm: polygon(0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px,
-    100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px));
+  --chamfer-sm: ${d.chamferSm};
 
-  /* 扫描线纹理 */
-  --scanlines: repeating-linear-gradient(0deg, transparent, transparent 2px,
-    rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px);
-  /* 电路网格背景 */
-  --circuit-bg: linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
+  /* 阴影：霓虹辉光 */
+  --el-1: ${c.shadow.dark.glowSm};
+  --el-2: ${c.shadow.dark.glow};
+  --el-glow: ${c.shadow.dark.glow};
+  --el-glow-secondary: ${c.shadow.dark.glowCyan};
+  --el-glow-tertiary: ${c.shadow.dark.glowMagenta};
+  --el-pop: none;
 
-  --dur-fast: 100ms; --dur: 150ms; --dur-slow: 300ms;
+  /* 纹理 */
+  --scanlines: ${c.texture.scanlines};
+  --circuit-bg: ${c.texture.circuit};
+
+  --dur-fast: 150ms; --dur: 300ms; --dur-slow: 400ms;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-pop: steps(4);
+  --ease-pop: cubic-bezier(0.4, 0, 0.2, 1);
 
   --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
 }
 
-/* ── 浅色 · Playful Geometric（data-theme="light"）────── */
+/* ═══════════════════════════════════════════════════════════════
+   浅色 · Playful Geometric（data-theme="light"）
+   ═══════════════════════════════════════════════════════════════ */
 :root[data-theme='light'] {
   --surface: ${c.surface.base.light};
   --surface-container: ${c.surface.container.light};
   --surface-high: ${c.surface.high.light};
+  --surface-low: ${c.surface.low.light};
   --on-surface: ${c.on.surface.light};
   --on-surface-variant: ${c.on.surfaceVariant.light};
   --outline: ${c.outline.default.light};
@@ -142,29 +138,26 @@ const css = `${HEADER}
 
   --focus: ${c.stateLayer.focus.light};
   --scrim: rgb(20 18 34 / 0.42);
-  --border-width: 2px;
-  --radius-card: 16px;
-  --radius-field: 8px;
-  --radius-pill: 9999px;
-  --radius-keypad: 12px;
-  --r-sm: 8px; --r-md: 16px; --r-pill: 9999px;
 
-  /* 糖果硬阴影 */
-  --el-1: ${c.shadow.light.pop};
+  --border-width: 2px;
+  --radius-card: 16px; --radius-sheet: 24px; --radius-field: 8px;
+  --radius-pill: 9999px; --radius-keypad: 12px;
+  --r-sm: 8px; --r-md: 16px; --r-pill: 9999px;
+  --chamfer: none;
+  --chamfer-sm: none;
+
+  --el-1: ${c.shadow.light.card};
   --el-2: ${c.shadow.light.sticker};
+  --el-glow: none; --el-glow-secondary: none; --el-glow-tertiary: none;
   --el-pop: ${c.shadow.light.pop};
   --el-pop-hover: ${c.shadow.light.popHover};
   --el-pop-active: ${c.shadow.light.popActive};
-  --el-sticker: ${c.shadow.light.sticker};
-  --el-sticker-pink: ${c.shadow.light.stickerPink};
 
-  --chamfer: none;
-  --chamfer-sm: none;
   --scanlines: none;
   --circuit-bg: none;
 
   --dur-fast: 150ms; --dur: 300ms; --dur-slow: 400ms;
-  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);  /* 弹性回弹 */
+  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 `;
