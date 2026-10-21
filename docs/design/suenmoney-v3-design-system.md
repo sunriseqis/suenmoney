@@ -172,7 +172,7 @@ docs/plan.md:440   第四轮已落地：彻底移除移动底栏（--bottom-bar-
 | 形态 | 文件 | 何时用 |
 |---|---|---|
 | 完整 | `brand/mark.svg` | **≥32px**：iOS / 鸿蒙 / fnOS 图标、启动图、桌面、顶栏 |
-| 小尺寸 | `brand/mark-small.svg` | **<32px**：favicon 16/24、通知栏。键位改圆点，**屏与灯保留** |
+| 小尺寸 | `brand/mark-small.svg` | **<32px**：favicon 16/24、通知栏。LED 段加粗 13→22，键位改圆点，**屏幕与数字保留** |
 | 单色 | `brand/mark-mono.svg` | 安卓 monochrome、鸿蒙分层前景、系统染色。屏 85% 白 + 亮键白 + 暗键 30% 白 |
 
 ### 全端产物（`npm run icons` 一条命令）
