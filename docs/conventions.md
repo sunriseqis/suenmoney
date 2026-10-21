@@ -19,7 +19,8 @@ suenmoney/
 
 **规则**
 
-- `server/` 与 `web/` **不得互相 import**。两者只通过 HTTP 接口耦合，接口形状由
+- `server/` 与 `web/` **不得互相 import**。服务端只是把 `web/dist` 当静态目录读（`@fastify/static`），
+  不碰任何前端源码。两者只通过 HTTP 接口耦合，接口形状由
   `web/src/api/types.ts` 与服务端 `src/http/*.ts` 两侧各自声明（类型重复是有意的：
   它让接口变更必须显式同步两边，而不是被一次自动重构悄悄改掉）。
 - `android/` 与 `ios/` **不放任何手写的业务代码**。它们的内容全部由
@@ -77,7 +78,7 @@ web/
 |---|---|---|---|
 | server | 无 | — | 直接用 `node` 运行 `.ts`，**没有构建步骤**，也就没有构建产物 |
 | server | `server/data/` | 否 | SQLite 库与 `backups/`。运行时数据，绝不入库 |
-| web | `web/dist/` | 否 | Vite 生产构建产物。只由 Docker 构建流程消费 |
+| web | `web/dist/` | 否 | Vite 生产构建产物。由 Docker 构建阶段生成，运行时由服务端静态托管（单端口） |
 | android | `android/app/build/`、`android/build/` | 否 | Gradle 产物 |
 | android | `android/**/*.apk`、`*.aab` | 否 | |
 | ios | `ios/App/build/`、`ios/**/Pods/` | 否 | |
@@ -95,11 +96,16 @@ web/
 docs/
 ├── conventions.md      本文件：目录与产物约定
 ├── decisions.md        设计决定与理由（改设计前先读）
-├── plan.md             路线图与当前进度
+├── plan.md             路线图与当前进度（总表，唯一一份）
 ├── api.md              接口清单
+├── plan/               方案文档（要做什么、按什么顺序、怎么算做完）
+├── memory/             实施记录（已经做了什么、踩了什么坑、根因）
 └── design/             设计素材（设计系统原文、令牌推导、界面评审记录）
 ```
 
+- 「**计划**」写 `docs/plan/`（一期一文件，`YYYY-MM-DD-主题.md`，进 `docs/plan/README.md` 索引）；
+  「**记忆**」写 `docs/memory/`（`YYYY-MM-DD.md` 或 `YYYY-MM-DD-主题.md`）。
+  总进度仍然只维护 `docs/plan.md` 一份，方案细节不往里堆。
 - 「记忆」「计划」「素材」**一律写进 `docs/`**。
 - **禁止创建 `.codebuddy/`、`.workbuddy/` 或任何同类目录**用于存放记忆、
   计划、缓存、说明文件。需要长期留存的信息写进 `docs/`，需要临时存的信息
