@@ -428,7 +428,7 @@ async function handleSkip(todoId: string): Promise<void> {
         </p>
 
         <!-- 3 个子指标，随 tab 切换 -->
-        <div class="mt-5 grid grid-cols-3 gap-4 border-t border-white/15 pt-4 text-xs lg:mt-6 lg:gap-8">
+        <div class="metrics-row">
           <template v-if="scope === 'month'">
             <div>
               <span class="block opacity-75">日均</span>
