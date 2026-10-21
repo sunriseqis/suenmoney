@@ -1,17 +1,10 @@
 name: CI Test & Lint
 
+# ⚠ 自动构建已关闭（2026-10-21）：本工作流只保留手动派发（workflow_dispatch）。
+#   存储/额度都是自己掏的，日常推送不该自动烧构建；需要构建时手动派发，
+#   恢复自动触发的做法见 docs/ci.md，原触发器原文可从 git 历史取回。
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-  pull_request:
-    branches:
-      - main
-      - master
+  workflow_dispatch:
 
 permissions:
   contents: read

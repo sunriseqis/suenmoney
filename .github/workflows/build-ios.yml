@@ -1,11 +1,9 @@
 name: Build iOS IPA
 
+# ⚠ 自动构建已关闭（2026-10-21）：本工作流只保留手动派发（workflow_dispatch）。
+#   存储/额度都是自己掏的，日常推送不该自动烧构建；需要构建时手动派发，
+#   恢复自动触发的做法见 docs/ci.md，原触发器原文可从 git 历史取回。
 on:
-  # macOS runner 按 10 倍计费，收拢为 Tag 发版 / 手动派发两种入口，
-  # 日常 Web/脚本推送不再自动触发昂贵的 Xcode 编译。
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       custom_version:
