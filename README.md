@@ -35,6 +35,9 @@ docker compose exec suenmoney node scripts/node-run.mjs src/cli/user-add.ts --us
 > **只有一个端口 5310**：它同时是页面地址与接口地址，没有第二个端口、也没有「后端地址」要配。
 > 浏览器里前端永远同源；原生客户端（iOS / 鸿蒙）在登录页填 `http://<宿主机IP>:5310` 即可。
 
+> **不想用 Docker？** 合并之后服务端自带静态托管，一个 Node 进程就是全部 ——
+> 见 [部署指南 · 本机直接部署](docs/deploy.md#三补本机直接部署不用-docker)（systemd 托管、开机自启）。
+
 > **时区**：镜像默认 `TZ=Asia/Shanghai`（影响备份调度时刻与容器日志时间戳）。
 > 业务日期不受容器时区影响——客户端按本地时区判定后传入 `YYYY-MM-DD`。
 > 宿主机在其他时区时，在 `docker-compose.yml` 里覆盖 `TZ` 即可。

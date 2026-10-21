@@ -98,6 +98,55 @@ docker ps --filter name=suenmoney
 
 ---
 
+## 三·补、本机直接部署（不用 Docker）
+
+合并之后服务端已经**自带静态托管**，所以「跑起来」这件事不再依赖任何容器工具 ——
+一个 Node 进程 + 一个前端产物目录就是全部。想要开机自启、崩溃重启，用 systemd 托管即可。
+
+```bash
+# 1. 准备产物（前端只构建一次，改了前端要重新跑）
+npm ci --prefix server && npm ci --prefix web
+npm --prefix web run build          # → web/dist
+
+# 2. 数据放仓库外，仓库保持干净（等价于容器里的 /app/data）
+sudo install -d -m 755 /var/lib/suenmoney /var/lib/suenmoney/backups
+
+# 3. 装 systemd 单元（仓库里带模板：scripts/suenmoney.service）
+sudo cp scripts/suenmoney.service /etc/systemd/system/suenmoney.service
+sudoedit /etc/systemd/system/suenmoney.service   # 改三处：WorkingDirectory / SUENMONEY_WEB_ROOT / ExecStart 的 node 绝对路径
+sudo systemctl daemon-reload
+sudo systemctl enable --now suenmoney
+
+# 4. 看状态与日志
+systemctl status suenmoney
+journalctl -u suenmoney -f
+```
+
+访问 `http://<宿主机IP>:5310`。
+
+**三个容易踩的点**
+
+| 坑 | 说明 |
+|---|---|
+| `ExecStart` 里必须写 node 的**绝对路径** | systemd 不读你的 shell PATH；nvm / asdf / volta 装的 node 在 `which node` 能看到、在单元里看不到（报 `status=203/EXEC`）。用 `which node` 的输出替换 |
+| 数据目录必须在仓库外 | 用 `/var/lib/suenmoney`。放仓库里的话 `git clean` 或某次误操作就可能连账本一起删 |
+| 前面套反代才开 `TRUST_PROXY` | 反代场景改成 `true`；直连保持 `false`，否则 XFF 可伪造、限流被绕过 |
+
+**验证它真的在跑**（这几条也是 CI 之外的最后一关）：
+
+```bash
+curl -s http://127.0.0.1:5310/api/health        # {"ok":true,...,"version":"..."}
+curl -sI http://127.0.0.1:5310/ | head -3       # 200 text/html + cache-control: no-cache
+curl -s  http://127.0.0.1:5310/api/nope         # {"error":"接口不存在"}（JSON，不是 HTML）
+systemctl stop suenmoney && ls -l /var/lib/suenmoney/   # -wal 应被归并为 0 字节（优雅停机生效）
+```
+
+> 这条路与 Docker 部署**完全等价**（同一份代码、同一套环境变量），
+> 也是飞牛 fnOS 套件（`docs/plan/2026-10-21-飞牛fnOS应用套件工程方案.md`）的运行形态 ——
+> 套件只是把 Node 运行时和数据目录换成了包内的 `bin/node` 与 `TRIM_PKGVAR`。
+
+---
+
 ## 四、环境变量速查
 
 | 环境变量 | 默认值 | 作用说明 |
