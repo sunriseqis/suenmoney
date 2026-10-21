@@ -64,7 +64,7 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
       v-for="digit in DIGITS"
       :key="digit"
       type="button"
-      class="rounded-[18px] bg-surface-container py-2.5 text-xl font-semibold text-on-surface shadow-[var(--el-1)] transition-all duration-150 active:scale-95 hover:bg-surface-high/60 sm:py-3 sm:text-2xl"
+      class="rounded-[var(--radius-keypad)] bg-surface-container py-2.5 text-xl font-semibold text-on-surface transition-all duration-150 active:scale-95 hover:border-primary hover:shadow-[var(--el-glow)] border border-outline sm:py-3 sm:text-2xl"
       @click="emit('press', digit)"
     >
       {{ digit }}
@@ -92,21 +92,21 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
 
     <button
       type="button"
-      class="rounded-[18px] bg-surface-container py-2.5 text-xl font-semibold text-on-surface shadow-[var(--el-1)] transition-all duration-150 active:scale-95 hover:bg-surface-high/60 sm:py-3 sm:text-2xl"
+      class="rounded-[var(--radius-keypad)] bg-surface-container py-2.5 text-xl font-semibold text-on-surface transition-all duration-150 active:scale-95 hover:border-primary hover:shadow-[var(--el-glow)] border border-outline sm:py-3 sm:text-2xl"
       @click="emit('press', '.')"
     >
       .
     </button>
     <button
       type="button"
-      class="rounded-[18px] bg-surface-container py-2.5 text-xl font-semibold text-on-surface shadow-[var(--el-1)] transition-all duration-150 active:scale-95 hover:bg-surface-high/60 sm:py-3 sm:text-2xl"
+      class="rounded-[var(--radius-keypad)] bg-surface-container py-2.5 text-xl font-semibold text-on-surface transition-all duration-150 active:scale-95 hover:border-primary hover:shadow-[var(--el-glow)] border border-outline sm:py-3 sm:text-2xl"
       @click="emit('press', '0')"
     >
       0
     </button>
     <button
       type="button"
-      class="rounded-[18px] bg-surface-high py-2.5 text-base font-medium text-on-surface-variant transition-all duration-150 active:scale-95 hover:bg-surface-high sm:py-3 sm:text-lg"
+      class="rounded-[var(--radius-keypad)] bg-surface-high py-2.5 text-base font-medium text-on-surface-variant border border-outline transition-all duration-150 active:scale-95 sm:py-3 sm:text-lg"
       @click="emit('press', '00')"
     >
       00
@@ -116,7 +116,7 @@ const DIGITS = ['7', '8', '9', '4', '5', '6', '1', '2', '3'] as const;
       type="button"
       :disabled="!canSave || saving"
       :class="$slots.left ? 'col-start-5' : 'col-start-4'"
-      class="row-span-2 row-start-3 rounded-[18px] bg-tertiary text-base font-bold text-on-tertiary shadow-[var(--el-2)] transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:active:scale-100 [clip-path:polygon(0_0,100%_0,100%_100%,9px_100%,0_calc(100%_-_9px))] sm:text-base"
+      class="row-span-2 row-start-3 rounded-[var(--radius-keypad)] bg-tertiary text-base font-bold text-on-tertiary transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:active:scale-100 hover:shadow-[var(--el-glow-tertiary)] sm:text-base"
       @click="emit('press', 'save')"
     >
       {{ saving ? '…' : saveLabel }}

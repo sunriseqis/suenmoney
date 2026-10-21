@@ -285,35 +285,42 @@
     display: inline-flex;
     gap: 2px;
     background: var(--surface);
-    border: 1px solid var(--outline-strong);
+    border: var(--border-width) solid var(--outline);
     padding: 3px;
     border-radius: var(--radius-pill);
+    clip-path: var(--chamfer-sm);
   }
 
   .pill-tabs button {
-    font: inherit;
+    font-family: var(--font-sans);
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 700;
     border: 0;
     background: transparent;
     color: var(--on-surface-variant);
-    padding: 5px 14px;
+    padding: 6px 14px;
     border-radius: var(--radius-pill);
+    clip-path: var(--chamfer-sm);
     cursor: pointer;
-    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+    transition: all var(--dur-fast) var(--ease);
   }
 
-  .pill-tabs button:hover {
-    background: rgb(242 239 250 / 0.08);        /* state layer hover 8% */
+  /* 深色 Cyberpunk：等宽 + 大写 + 宽字距 */
+  :root:not([data-theme='light']) .pill-tabs button {
+    text-transform: uppercase; letter-spacing: .12em; border-radius: 0;
   }
-  .pill-tabs button:active {
-    background: rgb(242 239 250 / 0.12);        /* pressed 12% */
+  :root:not([data-theme='light']) .pill-tabs button:hover { color: var(--primary); }
+  :root:not([data-theme='light']) .pill-tabs button[aria-pressed='true'] {
+    background: var(--primary); color: var(--on-primary);
+    box-shadow: var(--el-glow);
   }
 
-  .pill-tabs button[aria-pressed='true'] {
-    background: var(--primary-container);
-    color: var(--primary);
-    font-weight: 600;
+  /* 浅色 Playful：胶囊 + 硬阴影位移（糖果） */
+  :root[data-theme='light'] .pill-tabs button:hover { background: var(--tertiary); color: #1E293B; }
+  :root[data-theme='light'] .pill-tabs button[aria-pressed='true'] {
+    background: var(--primary); color: #fff;
+    box-shadow: 2px 2px 0px 0px #1E293B;
+    transform: translate(-1px,-1px);
   }
   .pill-tabs button:focus-visible {
     outline: 2px solid var(--focus);
@@ -471,6 +478,54 @@
   .pop-in {
     animation: su-pop 260ms var(--ease-out-soft) both;
   }
+
+  /* ═══════════ v5 组件：糖果按钮 vs 霓虹按钮 ═══════════════════ */
+  .btn-v4 {
+    font-family: var(--font-sans); font-weight: 700;
+    border: var(--border-width) solid var(--outline-strong);
+    border-radius: var(--radius-pill);
+    padding: 10px 22px; cursor: pointer;
+    background: var(--primary); color: var(--on-primary);
+    clip-path: var(--chamfer-sm);
+    transition: all var(--dur) var(--ease);
+  }
+  :root:not([data-theme='light']) .btn-v4 {
+    text-transform: uppercase; letter-spacing: .12em; font-size: 13px;
+    background: transparent; color: var(--primary);
+  }
+  :root:not([data-theme='light']) .btn-v4:hover {
+    background: var(--primary); color: var(--on-primary); box-shadow: var(--el-glow);
+  }
+  :root[data-theme='light'] .btn-v4 { box-shadow: var(--el-pop); }
+  :root[data-theme='light'] .btn-v4:hover {
+    transform: translate(-2px, -2px); box-shadow: 6px 6px 0px 0px #1E293B;
+  }
+  :root[data-theme='light'] .btn-v4:active {
+    transform: translate(2px, 2px); box-shadow: 2px 2px 0px 0px #1E293B;
+  }
+
+  /* ═══════════ v5 弹层：深色切角 / 浅色圆角+硬阴影 ══════════════ */
+  .panel-v4 {
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-card);
+    clip-path: var(--chamfer);
+    box-shadow: var(--el-1);
+  }
+  :root[data-theme='light'] .panel-v4 { border-color: var(--fg); }
+
+  /* ═══════════ v5 输入框 ════════════════════════════════════════ */
+  .input-v4 {
+    width: 100%; background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-field); color: var(--on-surface);
+    font-family: var(--font-sans);
+    clip-path: var(--chamfer-sm);
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .input-v4:focus { outline: none; border-color: var(--primary); box-shadow: var(--el-glow); }
+  :root[data-theme='light'] .input-v4 { border-color: #CBD5E1; }
+  :root[data-theme='light'] .input-v4:focus { box-shadow: 4px 4px 0px 0px var(--primary); }
 }
 
 /* 页面切换：淡入 + 上浮。out-in 保证两屏不叠在一起闪 */
