@@ -397,6 +397,12 @@
   .amount-v3 .dec  { font-size: 0.72em; color: var(--on-surface-variant); font-weight: 500; }
   .amount-v3.lg .cur { font-size: 0.5em; transform: translateY(-0.35em); }
 
+  /* 辅助标签：11px 全大写 + 0.5px 字距（M3 label） */
+  .label-v3 {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.5px;
+    text-transform: uppercase; color: var(--on-surface-variant);
+  }
+
   /* 44px 圆形分类徽位（流水行左端） */
   .cat-avatar {
     width: 44px; height: 44px; border-radius: 50%;
@@ -540,30 +546,49 @@
   }
 
   /* ---- 三档 Pill Tabs ---- */
+  /**
+   * 分段控件（v3 · M3 语法）。
+   * 选中态 = primary 12% container 底 + 电紫字（不是「白块跳出来」——
+   * 那是浅色设计的语言；深色设计的选中是「染上去」）。
+   * 边界用 outline-strong（3.4:1），不用 outline（1.64:1 只配分隔线）。
+   */
   .pill-tabs {
     display: inline-flex;
     gap: 2px;
-    background: var(--bg-sunken);
+    background: var(--surface);
+    border: 1px solid var(--outline-strong);
     padding: 3px;
-    border-radius: var(--r-sm);
+    border-radius: var(--radius-pill);
   }
 
   .pill-tabs button {
     font: inherit;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
     border: 0;
     background: transparent;
-    color: var(--fg-muted);
-    padding: 4px 12px;
-    border-radius: 4px;
+    color: var(--on-surface-variant);
+    padding: 5px 14px;
+    border-radius: var(--radius-pill);
     cursor: pointer;
-    transition: background 160ms, color 160ms;
+    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+
+  .pill-tabs button:hover {
+    background: rgb(242 239 250 / 0.08);        /* state layer hover 8% */
+  }
+  .pill-tabs button:active {
+    background: rgb(242 239 250 / 0.12);        /* pressed 12% */
   }
 
   .pill-tabs button[aria-pressed='true'] {
-    background: var(--bg-subtle);
-    color: var(--fg);
+    background: var(--primary-container);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .pill-tabs button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
   }
 
   /* ---- 左右滑 ---- */

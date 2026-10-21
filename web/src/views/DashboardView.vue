@@ -341,16 +341,9 @@ async function handleSkip(todoId: string): Promise<void> {
     <header class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-[calc(var(--safe-top)+20px)] lg:px-6 lg:pt-8">
       <!-- ① Hero 卡片：深蓝质感渐变 + 装饰光晕与水印（与流水顶卡对齐） -->
       <div
-        class="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#2563eb] via-[#1d4ed8] to-[#1e40af] p-5 text-on-primary shadow-xs lg:rounded-[14px] lg:p-7"
+        class="relative overflow-hidden rounded-2xl bg-surface-container p-5 text-on-surface shadow-[var(--el-1)] lg:p-7"
       >
-        <!-- 背景装饰光晕与水印（与流水顶卡一致的品牌设计语言） -->
-        <div class="pointer-events-none absolute -right-6 -bottom-10 h-40 w-40 rounded-full bg-white/[0.08] ring-8 ring-white/[0.03]" />
-        <div class="pointer-events-none absolute right-16 -top-10 h-32 w-32 rounded-full bg-white/[0.05]" />
-        <div
-          class="pointer-events-none absolute right-4 top-2 select-none font-sans font-black leading-none text-white/[0.07] text-7xl"
-        >
-          ¥
-        </div>
+        <!-- v3：无光晕无水印 —— 质感来自 tonal surface；金额与环比胶囊承担颜色 -->
 
         <div class="relative z-1">
           <div class="flex items-center justify-between gap-2">
@@ -359,7 +352,7 @@ async function handleSkip(todoId: string): Promise<void> {
             <button
               v-if="scope === 'month'"
               type="button"
-              class="grid h-8 w-8 place-items-center rounded-sm bg-white/15 transition-colors duration-200 hover:bg-white/30"
+              class="grid h-8 w-8 place-items-center rounded-full bg-surface-high transition-colors duration-200 hover:bg-surface-high/70"
               aria-label="上个月"
               @click="month = shiftMonth(month, -1)"
             >
@@ -371,7 +364,7 @@ async function handleSkip(todoId: string): Promise<void> {
             <button
               v-if="scope === 'month'"
               type="button"
-              class="grid h-8 w-8 place-items-center rounded-sm bg-white/15 transition-colors duration-200 hover:bg-white/30 disabled:opacity-30"
+              class="grid h-8 w-8 place-items-center rounded-full bg-surface-high transition-colors duration-200 hover:bg-surface-high/70 disabled:opacity-30"
               :disabled="isCurrentSelectedMonth"
               aria-label="下个月"
               @click="month = shiftMonth(month, 1)"
@@ -383,7 +376,7 @@ async function handleSkip(todoId: string): Promise<void> {
           <!-- 标题行行尾关闭按键（A24），返回流水落地页 -->
           <RouterLink
             :to="{ name: 'ledger' }"
-            class="relative grid h-10 w-10 place-items-center rounded-sm bg-white/15 text-sm font-bold text-white transition-colors hover:bg-white/30 after:absolute after:-inset-0.5 after:rounded-sm after:content-['']"
+            class="relative grid h-10 w-10 place-items-center rounded-full bg-surface-high text-sm font-bold text-on-surface transition-colors hover:bg-surface-high/70 after:absolute after:-inset-0.5 after:rounded-full after:content-['']"
             aria-label="关闭概况，返回流水"
           >
             ✕
@@ -413,7 +406,7 @@ async function handleSkip(todoId: string): Promise<void> {
             {{ formatMonthLabel(month) }} ·
             <span v-if="monthChangeRatio !== null">
               较上月
-              <b :class="monthChangeRatio > 0 ? 'text-amber-200' : 'text-emerald-200'">
+              <b :class="monthChangeRatio > 0 ? 'text-tertiary' : 'text-secondary'">
                 {{ monthChangeRatio > 0 ? '+' : '' }}{{ (monthChangeRatio * 100).toFixed(1) }}%
               </b>
               （{{ monthChangeDelta >= 0 ? '+' : '' }}{{ formatYuan(monthChangeDelta) }}）
