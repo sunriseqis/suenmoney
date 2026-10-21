@@ -115,3 +115,36 @@
   --r-md: var(--radius-card);
   --r-pill: var(--radius-pill);
 }
+
+/* ==========================================================================
+   浅色主题（data-theme="light"）
+   --------------------------------------------------------------------------
+   **同产品不同光**：结构、圆角、字号完全一致，只换色阶。
+   刻意不复用旧扁平浅色 —— 那会变成「两个产品」而不是「两种光线」。
+   ========================================================================== */
+:root[data-theme='light'] {
+  --surface: #F6F4EF;
+  --surface-container: #FFFFFF;
+  --surface-high: #E9E5DB;
+  --on-surface: #141222;
+  --on-surface-variant: #5E584C;
+  --outline: #D9D3C6;
+  --outline-strong: #8F8878;
+  --primary: #4C8DFF;
+  --on-primary: #12255C;
+  --primary-container: rgba(179,136,255,0.16);
+  --secondary: #00A98A;
+  --on-secondary: #FFFFFF;
+  --secondary-container: rgba(77,255,210,0.16);
+  --tertiary: #C7427F;
+  --on-tertiary: #FFFFFF;
+  --tertiary-container: rgba(255,122,184,0.16);
+  --lemon: #5C5300;
+  --on-lemon: #FFFFFF;
+  --lemon-container: rgba(229,255,65,0.16);
+  --info: #1F6FD0;
+  --on-info: #FFFFFF;
+  --info-container: rgba(93,184,255,0.16);
+  --focus: #1F6FD0;
+  --scrim: rgb(20 18 34 / 0.42);
+}
