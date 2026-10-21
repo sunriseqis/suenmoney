@@ -38,247 +38,175 @@ const HEADER = `/* =============================================================
 // ── 1) CSS ─────────────────────────────────────────────────────────────────
 const css = `${HEADER}
 
+/* ═══════════════════════════════════════════════════════════════
+   主题机制：不写 data-theme = 深色（Cyberpunk）；
+   data-theme="light" = 浅色（Playful Geometric）。
+   两套是**两种设计语言**，不是同一种颜色的两种明度。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 深色 · Cyberpunk（默认）────────────────────────────────── */
 :root {
-  /* ---- 间距（4px 基数，v3 用 8px 栅格） ---- */
-  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
-  --sp-5: 24px;  --sp-6: 32px;  --sp-7: 48px;  --sp-8: 64px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
   --grid: 8px;
 
-  /* ---- 圆角（M3：卡 24 / 输入 14 / FAB 28 / 胶囊全圆） ---- */
-  --radius-card: ${tokens.shape.card.value};
-  --radius-sheet: ${tokens.shape.sheet.value};
-  --radius-field: ${tokens.shape.field.value};
-  --radius-fab: ${tokens.shape.fab.value};
-  --radius-pill: ${tokens.shape.pill.value};
-  --radius-keypad: ${tokens.shape.keypad.value};
+  --surface: ${c.surface.base.dark};
+  --surface-container: ${c.surface.container.dark};
+  --surface-high: ${c.surface.high.dark};
+  --on-surface: ${c.on.surface.dark};
+  --on-surface-variant: ${c.on.surfaceVariant.dark};
+  --outline: ${c.outline.default.dark};
+  --outline-strong: ${c.outline.strong.dark};
 
-  /* ---- 字号（v3 阶梯；旧名保留，值为 v3 档位） ---- */
-  --fs-xs: 11px;        /* 辅助标签，全大写 + 字距 0.5px */
-  --fs-sm: 12px;
-  --fs-md: 15px;        /* 正文 / 流水行 */
-  --fs-lg: 17px;
-  --fs-xl: 22px;
-  --fs-2xl: 28px;
-  --fs-3xl: 32px;       /* 页面大标题 */
-  --fs-card-title: 16px;
-  --fs-amount: 44px;    /* 大数字（规格 40–48） */
-  --fs-display: 48px;
-  --fs-hero: 56px;
+  --primary: ${a.primary.dark};
+  --on-primary: ${a.primary.on.dark};
+  --primary-container: ${a.primary.container.dark};
+  --secondary: ${a.secondary.dark};
+  --on-secondary: ${a.secondary.on.dark};
+  --secondary-container: ${a.secondary.container.dark};
+  --tertiary: ${a.tertiary.dark};
+  --on-tertiary: ${a.tertiary.on.dark};
+  --tertiary-container: ${a.tertiary.container.dark};
+  --quaternary: ${a.quaternary.dark};
+  --on-quaternary: ${a.quaternary.on.dark};
+  --quaternary-container: ${a.quaternary.container.dark};
+  --info: ${a.info.dark};
+  --on-info: ${a.info.on.dark};
+  --info-container: ${a.info.container.dark};
+  --danger: ${a.destructive.dark};
+  --on-danger: ${a.destructive.on.dark};
 
-  --lh-tight: 1.15; --lh-normal: 1.6; --lh-relaxed: 1.7;
-
-  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; --fw-extrabold: 800;
-
-  /* ---- 动效（M3 emphasized，全站唯一曲线） ---- */
-  --dur-fast: ${tokens.motion.durationFast.value};
-  --dur: ${tokens.motion.durationMid.value};
-  --dur-slow: ${tokens.motion.durationSlow.value};
-  --ease: ${tokens.motion.easing.value};
-
-  /* ---- 层级 ---- */
-  --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
-
-  /* ======================================================================
-     颜色 · v3 深色（**默认主题**，不看系统偏好）
-     ====================================================================== */
-  /* 表面三层 */
-  --surface: ${c.surface.base.value};
-  --surface-container: ${c.surface.container.value};
-  --surface-high: ${c.surface.high.value};
-
-  /* 文字 */
-  --on-surface: ${c.on.surface.value};
-  --on-surface-variant: ${c.on.surfaceVariant.value};
-
-  /* 描边：default 只做分隔线，strong 给可交互控件（WCAG 1.4.11 要 ≥3:1） */
-  --outline: ${c.outline.default.value};
-  --outline-strong: ${c.outline.strong.value};
-
-  /* 五色（各自带 on- 深字与 12% container） */
-  --primary: ${a.primary.value};
-  --on-primary: ${a.primary.on};
-  --primary-container: ${a.primary.container};
-  --secondary: ${a.secondary.value};
-  --on-secondary: ${a.secondary.on};
-  --secondary-container: ${a.secondary.container};
-  --tertiary: ${a.tertiary.value};
-  --on-tertiary: ${a.tertiary.on};
-  --tertiary-container: ${a.tertiary.container};
-  --lemon: ${a.lemon.value};
-  --on-lemon: ${a.lemon.on};
-  --lemon-container: ${a.lemon.container};
-  --info: ${a.blue.value};
-  --on-info: ${a.blue.on};
-  --info-container: ${a.blue.container};
-
-  --focus: ${c.stateLayer.focus.value};
+  --focus: ${c.stateLayer.focus.dark};
   --scrim: rgb(0 0 0 / 0.62);
+  --border-width: 1px;
+  --radius-card: 0px;
+  --radius-field: 4px;
+  --radius-pill: 0px;
+  --radius-keypad: 0px;
+  --r-sm: 2px; --r-md: 4px; --r-pill: 0px;
 
-  /* 高度 */
-  --el-1: ${tokens.elevation.level1.value};
-  --el-2: ${tokens.elevation.level2.value};
+  /* 霓虹辉光 */
+  --el-1: ${c.shadow.dark.neonSm};
+  --el-2: ${c.shadow.dark.neon};
+  --el-neon: ${c.shadow.dark.neon};
+  --el-neon-secondary: ${c.shadow.dark.neonSecondary};
+  --el-neon-tertiary: ${c.shadow.dark.neonTertiary};
 
-  /* ======================================================================
-     兼容别名：老组件用的还是这套名字，映射到 v3 值 ——
-     这样「全站先变暗」不需要一次性改两百个类名。
-     逐条对照见 docs/design/suenmoney-v3-design-system.md §七。
-     ====================================================================== */
-  --bg: var(--surface);
-  --bg-subtle: var(--surface-container);
-  --bg-sunken: var(--surface-high);
-  --fg: var(--on-surface);
-  --fg-muted: var(--on-surface-variant);
-  --fg-faint: #8E8878;              /* 深底 4.9:1，仅用于占位与最弱说明 */
-  --border: var(--outline);
-  --border-strong: var(--outline-strong);
+  /* 切角（Cyberpunk 标志性） */
+  --chamfer: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px,
+    100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
+  --chamfer-sm: polygon(0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px));
 
-  --primary-fill: var(--primary);
-  --primary-text: var(--primary);
-  --secondary-fill: var(--secondary);
-  --secondary-text: var(--secondary);
-  --accent: var(--tertiary);        /* 旧「琥珀=待处理」并入霓虹粉 */
-  --accent-fill: var(--tertiary);
-  --accent-text: var(--tertiary);
-  --on-accent: var(--on-tertiary);
-  --danger: var(--tertiary);
-  --danger-fill: var(--tertiary);
-  --danger-text: var(--tertiary);
-  --on-danger: var(--on-tertiary);
+  /* 扫描线纹理 */
+  --scanlines: repeating-linear-gradient(0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px);
+  /* 电路网格背景 */
+  --circuit-bg: linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
 
-  /* 圆角旧名（组件大量使用） */
-  --r-sm: var(--radius-field);
-  --r-md: var(--radius-card);
-  --r-pill: var(--radius-pill);
+  --dur-fast: 100ms; --dur: 150ms; --dur-slow: 300ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-pop: steps(4);
+
+  --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
+}
+
+/* ── 浅色 · Playful Geometric（data-theme="light"）────── */
+:root[data-theme='light'] {
+  --surface: ${c.surface.base.light};
+  --surface-container: ${c.surface.container.light};
+  --surface-high: ${c.surface.high.light};
+  --on-surface: ${c.on.surface.light};
+  --on-surface-variant: ${c.on.surfaceVariant.light};
+  --outline: ${c.outline.default.light};
+  --outline-strong: ${c.outline.strong.light};
+
+  --primary: ${a.primary.light};
+  --on-primary: ${a.primary.on.light};
+  --primary-container: ${a.primary.container.light};
+  --secondary: ${a.secondary.light};
+  --on-secondary: ${a.secondary.on.light};
+  --secondary-container: ${a.secondary.container.light};
+  --tertiary: ${a.tertiary.light};
+  --on-tertiary: ${a.tertiary.on.light};
+  --tertiary-container: ${a.tertiary.container.light};
+  --quaternary: ${a.quaternary.light};
+  --on-quaternary: ${a.quaternary.on.light};
+  --quaternary-container: ${a.quaternary.container.light};
+  --info: ${a.info.light};
+  --on-info: ${a.info.on.light};
+  --info-container: ${a.info.container.light};
+  --danger: ${a.destructive.light};
+  --on-danger: ${a.destructive.on.light};
+
+  --focus: ${c.stateLayer.focus.light};
+  --scrim: rgb(20 18 34 / 0.42);
+  --border-width: 2px;
+  --radius-card: 16px;
+  --radius-field: 8px;
+  --radius-pill: 9999px;
+  --radius-keypad: 12px;
+  --r-sm: 8px; --r-md: 16px; --r-pill: 9999px;
+
+  /* 糖果硬阴影 */
+  --el-1: ${c.shadow.light.pop};
+  --el-2: ${c.shadow.light.sticker};
+  --el-pop: ${c.shadow.light.pop};
+  --el-pop-hover: ${c.shadow.light.popHover};
+  --el-pop-active: ${c.shadow.light.popActive};
+  --el-sticker: ${c.shadow.light.sticker};
+  --el-sticker-pink: ${c.shadow.light.stickerPink};
+
+  --chamfer: none;
+  --chamfer-sm: none;
+  --scanlines: none;
+  --circuit-bg: none;
+
+  --dur-fast: 150ms; --dur: 300ms; --dur-slow: 400ms;
+  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);  /* 弹性回弹 */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 `;
 
-// ── 2) Swift ───────────────────────────────────────────────────────────────
-const hex = (v) => `Color(hex: 0x${v.replace('#', '').toUpperCase()})`;
+// ── 2) Swift / ArkTS（双主题）──────────────────────────────────────────────
 const swift = `// ⚠ 由 scripts/gen-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
-// 计划三 S0 时搬进 ios/SuenMoney/UI/DesignTokens.swift，并补 Color(hex:) 扩展。
 import SwiftUI
 
 enum DesignTokens {
-    // 表面
-    static let surface = ${hex(c.surface.base.value)}
-    static let surfaceContainer = ${hex(c.surface.container.value)}
-    static let surfaceHigh = ${hex(c.surface.high.value)}
-    // 文字
-    static let onSurface = ${hex(c.on.surface.value)}
-    static let onSurfaceVariant = ${hex(c.on.surfaceVariant.value)}
-    // 描边
-    static let outline = ${hex(c.outline.default.value)}
-    static let outlineStrong = ${hex(c.outline.strong.value)}
-    // 五色
-    static let primary = ${hex(a.primary.value)}
-    static let onPrimary = ${hex(a.primary.on)}
-    static let secondary = ${hex(a.secondary.value)}
-    static let onSecondary = ${hex(a.secondary.on)}
-    static let tertiary = ${hex(a.tertiary.value)}
-    static let onTertiary = ${hex(a.tertiary.on)}
-    static let lemon = ${hex(a.lemon.value)}
-    static let onLemon = ${hex(a.lemon.on)}
-    static let info = ${hex(a.blue.value)}
-    static let onInfo = ${hex(a.blue.on)}
-
-    // 圆角 / 间距 / 动效
-    static let radiusCard: CGFloat = 24
-    static let radiusSheet: CGFloat = 24
-    static let radiusField: CGFloat = 14
-    static let radiusPill: CGFloat = 999
+    struct Theme { let surface: Color; let container: Color; let on: Color; let accent: Color }
+    static let dark = Theme(
+        surface: Color(hex: 0x0A0A0F), container: Color(hex: 0x12121A),
+        on: Color(hex: 0xE0E0E0), accent: Color(hex: 0x00FF88))
+    static let light = Theme(
+        surface: Color(hex: 0xFFFDF5), container: Color(hex: 0xFFFFFF),
+        on: Color(hex: 0x1E293B), accent: Color(hex: 0x8B5CF6))
+    // 圆角
+    static let radiusCardDark: CGFloat = 0
+    static let radiusCardLight: CGFloat = 16
     static let grid: CGFloat = 8
-    static let durationsFast: Double = 0.2
-    static let durationsMid: Double = 0.35
-    static let durationsSlow: Double = 0.4
 }
 `;
 
-// ── 3) ArkTS ───────────────────────────────────────────────────────────────
 const ets = `// ⚠ 由 scripts/gen-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
-// 计划三 S0 时搬进 hw/entry/src/main/ets/common/Tokens.ets。
 export class DesignTokens {
-  // 表面
-  static readonly surface: string = '${c.surface.base.value}';
-  static readonly surfaceContainer: string = '${c.surface.container.value}';
-  static readonly surfaceHigh: string = '${c.surface.high.value}';
-  // 文字
-  static readonly onSurface: string = '${c.on.surface.value}';
-  static readonly onSurfaceVariant: string = '${c.on.surfaceVariant.value}';
-  // 描边
-  static readonly outline: string = '${c.outline.default.value}';
-  static readonly outlineStrong: string = '${c.outline.strong.value}';
-  // 五色
-  static readonly primary: string = '${a.primary.value}';
-  static readonly onPrimary: string = '${a.primary.on}';
-  static readonly secondary: string = '${a.secondary.value}';
-  static readonly onSecondary: string = '${a.secondary.on}';
-  static readonly tertiary: string = '${a.tertiary.value}';
-  static readonly onTertiary: string = '${a.tertiary.on}';
-  static readonly lemon: string = '${a.lemon.value}';
-  static readonly onLemon: string = '${a.lemon.on}';
-  static readonly info: string = '${a.blue.value}';
-  static readonly onInfo: string = '${a.blue.on}';
-
-  // 圆角 / 间距
-  static readonly radiusCard: number = 24;
-  static readonly radiusField: number = 14;
-  static readonly radiusPill: number = 999;
+  static readonly dark = { surface: '#0a0a0f', container: '#12121a', on: '#e0e0e0', accent: '#00ff88' };
+  static readonly light = { surface: '#FFFDF5', container: '#FFFFFF', on: '#1E293B', accent: '#8B5CF6' };
   static readonly grid: number = 8;
 }
 `;
 
 
-
-function lightBlock(L) {
-  const rows = [
-    ['--surface', L['surface']],
-    ['--surface-container', L['surface-container']],
-    ['--surface-high', L['surface-high']],
-    ['--on-surface', L['on-surface']],
-    ['--on-surface-variant', L['on-surface-variant']],
-    ['--outline', L['outline']],
-    ['--outline-strong', L['outline-strong']],
-    ['--primary', L['primary']],
-    ['--on-primary', L['on-primary']],
-    ['--primary-container', L['primary-container']],
-    ['--secondary', L['secondary']],
-    ['--on-secondary', L['on-secondary']],
-    ['--secondary-container', L['secondary-container']],
-    ['--tertiary', L['tertiary']],
-    ['--on-tertiary', L['on-tertiary']],
-    ['--tertiary-container', L['tertiary-container']],
-    ['--lemon', L['lemon']],
-    ['--on-lemon', L['on-lemon']],
-    ['--lemon-container', L['lemon-container']],
-    ['--info', L['info']],
-    ['--on-info', L['on-info']],
-    ['--info-container', L['info-container']],
-    ['--focus', L['focus']],
-    ['--scrim', L['scrim']],
-  ];
-  return `
-/* ==========================================================================
-   浅色主题（data-theme="light"）
-   --------------------------------------------------------------------------
-   **同产品不同光**：结构、圆角、字号完全一致，只换色阶。
-   刻意不复用旧扁平浅色 —— 那会变成「两个产品」而不是「两种光线」。
-   ========================================================================== */
-:root[data-theme='light'] {
-` + rows.map(([k, v]) => `  ${k}: ${v};`).join('\n') + `\n}\n`;
-}
-
-
-// ── 分类/图表 16 色槽（tokens.json → chart.slots）──────────────────────────
-function chartCss(slots, theme) {
-  // 浅色主题：同色相压深（分类色在白卡上要 ≥3:1），深色主题直接用
-  const DARK = { 1:'#6E9EEA',2:'#5C9E78',3:'#C0894A',4:'#9A8AC9',5:'#C4737E',6:'#5FA0A7',
-    7:'#B85C50',8:'#7E8FC9',9:'#A0A050',10:'#4FA8A0',11:'#B06A9E',12:'#8A9A55',
-    13:'#C98B5F',14:'#7A6FC9',15:'#5C8AB0',16:'#8C8C8C' };
-  const LIGHT = { 1:'#2E5FB8',2:'#2F6D4E',3:'#8A5A20',4:'#6B5CA5',5:'#A63A55',6:'#2F6D74',
-    7:'#8F3E33',8:'#4F5FA5',9:'#5C5300',10:'#1F6D66',11:'#7E3A68',12:'#556430',
-    13:'#8A5A30',14:'#4F46A0',15:'#2E5A80',16:'#6B6B6B' };
+// ── 分类/图表 16 色槽（v4：浅色=Playful 糖果档，深色=Cyberpunk 霓虹档）──
+function chartCss(theme) {
+  const LIGHT = { 1:'#7C6CF0',2:'#F472B6',3:'#FBBF24',4:'#34D399',5:'#60A5FA',6:'#2DD4BF',
+    7:'#F87171',8:'#A78BFA',9:'#D9F99D',10:'#5EEAD4',11:'#F9A8D4',12:'#BEF264',
+    13:'#FDBA74',14:'#818CF8',15:'#93C5FD',16:'#94A3B8' };
+  const DARK = { 1:'#00ff88',2:'#ff00ff',3:'#00d4ff',4:'#FBBF24',5:'#5FD6A8',6:'#66C4CC',
+    7:'#E07060',8:'#93A5F0',9:'#C8D656',10:'#5AD4C4',11:'#E37FB2',12:'#A8C056',
+    13:'#E0A878',14:'#9D8FF5',15:'#74A8D6',16:'#8C8C8C' };
   const pick = theme === 'light' ? LIGHT : DARK;
-  return slots.map((s) => `  --chart-${s.index}: ${pick[s.index] ?? s.value};`).join('\n');
+  return Object.entries(pick).map(([i, v]) => `  --chart-${i}: ${v};`).join('\n');
 }
 
 // ── write / check ──────────────────────────────────────────────────────────
@@ -287,13 +215,7 @@ function chartCss(slots, theme) {
 
 let cssWithExtras = css;
 
-// 浅色主题追加到 CSS
-const light = tokens.theme?.light;
-if (light) {
-  cssWithExtras += lightBlock(light);
-}
-
-// chart 色槽追加到 CSS（浅色主题同生成）
+// chart 色槽追加到 CSS（深浅双套，模板里已生成 chart 引用）
 const chartSlots = tokens.chart?.slots ?? [];
 if (chartSlots.length > 0) {
   const chartCssFull =
