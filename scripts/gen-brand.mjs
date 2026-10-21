@@ -92,8 +92,12 @@ async function main() {
   await emit(SRC.master, 512, 'web/public/apple-touch-icon.png');
 
   // 真矢量 logo：替掉过去那个「里面是一张 base64 PNG」的 280KB 假 SVG
-  if (!CHECK) writeFileSync(join(ROOT, 'web/public/logo.svg'), SRC.master);
+  if (!CHECK) {
+    writeFileSync(join(ROOT, 'web/public/logo.svg'), SRC.master);
+    writeFileSync(join(ROOT, 'web/public/mark-light.svg'), SRC.light);
+  }
   written.push('web/public/logo.svg  (真矢量，' + (SRC.master.length / 1024).toFixed(1) + 'KB)');
+  written.push('web/public/mark-light.svg  (浅色反色版)');
 
   // ── 3) 飞牛 fnOS 套件（计划二直接消费） ──
   if (existsSync(join(ROOT, 'fn/manifest'))) {

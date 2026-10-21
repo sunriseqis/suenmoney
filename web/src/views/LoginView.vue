@@ -129,7 +129,7 @@ onMounted(async () => {
             type="text"
             autocomplete="username"
             autocapitalize="off"
-            class="mt-2 w-full rounded-sm bg-sunken px-4 py-3 text-base text-ink placeholder:text-ink-muted"
+            class="input-v4 mt-2 px-4 py-3 text-base"
             placeholder="小写字母"
           />
         </div>
@@ -140,7 +140,7 @@ onMounted(async () => {
             id="login-displayname"
             v-model="displayName"
             type="text"
-            class="mt-2 w-full rounded-sm bg-sunken px-4 py-3 text-base text-ink placeholder:text-ink-muted"
+            class="input-v4 mt-2 px-4 py-3 text-base"
             placeholder="界面上显示的名字，如「我」"
           />
         </div>
@@ -152,7 +152,7 @@ onMounted(async () => {
             v-model="password"
             type="password"
             :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-            class="mt-2 w-full rounded-sm bg-sunken px-4 py-3 text-base text-ink placeholder:text-ink-muted"
+            class="input-v4 mt-2 px-4 py-3 text-base"
             placeholder="至少 8 位"
           />
         </div>
@@ -162,7 +162,7 @@ onMounted(async () => {
         <button
           type="submit"
           :disabled="!canSubmit"
-          class="w-full rounded-md bg-primary-fill py-3.5 text-base font-bold text-on-primary transition-transform duration-200 hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+          class="btn-v4 w-full py-3.5 text-base disabled:opacity-40"
         >
           {{ busy ? '请稍候…' : mode === 'login' ? '登录' : '创建管理员账号' }}
         </button>
