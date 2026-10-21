@@ -1306,11 +1306,11 @@ function fullCategoryName(item: {
           </table>
 
           <!-- 移动端 / 窄屏：双行紧凑布局（主行：分类全名 + 金额；次行：支付方式 + 完整备注 + 账期） -->
-          <ul class="divide-y divide-outline/60 lg:hidden">
+          <ul class="rows-v5 lg:hidden">
             <li v-for="row in sortedItems" :key="row.id">
               <button
                 type="button"
-                class="flex min-h-16 w-full items-center gap-3 px-1 py-2 text-left transition-all duration-150"
+                class="row-v5 w-full text-left"
                 @click="ui.openEdit(row)"
               >
                 <!-- 日期格：最远支持 2 天简化显示（今日星期一 / 昨日星期日 / 26日星期六） -->
