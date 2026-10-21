@@ -24,6 +24,8 @@
     BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
     'Microsoft YaHei', monospace;
 
+  --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
+
   /* ═══ 兼容别名（老组件仍用这些名字）═══ */
   --bg: var(--surface);
   --bg-subtle: var(--surface-container);
@@ -51,6 +53,7 @@
 }
 
 :root[data-theme='light'] {
+  --font-head: 'Outfit Variable', 'MiSans VF', sans-serif;
   /* 浅色切回 Playful 字体栈：Jakarta 正文气质 */
   --font-sans:
     'Plus Jakarta Sans Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
