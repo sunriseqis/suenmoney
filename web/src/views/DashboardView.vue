@@ -417,7 +417,7 @@ async function handleSkip(todoId: string): Promise<void> {
             {{ year }} 年 ·
             <span v-if="yearChangeRatio !== null">
               与去年全年
-              <b :class="yearChangeRatio > 0 ? 'text-amber-200' : 'text-emerald-200'">
+              <b :class="yearChangeRatio > 0 ? 'text-tertiary' : 'text-secondary'">
                 {{ yearChangeRatio > 0 ? '+' : '' }}{{ (yearChangeRatio * 100).toFixed(1) }}%
               </b>
             </span>
