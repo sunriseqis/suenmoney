@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（小尺寸）">
+  <!-- v3 简化版｜<32px 用：2×2 格 + 金额柱，去掉细碎空隙与发光 -->
+  <rect width="1024" height="1024" fill="#141222"/>
+  <rect x="112" y="248" width="232" height="232" rx="68" fill="#4DFFD2"/>
+  <rect x="376" y="248" width="232" height="232" rx="68" fill="#B388FF"/>
+  <rect x="112" y="512" width="232" height="232" rx="68" fill="#5DB8FF"/>
+  <rect x="376" y="512" width="232" height="232" rx="68" fill="#FF7AB8"/>
+  <rect x="640" y="248" width="272" height="496" rx="90" fill="#E5FF41"/>
+</svg>
