@@ -1,12 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney">
-  <!-- v3 母版：一台计算器，屏幕显示 88.88，键位亮出 S（≥32px）
-       屏 600×184 装不下六位（第四位起互相叠字），用户裁决改 88.88：
-       四位大数字，位宽 96 / 段厚 18 / 位高 136 / 间隙 26，左右各余 33。
-       选 88.88 的理由不变：8 是七段管点亮段最多的字符，且 88.88 是
-       「账单金额」的自然形状 —— 远看是一块发光的金额窗。
-       小数点做成方形段（与七段同语言），柠色，同第三位。
-       键盘 4×5，格 135×106 r34，起点 (212,324)，与屏同宽 600。
-       亮键 11 / 暗键 9 照抄原版：上横薄荷 → 左竖紫 → 中横蓝 → 右竖柠 → 下横粉 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（浅色版）">
+  <!-- 反色浅色版：纸白底 + 白机身（描 2px 深边）+ 浅灰屏，LED/键位用 Playful 压深四色
+       与深色版同一几何，只换配色 —— 浅色主题下的图标/启动图 -->
   <defs>
     <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
     <filter id="ledglow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="10"/></filter>
@@ -18,12 +12,21 @@
     <g id="mono-lit"><rect x="212" y="324" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="365" y="324" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="518" y="324" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="212" y="448" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="212" y="572" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="365" y="572" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="518" y="572" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="671" y="696" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="365" y="820" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="518" y="820" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="671" y="820" width="135" height="106" rx="34" fill="#F2EFFA"/></g>
     <g id="mono-dim"><rect x="671" y="324" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="365" y="448" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="518" y="448" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="671" y="448" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="671" y="572" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="212" y="696" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="365" y="696" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="518" y="696" width="135" height="106" rx="34" fill="#F2EFFA"/><rect x="212" y="820" width="135" height="106" rx="34" fill="#F2EFFA"/></g>
   </defs>
-  <rect width="1024" height="1024" fill="#141222"/>
-  <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
-  <rect x="212" y="104" width="600" height="184" rx="48" fill="#141222"/>
+  <!-- v3 母版：一台计算器，屏幕显示 88.88，键位亮出 S（≥32px）
+       屏 600×184 装不下六位（第四位起互相叠字），用户裁决改 88.88：
+       四位大数字，位宽 96 / 段厚 18 / 位高 136 / 间隙 26，左右各余 33。
+       选 88.88 的理由不变：8 是七段管点亮段最多的字符，且 88.88 是
+       「账单金额」的自然形状 —— 远看是一块发光的金额窗。
+       小数点做成方形段（与七段同语言），柠色，同第三位。
+       键盘 4×5，格 135×106 r34，起点 (212,324)，与屏同宽 600。
+       亮键 11 / 暗键 9 照抄原版：上横薄荷 → 左竖紫 → 中横蓝 → 右竖柠 → 下横粉 -->
+  
+  <rect width="1024" height="1024" fill="#FFFDF5"/>
+  <rect x="48" y="48" width="928" height="928" rx="220" fill="#FFFFFF"/>
+  <rect x="212" y="104" width="600" height="184" rx="48" fill="#F1F5F9"/>
   <use href="#led" filter="url(#ledglow)" opacity=".55"/>
   <use href="#led"/>
   <use href="#dim"/>
-  <use href="#lit" filter="url(#glow)" opacity=".40"/>
+  <use href="#lit" filter="url(#glow)" opacity=".25"/>
   <use href="#lit"/>
 </svg>
