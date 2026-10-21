@@ -360,9 +360,9 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     页面里所有图形都是内联 <code>&lt;symbol&gt;</code>，单文件零依赖；悬停 / 按下 / 焦点态可以直接上手试。
   </p>
   <p class="lede" style="color:var(--lemon)">
-    ⚠ 本页已按<a href="#final" style="color:var(--blue)">定稿语义</a>更新：数据模型<span style="color:var(--on)">只记支出</span>，
-    所以「收入/支出双数值」与「预算卡」换成了<span style="color:var(--on)">「本月构成」与「计划与还款」</span>，
-    五色色值一个没动，只重定义职责（见 §5）。
+    ⚠ 本页用的是<b>「你的规格 + 我的三条建议」</b>混合版：卡片换成「本月构成 / 计划与还款」是**数据约束**
+    （只记支出，结余与预算算不出来）；而<b>「支出金额不染色」和「逾期用条纹」是我的建议，不是你的规格</b> ——
+    两处争议在 <a href="#dispute" style="color:var(--blue)">§4·5 并排可看</a>，撤回后回退成什么见设计系统 §3.3。
   </p>
 
   <!-- ======================= 1. 桌面端 ======================= -->
@@ -728,6 +728,61 @@ hr{border:0;border-top:1px solid rgba(242,239,250,.08);margin:44px 0}
     <tr><td><b>outline #3A3852 / surface</b></td><td><b>分隔线</b></td><td>—（装饰）</td><td class="num">1.64:1</td><td class="pass">可用</td></tr>
     <tr><td><b>outline #3A3852 当输入框边界</b></td><td><b>可交互控件</b></td><td>3.0</td><td class="num">1.64:1</td><td class="warn">不达标 → 见 §5</td></tr>
   </table>
+
+  <!-- ======================= 4.5 两处争议 ======================= -->
+  <h2 id="dispute">四·五 · 两处争议：你的规格 vs 我的建议（并排看）</h2>
+  <p class="note" style="margin-top:0">
+    这两处是<b>我的偏好</b>覆盖了你的规格，不是规范推导出来的。回退成本极低（只改用法，不改色值），
+    你说一句我就换回去。
+  </p>
+  <div class="row" style="margin-top:16px">
+
+    <div class="panel" style="flex:1 1 470px">
+      <div class="cap" style="color:var(--on-var)">你的规格（基线）</div>
+      <div class="lrow" style="border-top:0">
+        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-coffee"/></svg></div>
+        <div class="mid"><div class="who">星巴克</div><div class="sub">餐饮 · 09:12</div></div>
+        <div class="val out num"><span class="sign">−</span>28.00</div>
+      </div>
+      <div class="lrow">
+        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-house"/></svg></div>
+        <div class="mid"><div class="who">房贷 · 第 3 期</div><div class="sub">住房 · 10 月 20 日</div></div>
+        <div class="val out num"><span class="sign">−</span>2,800.00</div>
+      </div>
+      <div class="bud over" style="margin-top:18px">
+        <div class="row"><span class="nm">娱乐 · 订阅</span><span class="amt num">¥432 / ¥400</span></div>
+        <div class="track"><i style="--w:100%;background:var(--pink)"></i></div>
+        <div class="meta"><span>已超支 ¥32</span><span class="pct over num">108%</span></div>
+      </div>
+      <p class="note" style="margin-top:14px;color:var(--on-var)">
+        `−` 金额＝霓虹粉 · 超支＝霓虹粉实心填充。**整块都是警报色**，但语义单一、执行简单。
+      </p>
+    </div>
+
+    <div class="panel" style="flex:1 1 470px">
+      <div class="cap" style="color:var(--on-var)">我的建议（B1 + B2）</div>
+      <div class="lrow" style="border-top:0">
+        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-coffee"/></svg></div>
+        <div class="mid"><div class="who">星巴克</div><div class="sub">餐饮 · 09:12</div></div>
+        <div class="val num" style="color:var(--on)"><span class="sign">−</span>28.00</div>
+      </div>
+      <div class="lrow">
+        <div class="ava" style="background:var(--pink-c);color:var(--pink)"><svg viewBox="0 0 24 24"><use href="#i-house"/></svg></div>
+        <div class="mid"><div class="who">房贷 · 第 3 期</div><div class="sub">住房 · 10 月 20 日</div></div>
+        <div class="val num" style="color:var(--on)"><span class="sign">−</span>2,800.00</div>
+      </div>
+      <div class="bud over" style="margin-top:18px">
+        <div class="row"><span class="nm">娱乐 · 订阅</span><span class="amt num">¥432 / ¥400</span></div>
+        <div class="track"><i style="--w:100%"></i></div>
+        <div class="meta"><span>已超支 ¥32</span><span class="pct over num">108%</span></div>
+      </div>
+      <p class="note" style="margin-top:14px;color:var(--on-var)">
+        `−` 金额＝白，只有「退款 +」「上涨」「逾期」才染色 · 超支＝粉白条纹。
+        **颜色变少了，但每次出现都在报警。**
+      </p>
+    </div>
+
+  </div>
 
   <!-- ======================= 5. 三处规格修订 ======================= -->
   <h2>五 · 我在规格上改了三处（请你裁决）</h2>
