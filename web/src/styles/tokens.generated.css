@@ -116,35 +116,40 @@
   --r-pill: var(--radius-pill);
 }
 
-/* ==========================================================================
-   浅色主题（data-theme="light"）
-   --------------------------------------------------------------------------
-   **同产品不同光**：结构、圆角、字号完全一致，只换色阶。
-   刻意不复用旧扁平浅色 —— 那会变成「两个产品」而不是「两种光线」。
-   ========================================================================== */
+/* ==== 分类/图表 16 色槽（v3 账本色，深底全部 ≥3.69:1） ==== */
+:root {
+  --chart-1: #6E9EEA;
+  --chart-2: #5C9E78;
+  --chart-3: #C0894A;
+  --chart-4: #9A8AC9;
+  --chart-5: #C4737E;
+  --chart-6: #5FA0A7;
+  --chart-7: #B85C50;
+  --chart-8: #7E8FC9;
+  --chart-9: #A0A050;
+  --chart-10: #4FA8A0;
+  --chart-11: #B06A9E;
+  --chart-12: #8A9A55;
+  --chart-13: #C98B5F;
+  --chart-14: #7A6FC9;
+  --chart-15: #5C8AB0;
+  --chart-16: #8C8C8C;
+}
 :root[data-theme='light'] {
-  --surface: #F6F4EF;
-  --surface-container: #FFFFFF;
-  --surface-high: #E9E5DB;
-  --on-surface: #141222;
-  --on-surface-variant: #5E584C;
-  --outline: #D9D3C6;
-  --outline-strong: #8F8878;
-  --primary: #4C8DFF;
-  --on-primary: #12255C;
-  --primary-container: rgba(179,136,255,0.16);
-  --secondary: #00A98A;
-  --on-secondary: #FFFFFF;
-  --secondary-container: rgba(77,255,210,0.16);
-  --tertiary: #C7427F;
-  --on-tertiary: #FFFFFF;
-  --tertiary-container: rgba(255,122,184,0.16);
-  --lemon: #5C5300;
-  --on-lemon: #FFFFFF;
-  --lemon-container: rgba(229,255,65,0.16);
-  --info: #1F6FD0;
-  --on-info: #FFFFFF;
-  --info-container: rgba(93,184,255,0.16);
-  --focus: #1F6FD0;
-  --scrim: rgb(20 18 34 / 0.42);
+  --chart-1: #2E5FB8;
+  --chart-2: #2F6D4E;
+  --chart-3: #8A5A20;
+  --chart-4: #6B5CA5;
+  --chart-5: #A63A55;
+  --chart-6: #2F6D74;
+  --chart-7: #8F3E33;
+  --chart-8: #4F5FA5;
+  --chart-9: #5C5300;
+  --chart-10: #1F6D66;
+  --chart-11: #7E3A68;
+  --chart-12: #556430;
+  --chart-13: #8A5A30;
+  --chart-14: #4F46A0;
+  --chart-15: #2E5A80;
+  --chart-16: #6B6B6B;
 }
