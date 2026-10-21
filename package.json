@@ -23,5 +23,8 @@
     "check": "npm run typecheck && npm test && npm run build:web",
     "icons": "node scripts/gen-brand.mjs",
     "fn:build": "node scripts/build-fn.mjs"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.0"
   }
 }

@@ -1,37 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney">
-  <!-- v3 母版｜1024 方形全出血
-       字形 = 用户原版的 4×5 格子矩阵，逐格照抄（11 亮 / 9 空）：
-         上横 3 格（薄荷）→ 左竖 1 格（电紫）→ 中横 3 格（电光蓝）→ 右竖 1 格（荧光柠）→ 下横 3 格（霓虹粉）
-       只修四件事：画布改方形、去三层描边、发光由「逐格两次绘制」改为「分组模糊一次」、角半径成体系。 -->
+  <!-- v3 母版：**一台计算器**，键位亮出 S（≥32px 用）
+       三个部件缺一不可：
+         机身   48,48 → 928×928 rx 220        「这是一个物件」
+         显示屏 212,112 → 600×176 rx 48       「计算器的脸」—— 删掉它就只剩点阵（我上一版的错）
+         指示灯 圆点 r20 @ 758,152 薄荷色      「正在显示数字」
+         键盘   4×5，格 135×108 rx 34，与屏同宽（600），原版 168/168 同理
+       亮键 11 / 暗键 9，位置与色序照抄原版：上横薄荷 → 左竖紫 → 中横蓝 → 右竖柠 → 下横粉 -->
   <defs>
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="24"/></filter>
-    <g id="lit">
-      <rect x="114" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/>
-      <rect x="322" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/>
-      <rect x="530" y="114" width="172" height="140" rx="52" fill="#4DFFD2"/>
-      <rect x="114" y="278" width="172" height="140" rx="52" fill="#B388FF"/>
-      <rect x="114" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/>
-      <rect x="322" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/>
-      <rect x="530" y="442" width="172" height="140" rx="52" fill="#5DB8FF"/>
-      <rect x="738" y="606" width="172" height="140" rx="52" fill="#E5FF41"/>
-      <rect x="322" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
-      <rect x="530" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
-      <rect x="738" y="770" width="172" height="140" rx="52" fill="#FF7AB8"/>
-    </g>
-    <g id="dim">
-      <rect x="738" y="114" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="322" y="278" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="530" y="278" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="738" y="278" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="738" y="442" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="114" y="606" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="322" y="606" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="530" y="606" width="172" height="140" rx="52" fill="#282740"/>
-      <rect x="114" y="770" width="172" height="140" rx="52" fill="#282740"/>
-    </g>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+    <g id="lit"><rect x="212" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="367" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="522" y="328" width="135" height="108" rx="34" fill="#4DFFD2"/><rect x="212" y="456" width="135" height="108" rx="34" fill="#B388FF"/><rect x="212" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="367" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="522" y="584" width="135" height="108" rx="34" fill="#5DB8FF"/><rect x="677" y="712" width="135" height="108" rx="34" fill="#E5FF41"/><rect x="367" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/><rect x="522" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/><rect x="677" y="840" width="135" height="108" rx="34" fill="#FF7AB8"/></g>
+    <g id="dim"><rect x="677" y="328" width="135" height="108" rx="34" fill="#282740"/><rect x="367" y="456" width="135" height="108" rx="34" fill="#282740"/><rect x="522" y="456" width="135" height="108" rx="34" fill="#282740"/><rect x="677" y="456" width="135" height="108" rx="34" fill="#282740"/><rect x="677" y="584" width="135" height="108" rx="34" fill="#282740"/><rect x="212" y="712" width="135" height="108" rx="34" fill="#282740"/><rect x="367" y="712" width="135" height="108" rx="34" fill="#282740"/><rect x="522" y="712" width="135" height="108" rx="34" fill="#282740"/><rect x="212" y="840" width="135" height="108" rx="34" fill="#282740"/></g>
   </defs>
   <rect width="1024" height="1024" fill="#141222"/>
-  <rect x="64" y="64" width="896" height="896" rx="224" fill="#1E1D2E"/>
+  <rect x="48" y="48" width="928" height="928" rx="220" fill="#1E1D2E"/>
+  <rect x="212" y="112" width="600" height="176" rx="48" fill="#141222"/>
+  <circle cx="758" cy="152" r="20" fill="#4DFFD2"/>
   <use href="#dim"/>
   <use href="#lit" filter="url(#glow)" opacity=".40"/>
   <use href="#lit"/>
