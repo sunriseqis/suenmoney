@@ -1294,11 +1294,10 @@ function fullCategoryName(item: {
                 </td>
 
                 <td
-                  class="whitespace-nowrap py-2 text-right align-middle"
-                  :class="row.amountCents < 0 ? 'text-tertiary' : 'text-ink'"
+                  class="whitespace-nowrap py-2 text-right align-middle text-tertiary"
                 >
                   <span class="amount-v3 text-[15px] tabular-nums">
-                    <span class="cur">¥</span><span class="int">{{ formatYuan(row.amountCents) }}</span>
+                    <span class="cur">¥</span><span class="int">{{ formatCents(row.amountCents) }}</span>
                   </span>
                 </td>
               </tr>
@@ -1348,10 +1347,9 @@ function fullCategoryName(item: {
                       {{ fullCategoryName(row) }}
                     </span>
                     <span
-                      class="amount-v3 shrink-0 text-right text-[15px] tabular-nums whitespace-nowrap"
-                      :class="row.amountCents < 0 ? 'text-tertiary' : 'text-ink'"
+                      class="amount-v3 shrink-0 text-right text-[15px] tabular-nums whitespace-nowrap text-tertiary"
                     >
-                      <span class="cur">¥</span><span class="int">{{ formatYuan(row.amountCents) }}</span>
+                      <span class="cur">¥</span><span class="int">{{ formatCents(row.amountCents) }}</span>
                     </span>
                   </div>
 
