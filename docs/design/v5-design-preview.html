@@ -707,32 +707,31 @@ function vseg(x,y0,h,t,lower){
   if(!lower)return (x+t/2)+','+y0+' '+x+t+','+(y0+t/2)+' '+(x+t)+','+(y0+h-t/2)+' '+(x+t/2)+','+(y0+h)+' '+x+','+(y0+h-t/2)+' '+x+','+(y0+t/2);
   return x+','+y0+' '+x+t+','+y0+' '+x+t+','+(y0+h-t/2)+' '+(x+t/2)+','+(y0+h)+' '+x+','+(y0+h-t/2);
 }
-function digit(x,y,w,h,t,color){
-  var vh=(h-t)/2;
-  return '<polygon points="'+seg(x,y,w,t)+'" fill="'+color+'"/>'+
-         '<polygon points="'+vseg(x+w-t,y,vh,t)+'" fill="'+color+'"/>'+
-         '<polygon points="'+vseg(x+w-t,y+vh+t,vh,t,true)+'" fill="'+color+'"/>'+
-         '<polygon points="'+seg(x,y+h-t,w,t)+'" fill="'+color+'"/>'+
-         '<polygon points="'+vseg(x,y+vh+t,vh,t,true)+'" fill="'+color+'"/>'+
-         '<polygon points="'+vseg(x,y,vh,t)+'" fill="'+color+'"/>'+
-         '<polygon points="'+seg(x,y+vh,w,t)+'" fill="'+color+'"/>';
+function digit8(x,y,w,h,t,color){
+  /* 七段「8」：单条 path，七段共享顶点 —— 段与段之间无缝，
+     小尺寸下不会碎成一堆色块。全部 7 段都点亮。 */
+  var vh=(h-t)/2, x0=x, x1=x+w, y0=y, y1=y+vh, y2=y+h, xm=x+w/2;
+  var pts=[
+    [x0+t/2,y0],[xm-t/2,y0],[xm,y0+t/2],[xm+t/2,y0],[x1-t/2,y0],[x1,y0+t/2],[x1-t/2,y0+t],[x1-t,y0+t/2],[x1-t,y1-t/2],[x1-t/2,y1],[x1-t/2,y1+t/2],[x1-t,y1+t/2],[x1-t,y2-t/2],[x1-t/2,y2],[xm+t/2,y2],[xm,y2-t/2],[xm-t/2,y2],[x0+t/2,y2],[x0,y2-t/2],[x0+t,y2-t/2],[x0+t,y1+t/2],[x0+t/2,y1],[x0+t,y1+t/2],[x0+t,y0+t/2],[x0+t/2,y0+t],[x0+t/2,y1+t/2],[xm-t/2,y1+t/2],[xm-t/2,y1+t/2],[x0+t/2,y1+t/2]
+  ];
+  var d='M'+pts.map(function(p){return p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' L')+' Z';
+  return '<path d="'+d+'" fill="'+color+'"/>';
 }
 function keyRect(cx,cy,w,h,r,fill,stroke,sw){
-  return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'"'+
-         (stroke?' stroke="'+stroke+'" stroke-width="'+sw+'"':'')+'/>';
+  if(!stroke) return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'"/>';
+  return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
 }
-function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill){
+function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill, screenStroke, screenSW){
   var g=GEO, s='';
   // 屏幕
-  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,screenFill);
-  // LED 88.88
-  var xs=[273,395,533,655], t=18, w=96, h=136, y=128;
-  var cols=[ledColors[0],ledColors[1],ledColors[2],ledColors[3]];
-  s+=digit(xs[0],y,w,h,t,cols[0]);
-  s+=digit(xs[1],y,w,h,t,cols[1]);
-  s+=keyRect(501,240,22,18,4,ledColors[2]);                       // 小数点（方段）
-  s+=digit(xs[2],y,w,h,t,ledColors[2]);
-  s+=digit(xs[3],y,w,h,t,ledColors[3]);
+  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,screenFill,screenStroke||null,screenSW||0);
+  // LED「88.88」：单路径七段，四个 8 + 小数点
+  var xs=[278,400,538,658], t=16, w=88, h=132, y=130;
+  s+=digit8(xs[0],y,w,h,t,ledColors[0]);
+  s+=digit8(xs[1],y,w,h,t,ledColors[1]);
+  s+=keyRect(510,y+h-26,20,16,4,ledColors[2]);                    // 小数点（方段）
+  s+=digit8(xs[2],y,w,h,t,ledColors[2]);
+  s+=digit8(xs[3],y,w,h,t,ledColors[3]);
   // 键盘 4×5
   var k=g.key;
   for(var r=0;r<5;r++)for(var c=0;c<4;c++){
@@ -762,7 +761,7 @@ function logoLight(size){
   s+=calculator(
     ['#FBBF24','#F472B6','#34D399','#8B5CF6'],        // LED：黄 粉 (点) 绿 紫
     ['#8B5CF6','#F472B6','#34D399','#FBBF24','#8B5CF6'], // 键位：紫 粉 绿 黄 紫
-    '#E2E8F0','#1E293B',8,'#1E293B');                  // 暗键 + 深描边 + 深屏
+    '#E2E8F0','#1E293B',8,'#E2E8F0','#1E293B',4);      // 暗键 + 深描边 + 浅灰屏带深描边
   s+='</svg>';
   return s;
 }
@@ -774,10 +773,11 @@ function logoDark(size){
   s+='<rect width="1024" height="1024" fill="#0a0a0f"/>';
   s+='<g opacity=".5" filter="url(#ng)">'+ring+'</g>'+ring;                    // 霓虹环（发光+实色）
   s+=keyRect(g.body.x+56,g.body.y+56,g.body.w-112,g.body.h-112,g.body.r-28,'#12121a','#2a2a3a',4);
+  // 屏底比机身亮一档（#1a1a2e）+ 1px 描边，否则屏幕边界完全看不见
   s+=calculator(
     ['#00ff88','#00d4ff','#FBBF24','#ff00ff'],        // LED：绿 青 (点) 黄 品红
-    ['#00ff88','#00d4ff','#ff00ff','#FBBF24','#00ff88'],
-    '#1c1c2e','#2a2a3a',2,'#0a0a0f');
+    ['#00ff88','#00d4ff','#FBBF24','#00ff88','#00ff88'],
+    '#1c1c2e','#2a2a3a',2,'#1a1a2e','#00ff88',1);
   s+='</svg>';
   return s;
 }
