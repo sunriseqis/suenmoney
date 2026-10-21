@@ -725,7 +725,7 @@ function keyRect(cx,cy,w,h,r,fill,stroke,sw){
   if(!stroke) return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'"/>';
   return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
 }
-function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill, screenStroke, screenSW, dotGlow){
+function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill, screenStroke, screenSW, keyEdge){
   var g=GEO, s='';
   // 屏幕
   s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,screenFill,screenStroke,screenSW);
@@ -749,8 +749,8 @@ function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill,
     for(var i=0;i<g.lit.length;i++) if(g.lit[i][0]===r&&g.lit[i][1]===c) isLit=true;
     var row=r;
     s+=isLit
-      ? keyRect(cx,cy,k.cw,k.ch,k.r,keyColors[row],keyStroke,keySW)
-      : keyRect(cx,cy,k.cw,k.ch,k.r,dimFill,keyStroke,keySW);
+      ? keyRect(cx,cy,k.cw,k.ch,k.r,keyColors[row],(keyEdge&&keyEdge[row])||keyStroke,3)
+      : keyRect(cx,cy,k.cw,k.ch,k.r,dimFill,'#3A3A5C',1);
   }
   return s;
 }
@@ -771,7 +771,8 @@ function logoLight(size){
   s+=calculator(
     ['#FBBF24','#F472B6','#34D399','#8B5CF6'],                    // LED：黄 粉 (点) 绿 紫
     ['#8B5CF6','#F472B6','#34D399','#FBBF24','#8B5CF6'],          // 键位：紫 粉 绿 黄 紫
-    '#E2E8F0','#1E293B',8,'#1E293B','#FBBF24',4);                 // 暗键 + 深描边 + 深屏黄边
+    '#E2E8F0','#1E293B',8,'#1E293B','#FBBF24',4,
+    ['#5B21B6','#BE185D','#047857','#B45309','#5B21B6']);          // 键描边=自身深版                 // 暗键 + 深描边 + 深屏黄边
   s+='</svg>';
   return s;
 }function logoDark(size){
@@ -788,7 +789,8 @@ function logoLight(size){
   s+=calculator(
     ['#00ff88','#00ff88','#00ff88','#00ff88'],                    // LED 全绿（点阵同色，像真机）
     ['#00ff88','#00d4ff','#ff00ff','#FBBF24','#00ff88'],          // 键位：绿 青 品红 黄 绿
-    '#16162A','#3A3A5C',1,'#2A2A44','#00d4ff',3);                 // 暗键(比机身暗)+灰紫描边
+    '#16162A','#3A3A5C',1,'#2A2A44','#00d4ff',3,
+    ['#7BFFC4','#7FE3FF','#FF8CFF','#FFF09A','#7BFFC4']);          // 键描边=自身亮版（2 档同色相）                 // 暗键(比机身暗)+灰紫描边
   s+='</svg>';
   return s;
 }function renderLogos(){
