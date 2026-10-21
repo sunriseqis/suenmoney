@@ -1,0 +1,117 @@
+/* ==========================================================================
+   ⚠ 本文件由 scripts/gen-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
+   改令牌 → 改 tokens.json → npm run tokens
+   ========================================================================== */
+
+:root {
+  /* ---- 间距（4px 基数，v3 用 8px 栅格） ---- */
+  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 24px;  --sp-6: 32px;  --sp-7: 48px;  --sp-8: 64px;
+  --grid: 8px;
+
+  /* ---- 圆角（M3：卡 24 / 输入 14 / FAB 28 / 胶囊全圆） ---- */
+  --radius-card: 24px;
+  --radius-sheet: 24px;
+  --radius-field: 14px;
+  --radius-fab: 28px;
+  --radius-pill: 999px;
+  --radius-keypad: 18px;
+
+  /* ---- 字号（v3 阶梯；旧名保留，值为 v3 档位） ---- */
+  --fs-xs: 11px;        /* 辅助标签，全大写 + 字距 0.5px */
+  --fs-sm: 12px;
+  --fs-md: 15px;        /* 正文 / 流水行 */
+  --fs-lg: 17px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
+  --fs-3xl: 32px;       /* 页面大标题 */
+  --fs-card-title: 16px;
+  --fs-amount: 44px;    /* 大数字（规格 40–48） */
+  --fs-display: 48px;
+  --fs-hero: 56px;
+
+  --lh-tight: 1.15; --lh-normal: 1.6; --lh-relaxed: 1.7;
+
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; --fw-extrabold: 800;
+
+  /* ---- 动效（M3 emphasized，全站唯一曲线） ---- */
+  --dur-fast: 200ms;
+  --dur: 350ms;
+  --dur-slow: 400ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- 层级 ---- */
+  --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
+
+  /* ======================================================================
+     颜色 · v3 深色（**默认主题**，不看系统偏好）
+     ====================================================================== */
+  /* 表面三层 */
+  --surface: #141222;
+  --surface-container: #1E1D2E;
+  --surface-high: #282740;
+
+  /* 文字 */
+  --on-surface: #F2EFFA;
+  --on-surface-variant: #B9B5CC;
+
+  /* 描边：default 只做分隔线，strong 给可交互控件（WCAG 1.4.11 要 ≥3:1） */
+  --outline: #3A3852;
+  --outline-strong: #706D96;
+
+  /* 五色（各自带 on- 深字与 12% container） */
+  --primary: #B388FF;
+  --on-primary: #2A1065;
+  --primary-container: rgba(179,136,255,0.12);
+  --secondary: #4DFFD2;
+  --on-secondary: #00352E;
+  --secondary-container: rgba(77,255,210,0.12);
+  --tertiary: #FF7AB8;
+  --on-tertiary: #5F1606;
+  --tertiary-container: rgba(255,122,184,0.12);
+  --lemon: #E5FF41;
+  --on-lemon: #3F2E00;
+  --lemon-container: rgba(229,255,65,0.12);
+  --info: #5DB8FF;
+  --on-info: #00344F;
+  --info-container: rgba(93,184,255,0.12);
+
+  --focus: #5DB8FF;
+  --scrim: rgb(0 0 0 / 0.62);
+
+  /* 高度 */
+  --el-1: 0 2px 8px rgba(0,0,0,0.35);
+  --el-2: 0 8px 24px rgba(0,0,0,0.45);
+
+  /* ======================================================================
+     兼容别名：老组件用的还是这套名字，映射到 v3 值 ——
+     这样「全站先变暗」不需要一次性改两百个类名。
+     逐条对照见 docs/design/suenmoney-v3-design-system.md §七。
+     ====================================================================== */
+  --bg: var(--surface);
+  --bg-subtle: var(--surface-container);
+  --bg-sunken: var(--surface-high);
+  --fg: var(--on-surface);
+  --fg-muted: var(--on-surface-variant);
+  --fg-faint: #8E8878;              /* 深底 4.9:1，仅用于占位与最弱说明 */
+  --border: var(--outline);
+  --border-strong: var(--outline-strong);
+
+  --primary-fill: var(--primary);
+  --primary-text: var(--primary);
+  --secondary-fill: var(--secondary);
+  --secondary-text: var(--secondary);
+  --accent: var(--tertiary);        /* 旧「琥珀=待处理」并入霓虹粉 */
+  --accent-fill: var(--tertiary);
+  --accent-text: var(--tertiary);
+  --on-accent: var(--on-tertiary);
+  --danger: var(--tertiary);
+  --danger-fill: var(--tertiary);
+  --danger-text: var(--tertiary);
+  --on-danger: var(--on-tertiary);
+
+  /* 圆角旧名（组件大量使用） */
+  --r-sm: var(--radius-field);
+  --r-md: var(--radius-card);
+  --r-pill: var(--radius-pill);
+}
