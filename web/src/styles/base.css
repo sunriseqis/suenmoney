@@ -385,6 +385,26 @@
   }
 
   /* ---- 桌面 Hero 底部提醒条 ---- */
+  /* ═══════════════════════════════════════════════════════════════
+     v3 组件：金额三级排版
+       ¥  小 2 档、上移、弱色；整数 = 主字；角分 = 小 1 档、弱色。
+       全 tabular。金额右对齐的物理来源就是这三个 span 的 baseline 对齐。
+     ═══════════════════════════════════════════════════════════════ */
+  .amount-v3 { display: inline-flex; align-items: baseline; white-space: nowrap; }
+  .amount-v3 .cur  { font-size: 0.62em; font-weight: 500; color: var(--on-surface-variant);
+                     margin-right: 2px; transform: translateY(-0.28em); }
+  .amount-v3 .int  { font-weight: 600; letter-spacing: -0.01em; }
+  .amount-v3 .dec  { font-size: 0.72em; color: var(--on-surface-variant); font-weight: 500; }
+  .amount-v3.lg .cur { font-size: 0.5em; transform: translateY(-0.35em); }
+
+  /* 44px 圆形分类徽位（流水行左端） */
+  .cat-avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center; flex-shrink: 0;
+    background: color-mix(in srgb, var(--avatar-color, var(--primary)) 12%, transparent);
+    color: var(--avatar-color, var(--primary));
+  }
+
   .chipbar {
     position: relative;
     display: flex;

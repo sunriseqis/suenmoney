@@ -1194,7 +1194,7 @@ function fullCategoryName(item: {
               <tr
                 v-for="row in sortedItems"
                 :key="row.id"
-                class="cursor-pointer border-b border-line/50 transition-colors duration-150 hover:bg-sunken"
+                class="cursor-pointer border-b border-outline/60 transition-colors duration-150 hover:bg-surface-high/40"
                 @click="ui.openEdit(row)"
               >
                 <td
@@ -1209,16 +1209,21 @@ function fullCategoryName(item: {
                   </span>
                 </td>
 
-                <td class="py-2.5 pr-3 align-middle">
-                  <span class="flex items-center gap-2">
-                    <CategoryIcon
-                      :name="categoryNameOf(row)"
-                      :icon="row.categoryIcon"
-                      :color="row.parentCategoryColor ?? row.categoryColor"
-                      :color-name="row.parentCategoryName ?? categoryNameOf(row)"
-                      :size="18"
-                    />
-                    <span class="truncate text-sm font-medium text-ink">
+                <td class="py-2 pr-3 align-middle">
+                  <span class="flex items-center gap-3">
+                    <span
+                      class="cat-avatar"
+                      :style="{ '--avatar-color': categoryColorVar(Number(row.parentCategoryColor ?? row.categoryColor ?? 1)) }"
+                    >
+                      <CategoryIcon
+                        :name="categoryNameOf(row)"
+                        :icon="row.categoryIcon"
+                        :color="row.parentCategoryColor ?? row.categoryColor"
+                        :color-name="row.parentCategoryName ?? categoryNameOf(row)"
+                        :size="20"
+                      />
+                    </span>
+                    <span class="truncate text-[15px] font-medium text-ink">
                       {{ fullCategoryName(row) }}
                     </span>
                   </span>
@@ -1247,21 +1252,23 @@ function fullCategoryName(item: {
                 </td>
 
                 <td
-                  class="whitespace-nowrap py-2.5 text-right text-sm font-bold tabular-nums"
-                  :class="row.amountCents < 0 ? 'text-danger-text' : 'text-ink'"
+                  class="whitespace-nowrap py-2 text-right align-middle"
+                  :class="row.amountCents < 0 ? 'text-tertiary' : 'text-ink'"
                 >
-                  {{ formatYuan(row.amountCents) }}
+                  <span class="amount-v3 text-[15px] tabular-nums">
+                    <span class="cur">¥</span><span class="int">{{ formatYuan(row.amountCents) }}</span>
+                  </span>
                 </td>
               </tr>
             </tbody>
           </table>
 
           <!-- 移动端 / 窄屏：双行紧凑布局（主行：分类全名 + 金额；次行：支付方式 + 完整备注 + 账期） -->
-          <ul class="divide-y divide-line/40 lg:hidden">
+          <ul class="divide-y divide-outline/60 lg:hidden">
             <li v-for="row in sortedItems" :key="row.id">
               <button
                 type="button"
-                class="flex w-full items-center gap-3 py-2.5 px-1 text-left transition-colors duration-150 active:bg-sunken"
+                class="flex min-h-16 w-full items-center gap-3 px-1 py-2 text-left transition-colors duration-150 active:bg-surface-high/40"
                 @click="ui.openEdit(row)"
               >
                 <!-- 日期格：最远支持 2 天简化显示（今日星期一 / 昨日星期日 / 26日星期六） -->
@@ -1277,8 +1284,11 @@ function fullCategoryName(item: {
                   </span>
                 </span>
 
-                <!-- 图标 -->
-                <span class="shrink-0 text-ink-muted">
+                <!-- 44px 圆形分类徽位（v3：12% 分类色底 + 分类色图标） -->
+                <span
+                  class="cat-avatar"
+                  :style="{ '--avatar-color': categoryColorVar(Number(row.parentCategoryColor ?? row.categoryColor ?? 1)) }"
+                >
                   <CategoryIcon
                     :name="categoryNameOf(row)"
                     :icon="row.categoryIcon"
@@ -1296,10 +1306,10 @@ function fullCategoryName(item: {
                       {{ fullCategoryName(row) }}
                     </span>
                     <span
-                      class="shrink-0 text-sm font-bold tabular-nums text-right whitespace-nowrap"
-                      :class="row.amountCents < 0 ? 'text-danger-text' : 'text-ink'"
+                      class="amount-v3 shrink-0 text-right text-[15px] tabular-nums whitespace-nowrap"
+                      :class="row.amountCents < 0 ? 'text-tertiary' : 'text-ink'"
                     >
-                      {{ formatYuan(row.amountCents) }}
+                      <span class="cur">¥</span><span class="int">{{ formatYuan(row.amountCents) }}</span>
                     </span>
                   </div>
 
