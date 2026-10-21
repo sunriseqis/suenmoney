@@ -27,7 +27,7 @@ withDefaults(defineProps<{ size?: number; wordmark?: boolean }>(), {
 <template>
   <span class="inline-flex items-center gap-2.5">
     <img
-      :src="theme === 'light' ? '/mark-light.svg' : '/logo.svg'"
+      :src="theme === 'light' ? '/mark-light.svg' : '/mark-colored.svg'"
       alt="SuenMoney" :width="size" :height="size" class="block"
     />
     <span

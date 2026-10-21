@@ -95,9 +95,11 @@ async function main() {
   if (!CHECK) {
     writeFileSync(join(ROOT, 'web/public/logo.svg'), SRC.master);
     writeFileSync(join(ROOT, 'web/public/mark-light.svg'), SRC.light);
+    writeFileSync(join(ROOT, 'web/public/mark-colored.svg'), SRC.colored);
   }
   written.push('web/public/logo.svg  (真矢量，' + (SRC.master.length / 1024).toFixed(1) + 'KB)');
   written.push('web/public/mark-light.svg  (浅色反色版)');
+  written.push('web/public/mark-colored.svg  (彩色粗边框版)');
 
   // ── 3) 飞牛 fnOS 套件（计划二直接消费） ──
   if (existsSync(join(ROOT, 'fn/manifest'))) {
