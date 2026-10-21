@@ -113,7 +113,7 @@ onMounted(async () => {
   <div
     class="flex min-h-full items-center justify-center bg-canvas px-4 py-[var(--safe-top)] text-ink"
   >
-    <div class="w-full max-w-[380px]">
+    <div class="login-card">
       <div class="flex flex-col items-center gap-3">
         <BrandMark :size="56" />
       </div>
@@ -211,7 +211,7 @@ onMounted(async () => {
             v-model="customServerUrl"
             type="url"
             placeholder="http://192.168.1.100:3000"
-            class="w-full rounded-sm bg-sunken px-3 py-2 text-xs text-ink outline-none placeholder:text-ink-muted focus:ring-1 focus:ring-primary"
+            class="input-v4 px-3 py-2 text-xs"
           />
           <div class="flex items-center justify-between gap-2">
             <span v-if="serverUrlNotice" class="truncate text-[11px] text-ink-muted">
@@ -222,14 +222,14 @@ onMounted(async () => {
               <button
                 type="button"
                 :disabled="serverTesting || !customServerUrl"
-                class="rounded-sm border border-line bg-canvas px-2.5 py-1 text-xs hover:bg-surface disabled:opacity-40"
+                class="btn-v4 px-2.5 py-1 text-xs"
                 @click="testServerConnection"
               >
                 {{ serverTesting ? '测试中…' : '测试连接' }}
               </button>
               <button
                 type="button"
-                class="rounded-sm bg-surface border border-line px-2.5 py-1 text-xs font-semibold hover:bg-canvas"
+                class="btn-v4 px-2.5 py-1 text-xs"
                 @click="saveServerConnection"
               >
                 保存

@@ -538,6 +538,21 @@
   .metrics-row .metric-sub { font-size: 11.5px; color: var(--on-surface-variant); }
   @media (max-width: 960px) { .metrics-row { grid-template-columns: 1fr 1fr; } }
 
+  /* 登录页（静态稿：居中一卡，label 全大写） */
+  .login-card {
+    width: 100%; max-width: 420px;
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-card);
+    clip-path: var(--chamfer);
+    box-shadow: var(--el-1);
+    padding: 32px 28px;
+  }
+  :root[data-theme='light'] .login-card { border-color: var(--fg); box-shadow: 8px 8px 0px 0px #E2E8F0; }
+  .login-card .label-cn { font-size: 11px; font-weight: 700; letter-spacing: .12em;
+                          text-transform: uppercase; color: var(--on-surface-variant); }
+  @media (max-width: 960px) { .login-card { padding: 24px 20px; } }
+
   /* 设置页条目（静态稿：行卡 + 图标列 + 主副文字） */
   .settings-row { grid-template-columns: 40px 1fr auto; gap: 12px; padding: 10px 16px; }
   :root[data-theme='light'] .settings-row { box-shadow: 4px 4px 0px 0px #E2E8F0; }
