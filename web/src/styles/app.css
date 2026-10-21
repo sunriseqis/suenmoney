@@ -95,3 +95,23 @@
   /* 动效 */
   --ease-snap: var(--ease);
 }
+
+@layer utilities {
+  /* v5 旧式类重解释：与 Tailwind 工具类同层，源码在后即胜出 */
+     模板里还有 rounded-md/lg/sm、bg-subtle、bg-sunken、ring/border/divide-line
+     这些旧类。在两套主题下重新解释成 v5 形状，避免旧壳残留。 */
+  [class*='rounded-md'], [class*='rounded-lg'], [class*='rounded-sm'] {
+    border-radius: var(--radius-card);
+    clip-path: var(--chamfer-sm);
+  }
+  :root[data-theme='light'] [class*='rounded-md'],
+  :root[data-theme='light'] [class*='rounded-lg'],
+  :root[data-theme='light'] [class*='rounded-sm'] {
+    border-radius: var(--radius-card);
+    clip-path: none;
+  }
+  [class*='bg-subtle'] { background: var(--surface-container); }
+  [class*='bg-sunken'] { background: var(--surface-high); }
+  [class*='ring-line'], [class*='border-line'] { border-color: var(--outline); }
+  [class*='divide-line'] > * + * { border-color: var(--outline); }
+}
