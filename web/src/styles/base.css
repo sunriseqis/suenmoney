@@ -514,6 +514,42 @@
   }
   :root[data-theme='light'] .panel-v4 { border-color: var(--fg); }
 
+  /* ═══════════ v5 流水行：深色切角+hover 辉光位移；浅色硬阴影+hover 粉影 ══ */
+  .row-v5 {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 16px; align-items: center;
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-card);
+    padding: 12px 18px; cursor: pointer;
+    clip-path: var(--chamfer-sm);
+    transition: all var(--dur) var(--ease);
+  }
+  :root:not([data-theme='light']) .row-v5:hover {
+    border-color: var(--primary); box-shadow: var(--el-glow); transform: translateX(4px);
+  }
+  :root[data-theme='light'] .row-v5 { box-shadow: 5px 5px 0px 0px #E2E8F0; border-color: var(--fg); }
+  :root[data-theme='light'] .row-v5:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 8px 8px 0px 0px #F472B6;
+  }
+
+  /* ═══════════ v5 图标容器：深色切角方+辉光；浅色彩色圆+硬阴影 ══════════ */
+  .ic-v5 {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center; flex-shrink: 0;
+    border: var(--border-width) solid var(--fg);
+    background: var(--primary); color: var(--on-primary);
+    clip-path: var(--chamfer-sm);
+    transition: filter var(--dur) var(--ease);
+  }
+  :root:data-theme='light'] .ic-v5, :root[data-theme='light'] .ic-v5 {
+    border-radius: 50%; box-shadow: 3px 3px 0px 0px #1E293B;
+  }
+  :root:not([data-theme='light']) .ic-v5 svg {
+    stroke-width: 1.5; filter: drop-shadow(0 0 3px currentColor);
+  }
+  :root[data-theme='light'] .ic-v5 svg { stroke-width: 2.5; }
+
   /* ═══════════ v5 输入框 ════════════════════════════════════════ */
   .input-v4 {
     width: 100%; background: var(--surface-container);
