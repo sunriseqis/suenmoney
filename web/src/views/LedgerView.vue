@@ -701,18 +701,19 @@ function fullCategoryName(item: {
           class="lg:hidden"
           :class="[hasOverdue ? 'sticky top-[calc(var(--safe-top)+8px)] z-[var(--z-sticky)]' : '']"
         >
-          <!-- 支出 Hero 卡（始终全宽，背景深色质感，内嵌小巧提醒胶囊） -->
-          <div
-            class="relative overflow-hidden rounded-2xl bg-surface-container p-5 text-on-surface shadow-[var(--el-1)]"
-          >
-            <!-- v3：不要光晕与水印 —— 质感来自 tonal surface 本身，
-                 装饰会稀释「数字是主角」。配色信息由环比胶囊承担。 -->
+          <!-- 支出 Hero 卡（v5：静态稿语言 —— label / 大数字 / 胶囊 / 堆叠条） -->
+          <div class="card relative overflow-hidden p-5 text-on-surface">
+            <!-- 终端卡头（仅深色）：交通灯三点 -->
+            <div class="terminal-head">
+              <i></i><i></i><i></i>
+              <span>{{ topCardTitle }}</span>
+            </div>
 
             <!-- 卡片内容区 -->
             <div class="relative z-1">
-              <!-- 顶栏：标题 + 内嵌小巧提醒胶囊 -->
+              <!-- 顶栏：label + 内嵌提醒胶囊（chip） -->
               <div class="flex items-center justify-between gap-2">
-                <div class="truncate text-[11px] font-medium uppercase tracking-[0.5px] text-on-surface-variant">{{ topCardTitle }}</div>
+                <div class="label lg:hidden">{{ topCardTitle }}</div>
 
                 <!-- 缩小并包在卡片内部的提醒胶囊 -->
                 <button
@@ -742,7 +743,7 @@ function fullCategoryName(item: {
                 <div class="amount-v3 lg whitespace-nowrap">
                   <span class="cur">¥</span>
                   <span
-                    class="int font-extrabold text-tertiary tracking-tight tabular-nums"
+                    class="int font-extrabold tracking-tight tabular-nums"
                     :style="adaptiveAmountStyle(formatCents(displayTotalCents), 'card')"
                   >
                     {{ formatCents(displayTotalCents) }}
