@@ -227,12 +227,59 @@ export class DesignTokens {
 }
 `;
 
+
+
+function lightBlock(L) {
+  const rows = [
+    ['--surface', L['surface']],
+    ['--surface-container', L['surface-container']],
+    ['--surface-high', L['surface-high']],
+    ['--on-surface', L['on-surface']],
+    ['--on-surface-variant', L['on-surface-variant']],
+    ['--outline', L['outline']],
+    ['--outline-strong', L['outline-strong']],
+    ['--primary', L['primary']],
+    ['--on-primary', L['on-primary']],
+    ['--primary-container', L['primary-container']],
+    ['--secondary', L['secondary']],
+    ['--on-secondary', L['on-secondary']],
+    ['--secondary-container', L['secondary-container']],
+    ['--tertiary', L['tertiary']],
+    ['--on-tertiary', L['on-tertiary']],
+    ['--tertiary-container', L['tertiary-container']],
+    ['--lemon', L['lemon']],
+    ['--on-lemon', L['on-lemon']],
+    ['--lemon-container', L['lemon-container']],
+    ['--info', L['info']],
+    ['--on-info', L['on-info']],
+    ['--info-container', L['info-container']],
+    ['--focus', L['focus']],
+    ['--scrim', L['scrim']],
+  ];
+  return `
+/* ==========================================================================
+   浅色主题（data-theme="light"）
+   --------------------------------------------------------------------------
+   **同产品不同光**：结构、圆角、字号完全一致，只换色阶。
+   刻意不复用旧扁平浅色 —— 那会变成「两个产品」而不是「两种光线」。
+   ========================================================================== */
+:root[data-theme='light'] {
+` + rows.map(([k, v]) => `  ${k}: ${v};`).join('\n') + `\n}\n`;
+}
+
 // ── write / check ──────────────────────────────────────────────────────────
 const outputs = [
-  [OUT_CSS, css],
   [join(OUT_DIR, 'DesignTokens.swift'), swift],
   [join(OUT_DIR, 'Tokens.ets'), ets],
 ];
+
+
+// ── 4) 浅色主题（data-theme="light"）───────────────────────────────────────
+// 同产品不同光：结构/圆角/字号完全一致，只换色阶。刻意不复用旧扁平浅色。
+const light = tokens.theme?.light;
+if (light) {
+  outputs.push([OUT_CSS, css + lightBlock(light)]);
+}
 
 let drift = 0;
 for (const [path, content] of outputs) {

@@ -38,6 +38,7 @@ const showServerSettings = computed(() => getPlatform() !== 'web');
 import BillImportModal from './BillImportModal.vue';
 import LedgerImportModal from './LedgerImportModal.vue';
 import ServerSettingsPanel from './ServerSettingsPanel.vue';
+import ThemeSwitch from './ThemeSwitch.vue';
 
 const auth = useAuthStore();
 const ui = useUiStore();
@@ -207,6 +208,11 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
+    <!-- 主题：三档，默认深色（v3 是深色设计） -->
+    <section class="rounded-2xl border border-line bg-surface p-5" aria-label="主题">
+      <ThemeSwitch />
+    </section>
+
     <!-- 服务端设置（置顶展示，所有成员均可配置；仅原生壳需要） -->
     <ServerSettingsPanel v-if="showServerSettings" />
 

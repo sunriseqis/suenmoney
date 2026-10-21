@@ -3,24 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#141222" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#F6F4EF" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <title>SuenMoney</title>
     <script>
-      // 主题只有两种来源：系统偏好，或用户在设置里显式选择。
-      // 只在**显式选择过**时才写 data-theme —— 不写就由 tokens.css 里的
-      // prefers-color-scheme 分支接管，这样「跟随系统」是真正实时的（用户在
-      // 系统里切深浅色，我们的界面立刻跟着变，不需要刷新）。
+      // 主题来源：用户在设置里显式选择的（localStorage）。
+      // **不写 data-theme = 深色 v3**，不再看系统偏好 —— v3 是深色设计，
+      // 跟随系统会让浅色系统用户看到两套完全不同语言的界面。
+      // 想用浅色就显式选 light，会在 <html data-theme="light"> 上。
       try {
         var saved = localStorage.getItem('suenmoney:theme');
         if (saved === 'light' || saved === 'dark') {
           document.documentElement.dataset.theme = saved;
         }
       } catch (error) {
-        /* 隐私模式下 localStorage 可能不可用，忽略即可，退回跟随系统 */
+        /* 隐私模式下 localStorage 不可用，退回深色 */
       }
     </script>
   </head>
