@@ -652,32 +652,23 @@ function fullCategoryName(item: {
         >
           <!-- 支出 Hero 卡（始终全宽，背景深色质感，内嵌小巧提醒胶囊） -->
           <div
-            class="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#2563eb] via-[#1d4ed8] to-[#1e40af] p-4 text-on-primary shadow-xs"
+            class="relative overflow-hidden rounded-2xl bg-surface-container p-5 text-on-surface shadow-[var(--el-1)]"
           >
-            <!-- 背景装饰光晕与水印（消除纯白与空白感，赋予质感） -->
-            <div class="pointer-events-none absolute -right-6 -bottom-10 h-32 w-32 rounded-full bg-white/[0.08] ring-8 ring-white/[0.03]" />
-            <div class="pointer-events-none absolute right-10 -top-8 h-24 w-24 rounded-full bg-white/[0.05]" />
-            <div
-              class="pointer-events-none absolute right-4 top-2 select-none font-sans font-black leading-none text-white/[0.07] text-6xl"
-            >
-              ¥
-            </div>
+            <!-- v3：不要光晕与水印 —— 质感来自 tonal surface 本身，
+                 装饰会稀释「数字是主角」。配色信息由环比胶囊承担。 -->
 
             <!-- 卡片内容区 -->
             <div class="relative z-1">
               <!-- 顶栏：标题 + 内嵌小巧提醒胶囊 -->
               <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-1.5 text-xs font-medium text-white/85 truncate">
-                  <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300 shrink-0" />
-                  <span class="truncate">{{ topCardTitle }}</span>
-                </div>
+                <div class="truncate text-[11px] font-medium uppercase tracking-[0.5px] text-on-surface-variant">{{ topCardTitle }}</div>
 
                 <!-- 缩小并包在卡片内部的提醒胶囊 -->
                 <button
                   v-if="dueTodos.length > 0"
                   type="button"
                   class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all cursor-pointer shrink-0 shadow-2xs"
-                  :class="hasOverdue ? 'bg-red-500 text-white ring-1 ring-white/30' : 'bg-white/20 text-white hover:bg-white/30'"
+                  :class="hasOverdue ? 'bg-tertiary-container text-tertiary' : 'bg-surface-high text-on-surface-variant'"
                   @click="isTopCardExpanded = !isTopCardExpanded"
                 >
                   <span
@@ -697,10 +688,10 @@ function fullCategoryName(item: {
 
               <!-- 中间：大金额展示（自适应缩放） -->
               <div class="mt-2.5 min-w-0 overflow-hidden">
-                <div class="flex items-baseline gap-0.5 whitespace-nowrap">
-                  <span class="text-sm font-bold text-white/80 shrink-0">¥</span>
+                <div class="amount-v3 lg whitespace-nowrap">
+                  <span class="cur">¥</span>
                   <span
-                    class="font-extrabold tracking-tight tabular-nums text-white font-sans whitespace-nowrap"
+                    class="int font-extrabold text-on-surface tracking-tight tabular-nums"
                     :style="adaptiveAmountStyle(formatCents(displayTotalCents), 'card')"
                   >
                     {{ formatCents(displayTotalCents) }}
@@ -709,11 +700,11 @@ function fullCategoryName(item: {
               </div>
 
               <!-- 期间环比与亮点说明 -->
-              <div class="mt-1 flex items-center justify-between text-xs text-white/85">
+              <div class="mt-1 flex items-center justify-between text-xs text-on-surface-variant">
                 <div class="truncate">
                   <span v-if="scope === 'month' && monthChangeRatio !== null" class="inline-flex items-center gap-1">
                     <span class="opacity-80">较上月</span>
-                    <b :class="monthChangeRatio > 0 ? 'text-amber-200' : 'text-emerald-200'">
+                    <b :class="monthChangeRatio > 0 ? 'text-tertiary' : 'text-secondary'">
                       {{ monthChangeRatio > 0 ? '+' : '' }}{{ (monthChangeRatio * 100).toFixed(1) }}%
                     </b>
                     <span class="opacity-70 text-[11px]">
@@ -737,7 +728,7 @@ function fullCategoryName(item: {
               </div>
 
               <!-- 底部：3 列结构化指标格（充实信息，消灭空洞感） -->
-              <div class="mt-3 grid grid-cols-3 gap-2 border-t border-white/15 pt-2.5 text-xs text-white/90">
+              <div class="mt-3 grid grid-cols-3 gap-2 border-t border-outline pt-2.5 text-xs text-on-surface">
                 <!-- 栏位 1: 日均 (月) / 月均 (年) -->
                 <div>
                   <span class="block text-[11px] opacity-70">
