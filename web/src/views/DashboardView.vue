@@ -338,32 +338,32 @@ async function handleSkip(todoId: string): Promise<void> {
 <template>
   <div class="pb-[calc(var(--bottom-bar-h)+var(--safe-bottom)+24px)]">
     <!-- 概况一屏总览 -->
-    <header class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-[calc(var(--safe-top)+20px)] lg:px-6 lg:pt-8">
-      <!-- ① Hero 卡片：深蓝质感渐变 + 装饰光晕与水印（与流水顶卡对齐） -->
-      <div class="card relative overflow-hidden p-5 text-on-surface lg:p-7">
+    <header class="hero-section">
+      <!-- ① Hero 卡片（v5：静态稿布局 —— 顶行期间切换 + label + 发光大金额） -->
+      <div class="card hero-card relative overflow-hidden p-5 text-on-surface lg:p-7">
         <!-- v5：Cyberpunk 终端卡头（交通灯） -->
         <div class="terminal-head"><i></i><i></i><i></i><span>suenmoney · 2026</span></div>
 
         <div class="relative z-1">
-          <div class="flex items-center justify-between gap-2">
+          <div class="hero-toprow">
           <!-- 期间切换与标题 -->
           <div class="flex items-center gap-2">
             <button
               v-if="scope === 'month'"
               type="button"
-              class="grid h-8 w-8 place-items-center rounded-full bg-surface-high transition-colors duration-200 hover:bg-surface-high/70"
+              class="btn-v4 hero-nav-btn"
               aria-label="上个月"
               @click="month = shiftMonth(month, -1)"
             >
               ←
             </button>
-            <h1 class="text-sm font-bold opacity-95">
+            <h1 class="hero-title-sm">
               {{ scope === 'month' ? formatMonthLabel(month) : scope === 'year' ? `${year} 年` : '全部时间' }}
             </h1>
             <button
               v-if="scope === 'month'"
               type="button"
-              class="grid h-8 w-8 place-items-center rounded-full bg-surface-high transition-colors duration-200 hover:bg-surface-high/70 disabled:opacity-30"
+              class="btn-v4 hero-nav-btn"
               :disabled="isCurrentSelectedMonth"
               aria-label="下个月"
               @click="month = shiftMonth(month, 1)"
@@ -375,19 +375,19 @@ async function handleSkip(todoId: string): Promise<void> {
           <!-- 标题行行尾关闭按键（A24），返回流水落地页 -->
           <RouterLink
             :to="{ name: 'ledger' }"
-            class="relative grid h-10 w-10 place-items-center rounded-full bg-surface-high text-sm font-bold text-on-surface transition-colors hover:bg-surface-high/70 after:absolute after:-inset-0.5 after:rounded-full after:content-['']"
+            class="btn-v4 hero-close"
             aria-label="关闭概况，返回流水"
           >
             ✕
           </RouterLink>
         </div>
 
-        <p class="mt-4 text-xs font-semibold tracking-widest opacity-80">
+        <p class="hero-eyebrow">
           {{ heroTitle }}
         </p>
 
         <!-- 自适应金额展示区：根据数字长短和屏幕宽度平滑缩放，永不折行、永不溢出 -->
-        <div ref="heroAmountContainerRef" class="mt-2 w-full min-w-0 overflow-hidden">
+        <div ref="heroAmountContainerRef" class="hero-amount-wrap w-full min-w-0 overflow-hidden">
           <p v-if="loading && heroTotalCents === 0" class="skeleton h-[44px] w-56 rounded-sm lg:h-[52px]" />
           <p
             v-else
