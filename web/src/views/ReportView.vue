@@ -665,7 +665,7 @@ const memberRows = computed(() => {
         <RouterLink
           v-if="scope === 'year'"
           :to="{ name: 'annual-summary', query: { year } }"
-          class="flex items-center justify-between rounded-2xl bg-primary-container p-4 transition-colors hover:bg-primary-container/70"
+          class="card report-banner"
         >
           <div class="flex items-center gap-2.5">
             <Sparkles class="h-4 w-4 text-primary" />
@@ -699,7 +699,7 @@ const memberRows = computed(() => {
         <!-- ② 分类构成：环图 + 可展开二级的明细表（中心显示分类数，不显示合计） -->
         <section
           v-if="categories.length > 0"
-          class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5"
+          class="card"
           aria-label="分类构成"
         >
           <div class="flex items-center justify-between">
@@ -850,7 +850,7 @@ const memberRows = computed(() => {
         </section>
 
         <!-- ③ 期内节奏（Period Rhythm）：月档天折线/柱 · 年档月柱 · 汇总档年柱 -->
-        <section class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5" aria-label="期内节奏">
+        <section class="card" aria-label="期内节奏">
           <div class="flex items-center justify-between">
             <h2 class="label-cn">期内节奏</h2>
             <span class="text-xs text-ink-muted">
@@ -976,7 +976,7 @@ const memberRows = computed(() => {
           class="card-grid grid-cols-1 lg:grid-cols-2"
         >
           <!-- ⑤ 涨跌榜（月档较上月） -->
-          <section class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5" aria-label="涨跌榜">
+          <section class="card" aria-label="涨跌榜">
             <div class="flex items-center justify-between">
               <h2 class="label-cn">涨跌榜</h2>
               <span class="text-xs text-ink-muted">较上月变化显著项</span>
@@ -1024,7 +1024,7 @@ const memberRows = computed(() => {
           </section>
 
           <!-- ⑥ 还款节奏（本月刷卡 + 下月要还） -->
-          <section class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5" aria-label="还款节奏">
+          <section class="card" aria-label="还款节奏">
             <div class="flex items-center justify-between">
               <h2 class="label-cn">还款节奏</h2>
               <span class="text-xs text-ink-muted">各方式支出与下月应还</span>
@@ -1085,7 +1085,7 @@ const memberRows = computed(() => {
         <!-- 年档的涨跌榜（通栏或独立） -->
         <section
           v-else-if="scope === 'year'"
-          class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5"
+          class="card"
           aria-label="涨跌榜"
         >
           <div class="flex items-center justify-between">
@@ -1137,7 +1137,7 @@ const memberRows = computed(() => {
         <!-- 卡片并排区 2：本期洞察（⑦）与 按记录人（⑧） -->
         <div class="card-grid grid-cols-1 lg:grid-cols-2">
           <!-- ⑦ 本期洞察 -->
-          <section class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5" aria-label="本期洞察">
+          <section class="card" aria-label="本期洞察">
             <h2 class="label-cn">本期洞察</h2>
             <ul class="mt-3 space-y-2.5">
               <li
@@ -1154,7 +1154,7 @@ const memberRows = computed(() => {
           </section>
 
           <!-- ⑧ 按记录人 -->
-          <section class="rounded-md border border-line/50 bg-subtle p-4 lg:p-5" aria-label="按记录人">
+          <section class="card" aria-label="按记录人">
             <h2 class="label-cn">按记录人</h2>
             <ul class="mt-3 divide-y divide-line/40">
               <li

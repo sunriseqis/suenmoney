@@ -538,6 +538,14 @@
   .metrics-row .metric-sub { font-size: 11.5px; color: var(--on-surface-variant); }
   @media (max-width: 960px) { .metrics-row { grid-template-columns: 1fr 1fr; } }
 
+  /* 报表页横幅（静态稿：一整条主色卡，两端对齐） */
+  .report-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--primary-container); padding: 16px 20px;
+  }
+  :root:not([data-theme='light']) .report-banner { border-color: var(--primary); box-shadow: var(--el-glow); }
+  :root[data-theme='light'] .report-banner { border-color: var(--fg); }
+
   /* 流水页（静态稿：控制行「期间靠左 + 档位靠右」一行 + 列表） */
   .ledger-header { position: relative; padding: 20px 24px 12px; overflow: hidden; }
   .ledger-header::before {
