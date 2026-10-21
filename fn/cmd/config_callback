@@ -1,0 +1,11 @@
+#!/bin/bash
+# 配置变更后：bash 没法热重载 node 进程，只能停+起。
+# 恒 exit 0 —— 回调非零会让界面显示「设置保存失败」，而设置其实已经存下了。
+set -o pipefail
+cd "$(dirname "$0")" || exit 0
+./main stop
+sleep 1
+./main start
+VAR="${TRIM_PKGVAR:-$(cd .. && pwd)/var}"
+echo "$(date '+%Y-%m-%d %H:%M:%S') [配置变更] 已重启服务" >> "${VAR}/info.log" 2>/dev/null
+exit 0

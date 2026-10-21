@@ -1,0 +1,3 @@
+#!/bin/bash
+# 配置变更前：无需动作（.env 改了要重启才生效，由 config_callback 负责）
+exit 0

@@ -257,7 +257,83 @@ docker compose pull && docker compose up -d
 
 ---
 
-## 八、常见问题
+## 八、飞牛私有云（fnOS）套件
+
+不想用 Docker 的 NAS 用户，可以直接在飞牛应用中心装 `.fpk` 套件：**包里自带 Node 运行时**，
+宿主机不需要装 Node、不需要包管理器、不跑容器。运行形态与「方式三：本机直接部署」同构。
+
+### 1. 构建
+
+```bash
+npm run fn:build          # → output/suenmoney-v<version>.fpk（+ .sha256）
+```
+
+七步流水线：版本注入 → 图标（矢量母版出 64/256）→ 自带 Node 运行时（**sha256 校验**）→
+组装 payload（前端产物 + 服务端源码 + `npm ci --omit=dev`）→ 权限归一 + **零软链校验** →
+取 fnpack → 出包。
+
+三条门禁都是有事故对应的，不要绕：
+
+| 门禁 | 不做的后果 |
+|---|---|
+| 包内**零软链** | `node_modules/.bin` 的相对软链被打包器改写成自引用死链，飞牛赋权阶段 `stat` 失败，安装恒定报「设置目录权限失败」 |
+| 包内**无 devDeps** | 体积失控、不可复现（出包前会硬检查 `typescript` / `@types` / `vite`） |
+| 权限 **755/644** | 构建机 umask 077 会让包里出现 700，装到 NAS 上读不到 |
+
+### 2. 安装与目录
+
+应用中心上传 `output/suenmoney-v*.fpk` → 桌面出现 SuenMoney → 点开就是 `http://<NAS IP>:5310`。
+**只有一个端口 5310**（页面 + `/api` 同源同端口，同 Docker 形态）。
+
+| 变量 | 落点 | 内容 |
+|---|---|---|
+| `TRIM_APPDEST` | `/var/apps/suenmoney/target` | `bin/node`、`server/`、`web/dist/` —— **升级时整体替换，禁止往里放业务数据** |
+| `TRIM_PKGVAR` | `…/@appdata/suenmoney` | `data/suenmoney.sqlite`、`info.log`、`app.pid`、`stop.flag` |
+| `TRIM_PKGETC` | `…/@appconf/suenmoney` | `.env`（配置）、`env.example`（模板） |
+| `TRIM_DATA_SHARE_PATHS` | `…/suenmoney/backup` | `SUENMONEY_BACKUP_DIR`：物理快照（`VACUUM INTO`）落这里，文件管理器里可见 |
+
+### 3. 生命周期
+
+| 动作 | 行为 |
+|---|---|
+| 启动 | 守护进程 + 服务进程；服务异常退出 5 秒后自动重启 |
+| 应用中心「停止」 | 调 `cmd/main stop`：先立 `stop.flag` → `TERM` → 15 秒后 `KILL` → **校验端口释放**；端口没释放就保留 flag 防止被守护拉起 |
+| 升级 | `upgrade_init` 先停并等端口释放 → 装新包 → `upgrade_callback` 起服务并探 `/api/health`，把返回体（含 `version`）写进 `info.log` |
+| 卸载 | **只停进程，不删数据**。重装/升级可续用；要清空请自己删目录 |
+
+> **「应用中心显示运行中」不算活着**：`checkport` 只探 `127.0.0.1`，进程崩了只要端口有人占就还是绿的。
+> 判断是否真的在跑，看 `main status` 的退出码（`0` 运行 / `3` 未运行），或直接 `curl http://127.0.0.1:5310/api/health`。
+
+### 4. 命令行运维（有一个必须踩的坑）
+
+在包里跑 CLI 时，**必须显式指定数据库路径，并优先用包内 node**：
+
+```bash
+cd /var/apps/suenmoney/target
+sudo -u suenmoney   SUENMONEY_DB_PATH=/var/apps/suenmoney/var/data/suenmoney.sqlite \
+  ./bin/node scripts/node-run.mjs src/cli/user-add.ts --username admin --name 管理员 --admin
+```
+
+不写 `SUENMONEY_DB_PATH` 的后果：默认是相对路径 `./data/…`，库会建在 `target/` 里 ——
+**下次升级整体替换 `target/`，账本就没了**。这是这类套件最典型的数据丢失路径。
+
+### 5. 配置与日志
+
+```bash
+# 配置：写到 etc/.env，改完重启生效（bash 无法热重载 node）
+sudoedit /var/apps/suenmoney/etc/.env      # 例如 SUENMONEY_BACKUP_KEEP=30
+/var/apps/suenmoney/target/cmd/main restart
+
+# 日志（>8MB 自动轮转成 info.log.1）
+tail -f /var/apps/suenmoney/var/info.log
+```
+
+首次启动会在 `etc/` 写一份 `env.example` 模板，**不会自动生成 `.env`** ——
+避免「改了模板以为生效」。
+
+---
+
+## 九、常见问题
 
 | 现象 | 原因与处理 |
 |---|---|

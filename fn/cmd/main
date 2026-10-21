@@ -1,0 +1,274 @@
+#!/bin/bash
+# ==============================================================================
+# SuenMoney · 飞牛 fnOS 套件生命周期脚本
+#
+#   ./main start | stop | status        （内部还有个 __supervise，不要手动调）
+#
+# 三条纪律（每一条都对应一次真事故，别简化）：
+#   1. 路径只信 TRIM_*，拿不到就反推，反推结果落在危险值上直接 FATAL 退出
+#      —— 否则日志/库/PID 会写到根分区（曾把 /data 与 /info.log 建到 / 上）。
+#   2. 业务数据只放 TRIM_PKGVAR，配置只放 TRIM_PKGETC。
+#      TRIM_APPDEST（包目录）在升级时整体替换，往里写库 = 升级后账本蒸发。
+#   3. 「应用中心显示运行中」不算活着：checkport 只探 127.0.0.1，
+#      进程崩了只要端口有人占就还是绿的 —— 所以自带守护 + 自己的 status 判据。
+# ==============================================================================
+set -o pipefail
+
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "${SELF}")"
+
+# ── 1. 目录解析：TRIM_* 优先，拿不到就反推 ──────────────────────────────────
+APP_DIR="${TRIM_APPDEST:-}"
+if [ -z "${APP_DIR}" ]; then
+    APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
+
+VAR_DIR="${TRIM_PKGVAR:-}"
+if [ -z "${VAR_DIR}" ]; then
+    VAR_DIR="$(cd "${APP_DIR}/.." && pwd)/var"
+fi
+
+ETC_DIR="${TRIM_PKGETC:-}"
+if [ -z "${ETC_DIR}" ]; then
+    ETC_DIR="$(cd "${APP_DIR}/.." && pwd)/etc"
+fi
+
+# 硬闸：这几个值一旦落进来，后面所有写操作都会写到系统盘上
+case "${VAR_DIR}" in
+    ""|"/"|"/var"|"/usr"|"/tmp"|"/opt"|"/root")
+        echo "[FATAL] TRIM_PKGVAR 解析结果不可用：'${VAR_DIR}'" >&2
+        exit 1
+        ;;
+esac
+case "${APP_DIR}" in
+    ""|"/")
+        echo "[FATAL] TRIM_APPDEST 解析结果不可用：'${APP_DIR}'" >&2
+        exit 1
+        ;;
+esac
+
+DATA_DIR="${VAR_DIR}/data"
+LOG_FILE="${VAR_DIR}/info.log"
+PID_FILE="${VAR_DIR}/app.pid"
+CHILD_PID_FILE="${VAR_DIR}/app.child.pid"
+STOP_FLAG="${VAR_DIR}/stop.flag"
+
+# ── 2. 配置：etc/.env 优先，其次 var/.env（先到先用） ────────────────────────
+[ -f "${ETC_DIR}/.env" ] && set -a && . "${ETC_DIR}/.env" && set +a
+[ -f "${VAR_DIR}/.env" ] && set -a && . "${VAR_DIR}/.env" && set +a
+
+PORT="${SUENMONEY_PORT:-5310}"
+TZ="${TZ:-Asia/Shanghai}"
+export TZ                                    # 必须在写任何日志之前导出
+
+# 备份目录：data-share 优先（用户在文件管理器里能看到），否则落私有区
+SHARE_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
+BACKUP_DIR="${SUENMONEY_BACKUP_DIR:-${SHARE_DIR:-${DATA_DIR}/backups}}"
+
+NODE_BIN=""
+find_node() {
+    if [ -x "${APP_DIR}/bin/node" ]; then
+        NODE_BIN="${APP_DIR}/bin/node"
+        return 0
+    fi
+    if command -v node >/dev/null 2>&1; then
+        NODE_BIN="$(command -v node)"
+        return 0
+    fi
+    return 1
+}
+
+rotate_log() {
+    [ -f "${LOG_FILE}" ] || return 0
+    local size
+    size="$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)"
+    if [ "${size}" -gt 8388608 ]; then          # 8MB
+        mv -f "${LOG_FILE}" "${LOG_FILE}.1"
+    fi
+}
+
+log() {
+    mkdir -p "${VAR_DIR}" 2>/dev/null
+    rotate_log
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+# ── 3. 进程身份：pid + 启动时刻（防 PID 复用杀错人） ────────────────────────
+proc_start_time() {
+    sed 's/^[^)]*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'
+}
+
+check_process() {
+    local pid="$1" want_start="${2:-}"
+    [ -n "${pid}" ] || return 1
+    kill -0 "${pid}" 2>/dev/null || return 1
+    if [ -n "${want_start}" ]; then
+        [ "$(proc_start_time "${pid}")" = "${want_start}" ] || return 1
+    fi
+    return 0
+}
+
+port_open() {
+    timeout 2 bash -c "exec 3<>/dev/tcp/127.0.0.1/${PORT}" 2>/dev/null
+}
+
+read_pid_file() {
+    PID=""
+    PID_START=""
+    [ -f "${PID_FILE}" ] || return 1
+    read -r PID PID_START < "${PID_FILE}" || true
+    [ -n "${PID}" ] || return 1
+    return 0
+}
+
+# ── 4. 子进程启动（守护进程与 start 共用同一套环境） ────────────────────────
+export_app_env() {
+    export NODE_ENV="${NODE_ENV:-production}"
+    export SUENMONEY_HOST="${SUENMONEY_HOST:-0.0.0.0}"     # 必须 0.0.0.0：手机要能连
+    export SUENMONEY_PORT="${PORT}"
+    export SUENMONEY_DB_PATH="${SUENMONEY_DB_PATH:-${DATA_DIR}/suenmoney.sqlite}"
+    export SUENMONEY_WEB_ROOT="${SUENMONEY_WEB_ROOT:-${APP_DIR}/web/dist}"
+    export SUENMONEY_BACKUP_DIR="${BACKUP_DIR}"
+    export SUENMONEY_BACKUP_KEEP="${SUENMONEY_BACKUP_KEEP:-14}"
+    # 套件前面没有反代；开了等于允许伪造 X-Forwarded-For 绕过登录限流
+    export SUENMONEY_TRUST_PROXY="${SUENMONEY_TRUST_PROXY:-false}"
+    mkdir -p "${DATA_DIR}" "${SUENMONEY_BACKUP_DIR}"
+}
+
+run_server() {
+    cd "${APP_DIR}/server" || return 1
+    # Node ≥22.18 起类型剥离默认开启，可以直跑 .ts（少一层进程，PID 更好管）
+    local major minor
+    major="$("${NODE_BIN}" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+    minor="$("${NODE_BIN}" -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
+    if [ "${major}" -gt 22 ] || { [ "${major}" -eq 22 ] && [ "${minor}" -ge 18 ]; }; then
+        exec "${NODE_BIN}" --disable-warning=ExperimentalWarning src/index.ts
+    fi
+    # 老一点的 Node 交给自适应启动器（它会探测 --experimental-strip-types / --experimental-sqlite）
+    exec "${NODE_BIN}" scripts/node-run.mjs src/index.ts
+}
+
+supervise() {
+    trap 'cleanup' TERM INT
+    export_app_env
+    log "[INFO] 守护进程启动 pid=$$  安装=${APP_DIR} 数据=${DATA_DIR} 配置=${ETC_DIR} 备份=${SUENMONEY_BACKUP_DIR}"
+    while true; do
+        if [ -f "${STOP_FLAG}" ]; then
+            log "[INFO] 检测到 stop.flag，守护退出"
+            exit 0
+        fi
+        find_node || { log "[FATAL] 找不到 node 运行时"; exit 1; }
+        ( run_server ) >> "${LOG_FILE}" 2>&1 &
+        local child=$!
+        echo "${child}" > "${CHILD_PID_FILE}"
+        wait "${child}"
+        local code=$?
+        log "[WARN] 服务进程退出 code=${code}，5 秒后重启"
+        [ -f "${STOP_FLAG}" ] && { log "[INFO] 停止中，不再重启"; exit 0; }
+        sleep 5
+    done
+}
+
+cleanup() {
+    log "[INFO] 守护进程收到终止信号"
+    if [ -f "${CHILD_PID_FILE}" ]; then
+        local child
+        child="$(cat "${CHILD_PID_FILE}" 2>/dev/null)"
+        [ -n "${child}" ] && kill -TERM "${child}" 2>/dev/null
+        rm -f "${CHILD_PID_FILE}"
+    fi
+    exit 0
+}
+
+# ── 5. 动作 ────────────────────────────────────────────────────────────────
+do_start() {
+    mkdir -p "${VAR_DIR}" "${DATA_DIR}" "${ETC_DIR}"
+    if read_pid_file && check_process "${PID}" "${PID_START}"; then
+        log "[INFO] 已在运行 pid=${PID}，start 幂等返回"
+        return 0
+    fi
+    rm -f "${STOP_FLAG}"
+    find_node || { log "[FATAL] 找不到 node 运行时（既没有 bin/node 也没有系统 node）"; return 1; }
+
+    # 首次启动留一份配置模板（不自动建 .env —— 否则用户改了模板以为生效）
+    if [ ! -f "${ETC_DIR}/env.example" ]; then
+        cat > "${ETC_DIR}/env.example" <<'ENVEOF'
+# 复制成 .env 后生效（改完执行 main restart）
+# SUENMONEY_PORT=5310
+# SUENMONEY_BACKUP_KEEP=14
+# SUENMONEY_ALLOW_REGISTRATION=false
+# SUENMONEY_SESSION_DAYS=180
+# TZ=Asia/Shanghai
+ENVEOF
+    fi
+
+    nohup "${SELF}" __supervise >> "${LOG_FILE}" 2>&1 &
+    local sup=$!
+    echo "${sup} $(proc_start_time "${sup}")" > "${PID_FILE}"
+    sleep 2
+    if check_process "${sup}" "$(cat "${PID_FILE}" 2>/dev/null | awk '{print $2}')" || port_open; then
+        log "[INFO] 启动成功 pid=${sup} port=${PORT}"
+        return 0
+    fi
+    log "[FATAL] 启动失败，见 ${LOG_FILE}"
+    return 1
+}
+
+do_stop() {
+    # 先立 flag，挡住守护进程的重启路径
+    : > "${STOP_FLAG}"
+    if read_pid_file; then
+        local sup_start="${PID_START}"
+        if check_process "${PID}" "${sup_start}"; then
+            kill -TERM "${PID}" 2>/dev/null
+            local i=0
+            while [ "${i}" -lt 15 ] && check_process "${PID}" "${sup_start}"; do
+                sleep 1; i=$((i + 1))
+            done
+            check_process "${PID}" "${sup_start}" && kill -KILL "${PID}" 2>/dev/null
+        fi
+    fi
+    if [ -f "${CHILD_PID_FILE}" ]; then
+        local child
+        child="$(cat "${CHILD_PID_FILE}" 2>/dev/null)"
+        [ -n "${child}" ] && kill -TERM "${child}" 2>/dev/null
+        sleep 1
+        [ -n "${child}" ] && kill -KILL "${child}" 2>/dev/null
+        rm -f "${CHILD_PID_FILE}"
+    fi
+    rm -f "${PID_FILE}"
+
+    local i=0
+    while [ "${i}" -lt 15 ] && port_open; do sleep 1; i=$((i + 1)); done
+    if port_open; then
+        # 端口没释放就**保留** stop.flag：否则守护会把服务又拉起来
+        log "[WARN] 端口 ${PORT} 仍被占用，保留 stop.flag 以防自动重启"
+        return 1
+    fi
+    rm -f "${STOP_FLAG}"
+    log "[INFO] 已停止，端口 ${PORT} 已释放"
+    return 0
+}
+
+do_status() {
+    if read_pid_file && check_process "${PID}" "${PID_START}"; then
+        return 0
+    fi
+    if port_open; then
+        # 守护进程 PID 丢了但端口在听：算运行中（宁可信其活，避免重复拉起）
+        return 0
+    fi
+    return 3
+}
+
+case "${1:-}" in
+    start)      do_start ;;
+    stop)       do_stop ;;
+    restart)    do_stop; sleep 1; do_start ;;
+    status)     do_status ;;
+    __supervise) supervise ;;
+    *)
+        echo "用法：$0 {start|stop|restart|status}" >&2
+        exit 1
+        ;;
+esac
