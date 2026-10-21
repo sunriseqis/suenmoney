@@ -707,38 +707,47 @@ function vseg(x,y0,h,t,lower){
   if(!lower)return (x+t/2)+','+y0+' '+x+t+','+(y0+t/2)+' '+(x+t)+','+(y0+h-t/2)+' '+(x+t/2)+','+(y0+h)+' '+x+','+(y0+h-t/2)+' '+x+','+(y0+t/2);
   return x+','+y0+' '+x+t+','+y0+' '+x+t+','+(y0+h-t/2)+' '+(x+t/2)+','+(y0+h)+' '+x+','+(y0+h-t/2);
 }
-function digit8(x,y,w,h,t,color){
-  /* 七段「8」：单条 path，七段共享顶点 —— 段与段之间无缝，
-     小尺寸下不会碎成一堆色块。全部 7 段都点亮。 */
-  var vh=(h-t)/2, x0=x, x1=x+w, y0=y, y1=y+vh, y2=y+h, xm=x+w/2;
-  var pts=[
-    [x0+t/2,y0],[xm-t/2,y0],[xm,y0+t/2],[xm+t/2,y0],[x1-t/2,y0],[x1,y0+t/2],[x1-t/2,y0+t],[x1-t,y0+t/2],[x1-t,y1-t/2],[x1-t/2,y1],[x1-t/2,y1+t/2],[x1-t,y1+t/2],[x1-t,y2-t/2],[x1-t/2,y2],[xm+t/2,y2],[xm,y2-t/2],[xm-t/2,y2],[x0+t/2,y2],[x0,y2-t/2],[x0+t,y2-t/2],[x0+t,y1+t/2],[x0+t/2,y1],[x0+t,y1+t/2],[x0+t,y0+t/2],[x0+t/2,y0+t],[x0+t/2,y1+t/2],[xm-t/2,y1+t/2],[xm-t/2,y1+t/2],[x0+t/2,y1+t/2]
-  ];
-  var d='M'+pts.map(function(p){return p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' L')+' Z';
-  return '<path d="'+d+'" fill="'+color+'"/>';
+/* LED 点阵「8」：5×7 字模，每个亮点是小圆角方块 —— 电子表/计算器的
+   点阵 LED 显示语言。亮点点径 16、点距 3，整字 92×130。 */
+var GLYPH_8 = ['01110','10001','10001','01110','10001','10001','01110'];
+function digitDot(ox, oy, d, gap, color, radius){
+  var s='';
+  for(var r=0;r<7;r++){
+    for(var c=0;c<5;c++){
+      if(GLYPH_8[r][c] !== '1') continue;
+      s += '<rect x="'+(ox+c*(d+gap))+'" y="'+(oy+r*(d+gap))+'" width="'+d+'" height="'+d+
+           '" rx="'+(radius||3)+'" fill="'+color+'"/>';
+    }
+  }
+  return s;
 }
 function keyRect(cx,cy,w,h,r,fill,stroke,sw){
   if(!stroke) return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'"/>';
   return '<rect x="'+cx+'" y="'+cy+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
 }
-function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill, screenStroke, screenSW){
+function calculator(ledColors, keyColors, dimFill, keyStroke, keySW, screenFill, screenStroke, screenSW, dotGlow){
   var g=GEO, s='';
   // 屏幕
-  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,screenFill,screenStroke||null,screenSW||0);
-  // LED「88.88」：单路径七段，四个 8 + 小数点
-  var xs=[278,400,538,658], t=16, w=88, h=132, y=130;
-  s+=digit8(xs[0],y,w,h,t,ledColors[0]);
-  s+=digit8(xs[1],y,w,h,t,ledColors[1]);
-  s+=keyRect(510,y+h-26,20,16,4,ledColors[2]);                    // 小数点（方段）
-  s+=digit8(xs[2],y,w,h,t,ledColors[2]);
-  s+=digit8(xs[3],y,w,h,t,ledColors[3]);
+  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,screenFill,screenStroke,screenSW);
+  // LED 点阵「88.88」：4 位 + 小数点，d=16 / 点距 3 / 位宽 92 / 行高 130
+  var D=16, GP=3, DN=8;
+  var total = 4*(5*D+4*GP) + 3*DN + D;
+  var x0 = g.screen.x + (g.screen.w-total)/2;
+  var y0 = g.screen.y + (g.screen.h-(7*D+6*GP))/2;
+  var led=ledColors;
+  s+=digitDot(x0, y0, D, GP, led[0]);                       // 8
+  s+=digitDot(x0+(5*D+4*GP)+DN, y0, D, GP, led[1]);         // 8
+  var dotX = x0+2*(5*D+4*GP)+2*DN;
+  s+='<rect x="'+dotX+'" y="'+(y0+6*(D+GP))+'" width="'+D+'" height="'+D+'" rx="3" fill="'+led[2]+'"/>';  // 小数点
+  s+=digitDot(dotX+D+DN, y0, D, GP, led[2]);                // 8
+  s+=digitDot(dotX+2*D+2*DN+(5*D+4*GP), y0, D, GP, led[3]); // 8
   // 键盘 4×5
   var k=g.key;
   for(var r=0;r<5;r++)for(var c=0;c<4;c++){
     var cx=k.x0+c*(k.cw+k.gx), cy=k.y0+r*(k.ch+k.gy);
     var isLit=false;
     for(var i=0;i<g.lit.length;i++) if(g.lit[i][0]===r&&g.lit[i][1]===c) isLit=true;
-    var row=r===0?0:(r===1?1:(r===2?2:(r===3?3:4)));
+    var row=r;
     s+=isLit
       ? keyRect(cx,cy,k.cw,k.ch,k.r,keyColors[row],keyStroke,keySW)
       : keyRect(cx,cy,k.cw,k.ch,k.r,dimFill,keyStroke,keySW);
@@ -756,32 +765,33 @@ function logoLight(size){
   var g=GEO;
   var s='<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 1024 1024" role="img" aria-label="SuenMoney">';
   s+='<rect width="1024" height="1024" fill="#FFFDF5"/>';
-  s+=keyRect(104,104,928,928,220,'#1E293B');                                  // 硬阴影
-  s+=keyRect(g.body.x,g.body.y,g.body.w,g.body.h,g.body.r,'#FFFFFF','#1E293B',16);   // 白机身 + 2px(等效)深描边
+  s+=keyRect(g.body.x,g.body.y,g.body.w,g.body.h,g.body.r,'#1E293B');                       // 硬阴影
+  s+=keyRect(g.body.x-6,g.body.y-6,g.body.w,g.body.h,g.body.r,'#FFFFFF','#1E293B',14);      // 白机身 + 深描边
+  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,'#1E293B','#1E293B',6); // 深屏（贴纸语言）
   s+=calculator(
-    ['#FBBF24','#F472B6','#34D399','#8B5CF6'],        // LED：黄 粉 (点) 绿 紫
-    ['#8B5CF6','#F472B6','#34D399','#FBBF24','#8B5CF6'], // 键位：紫 粉 绿 黄 紫
-    '#E2E8F0','#1E293B',8,'#E2E8F0','#1E293B',4);      // 暗键 + 深描边 + 浅灰屏带深描边
+    ['#FBBF24','#F472B6','#34D399','#8B5CF6'],                    // LED：黄 粉 (点) 绿 紫
+    ['#8B5CF6','#F472B6','#34D399','#FBBF24','#8B5CF6'],          // 键位：紫 粉 绿 黄 紫
+    '#E2E8F0','#1E293B',8,'#1E293B','#FBBF24',4);                 // 暗键 + 深描边 + 深屏黄边
   s+='</svg>';
   return s;
-}
-function logoDark(size){
+}function logoDark(size){
   var g=GEO;
   var ring=arc(-84,-6,'#00ff88')+arc(-6,72,'#00d4ff')+arc(96,174,'#ff00ff')+arc(186,276,'#FBBF24');
   var s='<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 1024 1024" role="img" aria-label="SuenMoney">';
   s+='<defs><filter id="ng" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter></defs>';
-  s+='<rect width="1024" height="1024" fill="#0a0a0f"/>';
-  s+='<g opacity=".5" filter="url(#ng)">'+ring+'</g>'+ring;                    // 霓虹环（发光+实色）
-  s+=keyRect(g.body.x+56,g.body.y+56,g.body.w-112,g.body.h-112,g.body.r-28,'#12121a','#2a2a3a',4);
-  // 屏底比机身亮一档（#1a1a2e）+ 1px 描边，否则屏幕边界完全看不见
+  s+='<rect width="1024" height="1024" fill="#050509"/>';                                  // 底：近黑（最暗）
+  s+='<g opacity=".5" filter="url(#ng)">'+ring+'</g>'+ring;                                 // 霓虹环
+  // 机身：比底亮 4 档，霓虹描边（不是黑描边）
+  s+=keyRect(g.body.x,g.body.y,g.body.w,g.body.h,g.body.r,'#1E1D2E','#00ff88',4);
+  // 屏：比机身再亮一档 + 青色描边
+  s+=keyRect(g.screen.x,g.screen.y,g.screen.w,g.screen.h,g.screen.r,'#2A2A44','#00d4ff',3);
   s+=calculator(
-    ['#00ff88','#00d4ff','#FBBF24','#ff00ff'],        // LED：绿 青 (点) 黄 品红
-    ['#00ff88','#00d4ff','#FBBF24','#00ff88','#00ff88'],
-    '#1c1c2e','#2a2a3a',2,'#1a1a2e','#00ff88',1);
+    ['#00ff88','#00ff88','#00ff88','#00ff88'],                    // LED 全绿（点阵同色，像真机）
+    ['#00ff88','#00d4ff','#ff00ff','#FBBF24','#00ff88'],          // 键位：绿 青 品红 黄 绿
+    '#16162A','#3A3A5C',1,'#2A2A44','#00d4ff',3);                 // 暗键(比机身暗)+灰紫描边
   s+='</svg>';
   return s;
-}
-function renderLogos(){
+}function renderLogos(){
   var els=document.querySelectorAll('[data-logo]');
   for(var i=0;i<els.length;i++){
     var kind=els[i].getAttribute('data-logo');
