@@ -41,6 +41,8 @@ const SRC = {
   master: svg('mark.svg'),
   small: svg('mark-small.svg'),
   mono: svg('mark-mono.svg'),
+  colored: svg('mark-colored.svg'),
+  light: svg('mark-light.svg'),
 };
 
 function pick(size) {
@@ -101,6 +103,14 @@ async function main() {
     await emit(SRC.master, 256, 'fn/app/ui/images/icon_256.png');
   } else {
     written.push('（跳过 fn/ —— 工程还没建）');
+  }
+
+  // ── 3.5) 彩色边框版 / 反色浅色版 ──
+  for (const size of [64, 128, 256, 512, 1024]) {
+    await emit(SRC.colored, size, `docs/design/brand/dist/mark-colored-${size}.png`);
+  }
+  for (const size of [32, 64, 128, 256, 512, 1024]) {
+    await emit(SRC.light, size, `docs/design/brand/dist/mark-light-${size}.png`);
   }
 
   // ── 4) iOS / 鸿蒙：计划三会重写工程，这里只出「可用的源图」，不动工程 ──

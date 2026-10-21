@@ -3,186 +3,170 @@
    改令牌 → 改 tokens.json → npm run tokens
    ========================================================================== */
 
+/* ═══════════════════════════════════════════════════════════════
+   主题机制：不写 data-theme = 深色（Cyberpunk）；
+   data-theme="light" = 浅色（Playful Geometric）。
+   两套是**两种设计语言**，不是同一种颜色的两种明度。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 深色 · Cyberpunk（默认）────────────────────────────────── */
 :root {
-  /* ---- 间距（4px 基数，v3 用 8px 栅格） ---- */
-  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
-  --sp-5: 24px;  --sp-6: 32px;  --sp-7: 48px;  --sp-8: 64px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
   --grid: 8px;
 
-  /* ---- 圆角（M3：卡 24 / 输入 14 / FAB 28 / 胶囊全圆） ---- */
-  --radius-card: 24px;
-  --radius-sheet: 24px;
-  --radius-field: 14px;
-  --radius-fab: 28px;
-  --radius-pill: 999px;
-  --radius-keypad: 18px;
+  --surface: #0a0a0f;
+  --surface-container: #12121a;
+  --surface-high: #1c1c2e;
+  --on-surface: #e0e0e0;
+  --on-surface-variant: #6b7280;
+  --outline: #2a2a3a;
+  --outline-strong: #00ff88;
 
-  /* ---- 字号（v3 阶梯；旧名保留，值为 v3 档位） ---- */
-  --fs-xs: 11px;        /* 辅助标签，全大写 + 字距 0.5px */
-  --fs-sm: 12px;
-  --fs-md: 15px;        /* 正文 / 流水行 */
-  --fs-lg: 17px;
-  --fs-xl: 22px;
-  --fs-2xl: 28px;
-  --fs-3xl: 32px;       /* 页面大标题 */
-  --fs-card-title: 16px;
-  --fs-amount: 44px;    /* 大数字（规格 40–48） */
-  --fs-display: 48px;
-  --fs-hero: 56px;
+  --primary: #00ff88;
+  --on-primary: #0a0a0f;
+  --primary-container: rgba(0,255,136,.12);
+  --secondary: #ff00ff;
+  --on-secondary: #0a0a0f;
+  --secondary-container: rgba(255,0,255,.12);
+  --tertiary: #ff00ff;
+  --on-tertiary: #0a0a0f;
+  --tertiary-container: rgba(255,0,255,.12);
+  --quaternary: #00d4ff;
+  --on-quaternary: #0a0a0f;
+  --quaternary-container: rgba(0,212,255,.12);
+  --info: #00d4ff;
+  --on-info: #0a0a0f;
+  --info-container: rgba(0,212,255,.12);
+  --danger: #ff3366;
+  --on-danger: #0a0a0f;
 
-  --lh-tight: 1.15; --lh-normal: 1.6; --lh-relaxed: 1.7;
-
-  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; --fw-extrabold: 800;
-
-  /* ---- 动效（M3 emphasized，全站唯一曲线） ---- */
-  --dur-fast: 200ms;
-  --dur: 350ms;
-  --dur-slow: 400ms;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
-
-  /* ---- 层级 ---- */
-  --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
-
-  /* ======================================================================
-     颜色 · v3 深色（**默认主题**，不看系统偏好）
-     ====================================================================== */
-  /* 表面三层 */
-  --surface: #141222;
-  --surface-container: #1E1D2E;
-  --surface-high: #282740;
-
-  /* 文字 */
-  --on-surface: #F2EFFA;
-  --on-surface-variant: #B9B5CC;
-
-  /* 描边：default 只做分隔线，strong 给可交互控件（WCAG 1.4.11 要 ≥3:1） */
-  --outline: #3A3852;
-  --outline-strong: #706D96;
-
-  /* 五色（各自带 on- 深字与 12% container） */
-  --primary: #B388FF;
-  --on-primary: #2A1065;
-  --primary-container: rgba(179,136,255,0.12);
-  --secondary: #4DFFD2;
-  --on-secondary: #00352E;
-  --secondary-container: rgba(77,255,210,0.12);
-  --tertiary: #FF7AB8;
-  --on-tertiary: #5F1606;
-  --tertiary-container: rgba(255,122,184,0.12);
-  --lemon: #E5FF41;
-  --on-lemon: #3F2E00;
-  --lemon-container: rgba(229,255,65,0.12);
-  --info: #5DB8FF;
-  --on-info: #00344F;
-  --info-container: rgba(93,184,255,0.12);
-
-  --focus: #5DB8FF;
+  --focus: #00ff88;
   --scrim: rgb(0 0 0 / 0.62);
+  --border-width: 1px;
+  --radius-card: 0px;
+  --radius-field: 4px;
+  --radius-pill: 0px;
+  --radius-keypad: 0px;
+  --r-sm: 2px; --r-md: 4px; --r-pill: 0px;
 
-  /* 高度 */
-  --el-1: 0 2px 8px rgba(0,0,0,0.35);
-  --el-2: 0 8px 24px rgba(0,0,0,0.45);
+  /* 霓虹辉光 */
+  --el-1: 0 0 3px #00ff88, 0 0 6px #00ff8830;
+  --el-2: 0 0 5px #00ff88, 0 0 10px #00ff8840;
+  --el-neon: 0 0 5px #00ff88, 0 0 10px #00ff8840;
+  --el-neon-secondary: 0 0 5px #ff00ff, 0 0 20px #ff00ff60;
+  --el-neon-tertiary: 0 0 5px #00d4ff, 0 0 20px #00d4ff60;
 
-  /* ======================================================================
-     兼容别名：老组件用的还是这套名字，映射到 v3 值 ——
-     这样「全站先变暗」不需要一次性改两百个类名。
-     逐条对照见 docs/design/suenmoney-v3-design-system.md §七。
-     ====================================================================== */
-  --bg: var(--surface);
-  --bg-subtle: var(--surface-container);
-  --bg-sunken: var(--surface-high);
-  --fg: var(--on-surface);
-  --fg-muted: var(--on-surface-variant);
-  --fg-faint: #8E8878;              /* 深底 4.9:1，仅用于占位与最弱说明 */
-  --border: var(--outline);
-  --border-strong: var(--outline-strong);
+  /* 切角（Cyberpunk 标志性） */
+  --chamfer: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px,
+    100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
+  --chamfer-sm: polygon(0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px));
 
-  --primary-fill: var(--primary);
-  --primary-text: var(--primary);
-  --secondary-fill: var(--secondary);
-  --secondary-text: var(--secondary);
-  --accent: var(--tertiary);        /* 旧「琥珀=待处理」并入霓虹粉 */
-  --accent-fill: var(--tertiary);
-  --accent-text: var(--tertiary);
-  --on-accent: var(--on-tertiary);
-  --danger: var(--tertiary);
-  --danger-fill: var(--tertiary);
-  --danger-text: var(--tertiary);
-  --on-danger: var(--on-tertiary);
+  /* 扫描线纹理 */
+  --scanlines: repeating-linear-gradient(0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px);
+  /* 电路网格背景 */
+  --circuit-bg: linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
 
-  /* 圆角旧名（组件大量使用） */
-  --r-sm: var(--radius-field);
-  --r-md: var(--radius-card);
-  --r-pill: var(--radius-pill);
+  --dur-fast: 100ms; --dur: 150ms; --dur-slow: 300ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-pop: steps(4);
+
+  --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
 }
 
-/* ==========================================================================
-   浅色主题（data-theme="light"）
-   --------------------------------------------------------------------------
-   **同产品不同光**：结构、圆角、字号完全一致，只换色阶。
-   刻意不复用旧扁平浅色 —— 那会变成「两个产品」而不是「两种光线」。
-   ========================================================================== */
+/* ── 浅色 · Playful Geometric（data-theme="light"）────── */
 :root[data-theme='light'] {
-  --surface: #F6F4EF;
+  --surface: #FFFDF5;
   --surface-container: #FFFFFF;
-  --surface-high: #E9E5DB;
-  --on-surface: #141222;
-  --on-surface-variant: #5E584C;
-  --outline: #D9D3C6;
-  --outline-strong: #8F8878;
-  --primary: #4C8DFF;
-  --on-primary: #12255C;
-  --primary-container: rgba(179,136,255,0.16);
-  --secondary: #00A98A;
+  --surface-high: #F1F5F9;
+  --on-surface: #1E293B;
+  --on-surface-variant: #64748B;
+  --outline: #E2E8F0;
+  --outline-strong: #1E293B;
+
+  --primary: #8B5CF6;
+  --on-primary: #FFFFFF;
+  --primary-container: rgba(139,92,246,.12);
+  --secondary: #F472B6;
   --on-secondary: #FFFFFF;
-  --secondary-container: rgba(77,255,210,0.16);
-  --tertiary: #C7427F;
-  --on-tertiary: #FFFFFF;
-  --tertiary-container: rgba(255,122,184,0.16);
-  --lemon: #5C5300;
-  --on-lemon: #FFFFFF;
-  --lemon-container: rgba(229,255,65,0.16);
+  --secondary-container: rgba(244,114,182,.12);
+  --tertiary: #FBBF24;
+  --on-tertiary: #1E293B;
+  --tertiary-container: rgba(251,191,36,.12);
+  --quaternary: #34D399;
+  --on-quaternary: #1E293B;
+  --quaternary-container: rgba(52,211,153,.12);
   --info: #1F6FD0;
   --on-info: #FFFFFF;
-  --info-container: rgba(93,184,255,0.16);
-  --focus: #1F6FD0;
+  --info-container: rgba(31,111,208,.12);
+  --danger: #EF4444;
+  --on-danger: #FFFFFF;
+
+  --focus: #8B5CF6;
   --scrim: rgb(20 18 34 / 0.42);
+  --border-width: 2px;
+  --radius-card: 16px;
+  --radius-field: 8px;
+  --radius-pill: 9999px;
+  --radius-keypad: 12px;
+  --r-sm: 8px; --r-md: 16px; --r-pill: 9999px;
+
+  /* 糖果硬阴影 */
+  --el-1: 4px 4px 0px 0px #1E293B;
+  --el-2: 8px 8px 0px 0px #E2E8F0;
+  --el-pop: 4px 4px 0px 0px #1E293B;
+  --el-pop-hover: 6px 6px 0px 0px #1E293B;
+  --el-pop-active: 2px 2px 0px 0px #1E293B;
+  --el-sticker: 8px 8px 0px 0px #E2E8F0;
+  --el-sticker-pink: 8px 8px 0px 0px #F472B6;
+
+  --chamfer: none;
+  --chamfer-sm: none;
+  --scanlines: none;
+  --circuit-bg: none;
+
+  --dur-fast: 150ms; --dur: 300ms; --dur-slow: 400ms;
+  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);  /* 弹性回弹 */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* ==== 分类/图表 16 色槽（v3 账本色，深底全部 ≥3.69:1） ==== */
 :root {
-  --chart-1: #6E9EEA;
-  --chart-2: #5C9E78;
-  --chart-3: #C0894A;
-  --chart-4: #9A8AC9;
-  --chart-5: #C4737E;
-  --chart-6: #5FA0A7;
-  --chart-7: #B85C50;
-  --chart-8: #7E8FC9;
-  --chart-9: #A0A050;
-  --chart-10: #4FA8A0;
-  --chart-11: #B06A9E;
-  --chart-12: #8A9A55;
-  --chart-13: #C98B5F;
-  --chart-14: #7A6FC9;
-  --chart-15: #5C8AB0;
+  --chart-1: #00ff88;
+  --chart-2: #ff00ff;
+  --chart-3: #00d4ff;
+  --chart-4: #FBBF24;
+  --chart-5: #5FD6A8;
+  --chart-6: #66C4CC;
+  --chart-7: #E07060;
+  --chart-8: #93A5F0;
+  --chart-9: #C8D656;
+  --chart-10: #5AD4C4;
+  --chart-11: #E37FB2;
+  --chart-12: #A8C056;
+  --chart-13: #E0A878;
+  --chart-14: #9D8FF5;
+  --chart-15: #74A8D6;
   --chart-16: #8C8C8C;
 }
 :root[data-theme='light'] {
-  --chart-1: #2E5FB8;
-  --chart-2: #2F6D4E;
-  --chart-3: #8A5A20;
-  --chart-4: #6B5CA5;
-  --chart-5: #A63A55;
-  --chart-6: #2F6D74;
-  --chart-7: #8F3E33;
-  --chart-8: #4F5FA5;
-  --chart-9: #5C5300;
-  --chart-10: #1F6D66;
-  --chart-11: #7E3A68;
-  --chart-12: #556430;
-  --chart-13: #8A5A30;
-  --chart-14: #4F46A0;
-  --chart-15: #2E5A80;
-  --chart-16: #6B6B6B;
+  --chart-1: #00ff88;
+  --chart-2: #ff00ff;
+  --chart-3: #00d4ff;
+  --chart-4: #FBBF24;
+  --chart-5: #5FD6A8;
+  --chart-6: #66C4CC;
+  --chart-7: #E07060;
+  --chart-8: #93A5F0;
+  --chart-9: #C8D656;
+  --chart-10: #5AD4C4;
+  --chart-11: #E37FB2;
+  --chart-12: #A8C056;
+  --chart-13: #E0A878;
+  --chart-14: #9D8FF5;
+  --chart-15: #74A8D6;
+  --chart-16: #8C8C8C;
 }

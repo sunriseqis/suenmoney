@@ -20,6 +20,8 @@ import { createPinia } from 'pinia';
  * 那几片（通常 1–3 片），所以别被 dist 里的总体积吓到。
  */
 import '@fontsource-variable/outfit';
+import '@fontsource-variable/plus-jakarta-sans';
+import '@fontsource-variable/jetbrains-mono';
 import 'misans/lib/Normal/MiSansVF.min.css';
 
 import './styles/app.css';

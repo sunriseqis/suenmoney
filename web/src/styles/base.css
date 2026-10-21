@@ -43,7 +43,18 @@
   }
 
   html {
-    background: var(--bg);
+    background: var(--bg) var(--circuit-bg);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background: var(--scanlines); opacity: 0.35;
+    }
+  }
+  :root[data-theme='dark'] body::after,
+  html:not([data-theme]) body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    background: var(--scanlines); opacity: 0.35;
   }
 
   body {
@@ -396,6 +407,47 @@
   .amount-v3 .int  { font-weight: 600; letter-spacing: -0.01em; }
   .amount-v3 .dec  { font-size: 0.72em; color: inherit; opacity: 0.7; font-weight: 500; }
   .amount-v3.lg .cur { font-size: 0.5em; transform: translateY(-0.35em); }
+
+  /* ═════════ v4 双设计语言组件 ═════════════════════════════
+     深色（Cyberpunk）：弹层/卡片 clip-path 切角 + 霓虹边；
+     浅色（Playful）：糖果按钮（硬阴影 + 2px 深边框 + 弹性回弹）。
+     同一类名，变量驱动 —— 组件代码零改动。 */
+
+  /* 弹层/卡片：深色切角，浅色圆角+硬阴影 */
+  .panel-v4 {
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-card);
+    clip-path: var(--chamfer);
+    box-shadow: var(--el-1);
+  }
+
+  /* 糖果按钮（浅色生效：硬阴影位移）；深色自动变霓虹描边钮 */
+  .btn-v4 {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    border: var(--border-width) solid var(--outline-strong);
+    border-radius: var(--radius-pill);
+    padding: 10px 22px;
+    cursor: pointer;
+    background: var(--primary);
+    color: var(--on-primary);
+    box-shadow: var(--el-pop);
+    transition: all var(--dur) var(--ease-pop);
+  }
+  .btn-v4:hover { box-shadow: var(--el-pop-hover); transform: translate(-2px,-2px); }
+  .btn-v4:active { box-shadow: var(--el-pop-active); transform: translate(2px,2px); }
+
+  :root:not([data-theme='light']) .btn-v4 {
+    background: transparent; color: var(--primary);
+    border-color: var(--primary);
+    clip-path: var(--chamfer-sm);
+    box-shadow: none; border-radius: 0;
+  }
+  :root:not([data-theme='light']) .btn-v4:hover {
+    background: var(--primary); color: var(--on-primary);
+    box-shadow: var(--el-neon); transform: none;
+  }
 
   /* 辅助标签：11px 全大写 + 0.5px 字距（M3 label） */
   .label-v3 {
