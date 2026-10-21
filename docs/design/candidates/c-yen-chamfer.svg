@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney 候选 C：切角 ¥">
+  <!-- 方向 C｜符号直给：切角方框里的 ¥，16px 也能读出来 -->
+  <rect width="1024" height="1024" fill="#17181B"/>
+  <path d="M168 96 H928 V832 L832 928 H96 V192 Z" fill="none" stroke="#2A2C30" stroke-width="16"/>
+  <g stroke-linecap="butt" fill="none">
+    <path d="M392 292 L512 452 L632 292" stroke="#E9E7E2" stroke-width="76"/>
+    <path d="M512 452 V736" stroke="#4C8DFF" stroke-width="76"/>
+    <path d="M384 560 H640" stroke="#E9E7E2" stroke-width="64"/>
+    <path d="M384 648 H640" stroke="#E9E7E2" stroke-width="64"/>
+  </g>
+</svg>

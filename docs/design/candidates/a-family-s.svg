@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney 候选 A：家族折角 S">
+  <!-- 方向 A｜家族同构：与 SuenMusic 的「实心折角 S」同一剪影，只换配色与段位 -->
+  <rect width="1024" height="1024" fill="#17181B"/>
+  <!-- 蚀刻折角边（两角 45° 切角，家族记号） -->
+  <path d="M168 96 H928 V832 L832 928 H96 V192 Z" fill="none" stroke="#2A2C30" stroke-width="16"/>
+  <!-- 折角 S：三段横 + 两段竖，纯直角，与切角同语言 -->
+  <g>
+    <rect x="300" y="300" width="424" height="88" fill="#E9E7E2"/>
+    <rect x="636" y="300" width="88" height="212" fill="#E9E7E2"/>
+    <rect x="300" y="424" width="424" height="88" fill="#E9E7E2"/>
+    <rect x="300" y="424" width="88" height="212" fill="#E9E7E2"/>
+    <rect x="300" y="548" width="424" height="88" fill="#E9E7E2"/>
+    <!-- 段 0 染色：S 的「起笔」用账目蓝，呼应 SuenMusic 段 0 染琥珀 -->
+    <rect x="560" y="300" width="164" height="88" fill="#4C8DFF"/>
+    <rect x="636" y="300" width="88" height="212" fill="#4C8DFF"/>
+  </g>
+</svg>
