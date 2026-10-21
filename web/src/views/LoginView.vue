@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError, auth as authApi, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
+import { getPlatform } from '@/platform';
 import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
@@ -27,6 +28,10 @@ const busy = ref(false);
 const errorMessage = ref<string | null>(null);
 
 // 服务器连接配置
+//
+// 只对原生壳出现：浏览器里前端就是服务端自己托管的那份，永远同源，
+// 「填后端地址」这件事本身已经不存在了（填错还只会把自己锁在外面）。
+const showServerConfigEntry = computed(() => getPlatform() !== 'web');
 const showServerConfig = ref(false);
 const customServerUrl = ref(readServerUrl());
 const serverTesting = ref(false);
@@ -186,8 +191,8 @@ onMounted(async () => {
         该入口只在系统里一个账号都没有时可用，建好第一个账号后会自动关闭。
       </p>
 
-      <!-- 自定义服务器连接配置（移动端或局域网自建部署） -->
-      <div class="mt-8 border-t border-line pt-4 text-xs">
+      <!-- 自定义服务器连接配置（仅原生壳：换一台自建服务器时才用得上） -->
+      <div v-if="showServerConfigEntry" class="mt-8 border-t border-line pt-4 text-xs">
         <button
           type="button"
           class="flex w-full items-center justify-between text-ink-muted transition-colors hover:text-ink"

@@ -1,13 +1,27 @@
-node_modules
+# Docker 构建上下文裁剪（构建上下文 = 仓库根目录）
+#
+# 根 Dockerfile 只需要两侧源码：`web/`（构建 SPA）与 `server/`（运行时）。
+# 其余一律不进上下文 —— 既减小传输量，也避免宿主机的旧产物混进镜像。
+
+**/node_modules
 .git
+.github
 .DS_Store
+
+# 宿主机的构建产物（前端在容器内重新构建，不吃这里的）
 dist
-server/data
-server/tests
 web/dist
+server/data
+output
+
+# 测试、原生工程、套件工程与文档都不参与镜像构建
+server/tests
 web/tests
 android
 ios
-docss
+hw
+fn
+docs
 scratch
 *.log
+.env

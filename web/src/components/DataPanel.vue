@@ -22,11 +22,18 @@ import {
   type WebdavConfig,
   type WebdavStatus,
 } from '@/api';
+import { getPlatform } from '@/platform';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { useUpdateStore } from '@/stores/update';
 
 const updateStore = useUpdateStore();
+
+/**
+ * 「服务端设置」只对原生壳出现：Web 前端由服务端自己托管，永远同源，
+ * 没有第二个后端可填（详见 `api/client.ts` 的 `readServerUrls`）。
+ */
+const showServerSettings = computed(() => getPlatform() !== 'web');
 
 import BillImportModal from './BillImportModal.vue';
 import LedgerImportModal from './LedgerImportModal.vue';
@@ -200,8 +207,8 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
-    <!-- 服务端设置（置顶展示，所有成员均可配置） -->
-    <ServerSettingsPanel />
+    <!-- 服务端设置（置顶展示，所有成员均可配置；仅原生壳需要） -->
+    <ServerSettingsPanel v-if="showServerSettings" />
 
     <!-- 管理员专属：数据管理与安全备份 -->
     <template v-if="isAdmin">

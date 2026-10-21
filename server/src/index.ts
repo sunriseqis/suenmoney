@@ -12,7 +12,7 @@ import { config } from './config.ts';
 import { migrate, openDatabase } from './db/index.ts';
 import { startDailySnapshotScheduler, stopDailySnapshotScheduler } from './db/repo/snapshots.ts';
 import { startDailyWebdavScheduler, stopDailyWebdavScheduler } from './db/repo/webdav.ts';
-import { buildServer } from './http/server.ts';
+import { buildServer, resolveWebRoot } from './http/server.ts';
 
 const db = openDatabase();
 
@@ -26,6 +26,14 @@ startDailySnapshotScheduler(db);
 startDailyWebdavScheduler(db);
 
 const app = await buildServer();
+
+// 启动时把「页面从哪来」打出来：装飞牛套件/容器时第一眼看的就是这一行
+const webRoot = resolveWebRoot();
+app.log.info(
+  webRoot === null
+    ? '静态资源：未启用（纯 API 模式，访问 / 只会得到 404）'
+    : `静态资源：${webRoot}（同一端口同时提供页面与 /api）`,
+);
 
 try {
   await app.listen({ host: config.host, port: config.port });
