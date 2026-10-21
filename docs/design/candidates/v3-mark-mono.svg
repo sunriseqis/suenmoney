@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SuenMoney（单色）">
+  <!-- v3 单色版｜通知栏小图标 / 安卓 monochrome / 鸿蒙分层前景（靠透明度而不是颜色区分） -->
+  <rect width="1024" height="1024" fill="#141222"/>
+  <g fill="#F2EFFA">
+    <rect x="112" y="248" width="232" height="232" rx="68"/>
+    <rect x="376" y="248" width="232" height="232" rx="68" opacity=".38"/>
+    <rect x="112" y="512" width="232" height="232" rx="68" opacity=".38"/>
+    <rect x="376" y="512" width="232" height="232" rx="68"/>
+    <rect x="640" y="248" width="272" height="496" rx="90"/>
+  </g>
+</svg>
