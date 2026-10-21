@@ -277,13 +277,13 @@ function formatTimestamp(iso: string): string {
     <main class="mx-auto w-full max-w-[var(--content-max)] px-4 pt-6 lg:px-6 lg:pt-8">
       <p
         v-if="errorMessage !== null"
-        class="rounded-md bg-surface px-4 py-3 text-sm text-danger-text lg:mb-8"
+        class="row-v5 settings-row text-sm text-danger-text lg:mb-8"
       >
         {{ errorMessage }}
       </p>
       <p
         v-if="notice !== null"
-        class="rounded-md bg-surface px-4 py-3 text-sm text-secondary-text lg:mb-8"
+        class="row-v5 settings-row text-sm text-secondary-text lg:mb-8"
       >
         {{ notice }}
       </p>
@@ -354,7 +354,7 @@ function formatTimestamp(iso: string): string {
         <ul class="mt-3 space-y-1">
           <li v-for="root in dict.categories" :key="root.id">
             <div
-              class="flex items-center gap-2 rounded-md bg-surface py-2.5 pr-3 pl-2 transition-colors hover:bg-surface/80 cursor-pointer"
+              class="flex items-center gap-2 row-v5 settings-row transition-colors hover:bg-surface/80 cursor-pointer"
               @click="openCategoryEdit(root)"
             >
               <div class="grid h-9 w-9 shrink-0 place-items-center rounded-sm">
@@ -425,7 +425,7 @@ function formatTimestamp(iso: string): string {
           <li
             v-for="method in dict.paymentMethods"
             :key="method.id"
-            class="rounded-md bg-surface px-4 py-3 transition-colors hover:bg-surface/80 cursor-pointer"
+            class="row-v5 settings-row transition-colors hover:bg-surface/80 cursor-pointer"
             @click="openMethodEdit(method)"
           >
             <div class="flex items-center gap-3">
@@ -454,7 +454,7 @@ function formatTimestamp(iso: string): string {
             <!-- 账号 -->
           <section aria-label="账号">
         <h2 class="label-cn">我的账号</h2>
-        <div class="mt-3 flex items-center gap-3 rounded-md bg-surface px-4 py-3">
+        <div class="mt-3 flex items-center gap-3 row-v5 settings-row">
           <div class="min-w-0 flex-1">
             <template v-if="editingName">
               <div class="flex items-center gap-2">
@@ -508,7 +508,7 @@ function formatTimestamp(iso: string): string {
         </div>
 
         <!-- 修改密码（自助）：验证当前口令，成功后其他设备全部退出 -->
-        <div class="mt-2 rounded-md bg-surface px-4 py-3">
+        <div class="mt-2 row-v5 settings-row">
           <button
             type="button"
             class="flex w-full items-center justify-between text-sm font-semibold text-ink"
@@ -571,7 +571,7 @@ function formatTimestamp(iso: string): string {
           <li
             v-for="member in members"
             :key="member.id"
-            class="flex items-center gap-3 rounded-md bg-surface px-4 py-3"
+            class="flex items-center gap-3 row-v5 settings-row"
           >
             <span class="min-w-0 flex-1 truncate text-sm">{{ member.displayName }}</span>
             <span class="shrink-0 text-xs text-ink-muted">
@@ -623,7 +623,7 @@ function formatTimestamp(iso: string): string {
           <li
             v-for="item in sessions"
             :key="item.id"
-            class="flex items-center gap-3 rounded-md bg-surface px-4 py-3"
+            class="flex items-center gap-3 row-v5 settings-row"
           >
             <span class="min-w-0 flex-1">
               <span class="block truncate text-sm">
