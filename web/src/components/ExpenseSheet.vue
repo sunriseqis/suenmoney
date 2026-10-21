@@ -1052,7 +1052,7 @@ function close(): void {
       - 宽屏（≥1024px）：右侧定宽 480px 面板。
     -->
     <section
-      class="absolute inset-x-0 bottom-0 top-[5vh] flex flex-col rounded-t-xl bg-surface shadow-2xl lg:left-auto lg:right-0 lg:top-0 lg:w-[480px] lg:rounded-none"
+      class="absolute inset-x-0 bottom-0 top-[5vh] flex flex-col rounded-t-[24px] bg-surface shadow-[var(--el-2)] lg:left-auto lg:right-0 lg:top-0 lg:w-[480px] lg:rounded-none"
       role="dialog"
       aria-modal="true"
       @keydown.esc="close"
@@ -1189,7 +1189,7 @@ function close(): void {
         </p>
 
         <!-- ② 核心信息卡片（单行单元格流，彻底移除横向滑块） -->
-        <div class="divide-y divide-line/60 rounded-xl border border-line/60 bg-surface shadow-xs">
+        <div class="divide-y divide-outline/60 rounded-2xl border border-outline/60 bg-surface-container shadow-[var(--el-1)]">
           <!-- 分类单元格行 -->
           <button
             type="button"
@@ -1304,7 +1304,7 @@ function close(): void {
                   class="peer sr-only"
                 />
                 <div
-                  class="h-5 w-9 rounded-full bg-sunken transition-colors duration-200 peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-4"
+                  class="h-5 w-9 rounded-full bg-surface-high transition-colors duration-200 peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-on-surface after:transition-all after:content-[''] peer-checked:after:translate-x-4"
                 />
               </label>
             </div>
@@ -1516,7 +1516,7 @@ function close(): void {
           <button
             type="button"
             :disabled="saving"
-            class="w-full rounded-md bg-primary py-3 text-sm font-bold text-white shadow-xs transition-transform active:scale-95"
+            class="w-full rounded-[14px] bg-tertiary py-3 text-sm font-bold text-on-tertiary shadow-[var(--el-1)] transition-all active:scale-[.98] [clip-path:polygon(0_0,100%_0,100%_100%,9px_100%,0_calc(100%_-_9px))]"
             @click="save"
           >
             {{ saving ? '保存中…' : '保存备注' }}

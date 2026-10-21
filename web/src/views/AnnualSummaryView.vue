@@ -208,10 +208,10 @@ function goBack(): void {
         <!-- 核心 Hero：年度总结封面 -->
         <section
           aria-label="年度全貌"
-          class="relative overflow-hidden rounded-md bg-gradient-to-br from-surface via-surface to-primary/5 p-6 shadow-sm sm:p-8"
+          class="relative overflow-hidden rounded-2xl bg-surface-container p-6 shadow-[var(--el-1)] sm:p-8"
         >
           <div class="relative z-10">
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-primary-fill/10 px-3 py-1 text-xs font-bold text-primary">
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-primary-container px-3 py-1 text-xs font-medium text-primary">
               <Sparkles class="h-3.5 w-3.5" />
               <span>{{ year }} 年度财务印记</span>
             </span>

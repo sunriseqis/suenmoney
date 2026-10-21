@@ -665,11 +665,11 @@ const memberRows = computed(() => {
         <RouterLink
           v-if="scope === 'year'"
           :to="{ name: 'annual-summary', query: { year } }"
-          class="flex items-center justify-between rounded-md bg-gradient-to-r from-primary/10 via-subtle to-subtle p-4 border border-primary/20 hover:border-primary/50 transition-colors"
+          class="flex items-center justify-between rounded-2xl bg-primary-container p-4 transition-colors hover:bg-primary-container/70"
         >
           <div class="flex items-center gap-2.5">
             <Sparkles class="h-4 w-4 text-primary" />
-            <span class="text-xs font-bold text-ink">查看 {{ year }} 年度生活与财务总结报告</span>
+            <span class="text-xs font-medium text-on-surface">查看 {{ year }} 年度生活与财务总结报告</span>
           </div>
           <span class="text-xs font-semibold text-primary">进入报告 →</span>
         </RouterLink>
@@ -677,7 +677,7 @@ const memberRows = computed(() => {
         <!-- ④ 对照（Comparison）：月档 / 年档显示，汇总档隐藏 -->
         <section
           v-if="scope !== 'all' && comparisonMetrics.length > 0"
-          class="rounded-md border border-line/50 bg-subtle p-4"
+          class="rounded-2xl border border-outline/60 bg-surface-container p-4 shadow-[var(--el-1)]"
           aria-label="对照指标"
         >
           <h2 class="label-cn">对照</h2>
