@@ -1237,7 +1237,7 @@ function fullCategoryName(item: {
               <tr
                 v-for="row in sortedItems"
                 :key="row.id"
-                class="cursor-pointer border-b border-outline/60 transition-colors duration-150 hover:bg-surface-high/40"
+                class="row-v5-td cursor-pointer border-b border-outline/60 transition-all duration-150"
                 @click="ui.openEdit(row)"
               >
                 <td
@@ -1255,7 +1255,7 @@ function fullCategoryName(item: {
                 <td class="py-2 pr-3 align-middle">
                   <span class="flex items-center gap-3">
                     <span
-                      class="cat-avatar"
+                      class="ic-v5"
                       :style="{ '--avatar-color': categoryColorVar(Number(row.parentCategoryColor ?? row.categoryColor ?? 1)) }"
                     >
                       <CategoryIcon
@@ -1310,7 +1310,7 @@ function fullCategoryName(item: {
             <li v-for="row in sortedItems" :key="row.id">
               <button
                 type="button"
-                class="flex min-h-16 w-full items-center gap-3 px-1 py-2 text-left transition-colors duration-150 active:bg-surface-high/40"
+                class="flex min-h-16 w-full items-center gap-3 px-1 py-2 text-left transition-all duration-150"
                 @click="ui.openEdit(row)"
               >
                 <!-- 日期格：最远支持 2 天简化显示（今日星期一 / 昨日星期日 / 26日星期六） -->
@@ -1328,7 +1328,7 @@ function fullCategoryName(item: {
 
                 <!-- 44px 圆形分类徽位（v3：12% 分类色底 + 分类色图标） -->
                 <span
-                  class="cat-avatar"
+                  class="ic-v5"
                   :style="{ '--avatar-color': categoryColorVar(Number(row.parentCategoryColor ?? row.categoryColor ?? 1)) }"
                 >
                   <CategoryIcon

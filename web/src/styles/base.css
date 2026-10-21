@@ -514,6 +514,13 @@
   }
   :root[data-theme='light'] .panel-v4 { border-color: var(--fg); }
 
+  /* 桌面表格行 hover（v5） */
+  .row-v5-td { transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+  :root:not([data-theme='light']) .row-v5-td:hover {
+    background: var(--surface-high); box-shadow: inset 3px 0 0 0 var(--primary);
+  }
+  :root[data-theme='light'] .row-v5-td:hover { background: var(--tertiary); }
+
   /* ═══════════ v5 流水行：深色切角+hover 辉光位移；浅色硬阴影+hover 粉影 ══ */
   .row-v5 {
     display: grid; grid-template-columns: 44px 1fr auto; gap: 16px; align-items: center;
