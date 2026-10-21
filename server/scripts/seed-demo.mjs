@@ -357,6 +357,69 @@ generateTodos(
 );
 
 // ---------------------------------------------------------------------------
+// 本月密度（2026-10）：评审换皮需要「当下的」数据 —— 流水页默认就是本月档。
+// 上面 seed 铺的是 8-9 月历史密度 + 计划待办；这里补 10 月 1-21 日的日常笔。
+if (!db.prepare("SELECT COUNT(*) n FROM expenses WHERE note = '本月密度'").get().n) {
+  const OCT_DENSE = [
+    ['餐饮/外卖', '美团外卖 · 午饭', 32.5, '招行信用卡'],
+    ['餐饮/外卖', '饿了么 · 晚饭', 28.0, '花呗'],
+    ['交通/公共交通', '地铁通勤', 6.0, '现金'],
+    ['交通/打车', '滴滴回家', 23.6, '花呗'],
+    ['购物/日用', '盒马 · 水果', 68.4, '招行信用卡'],
+    ['购物/日用', '纸巾洗衣液', 45.9, '花呗'],
+    ['娱乐/订阅', '网易云音乐', 15.0, '花呗'],
+    ['娱乐/电影', '电影票两张', 96.0, '招行信用卡'],
+    ['医疗/药品', '感冒灵', 26.5, '现金'],
+    ['餐饮/下馆子', '周末火锅', 186.0, '招行信用卡'],
+    ['餐饮/咖啡', '瑞幸 ×2', 29.8, '花呗'],
+    ['购物/衣物', '优衣库 T 恤', 149.0, '招行信用卡'],
+    ['交通/打车', '机场打车', 64.0, '花呗'],
+    ['餐饮/买菜', '菜市场', 87.3, '现金'],
+    ['娱乐/游戏', 'Steam 秋促', 132.0, '招行信用卡'],
+    ['医疗/挂号', '牙科复诊', 200.0, '工资卡'],
+    ['餐饮/外卖', '麦当劳夜宵', 41.9, '花呗'],
+    ['购物/数码', '数据线', 39.9, '花呗'],
+    ['餐饮/买菜', '山姆囤货', 328.0, '招行信用卡'],
+    ['交通/加油', '加油 300', 300.0, '招行信用卡'],
+    ['娱乐/健身', '游泳两次', 80.0, '工资卡'],
+    ['餐饮/咖啡', 'Manner 拿铁', 20.0, '花呗'],
+  ];
+  const refunds = [['娱乐/电影', '电影票退款（场次取消）', -96.0, '招行信用卡', 12]];
+  const owners = [me, partner];
+  const pm = Object.fromEntries(
+    db.prepare('SELECT id, name FROM payment_methods').all().map((r) => [r.name, r.id]),
+  );
+  const catId = (path) => {
+    const [parent, child] = path.split('/');
+    const row = child
+      ? db.prepare('SELECT c.id FROM categories c JOIN categories p ON p.id=c.parent_id WHERE c.name=? AND p.name=?').get(child, parent)
+      : db.prepare('SELECT id FROM categories WHERE name=? AND depth=1').get(parent);
+    return row?.id ?? db.prepare('SELECT id FROM categories WHERE name=?').get(parent)?.id;
+  };
+  let day = 1;
+  OCT_DENSE.forEach(([path, note, yuan, pmName], i) => {
+    day = 1 + ((i * 7 + 3) % 21); // 1..21 日散开
+    insertExpense({
+      date: ymd(2026, 10, Math.min(day, 21)),
+      categoryPath: path,
+      yuan,
+      pmName,
+      note: '本月密度',
+      owner: i % 2,
+    });
+    // 备注改成可读的
+    db.prepare("UPDATE expenses SET note=? WHERE id=(SELECT id FROM expenses WHERE note='本月密度' ORDER BY created_at DESC LIMIT 1)").run(note);
+  });
+  for (const [path, note, yuan, pmName, ago] of refunds) {
+    insertExpense({
+      date: ymd(2026, 10, Math.min(21, ago + 8)),
+      categoryPath: path, yuan, pmName, note, owner: 0,
+    });
+  }
+  console.log(`本月密度：+${OCT_DENSE.length + refunds.length} 笔（2026-10）`);
+}
+
+// ---------------------------------------------------------------------------
 const summary = {
   users: db.prepare('SELECT COUNT(*) n FROM users').get().n,
   categories: db.prepare('SELECT COUNT(*) n FROM categories').get().n,
