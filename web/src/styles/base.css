@@ -408,6 +408,26 @@
   .amount-v3 .dec  { font-size: 0.72em; color: inherit; opacity: 0.7; font-weight: 500; }
   .amount-v3.lg .cur { font-size: 0.5em; transform: translateY(-0.35em); }
 
+  /* 输入框 v4：深色=终端（等宽字 + 霓虹 focus 辉光）；浅色=糖果（focus 硬阴影染色） */
+  .input-v4 {
+    width: 100%;
+    background: var(--surface-container);
+    border: var(--border-width) solid var(--outline);
+    border-radius: var(--radius-field);
+    color: var(--on-surface);
+    font-family: var(--font-sans);
+    transition: all var(--dur-fast) var(--ease);
+  }
+  .input-v4::placeholder { color: var(--on-surface-variant); }
+  .input-v4:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: var(--el-neon, 0 0 0 1px var(--primary));
+  }
+  :root[data-theme='light'] .input-v4:focus {
+    box-shadow: 4px 4px 0px 0px var(--primary);
+  }
+
   /* ═════════ v4 双设计语言组件 ═════════════════════════════
      深色（Cyberpunk）：弹层/卡片 clip-path 切角 + 霓虹边；
      浅色（Playful）：糖果按钮（硬阴影 + 2px 深边框 + 弹性回弹）。

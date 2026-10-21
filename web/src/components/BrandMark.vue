@@ -1,4 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+
+import { effectiveTheme, readStoredTheme, type ThemeChoice } from '@/utils/theme';
+
+const choice = ref<ThemeChoice>(readStoredTheme() ?? 'dark');
+const theme = computed(() => effectiveTheme(choice.value));
+// 监听 data-theme 变化（ThemeSwitch 会改 documentElement）
+const ob = new MutationObserver(() => {
+  choice.value = (document.documentElement.dataset.theme as ThemeChoice) ?? 'dark';
+});
+ob.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+import { ref } from 'vue';
 /**
  * 品牌位：计算器 mark + 字标。
  *
@@ -14,7 +26,10 @@ withDefaults(defineProps<{ size?: number; wordmark?: boolean }>(), {
 
 <template>
   <span class="inline-flex items-center gap-2.5">
-    <img src="/logo.svg" alt="SuenMoney" :width="size" :height="size" class="block" />
+    <img
+      :src="theme === 'light' ? '/mark-light.svg' : '/logo.svg'"
+      alt="SuenMoney" :width="size" :height="size" class="block"
+    />
     <span
       v-if="wordmark"
       class="text-base font-bold tracking-tight text-on-surface"

@@ -1052,7 +1052,7 @@ function close(): void {
       - 宽屏（≥1024px）：右侧定宽 480px 面板。
     -->
     <section
-      class="absolute inset-x-0 bottom-0 top-[5vh] flex flex-col rounded-t-[24px] bg-surface shadow-[var(--el-2)] lg:left-auto lg:right-0 lg:top-0 lg:w-[480px] lg:rounded-none"
+      class="panel-v4 absolute inset-x-0 bottom-0 top-[5vh] flex flex-col rounded-t-[24px] lg:left-auto lg:right-0 lg:top-0 lg:w-[480px] lg:rounded-none"
       role="dialog"
       aria-modal="true"
       @keydown.esc="close"

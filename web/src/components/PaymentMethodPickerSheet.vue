@@ -46,7 +46,7 @@ function close(): void {
 
     <!-- 弹层主体 -->
     <div
-      class="relative flex max-h-[70vh] w-full flex-col rounded-t-[24px] bg-surface shadow-[var(--el-2)] transition-transform lg:w-[460px] lg:rounded-[24px]"
+      class="panel-v4 relative flex max-h-[70vh] w-full flex-col rounded-t-[24px] transition-transform lg:w-[460px] lg:rounded-[24px]"
       role="dialog"
       aria-modal="true"
       @keydown.esc="close"
