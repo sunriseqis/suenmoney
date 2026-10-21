@@ -1,0 +1,56 @@
+# ==============================================================================
+# SuenMoney systemd 单元（本机直接部署，不用 Docker）
+#
+# 安装三步（详见 docs/deploy.md 第七节）：
+#
+#   sudo install -d -m 755 /var/lib/suenmoney /var/lib/suenmoney/backups
+#   sudo cp scripts/suenmoney.service /etc/systemd/system/suenmoney.service
+#   # 改三处：WorkingDirectory / SUENMONEY_WEB_ROOT / ExecStart 里的 node 绝对路径
+#   sudo systemctl daemon-reload && sudo systemctl enable --now suenmoney
+#
+# 为什么必须写 node 的绝对路径：systemd 不读你的 shell PATH，
+# nvm / asdf / volta 装的 node 在 `which node` 里能查到、在单元里查不到。
+# ==============================================================================
+
+[Unit]
+Description=SuenMoney 家庭记账系统（单进程：页面 + /api 同端口 5310）
+Documentation=file:///opt/suenmoney/docs/deploy.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# ← 改成仓库所在目录
+WorkingDirectory=/opt/suenmoney/server
+
+# 可选：把需要改的变量集中写到这个文件里（该文件不存在也不报错）
+EnvironmentFile=-/etc/suenmoney.env
+
+Environment=NODE_ENV=production
+Environment=SUENMONEY_HOST=0.0.0.0
+Environment=SUENMONEY_PORT=5310
+# ← 改成仓库里的 web/dist 绝对路径
+Environment=SUENMONEY_WEB_ROOT=/opt/suenmoney/web/dist
+Environment=SUENMONEY_DB_PATH=/var/lib/suenmoney/suenmoney.sqlite
+Environment=SUENMONEY_BACKUP_DIR=/var/lib/suenmoney/backups
+Environment=SUENMONEY_BACKUP_KEEP=14
+# 前面没有反代时**必须**保持 false：开了等于允许客户端伪造 X-Forwarded-For，
+# 登录限流（按 IP 计数）会被绕过。自己加 Caddy/nginx 做 TLS 时才改成 true。
+Environment=SUENMONEY_TRUST_PROXY=false
+Environment=TZ=Asia/Shanghai
+
+# ← 把 /usr/bin/node 换成 `which node` 的实际输出（nvm 的路径通常是
+#    /root/.nvm/versions/node/vX.Y.Z/bin/node）
+ExecStart=/usr/bin/node scripts/node-run.mjs src/index.ts
+
+Restart=always
+RestartSec=5
+
+# 优雅停机：index.ts 收到 SIGTERM 会先停调度器、再 wal_checkpoint(TRUNCATE) 关库。
+# 硬杀（SIGKILL）会跳过归并，下次启动要走崩溃恢复 —— 所以别加 KillMode=process 之外的骚操作。
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
