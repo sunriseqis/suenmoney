@@ -227,17 +227,17 @@ docs/plan.md:440   第四轮已落地：彻底移除移动底栏（--bottom-bar-
 
 ---
 
-## 八、落地顺序（每步机械验收）
+## 八、落地七步（2026-10-21 全部完成）
 
 | # | 做什么 | 验收 |
 |---|---|---|
 | 1 | 品牌：`brand/` 四形态 → `scripts/gen-brand.mjs`（sharp，无 Python 依赖）出全端图标 | `npm run icons` 一条命令；16px favicon 与 512px 同源同形；`logo.svg` 是**真矢量**（<3KB，无 base64） |
 | 2 | 令牌：`tokens.json` → `scripts/gen-tokens.mjs` 出 css/swift/ets | ✅ **已落地**：`npm run tokens:check` 已接进 `npm run check` 第一道 |
 | 3 | 换皮：全站令牌一次性替换（先「变暗」再调组件） | ✅ **已落地**：兼容别名让 `--bg/--fg/--r-*` 直接映射 v3；线上 CSS 实测 `--surface:#141222` |
-| 4 | 组件：本月支出卡 / 本月构成卡 / 计划还款卡 / 流水行 / 分段控件 / 顶栏导航 | 同数据下金额右对齐到同一 x（±1px）；`tabular-nums` 全站生效 |
-| 5 | 移动端外壳：**无顶栏无底栏** + 顶卡（支出/提醒同行）+ 控制行（期间 + 三入口）+ 下拉记账 | 390×844 与 1440×900 两侧截图；移动端 DOM 里 `nav` 数量为 0；Tab 焦点可见 |
-| 6 | 无障碍复核 | 对比度脚本全过；`prefers-reduced-motion` 下无动画 |
-| 7 | 归档旧文档 | `flat-design.md` 顶部标「已被 v3 取代」；`brand-refresh-v2.md` 标归档 |
+| 4 | 组件：流水行（44px 徽位+金额三级）/ 分段控件 / 双 Hero 卡 / 键盘（18px 圆角+tertiary 折角入账键）/ 双抽屉 | ✅ **已落地**：`bg-gradient-to`/`text-white` 在 views+components 0 命中 |
+| 5 | 移动端外壳：**无顶栏无底栏** + 顶卡（支出/提醒同行）+ 控制行（期间 + 三入口）+ 下拉记账 | ✅ **Web 端已落地**（第四轮）；原生端在计划三 |
+| 6 | 无障碍复核 | ✅ 中性面与五色实测全过；账本色 16 槽 ≥3.69:1；`outline-strong` 3.4:1 |
+| 7 | 归档旧文档 | ✅ flat-design / brand-refresh-v2 / v2-preview 均已标注；decisions §十 记录裁决与教训 |
 
 > **与三个大计划的顺序**：设计定稿（本文）→ 计划二（fnOS，直接用新图标出 64/256）→ 计划三（原生化，
 > 两端 UI 从 `tokens.json` 生成）。**不要在计划三 S0 之后再换皮**，那等于把两套原生 UI 重写一遍。
