@@ -50,6 +50,7 @@ const toast = useToast();
 const theme = useTheme();
 
 const today = todayLocal();
+const buildStamp = __BUILD_STAMP__;
 
 const TABS = [
   { value: 'ledger', label: '账目' },
@@ -508,6 +509,17 @@ async function revokeOthers(): Promise<void> {
 // ── 账单导入 ────────────────────────────────────────────────────────────────
 const billOpen = ref(false);
 
+// ── 数据总览 ────────────────────────────────────────────────────────────────
+const overview = ref<{ counts?: Record<string, number>; dbPath?: string; dbSizeBytes?: number } | null>(null);
+
+async function loadOverview(): Promise<void> {
+  try {
+    overview.value = (await dataApi.overview()).overview as never;
+  } catch {
+    overview.value = null;
+  }
+}
+
 // ── 备份与快照 ──────────────────────────────────────────────────────────────
 const webdav = ref<{ url: string; username: string; path: string; isEnabled: boolean; hasPassword?: boolean } | null>(null);
 const webdavUrl = ref('');
@@ -693,6 +705,7 @@ onMounted(() => {
   void loadSnapshots();
   void loadDoneTodos();
   void loadSessions();
+  void loadOverview();
 });
 </script>
 
@@ -934,6 +947,31 @@ onMounted(() => {
           </PBtn>
           <span class="tiny muted">{{ updateStore.message ?? '' }}</span>
         </div>
+      </PCard>
+
+      <PCard v-if="overview">
+        <div class="card-h">
+          <span class="card-t">数据总览</span>
+          <span class="card-cap">库里现在有什么</span>
+        </div>
+        <div class="set-row" v-for="(v, k) in overview.counts ?? {}" :key="k">
+          <span class="set-body"><span class="set-t">{{ k }}</span></span>
+          <b class="mono">{{ v }}</b>
+        </div>
+        <p v-if="overview.dbSizeBytes" class="hint" style="margin-top: 8px">
+          数据库 {{ Math.round(overview.dbSizeBytes / 1024) }} KB
+        </p>
+      </PCard>
+
+      <PCard>
+        <div class="card-h">
+          <span class="card-t">关于</span>
+          <span class="card-cap">{{ buildStamp }}</span>
+        </div>
+        <p class="hint">
+          SuenMoney · 单账本家庭记账。只记支出、整数分、退款以负数冲销；
+          账期按还款日归属。卡片配色取账本色 16 槽（存色号不存色值）。
+        </p>
       </PCard>
 
       <PCard>

@@ -427,7 +427,7 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
         <div class="keypad">
           <div class="paycol">
             <button
-              v-for="p in dict.usablePaymentMethods.slice(0, 6)"
+              v-for="p in dict.usablePaymentMethods.slice(0, 5)"
               :key="p.id"
               type="button"
               class="pay-key"
@@ -439,6 +439,16 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
               <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: center">
                 {{ p.name.slice(0, 4) }}
               </span>
+            </button>
+            <!-- 第 6 个位置固定是「更多」：支付方式多于 5 个时用它打开完整抽屉 -->
+            <button
+              type="button"
+              class="pay-key"
+              title="更多支付方式"
+              @click="payOpen = true"
+            >
+              <span style="font-size: 15px; line-height: 1">⋯</span>
+              <span style="width: 100%; text-align: center">更多</span>
             </button>
           </div>
           <div class="keys">
