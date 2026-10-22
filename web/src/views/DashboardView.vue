@@ -429,3 +429,19 @@ onMounted(() => {
     <p v-if="loading" class="tiny muted" style="text-align: center">加载中…</p>
   </div>
 </template>
+
+<style scoped>
+/*
+ * 概况主卡独占一整行（用户 2026-10-22 指定）。
+ * 原型的 og-hero 是 7/5 与待办卡并排；这里改成主卡通栏、待办卡到下一行 —— 
+ * 大金额是这一页的主角，与它并排的卡片会把它挤窄。
+ */
+.og-hero {
+  grid-column: 1 / -1;
+}
+@media (min-width: 1081px) {
+  .og-hero {
+    grid-column: span 12;
+  }
+}
+</style>

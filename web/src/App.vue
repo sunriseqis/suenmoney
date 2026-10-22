@@ -170,10 +170,10 @@ onUnmounted(() => {
       <aside class="sidebar">
         <RouterLink :to="{ name: 'ledger' }" class="brand" aria-label="回到流水">
           <BrandMark :size="46" />
-          <span class="brand-txt">
-            <span class="brand-name">SuenMoney</span>
-            <span class="brand-sub">FAMILY LEDGER · 单账本</span>
-          </span>
+          <div class="brand-txt">
+            <div class="brand-name">SuenMoney</div>
+            <div class="brand-sub">FAMILY LEDGER · 单账本</div>
+          </div>
         </RouterLink>
 
         <nav class="nav" aria-label="主导航">
@@ -210,6 +210,7 @@ onUnmounted(() => {
         <header class="topbar">
           <PIconBtn
             v-if="route.name !== 'ledger'"
+            class="mobile-only"
             :icon="ChevronLeft"
             :label="route.name === 'annual-summary' ? '返回报表' : '返回流水'"
             @click="goBack"
@@ -262,3 +263,32 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+/* 侧边栏品牌位：LOGO 与字标基线对齐，副标题不换行（原型 .brand 的语义） */
+.brand {
+  text-decoration: none;
+  color: inherit;
+}
+.brand-txt {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.brand-sub {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+</style>
