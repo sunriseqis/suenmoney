@@ -12,6 +12,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import BrandMark from '@/components/BrandMark.vue';
+import { PBtn, PIconBtn } from '@/components/proto';
 import ExpenseSheet from '@/components/ExpenseSheet.vue';
 import UpdateDialog from '@/components/UpdateDialog.vue';
 import { useTheme } from '@/composables/useTheme';
@@ -263,7 +264,7 @@ onUnmounted(() => {
         <RouterLink :to="{ name: 'ledger' }" class="brand" aria-label="回到流水">
           <BrandMark :size="46" />
           <span class="brand-txt">
-            <span class="brand-name">同账</span>
+            <span class="brand-name">SuenMoney</span>
             <span class="brand-sub">FAMILY LEDGER · 单账本</span>
           </span>
         </RouterLink>
@@ -310,15 +311,13 @@ onUnmounted(() => {
       <div class="main">
         <header class="topbar">
           <!-- 移动端：非流水页显示返回（原型 topbar-back） -->
-          <button
+          <PIconBtn
             v-if="route.name !== 'ledger'"
-            type="button"
-            class="icon-btn mobile-only"
-            :aria-label="route.name === 'annual-summary' ? '返回报表' : '返回流水'"
+            class="mobile-only"
+            :icon="ChevronLeft"
+            :label="route.name === 'annual-summary' ? '返回报表' : '返回流水'"
             @click="router.push({ name: route.name === 'annual-summary' ? 'report' : 'ledger' })"
-          >
-            <ChevronLeft :size="16" />
-          </button>
+          />
 
           <div class="topbar-txt">
             <div class="topbar-title">{{ pageMeta.title }}</div>
@@ -326,22 +325,14 @@ onUnmounted(() => {
           </div>
 
           <div class="topbar-actions">
-            <button
-              type="button"
-              class="icon-btn"
-              :aria-label="protoTheme === 'cyber' ? '切换到水果硬糖' : '切换到赛博朋克'"
+            <PIconBtn
+              :icon="protoTheme === 'cyber' ? Sun : Moon"
+              :label="protoTheme === 'cyber' ? '切换到水果硬糖' : '切换到赛博朋克'"
               @click="toggleProtoTheme"
-            >
-              <component :is="protoTheme === 'cyber' ? Sun : Moon" :size="17" />
-            </button>
-            <button
-              type="button"
-              class="btn btn--primary desktop-only"
-              @click="ui.openCreate()"
-            >
-              <Plus :size="14" :stroke-width="2.4" aria-hidden="true" />
-              记一笔
-            </button>
+            />
+            <span class="desktop-only">
+              <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
+            </span>
           </div>
         </header>
 
