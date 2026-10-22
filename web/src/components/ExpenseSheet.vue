@@ -18,6 +18,7 @@ import { computed, ref, watch } from 'vue';
 import {
   ApiError,
   expenses as expensesApi,
+  reports,
   plans as plansApi,
   type Expense,
   type PaymentMethod,
@@ -29,7 +30,7 @@ import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useSyncStore } from '@/stores/sync';
 import { PBtn, PIconBtn, PSwitch, PTag } from '@/ui';
-import { todayLocal } from '@/utils/dates';
+import { formatMonthDay, formatMonthLabel, currentMonth, todayLocal } from '@/utils/dates';
 import { formatYuan } from '@/utils/money';
 
 const props = defineProps<{ open: boolean; expense: Expense | null }>();
@@ -41,6 +42,47 @@ const plansStore = usePlansStore();
 const toast = useToast();
 
 const today = todayLocal();
+
+/**
+ * 记住上次用的分类与支付方式（decisions：记账是高频动作，重复的是同一组选择）。
+ * 沿用前必须校验「它现在仍然可选」—— 分类可能已被停用。
+ */
+const LAST_KEY = 'suenmoney:last-pick';
+
+function readLastPick(): { categoryId: string; paymentMethodId: string } | null {
+  try {
+    const raw = localStorage.getItem(LAST_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw) as { categoryId?: string; paymentMethodId?: string };
+    if (typeof parsed.categoryId !== 'string' || typeof parsed.paymentMethodId !== 'string') return null;
+    return { categoryId: parsed.categoryId, paymentMethodId: parsed.paymentMethodId };
+  } catch {
+    return null;
+  }
+}
+
+function writeLastPick(): void {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify({ categoryId: categoryId.value, paymentMethodId: paymentId.value }));
+  } catch {
+    /* 隐私模式忽略 */
+  }
+}
+
+/** 本月已支出（背景信息，不阻塞打开） */
+const monthSpentCents = ref<number | null>(null);
+
+/** 还款日是否落在下个月（跨月时抽屉要明说） */
+const crossesMonth = computed(() => {
+  const due = previewDates.value?.repaymentDate;
+  if (!due) return false;
+  return due.slice(0, 7) !== spendDate.value.slice(0, 7);
+});
+
+const previewMonthLabel = computed(() => {
+  const due = previewDates.value?.repaymentDate;
+  return due ? formatMonthLabel(due.slice(0, 7)) : '';
+});
 
 const amount = ref('');
 const categoryId = ref('');
@@ -101,10 +143,15 @@ watch(
       periods.value = null;
     } else {
       amount.value = '';
+      const last = readLastPick();
+      const lastCat = last === null ? null : dict.findCategory(last.categoryId);
+      const lastPay = last === null ? null : dict.findPaymentMethod(last.paymentMethodId);
       const firstRoot = dict.rootCategories[0];
       const firstCat = firstRoot ? dict.selectableChildren(firstRoot)[0] : null;
-      categoryId.value = firstCat?.id ?? '';
-      paymentId.value = dict.usablePaymentMethods[0]?.id ?? '';
+      // 上次的选择若已停用/不存在，退回第一项
+      categoryId.value = lastCat?.isEnabled === true ? lastCat.id : (firstCat?.id ?? '');
+      paymentId.value =
+        lastPay?.isEnabled === true ? lastPay.id : (dict.usablePaymentMethods[0]?.id ?? '');
       spendDate.value = today;
       note.value = '';
       isRefund.value = false;
@@ -113,6 +160,16 @@ watch(
     railId.value = rootOfCategory(categoryId.value);
     previewDates.value = null;
     void refreshPreview();
+    // 本月已支出：背景信息，拿不到就不显示
+    monthSpentCents.value = null;
+    void reports
+      .monthly(currentMonth())
+      .then((res) => {
+        monthSpentCents.value = res.report.totalCents;
+      })
+      .catch(() => {
+        monthSpentCents.value = null;
+      });
   },
   { immediate: true },
 );
@@ -260,6 +317,7 @@ async function save(): Promise<void> {
       }
     }
 
+    writeLastPick();
     emit('saved');
     emit('close');
   } catch (error) {
@@ -424,8 +482,12 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
         <div class="preview-box">
           金额预览（不落库先算）：<br />
           <template v-if="isCredit">
-            账期归属 <b>{{ previewDates?.repaymentDate ?? '—' }}</b> 还款日 · 本次计入
-            <b>{{ formatYuan(effectiveCents) }}</b>
+            <!-- 跨月必须明说这个月不会有这笔（decisions：记账抽屉必须明说记在哪个月） -->
+            <span v-if="crossesMonth" class="preview-cross">
+              这笔会记在 <b>{{ previewMonthLabel }}</b>（还款日 {{ formatMonthDay(previewDates?.repaymentDate ?? '') }}）
+            </span>
+            <span v-else>还款日 {{ formatMonthDay(previewDates?.repaymentDate ?? '') }}</span>
+            · 本次计入 <b>{{ formatYuan(effectiveCents) }}</b>
             <span v-if="periods"> · 每期约 <b>{{ formatYuan(perPeriodCents) }}</b>，共 {{ periods }} 期</span>
           </template>
           <template v-else>
@@ -434,6 +496,13 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
         </div>
 
         <p v-if="errorMessage" class="tiny" style="color: var(--danger); margin: 0">{{ errorMessage }}</p>
+
+        <!-- 本月已支出：记账时最想知道却又唯一被抽屉挡住的那个数（decisions 明确要求
+             出现在键盘上方）。取不到就不显示，不让它拖慢抽屉打开。 -->
+        <div v-if="monthSpentCents !== null" class="month-spent">
+          <span class="mono tiny muted">本月已支出</span>
+          <b class="mono">{{ formatYuan(monthSpentCents) }}</b>
+        </div>
 
         <!-- 键盘上方的常用分类快捷条（docs 第十六次修正：胶囊 + 底槽，
              把最常用的 6 个分类钉在这里，避免每次都要开分类抽屉） -->
@@ -588,6 +657,24 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
 
 <style scoped>
 /* 常用分类快捷条：横向可滑的胶囊，底槽比卡片低一层（sunken/40 的等价写法） */
+/* 跨月提示：这一笔不会出现在本月，必须让人看见（强调色 + 加粗） */
+.preview-cross {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* 本月已支出：键盘上方一行轻量信息 */
+.month-spent {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 4px;
+}
+.month-spent b {
+  font-size: 12px;
+  color: var(--ink);
+}
+
 .quick-cats {
   display: flex;
   gap: 6px;
