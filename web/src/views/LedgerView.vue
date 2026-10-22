@@ -693,4 +693,68 @@ onMounted(async () => {
     min-width: 76px;
   }
 }
+
+/* 待办提醒条目（PC 与移动同一形态：一行、可展开、无待办不渲染）
+   注意：这段必须在 <style scoped> 里 —— 上一轮锚点失效导致样式没写进去，
+   表现就是「待办提醒没有风格」。 */
+.hero-todo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  transition: border-color 0.16s, color 0.16s;
+}
+.hero-todo:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+.hero-todo-t {
+  font-weight: 600;
+  color: var(--ink);
+}
+.mh-todos {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 4px 0;
+}
+.todo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  flex: 0 0 auto;
+}
+.todo-dot.is-late {
+  background: var(--danger);
+}
+.todo-dot.is-soon {
+  background: var(--warn);
+}
+.todo-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.todo-line:last-child {
+  border-bottom: 0;
+}
+.todo-line-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
 </style>
