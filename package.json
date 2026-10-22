@@ -25,7 +25,13 @@
     "fn:build": "node scripts/build-fn.mjs",
     "tokens": "node scripts/gen-tokens.mjs",
     "tokens:check": "node scripts/gen-tokens.mjs --check",
-    "check:vue": "node scripts/vue-check.mjs"
+    "check:vue": "node scripts/vue-check.mjs",
+    "install:web2": "npm --prefix web-v2 install",
+    "dev:web2": "npm --prefix web-v2 run dev",
+    "build:web2": "npm --prefix web-v2 run build",
+    "preview:web2": "npm --prefix web-v2 run preview",
+    "typecheck:web2": "npm --prefix web-v2 run typecheck",
+    "test:web2": "npm --prefix web-v2 test"
   },
   "devDependencies": {
     "sharp": "^0.34.0"

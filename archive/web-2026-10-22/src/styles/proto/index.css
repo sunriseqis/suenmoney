@@ -1,0 +1,72 @@
+/* ==========================================================================
+   原型设计系统（原样引入）
+   --------------------------------------------------------------------------
+   来源：用户提供的原型 `家庭记账应用前端原型.zip`（React + Babel，同账）
+   文件：theme.css（双主题令牌）· app.css（外壳与通用组件）· views.css（各页样式）
+
+   **这三个文件保持原样，不做本地改写** —— 用户要求「对照抄」，改了就不再是原型。
+   本文件只做两件事：
+     1. 引入三个原型 CSS
+     2. 变量桥接：把原型变量名映射到应用原有令牌名，
+        让尚未迁移到原型类名的组件（老模板）也能落在同一套配色里，
+        而不是新老两套颜色打架。
+   ========================================================================== */
+
+@import './theme.css';
+@import './app.css';
+@import './views.css';
+
+/* ── 变量桥接：原型变量 → 应用原有令牌名 ───────────────────────────────
+   原型体系：--bg/--surface/--line/--ink/--accent
+   应用旧名：--surface/--surface-container/--outline/--on-surface/--primary
+   只在 `.app` 内生效，不影响登录页等外壳之外的部分。 */
+.app[data-theme='candy'],
+.app[data-theme='cyber'] {
+  --surface-container: var(--surface);
+  --surface-high: var(--surface-3);
+  --surface-low: var(--surface-2);
+  --on-surface: var(--ink);
+  --on-surface-variant: var(--ink-2);
+  --outline: var(--line);
+  --outline-strong: var(--line-2);
+  --primary: var(--accent);
+  --on-primary: var(--accent-ink);
+  --secondary: var(--pink);
+  --tertiary: var(--amber);
+  --quaternary: var(--mint);
+  --danger: var(--danger);
+  --fg: var(--ink);
+  --fg-muted: var(--ink-2);
+  --border: var(--line);
+  --border-strong: var(--line-2);
+  --font-sans: var(--font-body);
+  --font-head: var(--font-display);
+  --radius-card: var(--r-card);
+  --radius-field: var(--r-md);
+  --radius-pill: var(--r-pill);
+  --r-sm: var(--r-sm);
+  --r-md: var(--r-md);
+  --r-pill: var(--r-pill);
+  --scanlines: none;
+  --circuit-bg: none;
+  --chamfer: none;
+  --chamfer-sm: none;
+}
+
+/* 原型里 .app 是根容器，应用里由 App.vue 渲染；确保它铺满视口 */
+.app { min-height: 100vh; min-height: 100dvh; }
+
+/* ── 图标描边：原型规格 candy 2.4 / cyber 1.6 ──────────────────────────
+   Lucide 图标的描边写在 svg 元素上，原型用 `.ic { stroke-width: 2.4 }`；
+   那些图标没有 `.ic` 类，所以在 `.app` 内按主题统一给 svg 定描边。
+   旧 base.css 里的 1.5 / 2.5 在这两套主题下不再生效（选择器更具体）。 */
+.app[data-theme='candy'] svg { stroke-width: 2.4; }
+.app[data-theme='cyber'] svg { stroke-width: 1.6; }
+
+/* ── 原型组件的按压/悬停反馈优先于旧全局规则 ──────────────────────────
+   旧 base.css 里有 `button:not(:disabled):active` 这类元素级规则，
+   权重比 `.seg-btn`、`.chip`、`.icon-btn` 高。用 `.app ...` 前缀把原型拉回来。 */
+.app .btn:active { transform: translate(2px, 2px); }
+.app .icon-btn:active { transform: none; }
+.app .seg-btn:active { transform: none; }
+.app .chip:active { transform: none; }

@@ -1,0 +1,5 @@
+/* 样式总入口：原型设计系统在前，应用级补充在后 */
+@import './proto/theme.css';
+@import './proto/app.css';
+@import './proto/views.css';
+@import './base.css';

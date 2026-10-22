@@ -1,0 +1,164 @@
+/* ==========================================================================
+   ⚠ 本文件由 scripts/gen-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
+   改令牌 → 改 tokens.json → npm run tokens
+   ========================================================================== */
+
+/* ═══════════════════════════════════════════════════════════════
+   深色 · Cyberpunk（默认，不写 data-theme 即此主题）
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+  --grid: 8px;
+
+  --surface: #050509;
+  --surface-container: #1E1D2E;
+  --surface-high: #2A2A44;
+  --surface-low: #16162A;
+  --on-surface: #e0e0e0;
+  --on-surface-variant: #8b8ba7;
+  --outline: #3A3A5C;
+  --outline-strong: #00ff88;
+
+  --primary: #00ff88;
+  --on-primary: #050509;
+  --primary-container: rgba(0,255,136,.12);
+  --secondary: #00d4ff;
+  --on-secondary: #050509;
+  --secondary-container: rgba(0,212,255,.12);
+  --tertiary: #ff00ff;
+  --on-tertiary: #050509;
+  --tertiary-container: rgba(255,0,255,.12);
+  --quaternary: #FBBF24;
+  --on-quaternary: #050509;
+  --quaternary-container: rgba(251,191,36,.12);
+  --info: #00d4ff;
+  --on-info: #050509;
+  --info-container: rgba(0,212,255,.12);
+  --danger: #ff3366;
+  --on-danger: #050509;
+
+  --focus: #00ff88;
+  --scrim: rgb(0 0 0 / 0.72);
+
+  /* 形状：切角，圆角归零 */
+  --border-width: 1px;
+  --radius-card: 0px; --radius-sheet: 0px; --radius-field: 4px;
+  --radius-pill: 0px; --radius-keypad: 0px;
+  --r-sm: 2px; --r-md: 4px; --r-pill: 0px;
+  --chamfer: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px,
+    100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
+  --chamfer-sm: polygon(0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px));
+
+  /* 阴影：霓虹辉光 */
+  --el-1: 0 0 3px #00ff88, 0 0 8px #00ff8840;
+  --el-2: 0 0 5px #00ff88, 0 0 20px #00ff8860;
+  --el-glow: 0 0 5px #00ff88, 0 0 20px #00ff8860;
+  --el-glow-secondary: 0 0 5px #00d4ff, 0 0 20px #00d4ff60;
+  --el-glow-tertiary: 0 0 5px #ff00ff, 0 0 20px #ff00ff60;
+  --el-pop: none;
+
+  /* 纹理 */
+  --scanlines: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.3) 2px, rgba(0,0,0,.3) 4px);
+  --circuit-bg: linear-gradient(rgba(0,255,136,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,136,.04) 1px, transparent 1px);
+
+  --dur-fast: 150ms; --dur: 300ms; --dur-slow: 400ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-pop: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --z-base: 0; --z-sticky: 10; --z-bottom-bar: 20; --z-sheet: 30; --z-overlay: 40; --z-toast: 50;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   浅色 · Playful Geometric（data-theme="light"）
+   ═══════════════════════════════════════════════════════════════ */
+:root[data-theme='light'] {
+  --surface: #FFFDF5;
+  --surface-container: #FFFFFF;
+  --surface-high: #F1F5F9;
+  --surface-low: #F1F5F9;
+  --on-surface: #1E293B;
+  --on-surface-variant: #64748B;
+  --outline: #E2E8F0;
+  --outline-strong: #1E293B;
+
+  --primary: #8B5CF6;
+  --on-primary: #FFFFFF;
+  --primary-container: rgba(139,92,246,.12);
+  --secondary: #F472B6;
+  --on-secondary: #FFFFFF;
+  --secondary-container: rgba(244,114,182,.12);
+  --tertiary: #FBBF24;
+  --on-tertiary: #1E293B;
+  --tertiary-container: rgba(251,191,36,.12);
+  --quaternary: #34D399;
+  --on-quaternary: #1E293B;
+  --quaternary-container: rgba(52,211,153,.12);
+  --info: #1F6FD0;
+  --on-info: #FFFFFF;
+  --info-container: rgba(31,111,208,.12);
+  --danger: #EF4444;
+  --on-danger: #FFFFFF;
+
+  --focus: #8B5CF6;
+  --scrim: rgb(20 18 34 / 0.42);
+
+  --border-width: 2px;
+  --radius-card: 16px; --radius-sheet: 24px; --radius-field: 8px;
+  --radius-pill: 9999px; --radius-keypad: 12px;
+  --r-sm: 8px; --r-md: 16px; --r-pill: 9999px;
+  --chamfer: none;
+  --chamfer-sm: none;
+
+  --el-1: 8px 8px 0px 0px #E2E8F0;
+  --el-2: undefined;
+  --el-glow: none; --el-glow-secondary: none; --el-glow-tertiary: none;
+  --el-pop: 4px 4px 0px 0px #1E293B;
+  --el-pop-hover: 6px 6px 0px 0px #1E293B;
+  --el-pop-active: 2px 2px 0px 0px #1E293B;
+
+  --scanlines: none;
+  --circuit-bg: none;
+
+  --dur-fast: 150ms; --dur: 300ms; --dur-slow: 400ms;
+  --ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ==== 分类/图表 16 色槽（v3 账本色，深底全部 ≥3.69:1） ==== */
+:root {
+  --chart-1: #00ff88;
+  --chart-2: #ff00ff;
+  --chart-3: #00d4ff;
+  --chart-4: #FBBF24;
+  --chart-5: #5FD6A8;
+  --chart-6: #66C4CC;
+  --chart-7: #E07060;
+  --chart-8: #93A5F0;
+  --chart-9: #C8D656;
+  --chart-10: #5AD4C4;
+  --chart-11: #E37FB2;
+  --chart-12: #A8C056;
+  --chart-13: #E0A878;
+  --chart-14: #9D8FF5;
+  --chart-15: #74A8D6;
+  --chart-16: #8C8C8C;
+}
+:root[data-theme='light'] {
+  --chart-1: #00ff88;
+  --chart-2: #ff00ff;
+  --chart-3: #00d4ff;
+  --chart-4: #FBBF24;
+  --chart-5: #5FD6A8;
+  --chart-6: #66C4CC;
+  --chart-7: #E07060;
+  --chart-8: #93A5F0;
+  --chart-9: #C8D656;
+  --chart-10: #5AD4C4;
+  --chart-11: #E37FB2;
+  --chart-12: #A8C056;
+  --chart-13: #E0A878;
+  --chart-14: #9D8FF5;
+  --chart-15: #74A8D6;
+  --chart-16: #8C8C8C;
+}

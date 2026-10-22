@@ -1,0 +1,68 @@
+/* ==========================================================================
+   SuenMoney 设计令牌 · v4（双设计系统）
+   --------------------------------------------------------------------------
+   颜色/圆角/阴影/动效全由 `npm run tokens` 生成为 tokens.generated.css：
+     深色（默认）= Cyberpunk：void 黑 + 霓虹三色 + 辉光 + 切角 + 扫描线
+     浅色（light）= Playful Geometric：纸白 + 糖果四色 + 硬阴影 + 2px 粗边框
+   本文件只留：字体栈（按主题切）+ 布局/安全区 + **兼容别名**（老组件在用）。
+   ========================================================================== */
+
+@import './tokens.generated.css';
+
+:root {
+  --bottom-bar-h: 0px;
+  --content-max: 720px;
+
+  --safe-top: var(--inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--inset-bottom, env(safe-area-inset-bottom, 0px));
+
+  /* ---- 字体（深色=等宽终端感；浅色=几何标题+人文正文）----
+     中文一律回落 MiSans VF：Cyberpunk 没有合适的中文等宽开源字体，
+     用 MiSans 的紧凑感兜住 JetBrains 的拉丁部分是当前最优解。 */
+  --font-sans:
+    'JetBrains Mono Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
+    BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
+    'Microsoft YaHei', monospace;
+  --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
+
+  --font-head: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', sans-serif;
+
+  /* ═══ 兼容别名（老组件仍用这些名字）═══ */
+  --bg: var(--surface);
+  --bg-subtle: var(--surface-container);
+  --bg-sunken: var(--surface-high);
+  --fg: var(--on-surface);
+  --fg-muted: var(--on-surface-variant);
+  --fg-faint: var(--on-surface-variant);
+  --border: var(--outline);
+  --border-strong: var(--outline-strong);
+  --primary-fill: var(--primary);
+  --primary-text: var(--primary);
+  --secondary-fill: var(--secondary);
+  --secondary-text: var(--secondary);
+  --accent: var(--tertiary);
+  --accent-fill: var(--tertiary);
+  --accent-text: var(--tertiary);
+  --on-accent: var(--on-tertiary);
+  --danger: var(--tertiary);
+  --danger-fill: var(--tertiary);
+  --danger-text: var(--tertiary);
+  --on-danger: var(--on-tertiary);
+  --r-sm: var(--radius-field);
+  --r-md: var(--radius-card);
+  --r-pill: var(--radius-pill);
+}
+
+:root[data-theme='light'] {
+  --font-head: 'Outfit Variable', 'MiSans VF', sans-serif;
+  /* 浅色切回 Playful 字体栈：Jakarta 正文气质 */
+  --font-sans:
+    'Plus Jakarta Sans Variable', 'Outfit Variable', 'MiSans VF', -apple-system,
+    BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC',
+    'Microsoft YaHei', sans-serif;
+  --font-head: 'Outfit Variable', 'MiSans VF', sans-serif;
+}
+
+@media (min-width: 1024px) {
+  :root { --content-max: 1200px; --bottom-bar-h: 0px; }
+}
