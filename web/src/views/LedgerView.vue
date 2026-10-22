@@ -351,7 +351,7 @@ onMounted(async () => {
       <div class="ledger-toolbar">
         <div class="lt-search">
           <div class="search-wrap">
-            <Search :size="15" />
+            <Search class="ic" :size="15" />
             <PInput v-model="query" class="input--search" placeholder="搜索备注或分类" />
           </div>
         </div>
@@ -597,6 +597,25 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+/* 搜索框：图标绝对定位在框内左侧（原型 .search-wrap .ic），
+   输入框左侧留出图标宽度 —— 否则图标和输入内容会挤在一起 */
+.search-wrap {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 160px;
+}
+.search-wrap .ic {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.search-wrap :deep(.input) {
+  padding-left: 34px;
+  min-height: 38px;
 }
 .lt-adv {
   display: flex;
