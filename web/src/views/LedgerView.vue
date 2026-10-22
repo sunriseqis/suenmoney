@@ -327,7 +327,7 @@ onMounted(async () => {
 <template>
   <div class="stack">
     <!-- ════════ 移动端顶部卡（原型 mobile-hero）：本月支出 + 要还 + 最近待办 ════════ -->
-    <div class="mobile-hero">
+    <div class="mobile-hero mobile-only">
       <div class="mh-head">
         <span class="mh-eyebrow">{{ formatMonthLabel(anchor) }} · 本月支出</span>
         <div class="mh-amt"><span class="cur">¥</span>{{ formatYuan(periodTotalCents).replace('¥', '') }}</div>
