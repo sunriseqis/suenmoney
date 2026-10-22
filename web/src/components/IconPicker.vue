@@ -1,17 +1,27 @@
 <script setup lang="ts">
 /**
- * 图标选择器。
+ * 分类图标选择（分组网格）。
  *
- * 平铺 80 个图标是选不动的，所以按用途分组（餐饮 / 交通 / 居住 …）——
- * 分组标签本身就是检索线索，比图标名字好用的多。
- *
- * 选中态用**主色填充**表达，不用边框或阴影：Flat 没有阴影可用，
- * 而填充在密集的小方块里是最醒目的区分方式。
+ * 图标名必须来自 `ICON_REGISTRY` —— 存进去的是名字，渲染时再查表；
+ * 存组件本身没法过 JSON，也没法在服务端做校验。
  */
+import { computed, ref } from 'vue';
+
 import { ICON_GROUPS, ICON_REGISTRY, type IconName } from '@/utils/icons';
+import { PInput } from '@/ui';
 
 defineProps<{ modelValue: string }>();
-const emit = defineEmits<{ 'update:modelValue': [string] }>();
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+
+const keyword = ref('');
+
+const groups = computed(() => {
+  const k = keyword.value.trim();
+  if (k === '') return ICON_GROUPS;
+  return ICON_GROUPS.map((g) => ({ label: g.label, icons: g.icons.filter((i) => i.includes(k)) })).filter(
+    (g) => g.icons.length > 0,
+  );
+});
 
 function pick(name: IconName): void {
   emit('update:modelValue', name);
@@ -19,51 +29,65 @@ function pick(name: IconName): void {
 </script>
 
 <template>
-  <div class="rounded-md bg-sunken p-3">
-    <!--
-      「自动」= 把 icon 清空，回到按分类名推断。
-      没有这个选项的话，用户一旦手滑选错就只能挑一个别的图标来掩盖，永远回不到默认状态。
-
-      它放在**滚动区外面**：放在网格后面的话会被 288px 的滚动高度截掉，
-      而它恰恰是「改错了想撤销」时第一个要找的东西 —— 藏起来等于没有。
-    -->
-    <button
-      type="button"
-      class="w-full rounded-sm py-2 text-xs font-semibold transition-colors duration-200"
-      :class="
-        modelValue === ''
-          ? 'bg-primary-fill text-on-primary'
-          : 'bg-canvas text-ink-muted hover:text-ink'
-      "
-      :aria-pressed="modelValue === ''"
-      @click="emit('update:modelValue', '')"
-    >
-      自动
-    </button>
-
-    <div class="mt-2 max-h-60 overflow-y-auto">
-      <div v-for="group in ICON_GROUPS" :key="group.label" class="mb-3 last:mb-0">
-        <p class="label-cn">{{ group.label }}</p>
-
-        <div class="mt-1.5 flex flex-wrap gap-1">
+  <div class="icon-picker">
+    <PInput v-model="keyword" placeholder="搜索图标（英文名）" />
+    <div class="ip-scroll">
+      <div v-for="g in groups" :key="g.label" class="ip-group">
+        <span class="field-l">{{ g.label }}</span>
+        <div class="ip-grid">
           <button
-            v-for="name in group.icons"
+            v-for="name in g.icons"
             :key="name"
             type="button"
-            class="grid h-9 w-9 place-items-center rounded-sm transition-colors duration-200"
-            :class="
-              modelValue === name
-                ? 'bg-primary-fill text-on-primary'
-                : 'bg-canvas text-ink-muted hover:text-ink'
-            "
-            :aria-pressed="modelValue === name"
-            :aria-label="`图标 ${name}`"
+            class="ip-cell"
+            :class="{ 'is-on': modelValue === name }"
+            :title="name"
             @click="pick(name)"
           >
-            <component :is="ICON_REGISTRY[name]" :size="18" aria-hidden="true" />
+            <component :is="ICON_REGISTRY[name]" :size="17" :stroke-width="2.2" aria-hidden="true" />
           </button>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.icon-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ip-scroll {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+.ip-cell {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  transition: all 0.16s;
+}
+.ip-cell:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+.ip-cell.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+</style>

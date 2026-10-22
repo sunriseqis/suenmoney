@@ -1,33 +1,39 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 
 import { useAuthStore } from '@/stores/auth';
-import DashboardView from '@/views/DashboardView.vue';
-import LedgerView from '@/views/LedgerView.vue';
-import LoginView from '@/views/LoginView.vue';
-import ReportView from '@/views/ReportView.vue';
-import SettingsView from '@/views/SettingsView.vue';
-import AnnualSummaryView from '@/views/AnnualSummaryView.vue';
 
 /**
- * 底部导航只放三个高频入口（首页 / 流水 / 报表）加一个「记一笔」。
- * 计划与设置是「低频但重要」的页面，从首页头部进入 —— 塞进底栏会让
- * 每天要点几十次的那几个入口变窄，得不偿失。
+ * 路由骨架（重构版）。
+ *
+ * 与旧版的差异只有一处：移动端判定阈值从 1024 改成 **860**，
+ * 与原型 `.sidebar` 折叠成横向药丸条的断点一致 —— 两个断点不同步会出现
+ * 「侧边栏已经是移动形态、路由还当桌面」的错位。
+ *
+ * 视图用**懒加载**：首屏只需要登录/流水，报表与设置按需拉取，
+ * 移动端弱网下首屏更快。
  */
+const MOBILE_MAX = 860;
+
+function isMobile(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth <= MOBILE_MAX;
+}
+
 const routes: RouteRecordRaw[] = [
-  { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+  { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
   {
     path: '/',
-    redirect: () => {
-      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
-      return isMobile ? { name: 'ledger' } : { name: 'dashboard' };
-    },
+    redirect: () => (isMobile() ? { name: 'ledger' } : { name: 'dashboard' }),
   },
-  { path: '/dashboard', name: 'dashboard', component: DashboardView },
-  { path: '/ledger', name: 'ledger', component: LedgerView },
-  { path: '/report', name: 'report', component: ReportView },
-  { path: '/settings', name: 'settings', component: SettingsView },
-  { path: '/annual-summary', name: 'annual-summary', component: AnnualSummaryView },
-  // 记账抽屉是「动作」而不是「页面」，所以没有独立路由 —— 见 components/ExpenseSheet.vue
+  { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
+  { path: '/ledger', name: 'ledger', component: () => import('@/views/LedgerView.vue') },
+  { path: '/report', name: 'report', component: () => import('@/views/ReportView.vue') },
+  { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue') },
+  {
+    path: '/annual-summary',
+    name: 'annual-summary',
+    component: () => import('@/views/AnnualSummaryView.vue'),
+  },
+  // 记账是「动作」不是页面，用抽屉承载，没有独立路由
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ];
 
@@ -39,25 +45,21 @@ export const router = createRouter({
 
 /**
  * 登录守卫。
- *
- * 第一次导航时先 `bootstrap()` 恢复登录态（用它内部的 ready 标记保证只跑一次）。
- * 这一步不能放在组件里做：放在 App.vue 里会导致「刷新页面时先渲染一帧主页、
- * 再跳登录页」的闪烁，而放在这里可以在渲染之前就决定去哪。
+ * 放在守卫里而不是组件里：否则刷新时会先渲染一帧主页再跳登录，肉眼可见闪一下。
  */
 router.beforeEach(async (to) => {
-  const authStore = useAuthStore();
+  const auth = useAuthStore();
 
-  if (!authStore.ready) {
-    await authStore.bootstrap();
+  if (!auth.ready) {
+    await auth.bootstrap();
   }
 
-  if (to.meta['public'] !== true && !authStore.isAuthenticated) {
+  if (to.meta['public'] !== true && !auth.isAuthenticated) {
     return { name: 'login', query: to.fullPath === '/' ? {} : { next: to.fullPath } };
   }
 
-  if (to.name === 'login' && authStore.isAuthenticated) {
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
-    return isMobile ? { name: 'ledger' } : { name: 'dashboard' };
+  if (to.name === 'login' && auth.isAuthenticated) {
+    return isMobile() ? { name: 'ledger' } : { name: 'dashboard' };
   }
 
   return true;

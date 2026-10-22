@@ -1,77 +1,71 @@
 <script setup lang="ts">
 /**
- * 分类颜色选择器。
+ * 分类颜色选择（16 槽账本色）。
  *
- * 8 个色块 + 「自动」，和 IconPicker 同一套交互：
- * 「自动」把 color 清空，回到按分类名推导 —— 没有它，用户选错一次就永远
- * 只能换一个别的颜色掩盖，回不到默认状态。
- *
- * 选中态用**白色描边 + 放大**表达，而不是加内边框：色块本身就是颜色，
- * 往里面再画一个边框会在相近色相上几乎不可见。
+ * 色号存的是 **1–16 的索引**，不是色值 —— 换主题时账本色整体重排，
+ * 存死色值会让「同一分类在深浅主题下颜色对不上」。
  */
-import { Check } from '@lucide/vue';
-
 import { CATEGORY_COLORS } from '@/utils/category-colors';
 
-defineProps<{
-  modelValue: string;
-  autoColor?: number;
-}>();
-const emit = defineEmits<{ 'update:modelValue': [string] }>();
+defineProps<{ modelValue: string }>();
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 </script>
 
 <template>
-  <div class="rounded-md bg-sunken p-3">
-    <div class="flex flex-wrap items-center gap-2">
-      <!-- 自动 = 清空，回到按分类名推导 -->
-      <button
-        type="button"
-        class="flex h-8 items-center gap-1.5 rounded-sm px-2.5 text-xs font-semibold transition-all duration-200"
-        :class="
-          modelValue === ''
-            ? 'bg-primary-fill text-on-primary'
-            : 'bg-canvas text-ink-muted hover:text-ink'
-        "
-        @click="emit('update:modelValue', '')"
-      >
-        <span
-          v-if="autoColor"
-          class="h-2.5 w-2.5 rounded-full ring-1 ring-white/40"
-          :style="{ background: `var(--chart-${autoColor})` }"
-          aria-hidden="true"
-        />
-        <span>自动</span>
-      </button>
-
-      <span class="mx-1 h-5 w-px bg-line" aria-hidden="true" />
-
-      <button
-        v-for="c in CATEGORY_COLORS"
-        :key="c.index"
-        type="button"
-        class="relative grid h-8 w-8 place-items-center rounded-sm transition-all duration-200 hover:scale-110"
-        :class="[
-          modelValue === String(c.index) ? 'ring-2 ring-ink ring-offset-2 ring-offset-sunken scale-105' : '',
-          modelValue === '' && autoColor === c.index ? 'ring-2 ring-primary ring-offset-2 ring-offset-sunken ring-dashed' : '',
-        ]"
-        :style="{ background: `var(${c.varName})` }"
-        :aria-label="`颜色 ${c.index}`"
-        :aria-pressed="modelValue === String(c.index)"
-        @click="emit('update:modelValue', String(c.index))"
-      >
-        <Check
-          v-if="modelValue === String(c.index)"
-          :size="15"
-          :stroke-width="3"
-          class="text-white"
-          aria-hidden="true"
-        />
-        <span
-          v-else-if="modelValue === '' && autoColor === c.index"
-          class="h-2 w-2 rounded-full bg-white shadow-xs"
-          title="自动分配"
-        />
-      </button>
-    </div>
+  <div class="color-picker">
+    <button
+      type="button"
+      class="cp-auto"
+      :class="{ 'is-on': modelValue === '' }"
+      title="自动（按分类名推导）"
+      @click="emit('update:modelValue', '')"
+    >
+      自动
+    </button>
+    <button
+      v-for="c in CATEGORY_COLORS"
+      :key="c.index"
+      type="button"
+      class="cp-cell"
+      :class="{ 'is-on': modelValue === String(c.index) }"
+      :style="{ background: `var(${c.varName})` }"
+      :title="`色号 ${c.index}`"
+      :aria-label="`色号 ${c.index}`"
+      @click="emit('update:modelValue', String(c.index))"
+    />
   </div>
 </template>
+
+<style scoped>
+.color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.cp-cell {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  transition: transform 0.16s;
+}
+.cp-cell:hover {
+  transform: scale(1.12);
+}
+.cp-cell.is-on {
+  border-color: var(--ink);
+}
+.cp-auto {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+}
+.cp-auto.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+</style>
