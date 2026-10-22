@@ -1382,6 +1382,23 @@ function fullCategoryName(item: {
             </li>
           </ul>
 
+          <!-- v6：构成卡贴着列表（「花在什么上面」的答案） -->
+          <div class="ledger-composition">
+              <CompositionCard
+                v-if="selectedMonthReport"
+                :total-cents="selectedMonthReport.totalCents"
+                :by-category="selectedMonthReport.categories.map((c) => ({
+                  name: c.name,
+                  cents: c.cents,
+                  count: c.count,
+                  colorIndex: dict.colorOf(c.categoryId, c.name, c.color),
+                }))"
+                :by-payment="paymentBuckets"
+                :by-owner="ownerBuckets"
+                :by-rhythm="rhythmBuckets"
+              />
+          </div>
+
           <!-- 加载更多 / 查看上月 -->
           <button
             v-if="hasMore"
@@ -1447,21 +1464,6 @@ function fullCategoryName(item: {
             <!-- 数据项 -->
             <div v-if="loadingCard" class="py-6 text-center text-xs text-ink-muted">
               加载中…
-            </div>
-            <div v-else-if="selectedMonthReport" class="mt-4 space-y-4">
-              <CompositionCard
-                v-if="selectedMonthReport"
-                :total-cents="selectedMonthReport.totalCents"
-                :by-category="selectedMonthReport.categories.map((c) => ({
-                  name: c.name,
-                  cents: c.cents,
-                  count: c.count,
-                  colorIndex: dict.colorOf(c.categoryId, c.name, c.color),
-                }))"
-                :by-payment="paymentBuckets"
-                :by-owner="ownerBuckets"
-                :by-rhythm="rhythmBuckets"
-              />
             </div>
           </section>
         </div>
