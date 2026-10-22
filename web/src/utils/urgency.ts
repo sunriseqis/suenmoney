@@ -43,16 +43,16 @@ import { daysUntil } from './dates.ts';
 export type Urgency = 'overdue' | 'due' | 'later';
 
 /** 迟于还款日 = overdue；0–1 天 = due；更远 = later。 */
-export function urgencyOf(date: string): Urgency {
-  const days = daysUntil(date);
+export function urgencyOf(date: string, today?: string): Urgency {
+  const days = today === undefined ? daysUntil(date) : daysUntil(date, today);
 
   if (days < 0) return 'overdue';
   if (days <= 1) return 'due';
   return 'later';
 }
 
-export function urgencyLabel(date: string): string {
-  const days = daysUntil(date);
+export function urgencyLabel(date: string, today?: string): string {
+  const days = today === undefined ? daysUntil(date) : daysUntil(date, today);
 
   if (days === 0) return '今天到期';
   if (days < 0) return `已逾期 ${-days} 天`;
@@ -65,8 +65,8 @@ export function urgencyLabel(date: string): string {
  * 不另设一个「不适用」档：那只是把「无需关注」表达得更复杂，
  * 而且会让后面每一个 `Record<Urgency, …>` 都多一个分支要填。
  */
-export function urgencyOfOptional(date: string | null): Urgency {
-  return date === null ? 'later' : urgencyOf(date);
+export function urgencyOfOptional(date: string | null, today?: string): Urgency {
+  return date === null ? 'later' : urgencyOf(date, today);
 }
 
 /**
