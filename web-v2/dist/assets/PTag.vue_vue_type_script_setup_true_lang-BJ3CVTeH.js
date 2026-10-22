@@ -1,1 +1,0 @@
-import{d as t,o as n,a as o,D as s,r}from"./index-BTwHzYPy.js";const m=t({__name:"PTag",props:{tone:{default:""}},setup(e){return(a,l)=>(n(),o("span",{class:s(["tag",e.tone?`tag--${e.tone}`:""])},[r(a.$slots,"default")],2))}});export{m as _};
