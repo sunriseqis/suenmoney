@@ -16,14 +16,17 @@ import { RouterView, useRoute, useRouter } from 'vue-router';
 import BrandMark from '@/components/BrandMark.vue';
 import ExpenseSheet from '@/components/ExpenseSheet.vue';
 import { useTheme } from '@/composables/useTheme';
+import { onAppResume, setupHardwareBack } from '@/platform';
 import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
+import { useUpdateStore } from '@/stores/update';
 import { PIconBtn, PBtn, PToast } from '@/ui';
 
 const route = useRoute();
 const router = useRouter();
 const ui = useUiStore();
 const sync = useSyncStore();
+const updateStore = useUpdateStore();
 const theme = useTheme();
 
 const buildStamp = __BUILD_STAMP__;
@@ -99,7 +102,36 @@ function onUp(): void {
   if (reached) ui.openCreate();
 }
 
+let resumeCleaner: (() => void) | null = null;
+let backCleaner: (() => void) | null = null;
+
 onMounted(() => {
+  // 离线同步：init 会读本地缓存、检查连通性、必要时补推队列
+  void sync.init();
+  // 更新检查（平台门禁在 store 内，纯 Web 静默返回）
+  void updateStore.check(true);
+
+  // 切回前台时补一次静默检查（移动端切回来常常已经换过网络）
+  resumeCleaner = onAppResume(() => {
+    void updateStore.check(true);
+    void sync.runSync();
+  });
+
+  // 安卓返回键：抽屉打开时先关抽屉，否则交给路由
+  backCleaner = setupHardwareBack({
+    onBack: () => {
+      // 抽屉打开时先关抽屉，其余交给路由（返回 true 表示业务已消费，不退应用）
+      if (ui.sheetOpen) {
+        ui.closeSheet();
+        return true;
+      }
+      return false;
+    },
+    onExit: () => {
+      // 桌面/浏览器没有「退出应用」语义；原生壳里由平台层处理
+    },
+  });
+
   mq = window.matchMedia('(max-width: 860px)');
   onMq();
   mq.addEventListener('change', onMq);
@@ -112,6 +144,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  resumeCleaner?.();
+  backCleaner?.();
   mq?.removeEventListener('change', onMq);
   window.removeEventListener('touchstart', onDown);
   window.removeEventListener('touchmove', onMove);
@@ -158,9 +192,16 @@ onUnmounted(() => {
         </nav>
 
         <div class="side-foot">
-          <div class="tiny muted" style="line-height: 1.6; padding-left: 4px">
-            只记支出 · 整数分<br />退款以负数冲销
-          </div>
+          <button type="button" class="members" :disabled="sync.isSyncing" @click="sync.runSync()">
+            <span class="members-txt">
+              <b v-if="!sync.isOnline">离线（点击重试）</b>
+              <b v-else-if="sync.isSyncing">同步中…</b>
+              <b v-else-if="sync.hasPending">待同步 {{ sync.pendingCount }} 笔</b>
+              <b v-else>已同步</b>
+              只记支出 · 整数分
+            </span>
+            <span class="sync-dot"><i />SYNC</span>
+          </button>
           <div class="build-stamp">{{ buildStamp }}</div>
         </div>
       </aside>
@@ -204,7 +245,8 @@ onUnmounted(() => {
 
           <div class="build-stamp">
             SuenMoney · 单账本家庭记账 · {{ buildStamp }}
-            <span v-if="sync.hasPending"> · 待同步 {{ sync.pendingCount }}</span>
+            <span v-if="!sync.isOnline"> · 离线模式</span>
+            <span v-else-if="sync.hasPending"> · 待同步 {{ sync.pendingCount }}</span>
           </div>
         </main>
       </div>

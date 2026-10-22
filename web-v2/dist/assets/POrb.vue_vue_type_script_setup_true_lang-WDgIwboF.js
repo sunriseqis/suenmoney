@@ -1,1 +1,0 @@
-import{d as a,b as n,e as o,R as t,j as c,O as r}from"./index-DLMgP3uB.js";const m=a({__name:"POrb",props:{icon:{},tone:{default:"var(--accent)"},ink:{default:"#fff"}},setup(e){return(s,i)=>(n(),o("span",{class:"orb",style:t({background:e.tone,color:e.ink})},[(n(),c(r(e.icon),{size:16,"stroke-width":2.2,"aria-hidden":"true"}))],4))}});export{m as _};
