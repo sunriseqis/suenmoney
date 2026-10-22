@@ -18,10 +18,13 @@ import { computed, onMounted, ref } from 'vue';
 import {
   ApiError,
   categories as categoriesApi,
+  auth as authApi,
   data as dataApi,
   paymentMethods as paymentsApi,
   plans as plansApi,
+  snapshots as snapshotsApi,
   users as usersApi,
+  webdavBackup,
   type Category,
   type PaymentMethod,
   type Plan,
@@ -32,6 +35,7 @@ import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
+import { useUpdateStore } from '@/stores/update';
 import { PBtn, PCard, PEmpty, PField, PIconBtn, PInput, PSeg, PSheet, PSwitch, PTag } from '@/ui';
 import { todayLocal } from '@/utils/dates';
 import { formatYuan, parseYuanToCents } from '@/utils/money';
@@ -396,10 +400,190 @@ async function saveMember(): Promise<void> {
 
 
 
+
+// ── 备份与快照 ──────────────────────────────────────────────────────────────
+const webdav = ref<{ url: string; username: string; path: string; isEnabled: boolean; hasPassword?: boolean } | null>(null);
+const webdavUrl = ref('');
+const webdavUser = ref('');
+const webdavPass = ref('');
+const webdavPath = ref('suenmoney');
+const webdavEnabled = ref(false);
+const webdavTesting = ref(false);
+const webdavMessage = ref<string | null>(null);
+
+const snapshots = ref<Array<{ filename: string; sizeBytes: number; createdAt: string }>>([]);
+
+async function loadWebdav(): Promise<void> {
+  try {
+    const res = await webdavBackup.get();
+    webdav.value = res.config;
+    if (res.config) {
+      webdavUrl.value = res.config.url;
+      webdavUser.value = res.config.username;
+      webdavPath.value = res.config.path;
+      webdavEnabled.value = res.config.isEnabled;
+    }
+  } catch {
+    webdav.value = null;
+  }
+}
+
+async function saveWebdav(): Promise<void> {
+  if (webdavUrl.value.trim() === '' || webdavUser.value.trim() === '') {
+    toast.show('请填写 WebDAV 地址与用户名');
+    return;
+  }
+  try {
+    await webdavBackup.save({
+      url: webdavUrl.value.trim(),
+      username: webdavUser.value.trim(),
+      ...(webdavPass.value !== '' ? { password: webdavPass.value } : {}),
+      path: webdavPath.value.trim() || 'suenmoney',
+      isEnabled: webdavEnabled.value,
+    });
+    webdavPass.value = '';
+    toast.show('WebDAV 配置已保存');
+    await loadWebdav();
+  } catch (error) {
+    toast.show(errText(error, '保存失败'));
+  }
+}
+
+async function testWebdav(): Promise<void> {
+  webdavTesting.value = true;
+  webdavMessage.value = null;
+  try {
+    const res = await webdavBackup.test({
+      url: webdavUrl.value.trim(),
+      username: webdavUser.value.trim(),
+      ...(webdavPass.value !== '' ? { password: webdavPass.value } : {}),
+      path: webdavPath.value.trim(),
+    });
+    webdavMessage.value = res.message;
+  } catch (error) {
+    webdavMessage.value = errText(error, '测试失败');
+  } finally {
+    webdavTesting.value = false;
+  }
+}
+
+async function runWebdavBackup(): Promise<void> {
+  try {
+    const res = await webdavBackup.run();
+    toast.show(`已上传 ${res.filename}`);
+  } catch (error) {
+    toast.show(errText(error, '备份失败'));
+  }
+}
+
+async function downloadBackup(): Promise<void> {
+  try {
+    await dataApi.backup();
+    toast.show('备份文件已开始下载');
+  } catch (error) {
+    toast.show(errText(error, '下载失败'));
+  }
+}
+
+async function loadSnapshots(): Promise<void> {
+  try {
+    snapshots.value = (await snapshotsApi.list()).snapshots;
+  } catch {
+    snapshots.value = [];
+  }
+}
+
+async function createSnapshot(): Promise<void> {
+  try {
+    await snapshotsApi.create();
+    toast.show('快照已创建');
+    await loadSnapshots();
+  } catch (error) {
+    toast.show(errText(error, '创建失败'));
+  }
+}
+
+async function downloadSnapshot(name: string): Promise<void> {
+  try {
+    await snapshotsApi.download(name);
+  } catch (error) {
+    toast.show(errText(error, '下载失败'));
+  }
+}
+
+async function removeSnapshot(name: string): Promise<void> {
+  if (!window.confirm(`删除快照 ${name}？`)) return;
+  try {
+    await snapshotsApi.remove(name);
+    await loadSnapshots();
+    toast.show('快照已删除');
+  } catch (error) {
+    toast.show(errText(error, '删除失败'));
+  }
+}
+
+// ── 我的账号 ────────────────────────────────────────────────────────────────
+const me = ref<User | null>(null);
+const myDisplayName = ref('');
+const currentPassword = ref('');
+const newPassword = ref('');
+
+async function loadMe(): Promise<void> {
+  try {
+    const res = await authApi.me();
+    me.value = res.user;
+    myDisplayName.value = res.user.displayName;
+  } catch {
+    me.value = null;
+  }
+}
+
+async function saveMyName(): Promise<void> {
+  const name = myDisplayName.value.trim();
+  if (name === '') {
+    toast.show('显示名不能为空');
+    return;
+  }
+  try {
+    await authApi.updateMe(name);
+    toast.show('显示名已更新');
+    await loadMembers();
+  } catch (error) {
+    toast.show(errText(error, '保存失败'));
+  }
+}
+
+async function changePassword(): Promise<void> {
+  if (newPassword.value.length < 8) {
+    toast.show('新口令至少 8 位');
+    return;
+  }
+  try {
+    const res = await authApi.changePassword(currentPassword.value, newPassword.value);
+    currentPassword.value = '';
+    newPassword.value = '';
+    toast.show(res.message || '口令已修改');
+  } catch (error) {
+    toast.show(errText(error, '修改失败：当前口令不对？'));
+  }
+}
+
+// ── 检查更新（仅原生壳）─────────────────────────────────────────────────────
+const updateStore = useUpdateStore();
+const canCheckUpdate = computed(() => updateStore.isSupported);
+
+async function checkUpdate(): Promise<void> {
+  await updateStore.check(false);
+  toast.show(updateStore.message ?? (updateStore.available ? '发现新版本' : '已是最新版本'));
+}
+
 onMounted(() => {
   void dict.load().catch(() => undefined);
   void plansStore.refresh().catch(() => undefined);
   void loadMembers();
+  void loadMe();
+  void loadWebdav();
+  void loadSnapshots();
 });
 </script>
 
@@ -549,6 +733,75 @@ onMounted(() => {
 
       <PCard>
         <div class="card-h">
+          <span class="card-t">备份</span>
+          <span class="card-cap">本地下载 / WebDAV 上传</span>
+        </div>
+        <div class="split">
+          <PBtn @click="downloadBackup">下载备份文件</PBtn>
+          <PBtn v-if="webdav?.isEnabled" variant="primary" @click="runWebdavBackup">立即上传到 WebDAV</PBtn>
+        </div>
+        <div class="stack--sm" style="margin-top: 12px">
+          <PField label="WebDAV 地址" id="wd-url">
+            <PInput id="wd-url" v-model="webdavUrl" placeholder="https://dav.example.com/suenmoney" />
+          </PField>
+          <div class="g2" style="gap: 8px">
+            <PField label="用户名" id="wd-user">
+              <PInput id="wd-user" v-model="webdavUser" placeholder="user" />
+            </PField>
+            <PField label="口令（留空表示不改）" id="wd-pass">
+              <PInput id="wd-pass" v-model="webdavPass" type="password" placeholder="••••••" />
+            </PField>
+          </div>
+          <PField label="远端目录" id="wd-path">
+            <PInput id="wd-path" v-model="webdavPath" placeholder="suenmoney" />
+          </PField>
+          <div class="set-row" style="padding: 4px 0">
+            <span class="set-body">
+              <span class="set-t">启用 WebDAV 备份</span>
+              <span class="set-s">启用后可一键把账本上传到你的私有云</span>
+            </span>
+            <PSwitch :checked="webdavEnabled" label="启用" @change="(v) => (webdavEnabled = v)" />
+          </div>
+          <div class="split">
+            <PBtn :disabled="webdavTesting" @click="testWebdav">{{ webdavTesting ? '测试中…' : '测试连接' }}</PBtn>
+            <PBtn variant="primary" @click="saveWebdav">保存配置</PBtn>
+            <PTag v-if="webdavMessage" tone="dash">{{ webdavMessage }}</PTag>
+          </div>
+        </div>
+      </PCard>
+
+      <PCard>
+        <div class="card-h">
+          <span class="card-t">数据库快照</span>
+          <span class="card-cap">{{ snapshots.length }} 个</span>
+          <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="createSnapshot">创建快照</PBtn>
+        </div>
+        <PEmpty v-if="snapshots.length === 0" :icon="Database">还没有快照</PEmpty>
+        <div v-for="snap in snapshots" :key="snap.filename" class="set-row">
+          <span class="set-body">
+            <span class="set-t">{{ snap.filename }}</span>
+            <span class="set-s">{{ snap.createdAt }} · {{ Math.round(snap.sizeBytes / 1024) }} KB</span>
+          </span>
+          <PBtn size="sm" variant="ghost" @click="downloadSnapshot(snap.filename)">下载</PBtn>
+          <PIconBtn :icon="Trash2" label="删除" @click="removeSnapshot(snap.filename)" />
+        </div>
+      </PCard>
+
+      <PCard v-if="canCheckUpdate">
+        <div class="card-h">
+          <span class="card-t">检查更新</span>
+          <span class="card-cap">仅客户端可用</span>
+        </div>
+        <div class="split">
+          <PBtn :disabled="updateStore.checking" @click="checkUpdate">
+            {{ updateStore.checking ? '检查中…' : '检查更新' }}
+          </PBtn>
+          <span class="tiny muted">{{ updateStore.message ?? '' }}</span>
+        </div>
+      </PCard>
+
+      <PCard>
+        <div class="card-h">
           <span class="card-t">危险操作</span>
           <span class="card-cap">不可撤销</span>
         </div>
@@ -575,6 +828,28 @@ onMounted(() => {
           </span>
           <PTag v-if="m.role === 'admin'" tone="accent">管理员</PTag>
         </div>
+      </PCard>
+      <PCard v-if="me">
+        <div class="card-h">
+          <span class="card-t">我的账号</span>
+          <span class="card-cap">@{{ me.username }}</span>
+        </div>
+        <div class="split" style="align-items: flex-end">
+          <PField label="显示名" id="me-name" style="flex: 1 1 200px">
+            <PInput id="me-name" v-model="myDisplayName" />
+          </PField>
+          <PBtn @click="saveMyName">保存</PBtn>
+        </div>
+        <div class="g2" style="gap: 8px; margin-top: 12px">
+          <PField label="当前口令" id="me-cur">
+            <PInput id="me-cur" v-model="currentPassword" type="password" />
+          </PField>
+          <PField label="新口令（≥8 位）" id="me-new">
+            <PInput id="me-new" v-model="newPassword" type="password" />
+          </PField>
+        </div>
+        <p class="hint" style="margin-top: 6px">改口令后其他设备会被退出登录。</p>
+        <PBtn variant="primary" style="margin-top: 8px" @click="changePassword">修改口令</PBtn>
       </PCard>
     </template>
 
