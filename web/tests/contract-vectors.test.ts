@@ -67,6 +67,7 @@ for (const suite of ['money', 'dates', 'urgency', 'donut']) {
 
 describe('契约向量 · ulid', () => {
   const spec = (vectors['ulid'] as VectorCase[])[0];
+  assert.ok(spec !== undefined, 'vectors.json 缺 ulid 用例');
   test('长度 26 且只含 Crockford 字符集', () => {
     const id = ulid();
     assert.equal(id.length, (spec.expect as { length: number }).length);

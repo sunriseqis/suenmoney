@@ -15,6 +15,8 @@ import { requireAuth } from './guard.ts';
 const CONTENT_TYPE: Record<UpdatePlatform, string> = {
   android: 'application/vnd.android.package-archive',
   ios: 'application/octet-stream',
+  // 鸿蒙应用包官方 MIME（下载时靠它让系统识别 .hap）
+  harmony: 'application/vnd.huawei.hap',
 };
 
 function versionName(value: unknown): string {
