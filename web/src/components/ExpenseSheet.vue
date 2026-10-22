@@ -299,6 +299,18 @@ function pickPayment(id: string): void {
   payOpen.value = false;
 }
 
+/**
+ * 键盘上方的常用分类。
+ * 排序依据是「这个分类下的记录笔数」（服务端 expenseCount），纯本地频次会随
+ * 设备不同而不同 —— 同一家人的两个手机看到的顺序应一致，所以用服务端口径。
+ */
+const quickCategories = computed(() => {
+  const all = dict.rootCategories.flatMap((root) => dict.selectableChildren(root));
+  const sorted = all.slice().sort((a, b) => (b.expenseCount ?? 0) - (a.expenseCount ?? 0));
+  const picked = sorted.filter((c) => (c.expenseCount ?? 0) > 0).slice(0, 6);
+  return picked.length >= 3 ? picked : sorted.slice(0, 6);
+});
+
 const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.'];
 </script>
 
@@ -422,6 +434,22 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
         </div>
 
         <p v-if="errorMessage" class="tiny" style="color: var(--danger); margin: 0">{{ errorMessage }}</p>
+
+        <!-- 键盘上方的常用分类快捷条（docs 第十六次修正：胶囊 + 底槽，
+             把最常用的 6 个分类钉在这里，避免每次都要开分类抽屉） -->
+        <div v-if="quickCategories.length > 0" class="quick-cats">
+          <button
+            v-for="c in quickCategories"
+            :key="c.id"
+            type="button"
+            class="quick-cat"
+            :class="{ 'is-on': categoryId === c.id }"
+            @click="categoryId = c.id"
+          >
+            <PCatIcon :category-id="c.id" :size="16" />
+            <span>{{ c.name }}</span>
+          </button>
+        </div>
 
         <!-- 键盘 -->
         <div class="keypad">
@@ -559,6 +587,42 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
 </template>
 
 <style scoped>
+/* 常用分类快捷条：横向可滑的胶囊，底槽比卡片低一层（sunken/40 的等价写法） */
+.quick-cats {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 6px 2px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-3) 60%, transparent);
+}
+.quick-cats::-webkit-scrollbar {
+  display: none;
+}
+.quick-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.quick-cat.is-on {
+  border-color: var(--accent);
+  color: var(--ink);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.app[data-theme='cyber'] .quick-cat {
+  border-radius: 0;
+}
+
 /* 只补原型没覆盖的两处：金额显示的字号与键盘的支付列宽度 */
 .amt-display .a-cur {
   font-size: 20px;
