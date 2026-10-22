@@ -12,7 +12,7 @@
  *   · 档位汇总 `/api/reports/{monthly,yearly,summary}`（合计、构成、日历格）
  * 两条路各司其职，不互相推算 —— 前端自己按明细累加会与报表口径漂移。
  */
-import { ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
@@ -48,6 +48,8 @@ const sortBy = ref<'date' | 'amount'>('date');
 const showFilters = ref(false);
 /** 窄屏：工具栏高级控件默认收起（原型 .ledger-toolbar.is-open 控制） */
 const advOpen = ref(false);
+/** 移动 hero 待办展开态 */
+const todoOpen = ref(false);
 
 const items = ref<Expense[]>([]);
 const cursor = ref<string | null>(null);
@@ -210,7 +212,7 @@ function paymentIconOf(id: string): string {
   return dict.findPaymentMethod(id)?.icon ?? '';
 }
 
-void [prevTotalCents];
+void [prevTotalCents, nextTodo];
 
 function sum(rows: Expense[]): number {
   return rows.reduce((a, r) => a + r.amountCents, 0);
@@ -294,6 +296,15 @@ function switchTier(next: string): void {
   void reloadReports();
 }
 
+/** 移动 hero 待办：合计、逾期数、以及那唯一一个颜色标记 */
+const dueTodos = computed(() => plans.dueTodos);
+const dueTotalCents = computed(() => plans.dueTodos.reduce((a, t) => a + t.amountCents, 0));
+const overdueTodos = computed(() => plans.dueTodos.filter((t) => t.repaymentDate < today).length);
+const todoTone = computed<'late' | 'soon' | 'calm'>(() => {
+  if (overdueTodos.value > 0) return 'late';
+  return plans.dueTodos.some((t) => !t.willAutoPost) ? 'soon' : 'calm';
+});
+
 function openAdvOnNarrow(): void {
   if (typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches) advOpen.value = true;
 }
@@ -370,27 +381,30 @@ onMounted(async () => {
         <div class="mh-fact"><span>笔数</span><b>{{ monthReport?.count ?? items.length }} 笔</b></div>
         <div class="mh-fact"><span>本月要还</span><b>{{ formatYuan(creditDueCents) }}</b></div>
       </div>
-      <button v-if="nextTodo" type="button" class="mh-plan" @click="$router.push({ name: 'settings' })">
-        <i class="todo-mark" :class="nextTodo.willAutoPost ? 'is-soon' : 'is-late'" style="height: 20px" />
-        <span class="mh-plan-txt">
-          <b>{{ nextTodo.periodSeq }}期 · {{ nextTodo.planName }}</b>
-        </span>
-        <span class="urgency" :class="nextTodo.willAutoPost ? 'urgency--soon' : 'urgency--late'">
-          {{ nextTodo.willAutoPost ? '自动' : '需手动' }}
-        </span>
-        <span class="mh-plan-amt">{{ formatYuan(nextTodo.amountCents) }}</span>
-        <ChevronRight :size="13" />
+      <!-- 待办提醒：与 PC 同一机制 —— 有提醒才显示、可展开、无提醒整条不渲染 -->
+      <button
+        v-if="dueTodos.length > 0"
+        type="button"
+        class="hero-todo"
+        :aria-expanded="todoOpen"
+        @click="todoOpen = !todoOpen"
+      >
+        <span class="todo-dot" :class="`is-${todoTone}`" />
+        <span class="hero-todo-t">{{ dueTodos.length }} 笔待办</span>
+        <span class="mono tiny">{{ formatYuan(dueTotalCents) }}</span>
+        <span v-if="overdueTodos > 0" class="urgency urgency--late">{{ overdueTodos }} 笔逾期</span>
+        <span style="margin-left: auto" />
+        <component :is="todoOpen ? ChevronUp : ChevronDown" :size="13" />
       </button>
-      <div class="mh-nav">
-        <button type="button" class="mh-btn" @click="$router.push({ name: 'dashboard' })">
-          概况
-        </button>
-        <button type="button" class="mh-btn" @click="$router.push({ name: 'report' })">
-          报表
-        </button>
-        <button type="button" class="mh-btn" @click="$router.push({ name: 'settings' })">
-          设置
-        </button>
+      <div v-if="todoOpen && dueTodos.length > 0" class="mh-todos">
+        <div v-for="t in dueTodos" :key="t.id" class="todo-line">
+          <i class="todo-mark" :class="t.willAutoPost ? 'is-soon' : 'is-late'" style="height: 20px" />
+          <span class="todo-line-t">{{ t.periodSeq }}期 · {{ t.planName }}</span>
+          <span class="urgency" :class="t.willAutoPost ? 'urgency--soon' : 'urgency--late'">
+            {{ t.willAutoPost ? '自动' : '需手动' }}
+          </span>
+          <b class="mono tiny">{{ formatYuan(t.amountCents) }}</b>
+        </div>
       </div>
     </div>
 
@@ -475,7 +489,7 @@ onMounted(async () => {
     <!-- ════════ 构成（四维，贴住工具栏：先看结构再看明细）════════
          三档都显示：月档按分类/支付/记录人/周节奏，年与全部档只有分类口径，
          所以维度列表按档位变化（而不是整块隐藏） -->
-    <PCard>
+    <PCard class="desktop-only">
       <CompositionCard :total-cents="periodTotalCents" :dimensions="compositionDimensions" />
     </PCard>
 

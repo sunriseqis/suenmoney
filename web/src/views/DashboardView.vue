@@ -15,8 +15,6 @@ import {
   ChevronRight,
   ChevronUp,
   Layers,
-  Plus,
-  ReceiptText,
   TrendingDown,
   TrendingUp,
 } from '@lucide/vue';
@@ -26,12 +24,10 @@ import { reports, type CategoryBucket, type MonthlyReport, type SummaryReport, t
 import { useToast } from '@/composables/useToast';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
-import { useUiStore } from '@/stores/ui';
 import { PBtn, PCard, PIconBtn, POrb, PSeg, PStat, PTag } from '@/ui';
-import { daysUntil, currentMonth, daysInMonth, elapsedDays, formatMonthLabel, formatMonthDay, shiftMonth, todayLocal } from '@/utils/dates';
+import { daysUntil, currentMonth, daysInMonth, elapsedDays, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
 import { formatCompact, formatYuan } from '@/utils/money';
 
-const ui = useUiStore();
 const dict = useDictionariesStore();
 const plans = usePlansStore();
 const toast = useToast();
@@ -224,6 +220,8 @@ const todoTone = computed<'late' | 'soon' | 'calm'>(() => {
   return 'calm';
 });
 
+void [creditDueTotal, progressPct, planPaid, planMonthly, nearestDueDate, urgencyLabel];
+
 function shift(delta: number): void {
   if (tier.value === 'all') return;
   if (tier.value === 'month') anchor.value = shiftMonth(anchor.value, delta);
@@ -299,6 +297,22 @@ onMounted(() => {
         <PTag v-else tone="dash">全部记录</PTag>
       </div>
 
+      <!-- 待办提醒：贴着期间标签下方；没有待办时整条不渲染 -->
+      <button
+        v-if="dueTodos.length > 0"
+        type="button"
+        class="hero-todo"
+        :aria-expanded="alertOpen"
+        @click="alertOpen = !alertOpen"
+      >
+        <span class="todo-dot" :class="`is-${todoTone}`" />
+        <span class="hero-todo-t">{{ dueTodos.length }} 笔待办</span>
+        <span class="mono tiny">{{ formatYuan(dueTotal) }}</span>
+        <span v-if="overdueCount > 0" class="urgency urgency--late">{{ overdueCount }} 笔逾期</span>
+        <span style="margin-left: auto" />
+        <component :is="alertOpen ? ChevronUp : ChevronDown" :size="13" />
+      </button>
+
       <div class="hero-amt"><span class="cur">¥</span>{{ formatYuan(totalCents).replace('¥', '') }}</div>
 
       <div class="hero-delta">
@@ -324,97 +338,22 @@ onMounted(() => {
         </span>
       </div>
 
-      <!-- ── 三个小组件：一行三列（窄屏纵向堆叠）──
-           口径按 docs/decisions.md：
-           · 紧急度只由 4px 色条 + 状态文字表达，容器一律中性
-           · 文案压到最短（「3期」不是「第 3 期」，「需手动」不是「需手动入账」）
-           · 说明式文字一律删（机制解释 / 位置指引 / 计数复述） -->
-      <div class="hero-widgets">
-        <!-- ① 本月要还：只给合计与最近还款日，明细交给「全部待办」 -->
-        <section class="hero-widget">
-          <div class="hw-head">
-            <span class="hw-title">本月要还</span>
-            <span class="hw-cap">{{ creditDue.length }} 张</span>
-          </div>
-          <div class="hw-value">{{ formatYuan(creditDueTotal) }}</div>
-          <div v-if="nearestDueDate !== null" class="hw-sub">
-            <span class="urgency" :class="`urgency--${urgencyLevel(nearestDueDate)}`">{{ urgencyLabel(nearestDueDate) }}</span>
-            <span class="mono">{{ formatMonthDay(nearestDueDate) }}</span>
-          </div>
-          <div v-else class="hw-empty">本月无信用卡账单</div>
-        </section>
-
-        <!-- ② 待办提醒：合计 + 一个颜色标记（标记挂在展开箭头上） -->
-        <section class="hero-widget">
-          <div class="hw-head">
-            <span class="hw-title">待办提醒</span>
-            <button
-              v-if="dueTodos.length > 0"
-              type="button"
-              class="hw-toggle"
-              :aria-expanded="alertOpen"
-              :aria-label="alertOpen ? '收起待办' : '展开待办'"
-              @click="alertOpen = !alertOpen"
-            >
-              <span class="todo-dot" :class="`is-${todoTone}`" />
-              <component :is="alertOpen ? ChevronUp : ChevronDown" :size="13" />
-            </button>
-          </div>
-          <div v-if="dueTodos.length > 0" class="hw-value">{{ formatYuan(dueTotal) }}</div>
-          <div v-if="dueTodos.length === 0" class="hw-empty">没有待处理</div>
-          <div v-else-if="overdueCount > 0" class="hw-sub">
-            <span class="urgency urgency--late">{{ overdueCount }} 笔逾期</span>
-          </div>
-          <div v-else class="hw-sub"><span class="urgency urgency--calm">{{ dueTodos.length }} 笔未到期</span></div>
-
-          <div v-if="alertOpen && dueTodos.length > 0" class="hw-todos">
-            <div v-for="t in dueTodos" :key="t.id" class="todo-line">
-              <i class="todo-mark" :class="`is-${urgencyLevel(t.repaymentDate)}`" style="height: 22px" />
-              <span class="todo-line-t">{{ t.periodSeq }}期 · {{ t.planName }}</span>
-              <span class="urgency" :class="`urgency--${urgencyLevel(t.repaymentDate)}`">
-                {{ t.willAutoPost ? '自动' : '需手动' }}
-              </span>
-              <b class="mono tiny">{{ formatYuan(t.amountCents) }}</b>
-              <button
-                type="button"
-                class="link-btn"
-                @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')"
-              >
-                {{ t.willAutoPost ? '确认' : '入账' }}
-              </button>
-              <button type="button" class="link-btn" style="color: var(--ink-3)" @click="todoAction(t, 'skip')">
-                忽略
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- ③ 还款进度：数字 + 进度条，不写机制说明 -->
-        <section class="hero-widget">
-          <div class="hw-head">
-            <span class="hw-title">还款进度</span>
-            <span class="hw-cap">{{ plans.activePlans.length }} 个计划</span>
-          </div>
-          <div class="split" style="align-items: baseline; gap: 6px; margin-top: 4px">
-            <span class="op-num">{{ formatYuan(planPaid) }}</span>
-            <span class="tiny muted">/ {{ formatYuan(planMonthly) }}</span>
-            <span class="mono tiny muted" style="margin-left: auto">{{ progressPct.toFixed(0) }}%</span>
-          </div>
-          <div class="bar" style="margin-top: 6px">
-            <span
-              class="bar-fill"
-              :style="{
-                width: `${Math.min(100, progressPct)}%`,
-                background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
-              }"
-            />
-          </div>
-        </section>
-      </div>
-
-      <div class="toolbar" style="margin-top: 14px">
-        <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
-        <PBtn variant="ghost" :icon="ReceiptText" @click="$router.push({ name: 'ledger' })">查看流水</PBtn>
+      <!-- 展开后的待办：一行一条（色条 · 3期·房贷 · 需手动 · 金额 · 动作） -->
+      <div v-if="alertOpen && dueTodos.length > 0" class="hero-todos">
+        <div v-for="t in dueTodos" :key="t.id" class="todo-line">
+          <i class="todo-mark" :class="`is-${urgencyLevel(t.repaymentDate)}`" style="height: 22px" />
+          <span class="todo-line-t">{{ t.periodSeq }}期 · {{ t.planName }}</span>
+          <span class="urgency" :class="`urgency--${urgencyLevel(t.repaymentDate)}`">
+            {{ t.willAutoPost ? '自动' : '需手动' }}
+          </span>
+          <b class="mono tiny">{{ formatYuan(t.amountCents) }}</b>
+          <button type="button" class="link-btn" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
+            {{ t.willAutoPost ? '确认' : '入账' }}
+          </button>
+          <button type="button" class="link-btn" style="color: var(--ink-3)" @click="todoAction(t, 'skip')">
+            忽略
+          </button>
+        </div>
       </div>
     </PCard>
 
@@ -489,6 +428,37 @@ onMounted(() => {
 .og-heat .og-card-body,
 .og-cum .og-card-body {
   flex: 1 1 auto;
+}
+
+/* 待办提醒条目：贴在期间标签下方的一行，没有任何待办时整条不渲染 */
+.hero-todo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  transition: border-color 0.16s, color 0.16s;
+}
+.hero-todo:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+.hero-todo-t {
+  font-weight: 600;
+  color: var(--ink);
+}
+.hero-todos {
+  margin-top: 4px;
+  padding: 2px 10px 4px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 主卡内的三个小组件：一行三列，竖线分隔（同一个事务线的三件事） */
