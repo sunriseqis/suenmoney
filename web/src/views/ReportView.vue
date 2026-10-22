@@ -6,15 +6,15 @@
  * 还款节奏、本期洞察。所有数字来自 `/api/reports/*`，涨跌榜是「本期 vs 上期」
  * 两张报表的差值（两边都是服务端口径，不是前端累加）。
  */
-import { ChartPie, ChevronLeft, ChevronRight, CreditCard, Sparkles, TrendingDown, TrendingUp } from '@lucide/vue';
+import { ChartPie, ChevronLeft, ChevronRight, Sparkles, TrendingDown, TrendingUp } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { reports, type CategoryBucket, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import PCatIcon from '@/components/PCatIcon.vue';
-import { PBar, PBtn, PCard, PDonut, PEmpty, PIconBtn, PSeg, PStat, PTag } from '@/ui';
-import { currentMonth, daysInMonth, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
-import { formatYuan } from '@/utils/money';
+import { PBtn, PCard, PChip, PDonut, PEmpty, PIconBtn, PSeg } from '@/ui';
+import { currentMonth, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
+import { formatCompact, formatYuan } from '@/utils/money';
 
 const dict = useDictionariesStore();
 const today = todayLocal();
@@ -100,40 +100,65 @@ const movers = computed(() => {
     .slice(0, 6);
 });
 
-/** 期内节奏：日分布（月档） */
-const daily = computed(() => monthReport.value?.daily ?? []);
-const dailyMax = computed(() => Math.max(1, ...daily.value.map((d) => d.cents)));
 
-/** 还款节奏：信用卡聚合 */
-const creditRows = computed(() =>
-  (monthReport.value?.paymentMethods ?? [])
-    .filter((p) => p.type === 'credit')
-    .slice()
-    .sort((a, b) => b.cents - a.cents),
-);
-const creditTotal = computed(() => creditRows.value.reduce((a, p) => a + p.cents, 0));
+/** 四维切换（原型：分类 / 支付 / 记录人 / 节奏） */
+const DIMS = [
+  { value: 'cat', label: '分类' },
+  { value: 'pay', label: '支付' },
+  { value: 'owner', label: '记录人' },
+  { value: 'week', label: '节奏' },
+] as const;
 
-/** 本期洞察：几句结论（都是可直接从报表算出来的事实，不做预测） */
-const insights = computed(() => {
-  const out: string[] = [];
+const dim = ref<'cat' | 'pay' | 'owner' | 'week'>('cat');
+
+const perDayCents = computed(() => {
+  if (tier.value !== 'month') return activeCount.value > 0 ? Math.round(activeTotal.value / Math.max(1, activeCount.value)) : 0;
+  const elapsed = Math.max(1, Number(today.slice(8, 10)));
+  return Math.round(activeTotal.value / elapsed);
+});
+
+/** 当前维度下的行（分类直接用环形数据，其余用条形） */
+const dimRows = computed(() => {
+  if (dim.value === 'cat') return donutData.value.map((d) => ({ name: d.name, cents: d.value, color: d.color }));
+  if (dim.value === 'pay') {
+    return (monthReport.value?.paymentMethods ?? [])
+      .map((p, i) => ({ name: p.name, cents: p.cents, color: `var(--chart-${(i % 8) + 1})` }))
+      .filter((r) => r.cents > 0)
+      .sort((a, b) => b.cents - a.cents);
+  }
+  if (dim.value === 'owner') {
+    return (monthReport.value?.members ?? [])
+      .map((m, i) => ({ name: m.name, cents: m.cents, color: `var(--chart-${((i + 3) % 8) + 1})` }))
+      .filter((r) => r.cents > 0)
+      .sort((a, b) => b.cents - a.cents);
+  }
+  // 节奏：按「第几周」聚合日分布
+  const weeks = new Map<number, number>();
+  for (const d of monthReport.value?.daily ?? []) {
+    const week = Math.min(5, Math.ceil(Number(d.date.slice(8, 10)) / 7));
+    weeks.set(week, (weeks.get(week) ?? 0) + d.cents);
+  }
+  return [...weeks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([w, cents], i) => ({ name: `第 ${w} 周`, cents, color: `var(--chart-${(i % 8) + 1})` }));
+});
+
+const dimMax = computed(() => Math.max(1, ...dimRows.value.map((r) => r.cents)));
+
+/** 还款节奏：取近 6 个月（月报的 rolling12Months 尾部） */
+const repaySteps = computed(() => (monthReport.value?.rolling12Months ?? []).slice(-6).map((m) => ({ month: m.month, cents: m.totalCents ?? 0 })));
+const repayMax = computed(() => Math.max(1, ...repaySteps.value.map((r) => r.cents)));
+
+/** 一句话结论（原型 .report-note 的口径） */
+const conclusion = computed(() => {
+  if (activeTotal.value === 0) return '这个期间还没有记录，记一笔之后这里会自动生成结论。';
   const top = categories.value.slice().sort((a, b) => b.cents - a.cents)[0];
-  if (top) {
-    const pct = activeTotal.value > 0 ? Math.round((top.cents / activeTotal.value) * 100) : 0;
-    out.push(`花费最集中的是「${top.name}」，占 ${pct}%（${formatYuan(top.cents)}，${top.count} 笔）。`);
-  }
-  if (tier.value === 'month' && monthReport.value) {
-    const elapsed = Math.max(1, Number(today.slice(8, 10)));
-    const days = daysInMonth(anchor.value);
-    const perDay = Math.round(activeTotal.value / elapsed);
-    out.push(`按已过 ${elapsed} 天算，日均 ${formatYuan(perDay)}；照这个速度月末约 ${formatYuan(perDay * days)}。`);
-    const largest = monthReport.value.largest;
-    if (largest) out.push(`单笔最高是「${largest.categoryName}」${formatYuan(largest.cents)}。`);
-  }
-  if (deltaRatio.value !== null) {
-    const dir = deltaRatio.value > 0 ? '增加' : '减少';
-    out.push(`与上期相比${dir} ${Math.abs(deltaRatio.value * 100).toFixed(1)}%（${formatYuan(Math.abs(activeTotal.value - prevTotal.value))}）。`);
-  }
-  return out;
+  const head = top ? `头号开销是${top.name}，占 ${Math.round((top.cents / activeTotal.value) * 100)}%；` : '';
+  const tail =
+    deltaRatio.value === null
+      ? '这是第一段可对比的期间。'
+      : `整体${deltaRatio.value >= 0 ? '多花 ' : '少花 '}${formatYuan(Math.abs(activeTotal.value - prevTotal.value))}（${Math.abs(deltaRatio.value * 100).toFixed(1)}%）。`;
+  return head + tail;
 });
 
 function shift(delta: number): void {
@@ -172,70 +197,100 @@ onMounted(() => void load());
 
 <template>
   <div class="stack">
-    <!-- ═══════ 顶部：期间 + 合计 + 环比 ═══════ -->
-    <PCard>
-      <div class="hero-eyebrow">
-        <PSeg :options="TIERS" :value="tier" label="报表期间" @change="switchTier" />
-        <span style="margin-left: auto" />
-        <div v-if="tier !== 'all'" class="period-nav">
-          <PIconBtn :icon="ChevronLeft" label="上一期间" @click="shift(-1)" />
-          <span class="mono tiny" style="min-width: 92px; text-align: center">{{ periodLabel }}</span>
-          <PIconBtn :icon="ChevronRight" label="下一期间" @click="shift(1)" />
+    <!-- ═══════ ① 页头（原型 .report-head：紧凑事实条，不是 hero）═══════ -->
+    <PCard class="report-head">
+      <div class="toolbar">
+        <PSeg :options="TIERS" :value="tier" label="报表档位" @change="switchTier" />
+        <div class="period-nav">
+          <PIconBtn :icon="ChevronLeft" label="上一期间" :disabled="tier === 'all'" @click="shift(-1)" />
+          <span class="period-label">{{ periodLabel }}</span>
+          <PIconBtn :icon="ChevronRight" label="下一期间" :disabled="tier === 'all'" @click="shift(1)" />
         </div>
-        <PTag v-else tone="dash">全部记录</PTag>
+        <span style="margin-left: auto" />
+        <PBtn
+          size="sm"
+          variant="ghost"
+          :icon="Sparkles"
+          @click="$router.push({ name: 'annual-summary', query: { year: currentYear } })"
+        >
+          {{ currentYear }} 年度报告
+        </PBtn>
       </div>
 
-      <div class="hero-amt"><span class="cur">¥</span>{{ formatYuan(activeTotal).replace('¥', '') }}</div>
-      <div class="hero-delta">
-        <span v-if="deltaRatio !== null" class="delta-pill" :class="deltaRatio > 0 ? 'neg' : 'pos'">
-          <component :is="deltaRatio > 0 ? TrendingUp : TrendingDown" :size="11" />
-          {{ (deltaRatio * 100).toFixed(1) }}%
-        </span>
-        <span>上期 {{ formatYuan(prevTotal) }}</span>
-      </div>
-
-      <div class="hero-metrics" style="margin-top: 14px">
-        <PStat label="笔数" :value="`${activeCount} 笔`" />
-        <PStat label="单笔均值" :value="formatYuan(activeCount > 0 ? Math.round(activeTotal / activeCount) : 0)" />
-        <PStat
-          label="分类数"
-          :value="`${categories.filter((c) => c.cents > 0).length} 个`"
-        />
+      <div class="report-facts">
+        <div class="rf-main">
+          <span class="tiny muted mono">期间支出</span>
+          <b class="rf-num">{{ formatYuan(activeTotal) }}</b>
+        </div>
+        <div class="rf-items">
+          <span v-if="deltaRatio !== null" class="delta-pill" :class="deltaRatio > 0 ? 'neg' : 'pos'">
+            <component :is="deltaRatio > 0 ? TrendingUp : TrendingDown" :size="11" />
+            {{ (deltaRatio * 100).toFixed(1) }}%
+          </span>
+          <span class="rf-i">对比 <b>{{ formatYuan(prevTotal) }}</b></span>
+          <span class="rf-i">日均 <b>{{ formatYuan(perDayCents) }}</b></span>
+          <span class="rf-i">笔数 <b>{{ activeCount }}</b></span>
+        </div>
       </div>
     </PCard>
 
-    <!-- ═══════ 分类构成 + 涨跌榜 ═══════ -->
-    <div class="g-side">
-      <PCard>
-        <div class="card-h">
-          <span class="card-t">分类构成</span>
-          <span class="card-cap">{{ periodLabel }} · 按一级分类</span>
-        </div>
-        <PEmpty v-if="donutData.length === 0" :icon="ChartPie">这个期间还没有记录</PEmpty>
-        <div v-else class="compose-view">
-          <div class="compose-visual">
-            <PDonut :data="donutData" center-label="合计" :center-value="formatYuan(activeTotal)" />
-          </div>
-          <div class="compose-list">
-            <div v-for="d in donutData" :key="d.name" class="legend-row">
-              <i :style="{ background: d.color }" />
-              <span class="l-n">{{ d.name }}</span>
-              <span class="l-v">{{ formatYuan(d.value) }}</span>
-              <span class="l-p">{{ activeTotal > 0 ? Math.round((d.value / activeTotal) * 100) : 0 }}%</span>
+    <!-- ═══════ ② 支出构成（四维切换在卡头，原型 .report-compose）═══════ -->
+    <PCard class="report-compose">
+      <div class="card-h">
+        <span class="card-t">支出构成</span>
+        <span class="card-cap">分类 / 支付 / 记录人 / 节奏</span>
+        <span class="chips" style="margin-left: auto">
+          <PChip
+            v-for="d in DIMS"
+            :key="d.value"
+            :active="dim === d.value"
+            @click="dim = d.value"
+          >
+            {{ d.label }}
+          </PChip>
+        </span>
+      </div>
+
+      <PEmpty v-if="dimRows.length === 0" :icon="ChartPie">这个期间还没有构成数据</PEmpty>
+
+      <div v-else class="compose-view" :data-dim="dim">
+        <div class="compose-visual">
+          <PDonut
+            v-if="dim === 'cat'"
+            :data="donutData"
+            center-label="合计"
+            :center-value="formatYuan(activeTotal)"
+          />
+          <div v-else class="dim-bars">
+            <div v-for="r in dimRows" :key="r.name" class="dim-bar">
+              <span class="db-l">{{ r.name }}</span>
+              <span class="db-track">
+                <i :style="{ width: `${Math.max(3, (r.cents / dimMax) * 100)}%`, background: r.color }" />
+              </span>
+              <span class="db-v mono">{{ formatYuan(r.cents) }}</span>
             </div>
           </div>
         </div>
-      </PCard>
 
+        <div class="compose-list">
+          <div v-for="r in dimRows" :key="r.name" class="legend-row">
+            <i :style="{ background: r.color }" />
+            <span class="l-n">{{ r.name }}</span>
+            <span class="l-v">{{ formatYuan(r.cents) }}</span>
+            <span class="l-p">{{ activeTotal > 0 ? Math.round((r.cents / activeTotal) * 100) : 0 }}%</span>
+          </div>
+        </div>
+      </div>
+    </PCard>
+
+    <!-- ═══════ ③ 涨跌榜 + 还款节奏（原型 .g-side 两栏）═══════ -->
+    <div class="g-side">
       <PCard>
         <div class="card-h">
           <span class="card-t">涨跌榜</span>
-          <span class="card-cap">{{ tier === 'month' ? '较上月' : '仅月档可用' }}</span>
+          <span class="card-cap">分类环比 · 按差额排序</span>
         </div>
-        <PEmpty v-if="movers.length === 0" :icon="TrendingUp">
-          {{ tier === 'month' ? '与上月相比没有变化' : '切到「本月」档看涨跌' }}
-        </PEmpty>
-        <div v-else class="mover-grid">
+        <div v-if="movers.length > 0" class="mover-grid">
           <div v-for="m in movers" :key="m.name" class="mover">
             <PCatIcon :category-id="m.categoryId" :name="m.name" :size="30" />
             <div style="min-width: 0; flex: 1 1 auto">
@@ -250,93 +305,41 @@ onMounted(() => void load());
             </div>
           </div>
         </div>
+        <PEmpty v-else :icon="ChartPie">
+          {{ tier === 'month' ? '该期间没有可对比的分类' : '切到「月」档看涨跌' }}
+        </PEmpty>
+
+        <!-- 一句话结论（原型 .report-note） -->
+        <div v-if="conclusion !== ''" class="report-note">{{ conclusion }}</div>
       </PCard>
-    </div>
 
-    <!-- ═══════ 期内节奏 ═══════ -->
-    <PCard>
-      <div class="card-h">
-        <span class="card-t">期内节奏</span>
-        <span class="card-cap">按消费日 · 仅月档</span>
-      </div>
-      <PEmpty v-if="daily.length === 0" :icon="ChartPie">切到「本月」档查看日分布</PEmpty>
-      <div v-else>
-        <div class="bar" style="height: 10px; margin-bottom: 8px">
-          <span class="bar-fill" style="width: 100%; opacity: 0.15" />
-        </div>
-        <div style="display: flex; gap: 2px; align-items: flex-end; height: 88px">
-          <div
-            v-for="d in daily"
-            :key="d.date"
-            :title="`${d.date} ${formatYuan(d.cents)}`"
-            :style="{
-              flex: '1 1 0',
-              height: `${Math.max(4, (d.cents / dailyMax) * 100)}%`,
-              background: d.cents > 0 ? `color-mix(in srgb, var(--accent) ${40 + Math.round((d.cents / dailyMax) * 60)}%, var(--surface-3))` : 'var(--surface-3)',
-              borderRadius: '3px 3px 0 0',
-            }"
-          />
-        </div>
-        <div class="progress-line" style="margin-top: 8px">
-          <span>{{ daily[0]?.date ?? '' }} 起</span>
-          <span>峰值 {{ formatYuan(dailyMax) }}</span>
-        </div>
-      </div>
-    </PCard>
-
-    <!-- ═══════ 还款节奏 ═══════ -->
-    <PCard>
-      <div class="card-h">
-        <span class="card-t">还款节奏</span>
-        <span class="card-cap">信用卡 · 合计 {{ formatYuan(creditTotal) }}</span>
-      </div>
-      <PEmpty v-if="creditRows.length === 0" :icon="CreditCard">本月没有信用卡消费</PEmpty>
-      <div v-else style="display: flex; flex-direction: column; gap: 10px">
-        <div v-for="p in creditRows" :key="p.paymentMethodId">
-          <div class="split" style="margin-bottom: 4px">
-            <span style="font-size: 12.5px; font-weight: 600">{{ p.name }}</span>
-            <span class="tiny muted" style="margin-left: auto">{{ p.count }} 笔 · {{ formatYuan(p.cents) }}</span>
+      <div class="stack">
+        <PCard>
+          <div class="card-h">
+            <span class="card-t">还款节奏</span>
+            <span class="card-cap">近 6 个月 · 按账期</span>
           </div>
-          <PBar :pct="creditTotal > 0 ? (p.cents / creditTotal) * 100 : 0" />
-        </div>
-      </div>
-    </PCard>
+          <div class="repay-steps">
+            <div v-for="r in repaySteps" :key="r.month" class="repay-col">
+              <span class="mono" style="font-size: 8.5px">{{ r.cents > 0 ? formatCompact(r.cents) : '' }}</span>
+              <i :style="{ height: `${Math.max(3, (r.cents / repayMax) * 100)}%` }" />
+              <span>{{ Number(r.month.slice(5, 7)) }}月</span>
+            </div>
+          </div>
+        </PCard>
 
-    <!-- ═══════ 本期洞察 ═══════ -->
-    <PCard>
-      <div class="card-h">
-        <span class="card-t">本期洞察</span>
-        <span class="card-cap">只陈述报表里的事实</span>
+        <PCard>
+          <div class="card-h">
+            <span class="card-t">口径提醒</span>
+            <span class="card-cap">这份报表怎么算的</span>
+          </div>
+          <p class="hint">
+            合计与构成取自服务端报表接口，**月份归属按还款日**；退款以负数冲销计入当期；
+            涨跌榜是「本期 vs 上期」两张报表的分类差值。
+          </p>
+        </PCard>
       </div>
-      <PEmpty v-if="insights.length === 0" :icon="Sparkles">数据太少，得不出结论</PEmpty>
-      <div v-else class="insight">
-        <p v-for="(text, i) in insights" :key="i">{{ text }}</p>
-      </div>
-    </PCard>
-
-    <!-- 一句话结论（原型 .report-note） -->
-    <PCard v-if="insights.length > 0">
-      <div class="report-note" style="box-shadow: none; border: 0; background: transparent; padding: 0">
-        {{ insights[0] }}
-      </div>
-    </PCard>
-
-    <!-- ═══════ 年度报告入口 ═══════ -->
-    <PCard v-if="tier === 'year'">
-      <div class="split">
-        <div>
-          <div class="card-t">{{ currentYear }} 年度报告</div>
-          <div class="tiny muted">12 个月走势、年度之最、单笔最贵</div>
-        </div>
-        <PBtn
-          variant="primary"
-          style="margin-left: auto"
-          @click="$router.push({ name: 'annual-summary', query: { year: currentYear } })"
-        >
-          打开年度报告
-        </PBtn>
-      </div>
-    </PCard>
+    </div>
 
     <p v-if="loading" class="tiny muted" style="text-align: center">加载中…</p>
   </div>
@@ -347,6 +350,41 @@ onMounted(() => void load());
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.dim-bars {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dim-bar {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 10px;
+}
+.db-l {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-track {
+  height: 10px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.db-track i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+}
+.db-v {
+  text-align: right;
+  font-size: 11px;
+  color: var(--ink-2);
 }
 .progress-line {
   display: flex;

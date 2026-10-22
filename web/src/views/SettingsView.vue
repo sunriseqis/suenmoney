@@ -713,15 +713,21 @@ onMounted(() => {
 
 <template>
   <div class="stack">
-    <!-- 分区切换 -->
-    <PCard>
-      <PSeg
-        :options="TABS"
-        :value="tab"
-        label="设置分区"
-        @change="(v) => (tab = v as 'ledger' | 'plans' | 'data' | 'household')"
-      />
-    </PCard>
+    <!-- 分区切换（原型 .settings-tabs / .stab：下划线式页签） -->
+    <div class="settings-tabs" role="tablist" aria-label="设置分区">
+      <button
+        v-for="t in TABS"
+        :key="t.value"
+        type="button"
+        role="tab"
+        class="stab"
+        :class="{ 'is-on': tab === t.value }"
+        :aria-selected="tab === t.value"
+        @click="tab = t.value as 'ledger' | 'plans' | 'data' | 'household'"
+      >
+        {{ t.label }}
+      </button>
+    </div>
 
     <!-- ════════ 账目：分类 + 支付方式 ════════ -->
     <template v-if="tab === 'ledger'">
