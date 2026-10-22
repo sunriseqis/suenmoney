@@ -1,0 +1,347 @@
+{
+  "$meta": {
+    "name": "suenmoney-client-contract-vectors",
+    "version": 1,
+    "generatedAt": "2026-10-22",
+    "note": "三端（iOS / 鸿蒙 / Web）必须用**同一份**向量全过。日期相关用例固定 today=2026-10-22，不要用运行时的今天。"
+  },
+  "money": [
+    {
+      "fn": "parseYuanToCents",
+      "input": [
+        "12.34"
+      ],
+      "expect": 1234,
+      "note": "常规两位小数"
+    },
+    {
+      "fn": "parseYuanToCents",
+      "input": [
+        "0.5"
+      ],
+      "expect": 50,
+      "note": "一位小数补齐"
+    },
+    {
+      "fn": "parseYuanToCents",
+      "input": [
+        "-15.50"
+      ],
+      "expect": -1550,
+      "note": "负数不得翻正（历史 bug）"
+    },
+    {
+      "fn": "parseYuanToCents",
+      "input": [
+        "-0.50"
+      ],
+      "expect": -50,
+      "note": "-0 必须仍是负"
+    },
+    {
+      "fn": "parseYuanToCents",
+      "input": [
+        ""
+      ],
+      "expect": 0,
+      "note": "空串为 0"
+    },
+    {
+      "fn": "parseYuanToCents",
+      "input": [
+        "19.99"
+      ],
+      "expect": 1999,
+      "note": "浮点陷阱：19.99*100=1998.99…"
+    },
+    {
+      "fn": "formatCents",
+      "input": [
+        1234
+      ],
+      "expect": "12.34",
+      "note": "千分位 + 两位小数"
+    },
+    {
+      "fn": "formatCents",
+      "input": [
+        -1550
+      ],
+      "expect": "-15.50",
+      "note": "退款为负"
+    },
+    {
+      "fn": "formatYuan",
+      "input": [
+        1234
+      ],
+      "expect": "¥12.34",
+      "note": "带 ¥ 前缀"
+    },
+    {
+      "fn": "centsToInput",
+      "input": [
+        1200
+      ],
+      "expect": "12",
+      "note": "整元不带小数"
+    },
+    {
+      "fn": "centsToInput",
+      "input": [
+        1205
+      ],
+      "expect": "12.05",
+      "note": "补零"
+    },
+    {
+      "fn": "splitInstallment",
+      "input": [
+        100000,
+        3
+      ],
+      "expect": [
+        33333,
+        33333,
+        33334
+      ],
+      "note": "各期之和必须恰好等于总额（末期补差）"
+    },
+    {
+      "fn": "splitInstallment",
+      "input": [
+        2,
+        3
+      ],
+      "expect": [],
+      "note": "总额（2 分）小于期数（3）→ 空数组；注意 100 分分 3 期是合法的"
+    }
+  ],
+  "dates": [
+    {
+      "fn": "shiftMonth",
+      "input": [
+        "2026-01",
+        -1
+      ],
+      "expect": "2025-12",
+      "note": "跨年回退"
+    },
+    {
+      "fn": "shiftMonth",
+      "input": [
+        "2026-12",
+        1
+      ],
+      "expect": "2027-01",
+      "note": "跨年前进"
+    },
+    {
+      "fn": "shiftMonth",
+      "input": [
+        "2026-10",
+        -1
+      ],
+      "expect": "2026-09",
+      "note": "普通回退"
+    },
+    {
+      "fn": "daysUntil",
+      "input": [
+        "2026-10-22",
+        "2026-10-22"
+      ],
+      "expect": 0,
+      "note": "同一天为 0"
+    },
+    {
+      "fn": "daysUntil",
+      "input": [
+        "2026-10-20",
+        "2026-10-22"
+      ],
+      "expect": -2,
+      "note": "过去为负"
+    },
+    {
+      "fn": "daysUntil",
+      "input": [
+        "2026-11-01",
+        "2026-10-22"
+      ],
+      "expect": 10,
+      "note": "未来为正"
+    }
+  ],
+  "urgency": [
+    {
+      "fn": "urgencyOf",
+      "input": [
+        "2026-10-21",
+        "2026-10-22"
+      ],
+      "expect": "overdue",
+      "note": "迟于还款日"
+    },
+    {
+      "fn": "urgencyOf",
+      "input": [
+        "2026-10-22",
+        "2026-10-22"
+      ],
+      "expect": "due",
+      "note": "今天到期"
+    },
+    {
+      "fn": "urgencyOf",
+      "input": [
+        "2026-10-23",
+        "2026-10-22"
+      ],
+      "expect": "due",
+      "note": "0–1 天都算 due"
+    },
+    {
+      "fn": "urgencyOf",
+      "input": [
+        "2026-10-24",
+        "2026-10-22"
+      ],
+      "expect": "later",
+      "note": "2 天起为 later"
+    },
+    {
+      "fn": "urgencyLabel",
+      "input": [
+        "2026-10-20",
+        "2026-10-22"
+      ],
+      "expect": "已逾期 2 天",
+      "note": "逾期文案"
+    },
+    {
+      "fn": "urgencyLabel",
+      "input": [
+        "2026-10-22",
+        "2026-10-22"
+      ],
+      "expect": "今天到期",
+      "note": "当天文案"
+    },
+    {
+      "fn": "urgencyLabel",
+      "input": [
+        "2026-10-25",
+        "2026-10-22"
+      ],
+      "expect": "还有 3 天",
+      "note": "未来文案"
+    }
+  ],
+  "donut": [
+    {
+      "fn": "buildDonutArcs",
+      "input": [
+        [
+          {
+            "id": "a",
+            "ratio": 0.5,
+            "color": "#111111"
+          },
+          {
+            "id": "b",
+            "ratio": 0.3,
+            "color": "#222222"
+          },
+          {
+            "id": "c",
+            "ratio": 0.2,
+            "color": "#333333"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "id": "a",
+          "percent": 50,
+          "offset": 25,
+          "color": "#111111"
+        },
+        {
+          "id": "b",
+          "percent": 30,
+          "offset": -25,
+          "color": "#222222"
+        },
+        {
+          "id": "c",
+          "percent": 20,
+          "offset": -55,
+          "color": "#333333"
+        }
+      ],
+      "note": "offset 严格递增（首段 25 起步，逐段减 percent）；比例 50/30/20"
+    },
+    {
+      "fn": "buildDonutArcs",
+      "input": [
+        [
+          {
+            "id": "only",
+            "ratio": 1,
+            "color": "#111111"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "id": "only",
+          "percent": 100,
+          "offset": 25,
+          "color": "#111111"
+        }
+      ],
+      "note": "单一分类占满 100"
+    },
+    {
+      "fn": "buildDonutArcs",
+      "input": [
+        []
+      ],
+      "expect": [],
+      "note": "空输入返回空数组"
+    },
+    {
+      "fn": "buildDonutArcs",
+      "input": [
+        [
+          {
+            "id": "neg",
+            "ratio": -0.4,
+            "color": "#000000"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "id": "neg",
+          "percent": 0,
+          "offset": 25,
+          "color": "#000000"
+        }
+      ],
+      "note": "负 ratio 钳到 0（否则 stroke-dasharray 语法被破坏）"
+    }
+  ],
+  "ulid": [
+    {
+      "fn": "ulid",
+      "input": [],
+      "expect": {
+        "length": 26,
+        "charset": "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+      },
+      "note": "校验：26 位、Crockford 字符集、时间序单调"
+    }
+  ]
+}
