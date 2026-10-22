@@ -290,7 +290,8 @@ onMounted(() => void load());
     </PCard>
 
     <!-- ═══════ ③ 涨跌榜 + 还款节奏（原型 .g-side 两栏）═══════ -->
-    <div class="g-side">
+    <!-- 涨跌榜 + 还款节奏：等宽两列、等高对齐 -->
+    <div class="report-pair">
       <PCard>
         <div class="card-h">
           <span class="card-t">涨跌榜</span>
@@ -314,48 +315,38 @@ onMounted(() => void load());
         <PEmpty v-else :icon="ChartPie">
           {{ tier === 'month' ? '该期间没有可对比的分类' : '切到「月」档看涨跌' }}
         </PEmpty>
-
-        <!-- 一句话结论（原型 .report-note） -->
         <div v-if="conclusion !== ''" class="report-note">{{ conclusion }}</div>
       </PCard>
 
-      <div class="stack">
-        <PCard>
-          <div class="card-h">
-            <span class="card-t">还款节奏</span>
-            <span class="card-cap">近 6 个月 · 按账期</span>
+      <PCard>
+        <div class="card-h">
+          <span class="card-t">还款节奏</span>
+          <span class="card-cap">近 6 个月 · 按账期</span>
+        </div>
+        <div class="repay-steps">
+          <div v-for="r in repaySteps" :key="r.month" class="repay-col">
+            <span class="mono" style="font-size: 8.5px">{{ r.cents > 0 ? formatCompact(r.cents) : '' }}</span>
+            <i :style="{ height: `${Math.max(3, (r.cents / repayMax) * 100)}%` }" />
+            <span>{{ Number(r.month.slice(5, 7)) }}月</span>
           </div>
-          <div class="repay-steps">
-            <div v-for="r in repaySteps" :key="r.month" class="repay-col">
-              <span class="mono" style="font-size: 8.5px">{{ r.cents > 0 ? formatCompact(r.cents) : '' }}</span>
-              <i :style="{ height: `${Math.max(3, (r.cents / repayMax) * 100)}%` }" />
-              <span>{{ Number(r.month.slice(5, 7)) }}月</span>
-            </div>
-          </div>
-        </PCard>
-
-        <PCard>
-          <div class="card-h">
-            <span class="card-t">{{ currentYear }} 年度报告</span>
-            <span class="card-cap">ANNUAL</span>
-          </div>
-          <button
-            type="button"
-            class="report-banner"
-            style="width: 100%; text-align: left"
-            @click="$router.push({ name: 'annual-summary', query: { year: currentYear } })"
-          >
-            <div>
-              <div class="rb-t">{{ currentYear }} 年度报告已生成</div>
-              <div class="rb-s">年度全貌 · 年度之最 · 单笔最贵 · 最集中月份 · 12 月走势</div>
-            </div>
-            <span style="margin-left: auto" class="spacer" />
-            <ChevronRight :size="18" />
-          </button>
-        </PCard>
-
-      </div>
+        </div>
+      </PCard>
     </div>
+
+    <!-- 年度报告入口：独占一整行 -->
+    <button
+      type="button"
+      class="report-banner"
+      style="width: 100%; text-align: left"
+      @click="$router.push({ name: 'annual-summary', query: { year: currentYear } })"
+    >
+      <div>
+        <div class="rb-t">{{ currentYear }} 年度报告已生成</div>
+        <div class="rb-s">年度全貌 · 年度之最 · 单笔最贵 · 最集中月份 · 12 月走势</div>
+      </div>
+      <span class="spacer" style="margin-left: auto" />
+      <ChevronRight :size="18" />
+    </button>
 
     <p v-if="loading" class="tiny muted" style="text-align: center">加载中…</p>
   </div>
@@ -367,6 +358,22 @@ onMounted(() => void load());
   align-items: center;
   gap: 6px;
 }
+/* 涨跌榜与还款节奏：等宽两列、等高对齐（两列卡片内容高度不同时不会错位） */
+.report-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+.report-pair > .card {
+  height: 100%;
+}
+@media (max-width: 1080px) {
+  .report-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .dim-bars {
   width: 100%;
   display: flex;

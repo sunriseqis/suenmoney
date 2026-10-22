@@ -207,7 +207,7 @@ onUnmounted(() => {
       </aside>
 
       <div class="main">
-        <header class="topbar">
+        <header class="topbar" :class="{ 'topbar--bare': route.name === 'ledger' }">
           <PIconBtn
             v-if="route.name !== 'ledger'"
             class="mobile-only"
