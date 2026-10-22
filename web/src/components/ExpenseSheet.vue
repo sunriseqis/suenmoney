@@ -520,8 +520,17 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
           </button>
         </div>
 
-        <!-- 键盘 -->
-        <div class="keypad">
+        <!-- 桌面端：不弹键盘，改用输入框直接键入金额（键盘只服务移动端） -->
+        <input
+          v-model="amount"
+          class="input desktop-only amt-input"
+          inputmode="decimal"
+          placeholder="0.00"
+          aria-label="金额"
+        />
+
+        <!-- 键盘（仅移动端） -->
+        <div class="keypad mobile-only">
           <div class="paycol">
             <button
               v-for="p in dict.usablePaymentMethods.slice(0, 5)"
@@ -656,6 +665,72 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
 </template>
 
 <style scoped>
+/* 桌面金额输入框 */
+.amt-input {
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/*
+ * 移动端键盘尺寸跟随视口高度。
+ * 原型给的是固定值（.key 44px / .pay-key 40px），在主流机型上会出事：
+ * iPhone SE（667 高）放不下 4 行 + 底部安全区 → 完成键被挤到屏幕外；
+ * 高屏（932）则留一片空。这里用 dvh 做区间收缩，并对超矮屏再退一档。
+ */
+@media (max-width: 860px) {
+  .keypad {
+    gap: clamp(4px, 1.1vw, 7px);
+  }
+  .keys .key {
+    min-height: clamp(38px, 6.1dvh, 54px);
+    font-size: clamp(15px, 4.3vw, 19px);
+    border-radius: clamp(8px, 2.4vw, 12px);
+  }
+  .paycol .pay-key {
+    min-height: clamp(34px, 5.4dvh, 48px);
+    font-size: clamp(7.5px, 2.1vw, 9px);
+  }
+  .key--ok {
+    font-size: clamp(11px, 3vw, 14px);
+  }
+  /* 底部动作栏让开手势条 */
+  .sheet-foot {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 矮屏（SE / 老机型）：再退一档，保证「完成」键始终在视口内 */
+@media (max-width: 860px) and (max-height: 720px) {
+  .keys .key {
+    min-height: 36px;
+    font-size: 15px;
+  }
+  .paycol .pay-key {
+    min-height: 32px;
+  }
+  .amt-display .a-val {
+    font-size: 26px;
+  }
+  .preview-box {
+    display: none;
+  }
+}
+
+/* 极矮屏（分屏 / 软键盘弹起）：只保数字键与完成键 */
+@media (max-width: 860px) and (max-height: 620px) {
+  .quick-cats,
+  .month-spent {
+    display: none;
+  }
+  .keys .key {
+    min-height: 32px;
+    font-size: 14px;
+  }
+}
+
 /* 常用分类快捷条：横向可滑的胶囊，底槽比卡片低一层（sunken/40 的等价写法） */
 /* 跨月提示：这一笔不会出现在本月，必须让人看见（强调色 + 加粗） */
 .preview-cross {
