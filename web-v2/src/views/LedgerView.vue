@@ -1,14 +1,655 @@
 <script setup lang="ts">
 /**
- * LedgerView —— P0 骨架阶段的占位页。
- * 具体实现在对应阶段（P2–P7）按原型重写；此处只保证路由与外壳可运行。
+ * 流水（原型 `views/Ledger.jsx`）。
+ *
+ * 三档三形态（用户裁决过，不是可选项）：
+ *   按月   → 逐笔明细表（按消费日分组，带日小计）
+ *   按年   → 12 个月格日历
+ *   全部   → 一年一格
+ *
+ * 数据来源分两路：
+ *   · 明细列表 `/api/expenses`（游标分页，每段 100 笔）
+ *   · 档位汇总 `/api/reports/{monthly,yearly,summary}`（合计、构成、日历格）
+ * 两条路各司其职，不互相推算 —— 前端自己按明细累加会与报表口径漂移。
  */
-import { PCard, PTag } from '@/ui';
+import { ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
+import { computed, onMounted, ref, watch } from 'vue';
+
+import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
+import PCatIcon from '@/components/PCatIcon.vue';
+import PPayIcon from '@/components/PPayIcon.vue';
+import { useDictionariesStore } from '@/stores/dictionaries';
+import { usePlansStore } from '@/stores/plans';
+import { useUiStore } from '@/stores/ui';
+import { PBtn, PCard, PChip, PEmpty, PIconBtn, PInput, PSeg, PTag } from '@/ui';
+import { currentMonth, formatLedgerDate, formatMonthDay, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
+import { formatCompact, formatYuan } from '@/utils/money';
+
+const ui = useUiStore();
+const dict = useDictionariesStore();
+const plans = usePlansStore();
+
+type Tier = 'month' | 'year' | 'all';
+
+const TIER_OPTIONS = [
+  { value: 'month', label: '按月' },
+  { value: 'year', label: '按年' },
+  { value: 'all', label: '全部' },
+] as const;
+
+const tier = ref<Tier>('month');
+const anchor = ref(currentMonth()); // 月档用 'YYYY-MM'，年档/全部用年份
+const query = ref('');
+const filterCat = ref('');
+const filterPay = ref('');
+const filterOwner = ref('');
+const sortBy = ref<'date' | 'amount'>('date');
+const showFilters = ref(false);
+
+const items = ref<Expense[]>([]);
+const cursor = ref<string | null>(null);
+const hasMore = ref(false);
+const loading = ref(false);
+const loadingMore = ref(false);
+
+const monthReport = ref<MonthlyReport | null>(null);
+const yearReport = ref<YearlyReport | null>(null);
+const summaryReport = ref<SummaryReport | null>(null);
+const members = ref<Array<{ id: string; name: string }>>([]);
+
+const today = todayLocal();
+const PAGE = 100;
+
+const filterCount = computed(
+  () => (filterCat.value ? 1 : 0) + (filterPay.value ? 1 : 0) + (filterOwner.value ? 1 : 0),
+);
+
+const yearOfAnchor = computed(() => anchor.value.slice(0, 4));
+
+/** 期间标签（原型 period-label） */
+const periodLabel = computed(() => {
+  if (tier.value === 'month') return formatMonthLabel(anchor.value);
+  if (tier.value === 'year') return `${yearOfAnchor.value} 年`;
+  return '全部记录';
+});
+
+/** 当期合计（用报表口径；无报表时退回明细累加） */
+const periodTotalCents = computed(() => {
+  if (tier.value === 'month') return monthReport.value?.totalCents ?? sum(items.value);
+  if (tier.value === 'year') return yearReport.value?.totalCents ?? sum(items.value);
+  return summaryReport.value?.totalCents ?? sum(items.value);
+});
+
+/** 上期合计（环比用） */
+const prevTotalCents = computed(() => {
+  if (tier.value === 'month') return monthReport.value?.previous.totalCents ?? 0;
+  if (tier.value === 'year') return yearReport.value?.yearAgo.totalCents ?? 0;
+  return 0;
+});
+
+const deltaRatio = computed<number | null>(() => {
+  if (tier.value === 'month') return monthReport.value?.change.ratio ?? null;
+  if (tier.value === 'year') return yearReport.value?.yearAgo.change.ratio ?? null;
+  return null;
+});
+
+/** 移动端顶部卡：本月要还 */
+const creditDueCents = computed(() =>
+  (monthReport.value?.paymentMethods ?? [])
+    .filter((p) => p.type === 'credit')
+    .reduce((a, p) => a + p.cents, 0),
+);
+
+const perDayCents = computed(() => {
+  const days = Math.max(1, Number(today.slice(8, 10)));
+  return Math.round((monthReport.value?.totalCents ?? 0) / days);
+});
+
+/** 下一个待办（移动端顶部卡只显示最近一笔） */
+const nextTodo = computed(() => plans.dueTodos[0] ?? null);
+
+/** 年档：12 个月格 */
+const monthCells = computed(() => {
+  const y = yearOfAnchor.value;
+  const months = monthReport.value?.rolling12Months ?? [];
+  return Array.from({ length: 12 }, (_, i) => {
+    const key = `${y}-${String(i + 1).padStart(2, '0')}`;
+    const hit = months.find((m) => m.month === key);
+    return { key, label: `${i + 1}月`, cents: hit?.totalCents ?? 0, count: hit?.count ?? 0 };
+  });
+});
+
+const monthCellMax = computed(() => Math.max(1, ...monthCells.value.map((c) => c.cents)));
+
+/** 全部档：一年一格 */
+const yearCells = computed(() => summaryReport.value?.years ?? []);
+
+function sum(rows: Expense[]): number {
+  return rows.reduce((a, r) => a + r.amountCents, 0);
+}
+
+function cellTone(cents: number, max: number): Record<string, string> {
+  const pct = max > 0 ? Math.min(1, cents / max) : 0;
+  if (cents === 0) return { background: 'var(--surface-3)', color: 'var(--ink-3)' };
+  return {
+    background: `color-mix(in srgb, var(--accent) ${Math.round(12 + pct * 60)}%, var(--surface))`,
+    color: pct > 0.55 ? 'var(--accent-ink)' : 'var(--ink)',
+  };
+}
+
+/** 明细查询参数 */
+function listQuery() {
+  const base: Record<string, unknown> = { limit: PAGE };
+  if (tier.value === 'month') base['month'] = anchor.value;
+  else if (tier.value === 'year') {
+    base['from'] = `${yearOfAnchor.value}-01-01`;
+    base['to'] = `${yearOfAnchor.value}-12-31`;
+  }
+  if (query.value.trim()) base['q'] = query.value.trim();
+  if (filterCat.value) base['categoryId'] = filterCat.value;
+  if (filterPay.value) base['paymentMethodId'] = filterPay.value;
+  if (filterOwner.value) base['ownerId'] = filterOwner.value;
+  return base;
+}
+
+async function reload(): Promise<void> {
+  loading.value = true;
+  cursor.value = null;
+  try {
+    const page = await expensesApi.list(listQuery() as never);
+    items.value = page.items;
+    cursor.value = page.nextCursor;
+    hasMore.value = page.hasMore;
+  } catch {
+    items.value = [];
+    hasMore.value = false;
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadMore(): Promise<void> {
+  if (!hasMore.value || cursor.value === null || loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    const page = await expensesApi.list({ ...listQuery(), cursor: cursor.value } as never);
+    items.value = [...items.value, ...page.items];
+    cursor.value = page.nextCursor;
+    hasMore.value = page.hasMore;
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
+async function reloadReports(): Promise<void> {
+  try {
+    monthReport.value = (await reports.monthly(anchor.value)).report;
+  } catch {
+    monthReport.value = null;
+  }
+  if (tier.value === 'year') {
+    try {
+      yearReport.value = (await reports.yearly(yearOfAnchor.value)).report;
+    } catch {
+      yearReport.value = null;
+    }
+  }
+  try {
+    summaryReport.value = (await reports.summary()).report;
+  } catch {
+    summaryReport.value = null;
+  }
+}
+
+function shift(delta: number): void {
+  if (tier.value === 'all') return;
+  if (tier.value === 'month') anchor.value = shiftMonth(anchor.value, delta);
+  else anchor.value = `${Number(yearOfAnchor.value) + delta}-01`;
+}
+
+function switchTier(next: string): void {
+  tier.value = next as Tier;
+  if (next === 'year') anchor.value = `${yearOfAnchor.value}-01`;
+  void reload();
+  void reloadReports();
+}
+
+function clearFilters(): void {
+  filterCat.value = '';
+  filterPay.value = '';
+  filterOwner.value = '';
+  query.value = '';
+}
+
+function drillMonth(month: string): void {
+  tier.value = 'month';
+  anchor.value = month;
+  void reload();
+  void reloadReports();
+}
+
+const sortedItems = computed(() => {
+  const arr = items.value.slice();
+  if (sortBy.value === 'amount') arr.sort((a, b) => b.amountCents - a.amountCents);
+  else arr.sort((a, b) => (a.spendDate === b.spendDate ? (a.id < b.id ? 1 : -1) : a.spendDate < b.spendDate ? 1 : -1));
+  return arr;
+});
+
+/** 排序影响分组顺序，所以分组用排序后的列表重算 */
+const groupedSorted = computed(() => {
+  const map = new Map<string, Expense[]>();
+  for (const row of sortedItems.value) {
+    const list = map.get(row.spendDate);
+    if (list) list.push(row);
+    else map.set(row.spendDate, [row]);
+  }
+  return [...map.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([date, rows]) => ({ date, rows, cents: sum(rows) }));
+});
+
+watch([query, filterCat, filterPay, filterOwner], () => {
+  void reload();
+});
+
+watch(anchor, () => {
+  if (tier.value === 'month') void reload();
+  void reloadReports();
+});
+
+onMounted(async () => {
+  await Promise.all([dict.load().catch(() => undefined), plans.loadPlans().catch(() => undefined)]);
+  try {
+    members.value = (await usersApi.list()).users.map((u) => ({ id: u.id, name: u.displayName }));
+  } catch {
+    members.value = [];
+  }
+  await Promise.all([reload(), reloadReports()]);
+});
 </script>
 
 <template>
-  <PCard>
-    <PTag tone="dash">建设中</PTag>
-    <p class="hint" style="margin-top: 10px">LedgerView 将在对应阶段按原型重写。</p>
-  </PCard>
+  <div class="stack">
+    <!-- ════════ 移动端顶部卡（原型 mobile-hero）：本月支出 + 要还 + 最近待办 ════════ -->
+    <div class="mobile-hero">
+      <div class="mh-head">
+        <span class="mh-eyebrow">{{ formatMonthLabel(anchor) }} · 本月支出</span>
+        <div class="mh-amt"><span class="cur">¥</span>{{ formatYuan(periodTotalCents).replace('¥', '') }}</div>
+        <div class="mh-delta">
+          <span v-if="deltaRatio !== null" class="delta-pill" :class="deltaRatio > 0 ? 'neg' : 'pos'">
+            {{ (deltaRatio * 100).toFixed(1) }}%
+          </span>
+          <span>较上月 {{ formatYuan(prevTotalCents) }}</span>
+        </div>
+      </div>
+      <div class="mh-facts">
+        <div class="mh-fact"><span>日均</span><b>{{ formatYuan(perDayCents) }}</b></div>
+        <div class="mh-fact"><span>笔数</span><b>{{ monthReport?.count ?? items.length }} 笔</b></div>
+        <div class="mh-fact"><span>本月要还</span><b>{{ formatYuan(creditDueCents) }}</b></div>
+      </div>
+      <button v-if="nextTodo" type="button" class="mh-plan" @click="$router.push({ name: 'settings' })">
+        <span class="mh-plan-txt">
+          <b>{{ nextTodo.planName }} · {{ nextTodo.periodSeq }} 期</b>
+          <span>{{ plans.dueTodos.length }} 笔待处理 · {{ formatMonthDay(nextTodo.repaymentDate) }}</span>
+        </span>
+        <span class="mh-plan-amt">{{ formatYuan(nextTodo.amountCents) }}</span>
+      </button>
+    </div>
+
+    <!-- ════════ 工具栏（原型 ledger-toolbar）════════ -->
+    <PCard>
+      <div class="ledger-toolbar">
+        <div class="lt-search">
+          <div class="search-wrap">
+            <Search :size="15" />
+            <PInput v-model="query" class="input--search" placeholder="搜索备注或分类" />
+          </div>
+        </div>
+
+        <div class="lt-adv">
+          <PSeg :options="TIER_OPTIONS" :value="tier" label="流水档位" @change="switchTier" />
+          <div class="period-nav">
+            <PIconBtn :icon="ChevronLeft" label="上一期间" :disabled="tier === 'all'" @click="shift(-1)" />
+            <span class="period-label">{{ periodLabel }}</span>
+            <PIconBtn :icon="ChevronRight" label="下一期间" :disabled="tier === 'all'" @click="shift(1)" />
+          </div>
+          <PBtn size="sm" :variant="filterCount ? 'primary' : ''" :icon="Filter" @click="showFilters = !showFilters">
+            筛选{{ filterCount ? ` · ${filterCount}` : '' }}
+          </PBtn>
+          <div class="seg" style="margin-left: auto">
+            <button type="button" class="seg-btn" :class="{ 'is-on': sortBy === 'date' }" @click="sortBy = 'date'">按日期</button>
+            <button type="button" class="seg-btn" :class="{ 'is-on': sortBy === 'amount' }" @click="sortBy = 'amount'">按金额</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ledger-sum">
+        <span class="mono">{{ periodLabel }}</span>
+        <span class="ls-sep">·</span>
+        <span>{{ items.length }} 笔</span>
+        <span class="ls-sep">·</span>
+        <span>合计 <b>{{ formatYuan(periodTotalCents) }}</b></span>
+        <span v-if="filterCount || query" class="tiny muted" style="margin-left: auto">已筛选</span>
+      </div>
+
+      <div v-if="showFilters" class="filter-row">
+        <div class="filter-group">
+          <span class="filter-l">分类</span>
+          <PChip :active="!filterCat" @click="filterCat = ''">全部</PChip>
+          <PChip
+            v-for="c in dict.rootCategories"
+            :key="c.id"
+            :active="filterCat === c.id"
+            @click="filterCat = filterCat === c.id ? '' : c.id"
+          >
+            {{ c.name }}
+          </PChip>
+        </div>
+        <div class="filter-group">
+          <span class="filter-l">支付</span>
+          <PChip
+            v-for="p in dict.usablePaymentMethods"
+            :key="p.id"
+            :active="filterPay === p.id"
+            @click="filterPay = filterPay === p.id ? '' : p.id"
+          >
+            {{ p.name }}
+          </PChip>
+        </div>
+        <div class="filter-group">
+          <span class="filter-l">记录人</span>
+          <PChip
+            v-for="u in members"
+            :key="u.id"
+            :active="filterOwner === u.id"
+            @click="filterOwner = filterOwner === u.id ? '' : u.id"
+          >
+            {{ u.name }}
+          </PChip>
+          <PBtn v-if="filterCount || query" size="sm" variant="ghost" :icon="X" @click="clearFilters">清除</PBtn>
+        </div>
+      </div>
+    </PCard>
+
+    <!-- ════════ 月档：明细表 + 移动行卡 ════════ -->
+    <PCard v-if="tier === 'month'">
+      <div class="card-h">
+        <span class="card-t">流水明细</span>
+        <span class="card-cap">{{ items.length }} 笔 · 合计 {{ formatYuan(periodTotalCents) }}</span>
+      </div>
+
+      <PEmpty v-if="loading" :icon="Search">加载中…</PEmpty>
+      <PEmpty v-else-if="groupedSorted.length === 0" :icon="Search">没有符合条件的流水</PEmpty>
+
+      <template v-else>
+        <!-- 桌面表格 -->
+        <table class="tbl desktop-only">
+          <thead>
+            <tr>
+              <th style="width: 104px">消费日期</th>
+              <th style="width: 170px">分类</th>
+              <th>备注</th>
+              <th style="width: 110px">账期</th>
+              <th style="width: 82px">记录人</th>
+              <th style="width: 110px">支付方式</th>
+              <th style="width: 104px" class="th-r">金额</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="g in groupedSorted" :key="g.date">
+              <tr style="cursor: default" aria-hidden="true">
+                <td colspan="7" style="padding: 12px 10px 6px; border-bottom: 0">
+                  <div class="date-cap" style="padding: 0">
+                    {{ formatLedgerDate(g.date, today).dayText }}
+                    <span class="sum mono">{{ formatYuan(g.cents) }}</span>
+                  </div>
+                </td>
+              </tr>
+              <tr v-for="row in g.rows" :key="row.id" @click="ui.openEdit(row)">
+                <td class="mono tiny muted">{{ row.spendDate.slice(5) }}</td>
+                <td>
+                  <div class="cat-cell">
+                    <PCatIcon
+                      :category-id="row.categoryId"
+                      :name="row.categoryName"
+                      :icon="row.categoryIcon"
+                      :color="row.parentCategoryColor ?? row.categoryColor"
+                      :size="30"
+                    />
+                    <div class="cat-txt">
+                      <div class="cat-name">{{ row.categoryName }}</div>
+                      <div class="cat-sub">{{ row.parentCategoryName ?? '' }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div class="split" style="gap: 6px">
+                    <span>{{ row.note || '—' }}</span>
+                    <PTag v-if="row.amountCents < 0" tone="danger">退款</PTag>
+                  </div>
+                </td>
+                <td class="mono tiny">
+                  <span v-if="row.paymentMethodType === 'credit'">
+                    {{ row.repaymentDate.slice(5) }} <span class="muted">还</span>
+                  </span>
+                  <span v-else class="muted">即时</span>
+                </td>
+                <td class="tiny muted">{{ row.ownerName }}</td>
+                <td>
+                  <span class="split" style="gap: 6px">
+                    <PPayIcon :name="row.paymentMethodName" :size="14" />
+                    <span class="tiny">{{ row.paymentMethodName }}</span>
+                  </span>
+                </td>
+                <td class="td-r mono" :class="row.amountCents < 0 ? 'pos' : ''">{{ formatYuan(row.amountCents) }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <!-- 移动行卡 -->
+        <div class="mobile-only">
+          <div v-for="g in groupedSorted" :key="g.date">
+            <div class="date-cap">
+              {{ formatLedgerDate(g.date, today).dayText }}
+              <span class="sum mono">{{ formatYuan(g.cents) }}</span>
+            </div>
+            <button
+              v-for="row in g.rows"
+              :key="row.id"
+              type="button"
+              class="ledger-row"
+              @click="ui.openEdit(row)"
+            >
+              <PCatIcon
+                :category-id="row.categoryId"
+                :name="row.categoryName"
+                :icon="row.categoryIcon"
+                :color="row.parentCategoryColor ?? row.categoryColor"
+                :size="36"
+              />
+              <span class="lr-main">
+                <span class="lr-t">{{ row.categoryName }}</span>
+                <span class="lr-s">{{ row.paymentMethodName }}<template v-if="row.note"> · {{ row.note }}</template></span>
+              </span>
+              <span class="lr-amt mono" :class="row.amountCents < 0 ? 'pos' : ''">{{ formatYuan(row.amountCents) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="hasMore" style="margin-top: 14px; text-align: center">
+          <PBtn :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中…' : '加载更多' }}</PBtn>
+        </div>
+      </template>
+    </PCard>
+
+    <!-- ════════ 年档：12 月格 ════════ -->
+    <PCard v-else-if="tier === 'year'">
+      <div class="card-h">
+        <span class="card-t">{{ yearOfAnchor }} 年</span>
+        <span class="card-cap">合计 {{ formatYuan(periodTotalCents) }}</span>
+      </div>
+      <div class="heat-grid">
+        <button
+          v-for="cell in monthCells"
+          :key="cell.key"
+          type="button"
+          class="heat-cell"
+          :class="{ 'is-now': cell.key === currentMonth() }"
+          @click="drillMonth(cell.key)"
+        >
+          <span class="heat-m">{{ cell.label }}</span>
+          <span class="heat-v">{{ cell.cents ? formatCompact(cell.cents) : '—' }}</span>
+          <span class="heat-dot" :style="cellTone(cell.cents, monthCellMax)" />
+        </button>
+      </div>
+    </PCard>
+
+    <!-- ════════ 全部档：一年一格 ════════ -->
+    <PCard v-else>
+      <div class="card-h">
+        <span class="card-t">全部记录</span>
+        <span class="card-cap">{{ yearCells.length }} 年 · 合计 {{ formatYuan(periodTotalCents) }}</span>
+      </div>
+      <PEmpty v-if="yearCells.length === 0" :icon="SlidersHorizontal">还没有任何记录</PEmpty>
+      <div class="heat-grid" v-else>
+        <button
+          v-for="y in yearCells"
+          :key="y.year"
+          type="button"
+          class="heat-cell"
+          @click="drillMonth(`${y.year}-01`)"
+        >
+          <span class="heat-m">{{ y.year }}</span>
+          <span class="heat-v">{{ formatCompact(y.totalCents) }}</span>
+          <span class="heat-dot" :style="cellTone(y.totalCents, Math.max(1, ...yearCells.map((c) => c.totalCents)))" />
+        </button>
+      </div>
+    </PCard>
+  </div>
 </template>
+
+<style scoped>
+.ledger-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lt-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lt-adv {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.period-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.period-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  min-width: 96px;
+  text-align: center;
+  color: var(--ink-2);
+}
+.ledger-sum {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.ls-sep {
+  opacity: 0.5;
+}
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.filter-l {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  width: 40px;
+  flex: 0 0 auto;
+}
+.date-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.date-cap .sum {
+  margin-left: auto;
+  color: var(--ink-2);
+}
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.ledger-row:last-child {
+  border-bottom: 0;
+}
+.lr-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.lr-t {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lr-s {
+  display: block;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lr-amt {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+@media (max-width: 860px) {
+  .lt-adv {
+    gap: 8px;
+  }
+  .period-label {
+    min-width: 76px;
+  }
+}
+</style>

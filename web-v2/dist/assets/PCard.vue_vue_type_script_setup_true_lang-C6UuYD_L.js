@@ -1,1 +1,0 @@
-import{d as t,o as l,a as o,r as n,D as s}from"./index-BTwHzYPy.js";const f=t({__name:"PCard",props:{pop:{type:Boolean,default:!1},flat:{type:Boolean,default:!1},tint:{type:Boolean,default:!1}},setup(a){return(e,r)=>(l(),o("div",{class:s(["card",{"card--pop":a.pop,"card--flat":a.flat,"card--tint":a.tint}])},[n(e.$slots,"default")],2))}});export{f as _};
