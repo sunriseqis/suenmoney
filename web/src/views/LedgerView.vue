@@ -450,14 +450,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="ledger-sum">
-        <span class="mono">{{ periodLabel }}</span>
-        <span class="ls-sep">·</span>
-        <span>{{ items.length }} 笔</span>
-        <span class="ls-sep">·</span>
-        <span>合计 <b>{{ formatYuan(periodTotalCents) }}</b></span>
-        <span v-if="filterCount || query" class="tiny muted" style="margin-left: auto">已筛选</span>
-      </div>
 
       <div v-if="showFilters" class="filter-row filter-row--roomy">
         <div class="filter-group">

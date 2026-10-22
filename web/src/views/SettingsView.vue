@@ -778,10 +778,6 @@ onMounted(() => {
         <div class="card-h">
           <POrb :icon="Tag" tone="var(--accent)" ink="var(--accent-ink)" />
           <span class="card-t">分类管理</span>
-          <span class="card-cap">
-            一级 {{ dict.rootCategories.length }} · 二级
-            {{ dict.rootCategories.reduce((a, r) => a + r.children.length, 0) }}
-          </span>
           <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openCatCreate">新增类别</PBtn>
         </div>
 
@@ -841,7 +837,6 @@ onMounted(() => {
         <div class="card-h">
           <POrb :icon="CreditCard" tone="var(--sky)" ink="#1E293B" />
           <span class="card-t">支付方式</span>
-          <span class="card-cap">{{ dict.paymentMethods.length }} 个</span>
           <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openPayCreate">新增</PBtn>
         </div>
         <PEmpty v-if="dict.paymentMethods.length === 0" :icon="Wallet">还没有支付方式</PEmpty>
@@ -928,7 +923,6 @@ onMounted(() => {
       <PCard>
         <div class="card-h">
           <span class="card-t">主题</span>
-          <span class="card-cap">两套设计语言</span>
         </div>
         <div class="theme-cards theme-cards--3">
           <button
@@ -946,27 +940,21 @@ onMounted(() => {
             <span class="tiny muted">{{ opt.desc }}</span>
           </button>
         </div>
-        <div class="tiny muted mono" style="margin-top: 8px">
-          主题选择写入 localStorage；深色即赛博朋克。顶栏右上角也能一键切换。
-        </div>
       </PCard>
 
       <PCard>
         <div class="card-h">
           <span class="card-t">导出</span>
-          <span class="card-cap">账本 JSON / 流水 CSV</span>
         </div>
         <div class="split">
           <PBtn :icon="Database" @click="exportPackage">导出账本（JSON）</PBtn>
           <PBtn @click="exportCsv">导出流水（CSV）</PBtn>
         </div>
-        <p class="hint" style="margin-top: 8px">JSON 是全量数据包（可再导入）；CSV 只用于 Excel 对账。</p>
       </PCard>
 
       <PCard>
         <div class="card-h">
           <span class="card-t">导入</span>
-          <span class="card-cap">账本 JSON</span>
         </div>
         <div class="split">
           <label class="btn btn--ghost" style="cursor: pointer">
@@ -975,15 +963,11 @@ onMounted(() => {
           </label>
           <PBtn variant="primary" @click="billOpen = true">账单导入（微信 / 支付宝）</PBtn>
         </div>
-        <p class="hint" style="margin-top: 8px">
-          账本 JSON 导入是**追加**，不会清空现有数据；账单 CSV 导入会先解析再让你逐行确认分类与支付方式。
-        </p>
       </PCard>
 
       <PCard>
         <div class="card-h">
           <span class="card-t">备份</span>
-          <span class="card-cap">本地下载 / WebDAV 上传</span>
         </div>
         <div class="split">
           <PBtn @click="downloadBackup">下载备份文件</PBtn>
@@ -1039,7 +1023,6 @@ onMounted(() => {
       <PCard v-if="canCheckUpdate">
         <div class="card-h">
           <span class="card-t">检查更新</span>
-          <span class="card-cap">仅客户端可用</span>
         </div>
         <div class="split">
           <PBtn :disabled="updateStore.checking" @click="checkUpdate">
@@ -1052,7 +1035,6 @@ onMounted(() => {
       <PCard v-if="overview">
         <div class="card-h">
           <span class="card-t">数据总览</span>
-          <span class="card-cap">库里现在有什么</span>
         </div>
         <div class="set-row" v-for="(v, k) in overview.counts ?? {}" :key="k">
           <span class="set-body"><span class="set-t">{{ k }}</span></span>
