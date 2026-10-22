@@ -66,13 +66,38 @@ const PAGE = 100;
 /** 四维构成：分类 / 支付 / 记录人 / 节奏（周） */
 const compositionDimensions = computed(() => {
   const rep = monthReport.value;
+  const cats =
+    tier.value === 'month'
+      ? (monthReport.value?.categories ?? [])
+      : tier.value === 'year'
+        ? (yearReport.value?.categories ?? [])
+        : (summaryReport.value?.categories ?? []);
   const color = (i: number) => `var(--chart-${(i % 8) + 1})`;
 
-  const byCategory = (rep?.categories ?? []).map((c) => ({
+  // 报表没回来（离线/慢网）时用已加载明细兜底，保证卡片不空
+  const fallbackCats =
+    cats.length > 0
+      ? []
+      : (() => {
+          const map = new Map<string, { name: string; cents: number; color: string }>();
+          for (const row of items.value) {
+            const hit = map.get(row.categoryId);
+            if (hit) hit.cents += row.amountCents;
+            else
+              map.set(row.categoryId, {
+                name: row.categoryName,
+                cents: row.amountCents,
+                color: `var(--chart-${((dict.colorOf(row.categoryId, row.categoryName, row.categoryColor) - 1) % 8) + 1})`,
+              });
+          }
+          return [...map.values()];
+        })();
+
+  const byCategory = (cats.length > 0 ? cats.map((c) => ({
     name: c.name,
     cents: c.cents,
     color: `var(--chart-${((dict.colorOf(c.categoryId, c.name, c.color) - 1) % 8) + 1})`,
-  }));
+  })) : fallbackCats);
 
   const byPayment = (rep?.paymentMethods ?? []).map((p, i) => ({
     name: p.name,
@@ -97,12 +122,16 @@ const compositionDimensions = computed(() => {
     .sort((a, b) => a[0] - b[0])
     .map(([week, cents], i) => ({ name: `第 ${week} 周`, cents, color: color(i + 1) }));
 
-  return [
-    { key: 'cat', label: '分类', buckets: byCategory },
-    { key: 'pay', label: '支付', buckets: byPayment },
-    { key: 'owner', label: '记录人', buckets: byOwner },
-    { key: 'rhythm', label: '节奏', buckets: byRhythm },
-  ];
+  // 月档才有日分布（能算周节奏）与支付/记录人明细；年档/全部档只有分类口径
+  const dims = [{ key: 'cat', label: '分类', buckets: byCategory }];
+  if (tier.value === 'month') {
+    dims.push(
+      { key: 'pay', label: '支付', buckets: byPayment },
+      { key: 'owner', label: '记录人', buckets: byOwner },
+      { key: 'rhythm', label: '节奏', buckets: byRhythm },
+    );
+  }
+  return dims;
 });
 
 /** 触底「查看上月」：本月已加载完时给一个明确的下一步 */
@@ -440,8 +469,10 @@ onMounted(async () => {
       </div>
     </PCard>
 
-    <!-- ════════ 构成（四维，贴住工具栏：先看结构再看明细）════════ -->
-    <PCard v-if="tier === 'month'">
+    <!-- ════════ 构成（四维，贴住工具栏：先看结构再看明细）════════
+         三档都显示：月档按分类/支付/记录人/周节奏，年与全部档只有分类口径，
+         所以维度列表按档位变化（而不是整块隐藏） -->
+    <PCard>
       <CompositionCard :total-cents="periodTotalCents" :dimensions="compositionDimensions" />
     </PCard>
 
