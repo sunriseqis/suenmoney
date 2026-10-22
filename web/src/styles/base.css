@@ -553,6 +553,9 @@
                           text-transform: uppercase; color: var(--on-surface-variant); }
   @media (max-width: 960px) { .login-card { padding: 24px 20px; } }
 
+  /* v6：构成卡贴着流水列表 */
+  .ledger-composition { margin-top: 16px; }
+
   /* ═══════ v6 流水顶卡（静态稿 hero 语言 + 构成一屏答完）═══════════ */
   .topcard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .topcard-amount-row { display: flex; align-items: baseline; justify-content: space-between;
