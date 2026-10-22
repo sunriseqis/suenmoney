@@ -8,7 +8,7 @@
  * 数据全部来自报表接口，**不从前端明细重算**：合计、构成、环比、热力
  * 都有服务端口径，前端再算一遍迟早与报表页对不上。
  */
-import { Check,
+import {
   CalendarDays,
   ChevronDown,
   ChevronLeft,
@@ -24,12 +24,11 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 import { reports, type CategoryBucket, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
 import { useToast } from '@/composables/useToast';
-import ReminderRow from '@/components/ReminderRow.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
 import { PBtn, PCard, PIconBtn, POrb, PSeg, PStat, PTag } from '@/ui';
-import { currentMonth, daysInMonth, elapsedDays, formatMonthLabel, formatMonthDay, shiftMonth, todayLocal } from '@/utils/dates';
+import { daysUntil, currentMonth, daysInMonth, elapsedDays, formatMonthLabel, formatMonthDay, shiftMonth, todayLocal } from '@/utils/dates';
 import { formatCompact, formatYuan } from '@/utils/money';
 
 const ui = useUiStore();
@@ -185,6 +184,46 @@ const cumRows = computed(() => {
   ];
 });
 
+
+
+/**
+ * 紧急度三档（与 docs/decisions.md 一致：迟于还款日＝逾期，0–1 天＝临近，更远＝正常）。
+ * 判定只在 utils/urgency.ts 与这里各一处 —— 不要新增第三个版本。
+ */
+function urgencyLevel(date: string | null): 'late' | 'soon' | 'calm' {
+  if (date === null) return 'calm';
+  const days = daysUntil(date);
+  if (days < 0) return 'late';
+  if (days <= 1) return 'soon';
+  return 'calm';
+}
+
+/** 状态文字（不写日期，日期由调用处决定要不要显示） */
+function urgencyLabel(date: string | null): string {
+  if (date === null) return '';
+  const days = daysUntil(date);
+  if (days < 0) return `逾期 ${Math.abs(days)} 天`;
+  if (days === 0) return '今天到期';
+  if (days === 1) return '明天到期';
+  return `${days} 天后`;
+}
+
+/** 本月最近的还款日（信用卡一卡一行已经没有意义，只要「什么时候要还」） */
+const nearestDueDate = computed<string | null>(() => {
+  const dates = (monthReport.value?.paymentMethods ?? [])
+    .filter((p) => p.type === 'credit' && p.repaymentDate)
+    .map((p) => p.repaymentDate as string)
+    .sort();
+  return dates[0] ?? null;
+});
+
+/** 提醒条上的那一个颜色标记：逾期红 / 需手动黄 / 全自动则无标记 */
+const todoTone = computed<'late' | 'soon' | 'calm'>(() => {
+  if (overdueCount.value > 0) return 'late';
+  if (dueTodos.value.some((t) => !t.willAutoPost)) return 'soon';
+  return 'calm';
+});
+
 function shift(delta: number): void {
   if (tier.value === 'all') return;
   if (tier.value === 'month') anchor.value = shiftMonth(anchor.value, delta);
@@ -285,36 +324,30 @@ onMounted(() => {
         </span>
       </div>
 
-      <!-- ── 三个小组件：同一行的三列，窄屏堆叠 ── -->
+      <!-- ── 三个小组件：一行三列（窄屏纵向堆叠）──
+           口径按 docs/decisions.md：
+           · 紧急度只由 4px 色条 + 状态文字表达，容器一律中性
+           · 文案压到最短（「3期」不是「第 3 期」，「需手动」不是「需手动入账」）
+           · 说明式文字一律删（机制解释 / 位置指引 / 计数复述） -->
       <div class="hero-widgets">
-        <!-- 小组件 1：本月要还 -->
+        <!-- ① 本月要还：只给合计与最近还款日，明细交给「全部待办」 -->
         <section class="hero-widget">
           <div class="hw-head">
             <span class="hw-title">本月要还</span>
-            <span class="hw-cap">{{ creditDue.length }} 张卡</span>
+            <span class="hw-cap">{{ creditDue.length }} 张</span>
           </div>
           <div class="hw-value">{{ formatYuan(creditDueTotal) }}</div>
-          <div v-if="creditDue.length === 0" class="hw-empty">本月没有信用卡账单</div>
-          <template v-else>
-            <div v-for="p in creditDue.slice(0, 3)" :key="p.paymentMethodId" class="due-row" style="padding: 5px 0">
-              <span class="due-card-badge"><CreditCard :size="13" /></span>
-              <div style="min-width: 0; flex: 1 1 auto">
-                <div style="font-size: 11.5px; font-weight: 600">{{ p.name }}</div>
-                <div class="tiny muted">{{ p.count }} 笔</div>
-              </div>
-              <div class="row-end"><div class="row-amt">{{ formatYuan(p.cents) }}</div></div>
-            </div>
-            <div v-if="creditDue.length > 3" class="tiny muted" style="margin-top: 4px">
-              还有 {{ creditDue.length - 3 }} 张…
-            </div>
-          </template>
+          <div v-if="nearestDueDate !== null" class="hw-sub">
+            <span class="urgency" :class="`urgency--${urgencyLevel(nearestDueDate)}`">{{ urgencyLabel(nearestDueDate) }}</span>
+            <span class="mono">{{ formatMonthDay(nearestDueDate) }}</span>
+          </div>
+          <div v-else class="hw-empty">本月无信用卡账单</div>
         </section>
 
-        <!-- 小组件 2：待办提醒（无待办时整块收起成一行绿字） -->
+        <!-- ② 待办提醒：合计 + 一个颜色标记（标记挂在展开箭头上） -->
         <section class="hero-widget">
           <div class="hw-head">
             <span class="hw-title">待办提醒</span>
-            <span v-if="dueTodos.length > 0" class="hw-cap">{{ dueTodos.length }} 笔</span>
             <button
               v-if="dueTodos.length > 0"
               type="button"
@@ -323,38 +356,40 @@ onMounted(() => {
               :aria-label="alertOpen ? '收起待办' : '展开待办'"
               @click="alertOpen = !alertOpen"
             >
+              <span class="todo-dot" :class="`is-${todoTone}`" />
               <component :is="alertOpen ? ChevronUp : ChevronDown" :size="13" />
             </button>
           </div>
-          <div class="hw-value" :class="{ 'hw-value--late': overdueCount > 0 }">
-            {{ formatYuan(dueTotal) }}
+          <div v-if="dueTodos.length > 0" class="hw-value">{{ formatYuan(dueTotal) }}</div>
+          <div v-if="dueTodos.length === 0" class="hw-empty">没有待处理</div>
+          <div v-else-if="overdueCount > 0" class="hw-sub">
+            <span class="urgency urgency--late">{{ overdueCount }} 笔逾期</span>
           </div>
-          <div v-if="dueTodos.length === 0" class="hw-empty hw-empty--ok">
-            <Check :size="12" />计划待办已清空
-          </div>
-          <template v-else>
-            <div class="hw-sub">
-              {{ overdueCount > 0 ? `${overdueCount} 笔已逾期` : '全部未到期' }} ·
-              {{ formatMonthDay(dueTodos[0]!.repaymentDate) }} 最近
-            </div>
-            <div v-if="alertOpen" class="hw-todos">
-              <ReminderRow
-                v-for="t in dueTodos"
-                :key="t.id"
-                :title="`${t.planName} · ${t.periodSeq} 期`"
-                :sub="`${formatMonthDay(t.repaymentDate)} · ${t.willAutoPost ? '到期自动入账' : '需手动入账'}`"
-                :amount="formatYuan(t.amountCents)"
-                @skip="todoAction(t, 'skip')"
+          <div v-else class="hw-sub"><span class="urgency urgency--calm">{{ dueTodos.length }} 笔未到期</span></div>
+
+          <div v-if="alertOpen && dueTodos.length > 0" class="hw-todos">
+            <div v-for="t in dueTodos" :key="t.id" class="todo-line">
+              <i class="todo-mark" :class="`is-${urgencyLevel(t.repaymentDate)}`" style="height: 22px" />
+              <span class="todo-line-t">{{ t.periodSeq }}期 · {{ t.planName }}</span>
+              <span class="urgency" :class="`urgency--${urgencyLevel(t.repaymentDate)}`">
+                {{ t.willAutoPost ? '自动' : '需手动' }}
+              </span>
+              <b class="mono tiny">{{ formatYuan(t.amountCents) }}</b>
+              <button
+                type="button"
+                class="link-btn"
+                @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')"
               >
-                <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
-                  {{ t.willAutoPost ? '确认' : '入账' }}
-                </PBtn>
-              </ReminderRow>
+                {{ t.willAutoPost ? '确认' : '入账' }}
+              </button>
+              <button type="button" class="link-btn" style="color: var(--ink-3)" @click="todoAction(t, 'skip')">
+                忽略
+              </button>
             </div>
-          </template>
+          </div>
         </section>
 
-        <!-- 小组件 3：还款进度 -->
+        <!-- ③ 还款进度：数字 + 进度条，不写机制说明 -->
         <section class="hero-widget">
           <div class="hw-head">
             <span class="hw-title">还款进度</span>
@@ -373,17 +408,6 @@ onMounted(() => {
                 background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
               }"
             />
-          </div>
-          <div class="progress-line">
-            <span>本月计划固定还款</span>
-            <button
-              v-if="plans.activePlans.length > 0"
-              type="button"
-              class="link-btn"
-              @click="$router.push({ name: 'settings' })"
-            >
-              管理计划
-            </button>
           </div>
         </section>
       </div>
@@ -583,6 +607,42 @@ onMounted(() => {
 .hw-empty--ok {
   color: var(--ok);
 }
+/* 提醒条上的那个唯一颜色标记（决策：容器不染色，只给一个标记） */
+.todo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+.todo-dot.is-late {
+  background: var(--danger);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 60%, transparent);
+}
+.todo-dot.is-soon {
+  background: var(--warn);
+}
+
+/* 展开后的待办：一行一条（3期 · 房贷 / 需手动 / ¥1,200 / 入账 忽略） */
+.todo-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.todo-line:last-child {
+  border-bottom: 0;
+}
+.todo-line-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
 .hw-todos {
   margin-top: 8px;
   max-height: 168px;
