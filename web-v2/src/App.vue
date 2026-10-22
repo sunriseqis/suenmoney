@@ -18,7 +18,7 @@ import ExpenseSheet from '@/components/ExpenseSheet.vue';
 import { useTheme } from '@/composables/useTheme';
 import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
-import { PIconBtn, PBtn } from '@/ui';
+import { PIconBtn, PBtn, PToast } from '@/ui';
 
 const route = useRoute();
 const router = useRouter();
@@ -209,6 +209,8 @@ onUnmounted(() => {
         </main>
       </div>
     </div>
+
+    <PToast />
 
     <ExpenseSheet
       :open="ui.sheetOpen"

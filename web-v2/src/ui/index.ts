@@ -16,5 +16,7 @@ export { default as PInput } from './PInput.vue';
 export { default as POrb } from './POrb.vue';
 export { default as PSeg } from './PSeg.vue';
 export { default as PStat } from './PStat.vue';
+export { default as PSheet } from './PSheet.vue';
 export { default as PSwitch } from './PSwitch.vue';
+export { default as PToast } from './PToast.vue';
 export { default as PTag } from './PTag.vue';
