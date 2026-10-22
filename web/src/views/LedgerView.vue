@@ -381,6 +381,13 @@ onMounted(async () => {
         <div class="mh-fact"><span>笔数</span><b>{{ monthReport?.count ?? items.length }} 笔</b></div>
         <div class="mh-fact"><span>本月要还</span><b>{{ formatYuan(creditDueCents) }}</b></div>
       </div>
+      <!-- 三个入口（原型 mh-nav）：小型化，放在待办提醒上面 -->
+      <div class="mh-nav mh-nav--sm">
+        <button type="button" class="mh-btn" @click="$router.push({ name: 'dashboard' })">概况</button>
+        <button type="button" class="mh-btn" @click="$router.push({ name: 'report' })">报表</button>
+        <button type="button" class="mh-btn" @click="$router.push({ name: 'settings' })">设置</button>
+      </div>
+
       <!-- 待办提醒：与 PC 同一机制 —— 有提醒才显示、可展开、无提醒整条不渲染 -->
       <button
         v-if="dueTodos.length > 0"
@@ -692,6 +699,30 @@ onMounted(async () => {
   .period-label {
     min-width: 76px;
   }
+}
+
+/* 三个入口的小号版本：原型 .mh-btn 是 44px 高的大按钮，占掉太多纵向空间；
+   这里压到 30px 高、圆角 999px，一行放下三个 */
+.mh-nav--sm {
+  gap: 6px;
+}
+.mh-nav--sm .mh-btn {
+  min-height: 30px;
+  padding: 0 4px;
+  font-size: 11.5px;
+  border-width: 1px;
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  gap: 0;
+}
+.mh-nav--sm .mh-btn:active {
+  transform: scale(0.98);
+}
+.app[data-theme='cyber'] .mh-nav--sm .mh-btn {
+  border-color: rgba(0, 255, 136, 0.32);
+  color: var(--accent);
+  font-size: 10px;
 }
 
 /* 待办提醒条目（PC 与移动同一形态：一行、可展开、无待办不渲染）
