@@ -296,11 +296,17 @@ onMounted(() => {
           <div class="hw-value">{{ formatYuan(creditDueTotal) }}</div>
           <div v-if="creditDue.length === 0" class="hw-empty">本月没有信用卡账单</div>
           <template v-else>
-            <div v-for="p in creditDue.slice(0, 3)" :key="p.paymentMethodId" class="hw-row">
-              <span class="hw-row-name">{{ p.name }}</span>
-              <span class="hw-row-val mono">{{ formatYuan(p.cents) }}</span>
+            <div v-for="p in creditDue.slice(0, 3)" :key="p.paymentMethodId" class="due-row" style="padding: 5px 0">
+              <span class="due-card-badge"><CreditCard :size="13" /></span>
+              <div style="min-width: 0; flex: 1 1 auto">
+                <div style="font-size: 11.5px; font-weight: 600">{{ p.name }}</div>
+                <div class="tiny muted">{{ p.count }} 笔</div>
+              </div>
+              <div class="row-end"><div class="row-amt">{{ formatYuan(p.cents) }}</div></div>
             </div>
-            <div v-if="creditDue.length > 3" class="hw-more">还有 {{ creditDue.length - 3 }} 张…</div>
+            <div v-if="creditDue.length > 3" class="tiny muted" style="margin-top: 4px">
+              还有 {{ creditDue.length - 3 }} 张…
+            </div>
           </template>
         </section>
 
@@ -354,9 +360,10 @@ onMounted(() => {
             <span class="hw-title">还款进度</span>
             <span class="hw-cap">{{ plans.activePlans.length }} 个计划</span>
           </div>
-          <div class="hw-value">
-            {{ formatYuan(planPaid) }}
-            <span class="hw-value-sub">/ {{ formatYuan(planMonthly) }}</span>
+          <div class="split" style="align-items: baseline; gap: 6px; margin-top: 4px">
+            <span class="op-num">{{ formatYuan(planPaid) }}</span>
+            <span class="tiny muted">/ {{ formatYuan(planMonthly) }}</span>
+            <span class="mono tiny muted" style="margin-left: auto">{{ progressPct.toFixed(0) }}%</span>
           </div>
           <div class="bar" style="margin-top: 6px">
             <span
@@ -367,10 +374,15 @@ onMounted(() => {
               }"
             />
           </div>
-          <div class="hw-sub">
-            {{ progressPct.toFixed(0) }}% · 本月计划固定还款
-            <button v-if="plans.activePlans.length > 0" type="button" class="hw-link" @click="$router.push({ name: 'settings' })">
-              管理
+          <div class="progress-line">
+            <span>本月计划固定还款</span>
+            <button
+              v-if="plans.activePlans.length > 0"
+              type="button"
+              class="link-btn"
+              @click="$router.push({ name: 'settings' })"
+            >
+              管理计划
             </button>
           </div>
         </section>
