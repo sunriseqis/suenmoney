@@ -16,6 +16,7 @@ import { ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from 
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
+import CompositionCard from '@/components/CompositionCard.vue';
 import PCatIcon from '@/components/PCatIcon.vue';
 import PPayIcon from '@/components/PPayIcon.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
@@ -59,6 +60,55 @@ const members = ref<Array<{ id: string; name: string }>>([]);
 
 const today = todayLocal();
 const PAGE = 100;
+
+/** 四维构成：分类 / 支付 / 记录人 / 节奏（周） */
+const compositionDimensions = computed(() => {
+  const rep = monthReport.value;
+  const color = (i: number) => `var(--chart-${(i % 8) + 1})`;
+
+  const byCategory = (rep?.categories ?? []).map((c) => ({
+    name: c.name,
+    cents: c.cents,
+    color: `var(--chart-${((dict.colorOf(c.categoryId, c.name, c.color) - 1) % 8) + 1})`,
+  }));
+
+  const byPayment = (rep?.paymentMethods ?? []).map((p, i) => ({
+    name: p.name,
+    cents: p.cents,
+    color: color(i),
+  }));
+
+  const byOwner = (rep?.members ?? []).map((m, i) => ({
+    name: m.name,
+    cents: m.cents,
+    color: color(i + 3),
+  }));
+
+  // 节奏：按「第几周」把日分布聚合（第 1 周 = 1–7 日，依此类推）
+  const weeks = new Map<number, number>();
+  for (const d of rep?.daily ?? []) {
+    const day = Number(d.date.slice(8, 10));
+    const week = Math.min(5, Math.ceil(day / 7));
+    weeks.set(week, (weeks.get(week) ?? 0) + d.cents);
+  }
+  const byRhythm = [...weeks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([week, cents], i) => ({ name: `第 ${week} 周`, cents, color: color(i + 1) }));
+
+  return [
+    { key: 'cat', label: '分类', buckets: byCategory },
+    { key: 'pay', label: '支付', buckets: byPayment },
+    { key: 'owner', label: '记录人', buckets: byOwner },
+    { key: 'rhythm', label: '节奏', buckets: byRhythm },
+  ];
+});
+
+/** 触底「查看上月」：本月已加载完时给一个明确的下一步 */
+function goPrevMonth(): void {
+  anchor.value = shiftMonth(anchor.value, -1);
+}
+
+
 
 const filterCount = computed(
   () => (filterCat.value ? 1 : 0) + (filterPay.value ? 1 : 0) + (filterOwner.value ? 1 : 0),
@@ -371,6 +421,11 @@ onMounted(async () => {
       </div>
     </PCard>
 
+    <!-- ════════ 构成（四维，贴住工具栏：先看结构再看明细）════════ -->
+    <PCard v-if="tier === 'month'">
+      <CompositionCard :total-cents="periodTotalCents" :dimensions="compositionDimensions" />
+    </PCard>
+
     <!-- ════════ 月档：明细表 + 移动行卡 ════════ -->
     <PCard v-if="tier === 'month'">
       <div class="card-h">
@@ -479,6 +534,9 @@ onMounted(async () => {
 
         <div v-if="hasMore" style="margin-top: 14px; text-align: center">
           <PBtn :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中…' : '加载更多' }}</PBtn>
+        </div>
+        <div v-else-if="items.length > 0" style="margin-top: 14px; text-align: center">
+          <PBtn variant="ghost" :icon="ChevronLeft" @click="goPrevMonth">查看上月</PBtn>
         </div>
       </template>
     </PCard>
