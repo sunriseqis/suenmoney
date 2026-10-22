@@ -102,6 +102,14 @@ function openCatEdit(cat: Category): void {
 
 /** 分类卡左侧当前选中的一级分类 */
 const catRail = ref<string>('');
+const currentRoot = computed(() => dict.rootCategories.find((r) => r.id === catRail.value) ?? null);
+
+/** 正在编辑的是否一级类别（决定是否显示颜色选择器） */
+const isRootCategory = computed(() => {
+  const editing = catEditing.value;
+  if (editing === null) return catParent.value === '';
+  return editing.parentId === null;
+});
 const railChildren = computed(() => {
   const root = dict.rootCategories.find((r) => r.id === catRail.value);
   return root ? root.children : [];
@@ -139,7 +147,12 @@ async function saveCat(): Promise<void> {
       await categoriesApi.update(editing.id, {
         name,
         icon: catIcon.value,
-        color: catColor.value,
+        // 二级分类不写颜色（跟随一级）；一级才写
+        ...(isRootCategory.value ? { color: catColor.value } : {}),
+        // 二级分类支持移动到别的类别下
+        ...(!isRootCategory.value && catParent.value !== (editing.parentId ?? '')
+          ? { parentId: catParent.value }
+          : {}),
       } as never);
       // 停用/启用单独走 isEnabled，避免一次提交里混两种语义
       if (editing.isEnabled !== catEnabled.value) {
@@ -769,7 +782,7 @@ onMounted(() => {
             一级 {{ dict.rootCategories.length }} · 二级
             {{ dict.rootCategories.reduce((a, r) => a + r.children.length, 0) }}
           </span>
-          <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openCatCreate">新增一级</PBtn>
+          <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openCatCreate">新增类别</PBtn>
         </div>
 
         <div class="cat-admin">
@@ -792,9 +805,14 @@ onMounted(() => {
           <!-- 右：当前一级下的二级分类 -->
           <div>
             <div class="split" style="margin-bottom: 8px">
-              <span class="tiny muted mono">二级分类 · 继承父级图标与颜色</span>
-              <PBtn size="sm" variant="ghost" :icon="Plus" style="margin-left: auto" @click="openCatCreateChild">
-                新增二级
+              <span class="tiny muted mono">{{ currentRoot?.name ?? '' }} · 分类</span>
+              <span style="margin-left: auto" />
+              <PBtn size="sm" variant="ghost" :icon="Plus" @click="openCatCreateChild">新增分类</PBtn>
+              <PBtn v-if="currentRoot" size="sm" variant="ghost" :icon="Pencil" @click="openCatEdit(currentRoot)">
+                编辑类别
+              </PBtn>
+              <PBtn v-if="currentRoot" size="sm" variant="ghost" :icon="Trash2" @click="removeCat(currentRoot)">
+                删除
               </PBtn>
             </div>
             <div class="cat-kid-list">
@@ -831,8 +849,8 @@ onMounted(() => {
           <span class="set-ic"><PPayIcon :name="p.name" :icon="p.icon" :size="18" /></span>
           <span class="set-body">
             <span class="set-t">{{ p.name }}</span>
-            <span class="set-s">
-              {{ p.type === 'credit' ? `信用卡 · ${p.billingDay} 日账单 / ${p.repaymentDay} 日还款` : '即时结算' }}
+            <span v-if="p.type === 'credit'" class="set-s">
+              {{ p.billingDay }} 日账单 · {{ p.repaymentDay }} 日还款
             </span>
           </span>
           <PBtn size="sm" variant="ghost" @click="openMerge(p)">合并</PBtn>
@@ -1159,10 +1177,12 @@ onMounted(() => {
       <PField label="图标" id="cat-icon">
         <IconPicker v-model="catIcon" />
       </PField>
-      <PField label="颜色" id="cat-color">
+      <!-- 只有一级类别能选颜色；二级分类的颜色跟随一级，不单独设 -->
+      <PField v-if="isRootCategory" label="颜色" id="cat-color">
         <ColorPicker v-model="catColor" />
       </PField>
-      <PField v-if="!catEditing" label="归属一级分类" id="cat-parent">
+      <!-- 二级分类可以移动到别的类别下（同深度平移） -->
+      <PField v-if="!isRootCategory" label="归属类别" id="cat-parent">
         <select id="cat-parent" v-model="catParent" class="input">
           <option v-for="r in dict.rootCategories" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>
