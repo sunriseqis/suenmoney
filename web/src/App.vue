@@ -28,6 +28,9 @@ const ui = useUiStore();
 const syncStore = useSyncStore();
 const updateStore = useUpdateStore();
 const theme = useTheme();
+
+/** 构建标记，由 vite define 注入 */
+const buildStamp = __BUILD_STAMP__;
 const plansStore = usePlansStore();
 
 /** 侧边栏「概况」上的待办角标 */
@@ -303,6 +306,7 @@ onUnmounted(() => {
           </button>
           <div class="tiny muted" style="line-height: 1.6; padding-left: 4px">
             退款以负数冲销<br />账期按还款日归属
+            <br /><span style="opacity: 0.7">{{ buildStamp }}</span>
           </div>
         </div>
       </aside>
@@ -350,6 +354,11 @@ onUnmounted(() => {
               <component :is="Component" />
             </Transition>
           </RouterView>
+
+          <!-- 构建标记（版本 · 短 sha · 构建时间）：换肤期间用来确认「看的是哪一版」 -->
+          <div class="tiny muted mono" style="text-align: center; padding-top: 18px; opacity: 0.75">
+            SuenMoney · 单账本家庭记账 · {{ buildStamp }}
+          </div>
         </main>
       </div>
     </div>

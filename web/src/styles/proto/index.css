@@ -55,3 +55,18 @@
 
 /* 原型里 .app 是根容器，应用里由 App.vue 渲染；确保它铺满视口 */
 .app { min-height: 100vh; min-height: 100dvh; }
+
+/* ── 图标描边：原型规格 candy 2.4 / cyber 1.6 ──────────────────────────
+   Lucide 图标的描边写在 svg 元素上，原型用 `.ic { stroke-width: 2.4 }`；
+   那些图标没有 `.ic` 类，所以在 `.app` 内按主题统一给 svg 定描边。
+   旧 base.css 里的 1.5 / 2.5 在这两套主题下不再生效（选择器更具体）。 */
+.app[data-theme='candy'] svg { stroke-width: 2.4; }
+.app[data-theme='cyber'] svg { stroke-width: 1.6; }
+
+/* ── 原型组件的按压/悬停反馈优先于旧全局规则 ──────────────────────────
+   旧 base.css 里有 `button:not(:disabled):active` 这类元素级规则，
+   权重比 `.seg-btn`、`.chip`、`.icon-btn` 高。用 `.app ...` 前缀把原型拉回来。 */
+.app .btn:active { transform: translate(2px, 2px); }
+.app .icon-btn:active { transform: none; }
+.app .seg-btn:active { transform: none; }
+.app .chip:active { transform: none; }
