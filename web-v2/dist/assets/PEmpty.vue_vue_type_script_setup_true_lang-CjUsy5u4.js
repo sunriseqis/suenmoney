@@ -1,1 +1,0 @@
-import{d as a,o,a as n,l as s,P as r,b as c,r as i}from"./index-BBvb-5FG.js";const m={class:"empty"},p=a({__name:"PEmpty",props:{icon:{}},setup(e){return(t,l)=>(o(),n("div",m,[e.icon?(o(),s(r(e.icon),{key:0,size:18,"aria-hidden":"true"})):c("",!0),i(t.$slots,"default")]))}});export{p as _};

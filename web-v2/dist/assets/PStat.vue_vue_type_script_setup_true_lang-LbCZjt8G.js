@@ -1,1 +1,0 @@
-import{d as n,o as a,a as e,h as o,t,b as c}from"./index-BBvb-5FG.js";const l={class:"stat"},i={class:"stat-v"},r={class:"stat-l"},u={key:0,class:"stat-sub"},b=n({__name:"PStat",props:{label:{},value:{},sub:{}},setup(s){return(d,_)=>(a(),e("div",l,[o("span",i,t(s.value),1),o("span",r,t(s.label),1),s.sub?(a(),e("span",u,t(s.sub),1)):c("",!0)]))}});export{b as _};
