@@ -353,7 +353,12 @@ watch(anchor, () => {
 });
 
 onMounted(async () => {
-  await Promise.all([dict.load().catch(() => undefined), plans.loadPlans().catch(() => undefined)]);
+  // dueTodos 必须单独拉：loadPlans() 只取计划本身，待办是另一个接口
+  await Promise.all([
+    dict.load().catch(() => undefined),
+    plans.loadPlans().catch(() => undefined),
+    plans.loadDueTodos().catch(() => undefined),
+  ]);
   try {
     members.value = (await usersApi.list()).users.map((u) => ({ id: u.id, name: u.displayName }));
   } catch {
@@ -454,7 +459,7 @@ onMounted(async () => {
         <span v-if="filterCount || query" class="tiny muted" style="margin-left: auto">已筛选</span>
       </div>
 
-      <div v-if="showFilters" class="filter-row">
+      <div v-if="showFilters" class="filter-row filter-row--roomy">
         <div class="filter-group">
           <span class="filter-l">分类</span>
           <PChip :active="!filterCat" @click="filterCat = ''">全部</PChip>
@@ -780,6 +785,37 @@ onMounted(async () => {
 .todo-line:last-child {
   border-bottom: 0;
 }
+/* 筛选区：三组横排会挤成一团 → 每组独立一行，组内可换行，行间留 12px */
+.filter-row--roomy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+.filter-row--roomy .filter-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.filter-row--roomy .filter-l {
+  width: 44px;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+@media (max-width: 860px) {
+  .filter-row--roomy .filter-l {
+    width: 100%;
+    margin-bottom: 2px;
+  }
+}
+
 .todo-line-t {
   flex: 1 1 auto;
   min-width: 0;
