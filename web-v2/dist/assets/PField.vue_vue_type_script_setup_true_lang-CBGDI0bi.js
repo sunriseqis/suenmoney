@@ -1,0 +1,1 @@
+import{d as s,b as a,e as t,t as o,k as n,a3 as r}from"./index-BfCmNfK2.js";const c=["for"],d={key:0,class:"field-l"},m=s({__name:"PField",props:{label:{},id:{}},setup(e){return(l,i)=>(a(),t("label",{class:"field",for:e.id},[e.label?(a(),t("span",d,o(e.label),1)):n("",!0),r(l.$slots,"default")],8,c))}});export{m as _};
