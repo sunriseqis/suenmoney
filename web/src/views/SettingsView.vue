@@ -35,6 +35,7 @@ import {
 import BillImportModal from '@/components/BillImportModal.vue';
 import BrandMark from '@/components/BrandMark.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
+import PayIconPicker from '@/components/PayIconPicker.vue';
 import PCatIcon from '@/components/PCatIcon.vue';
 import PPayIcon from '@/components/PPayIcon.vue';
 import IconPicker from '@/components/IconPicker.vue';
@@ -185,6 +186,7 @@ const payName = ref('');
 const payType = ref<'credit' | 'cash'>('credit');
 const payBilling = ref('1');
 const payRepay = ref('20');
+const payIcon = ref('');
 
 function openPayCreate(): void {
   payEditing.value = null;
@@ -192,6 +194,7 @@ function openPayCreate(): void {
   payType.value = 'credit';
   payBilling.value = '1';
   payRepay.value = '20';
+  payIcon.value = '';
   paySheet.value = true;
 }
 
@@ -201,6 +204,7 @@ function openPayEdit(p: PaymentMethod): void {
   payType.value = p.type;
   payBilling.value = String(p.billingDay ?? 1);
   payRepay.value = String(p.repaymentDay ?? 20);
+  payIcon.value = p.icon;
   paySheet.value = true;
 }
 
@@ -217,6 +221,7 @@ async function savePay(): Promise<void> {
       await paymentsApi.create({
         name,
         type: payType.value,
+        ...(payIcon.value !== '' ? { icon: payIcon.value } : {}),
         ...(isCredit
           ? { billingDay: Number(payBilling.value), repaymentDay: Number(payRepay.value) }
           : {}),
@@ -225,10 +230,11 @@ async function savePay(): Promise<void> {
     } else {
       await paymentsApi.update(payEditing.value.id, {
         name,
+        icon: payIcon.value,
         ...(isCredit
           ? { billingDay: Number(payBilling.value), repaymentDay: Number(payRepay.value) }
           : {}),
-      });
+      } as never);
       toast.show('支付方式已更新');
     }
     paySheet.value = false;
@@ -822,7 +828,7 @@ onMounted(() => {
         </div>
         <PEmpty v-if="dict.paymentMethods.length === 0" :icon="Wallet">还没有支付方式</PEmpty>
         <div v-for="p in dict.paymentMethods" :key="p.id" class="set-row">
-          <span class="set-ic"><PPayIcon :name="p.name" :size="18" /></span>
+          <span class="set-ic"><PPayIcon :name="p.name" :icon="p.icon" :size="18" /></span>
           <span class="set-body">
             <span class="set-t">{{ p.name }}</span>
             <span class="set-s">
@@ -1171,6 +1177,9 @@ onMounted(() => {
     <PSheet :open="paySheet" :title="payEditing ? '编辑支付方式' : '新增支付方式'" @close="paySheet = false">
       <PField label="名称" id="pay-name">
         <PInput id="pay-name" v-model="payName" placeholder="如：招商信用卡" />
+      </PField>
+      <PField label="图标">
+        <PayIconPicker v-model="payIcon" />
       </PField>
       <PField label="类型" id="pay-type">
         <select id="pay-type" v-model="payType" class="input">

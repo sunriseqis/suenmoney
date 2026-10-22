@@ -176,6 +176,11 @@ const monthCellMax = computed(() => Math.max(1, ...monthCells.value.map((c) => c
 /** 全部档：一年一格 */
 const yearCells = computed(() => summaryReport.value?.years ?? []);
 
+/** 支付方式图标：Expense 上没有 icon 字段，按 paymentMethodId 查字典 */
+function paymentIconOf(id: string): string {
+  return dict.findPaymentMethod(id)?.icon ?? '';
+}
+
 function sum(rows: Expense[]): number {
   return rows.reduce((a, r) => a + r.amountCents, 0);
 }
@@ -506,7 +511,7 @@ onMounted(async () => {
                 <td class="tiny muted">{{ row.ownerName }}</td>
                 <td>
                   <span class="split" style="gap: 6px">
-                    <PPayIcon :name="row.paymentMethodName" :size="14" />
+                    <PPayIcon :name="row.paymentMethodName" :icon="paymentIconOf(row.paymentMethodId)" :size="14" />
                     <span class="tiny">{{ row.paymentMethodName }}</span>
                   </span>
                 </td>

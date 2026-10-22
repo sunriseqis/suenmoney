@@ -345,7 +345,7 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
         </div>
 
         <button type="button" class="sheet-cell" @click="payOpen = true">
-          <PPayIcon :name="payment?.name ?? ''" :size="18" />
+          <PPayIcon :name="payment?.name ?? ''" :icon="payment?.icon ?? ''" :size="18" />
           <span style="min-width: 0">
             <span class="lbl" style="display: block">支付方式</span>
             <span class="val">
@@ -435,7 +435,7 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
               :title="p.name"
               @click="paymentId = p.id"
             >
-              <PPayIcon :name="p.name" :size="15" />
+              <PPayIcon :name="p.name" :icon="p.icon" :size="15" />
               <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; text-align: center">
                 {{ p.name.slice(0, 4) }}
               </span>
@@ -542,7 +542,7 @@ const KEYS = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', 
               :class="{ 'is-on': paymentId === p.id }"
               @click="pickPayment(p.id)"
             >
-              <span class="set-ic"><PPayIcon :name="p.name" :size="16" /></span>
+              <span class="set-ic"><PPayIcon :name="p.name" :icon="p.icon" :size="16" /></span>
               <span style="flex: 1 1 auto; min-width: 0">
                 <span style="display: block; font-size: 12.5px; font-weight: 600">{{ p.name }}</span>
                 <span class="tiny muted" style="display: block; margin-top: 2px">
