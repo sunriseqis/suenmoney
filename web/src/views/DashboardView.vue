@@ -8,6 +8,21 @@
  *   3. 桌面 hero 底部挂提醒条（popover 展开后能动手），移动端提醒归流水页顶卡。
  *   4. 卡片一律按内容高（.card-grid），最后一行内容离底边 < 40px。
  */
+import {
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  CreditCard,
+  Layers,
+  Plus,
+  ReceiptText,
+  TrendingDown,
+  TrendingUp,
+  TriangleAlert,
+} from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
@@ -20,7 +35,9 @@ import {
   type SummaryReport,
   type YearlyReport,
 } from '@/api';
+import type { CategoryBucket } from '@/api/types';
 import PaymentIcon from '@/components/PaymentIcon.vue';
+import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
@@ -51,6 +68,7 @@ import {
 const router = useRouter();
 const ui = useUiStore();
 const plansStore = usePlansStore();
+const dict = useDictionariesStore();
 const syncStore = useSyncStore();
 
 type Scope = 'month' | 'year' | 'all';
@@ -312,12 +330,149 @@ function onHeatCellClick(targetMonth: string): void {
 // 桌面提醒条动作
 // ---------------------------------------------------------------------------
 
+// ── 原型模板：期间控件与档位映射 ──────────────────────────────────────────
+const SCOPE_OPTIONS = [
+  { value: 'month', label: '本月' },
+  { value: 'year', label: '本年' },
+  { value: 'all', label: '全部' },
+] as const;
+
+/** 当前档位的环比（月=较上月 / 年=较去年 / 全部=None） */
+const activeChangeRatio = computed<number | null>(() => {
+  if (scope.value === 'month') return monthChangeRatio.value;
+  if (scope.value === 'year') return yearChangeRatio.value;
+  return null;
+});
+
+/** 当前档位笔数 */
+const activeCount = computed(() => {
+  if (scope.value === 'month') return monthly.value?.count ?? 0;
+  if (scope.value === 'year') return yearly.value?.count ?? 0;
+  return summary.value?.count ?? 0;
+});
+
+/** 期间标签（原型 hero 顶行） */
+const periodLabel = computed(() => {
+  if (scope.value === 'month') return formatMonthLabel(month.value);
+  if (scope.value === 'year') return `${year.value} 年`;
+  return '全部记录';
+});
+
+function shiftBack(): void {
+  if (scope.value === 'month') month.value = shiftMonth(month.value, -1);
+  else if (scope.value === 'year') month.value = `${Number(year.value) - 1}-01`;
+}
+
+function shiftForward(): void {
+  if (scope.value === 'month') month.value = shiftMonth(month.value, 1);
+  else if (scope.value === 'year') month.value = `${Number(year.value) + 1}-01`;
+}
+
+// ---------------------------------------------------------------------------
+// 原型（同账）概况页派生数据
+// ---------------------------------------------------------------------------
+
+/** 当前档位对应的分类构成 */
+const activeCategories = computed<CategoryBucket[]>(() => {
+  if (scope.value === 'month') return monthly.value?.categories ?? [];
+  if (scope.value === 'year') return yearly.value?.categories ?? [];
+  return summary.value?.categories ?? [];
+});
+
+/** 堆叠条：前 4 类 + 「其他」 */
+const composeRows = computed(() => {
+  const rows = activeCategories.value
+    .filter((c) => c.cents > 0)
+    .slice()
+    .sort((a, b) => b.cents - a.cents);
+  const top = rows.slice(0, 4).map((c) => ({
+    id: c.categoryId,
+    name: c.name,
+    cents: c.cents,
+    color: `var(--chart-${((dict.colorOf(c.categoryId, c.name, c.color) - 1) % 8) + 1})`,
+  }));
+  const restCents = rows.slice(4).reduce((a, c) => a + c.cents, 0);
+  if (restCents > 0) top.push({ id: '__rest', name: '其他', cents: restCents, color: 'var(--ink-3)' });
+  return top;
+});
+
+const summaryTotalCents = computed(() => summary.value?.totalCents ?? 0);
+const summaryCount = computed(() => summary.value?.count ?? 0);
+const summaryMonthlyAvg = computed(() => summary.value?.monthlyAverageCents ?? 0);
+const summarySpanMonths = computed(() => Math.max(1, Math.round((summary.value?.recordedDays ?? 0) / 30)));
+
+/** 进行中计划 × 每期金额 = 本月计划固定还款 */
+const planMonthlyCents = computed(() => plansStore.activePlans.reduce((a, p) => a + p.amountCents, 0));
+const activePlanCount = computed(() => plansStore.activePlans.length);
+const progressPct = computed(() => progressBarPercent.value);
+
+/** 本月已入账的计划金额 = 计划总额 − 本月仍待还 */
+const planPaidCents = computed(() => {
+  const nowMonth = currentMonth();
+  const stillDue = plansStore.dueTodos
+    .filter((t) => t.repaymentDate.slice(0, 7) === nowMonth)
+    .reduce((a, t) => a + t.amountCents, 0);
+  return Math.max(0, planMonthlyCents.value - stillDue);
+});
+
+const rolling12TotalCents = computed(() => rolling12.value.reduce((a, c) => a + (c.totalCents ?? 0), 0));
+
+/** 构成条百分比 */
+function percentOf(cents: number): number {
+  const total = composeRows.value.reduce((a, r) => a + r.cents, 0);
+  return total > 0 ? Math.round((cents / total) * 100) : 0;
+}
+
+/** 热力格点色（原型用 color-mix 按占比混强调色） */
+function heatDotColor(cents: number | null): string {
+  if (cents === null || cents === 0) return 'var(--surface-3)';
+  const max = heatStats.value.max;
+  const pct = max > 0 ? Math.min(1, cents / max) : 0;
+  return `color-mix(in srgb, var(--accent) ${Math.round(18 + pct * 82)}%, var(--surface-3))`;
+}
+
+/** 待办紧急度 → 原型三档 class（late / soon / calm） */
+function urgencyLevel(date: string | null): 'late' | 'soon' | 'calm' {
+  if (date === null) return 'calm';
+  const days = daysUntil(date);
+  if (days < 0) return 'late';
+  if (days <= 3) return 'soon';
+  return 'calm';
+}
+
+function daysUntil(date: string): number {
+  const now = new Date();
+  const a = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const t = new Date(`${date}T00:00:00`);
+  const b = Date.UTC(t.getFullYear(), t.getMonth(), t.getDate());
+  return Math.round((b - a) / 86_400_000);
+}
+
 const dueTodos = computed(() => plansStore.dueTodos);
 const dueTotalAmount = computed(() =>
   dueTodos.value.reduce((acc, t) => acc + t.amountCents, 0),
 );
 
-const reminderTone = computed(() => reminderToneOf(dueTodos.value));
+/**
+ * 模板重写（原型骨架）后，以下几个派生量暂时没有引用点：
+ * 自适应字号（原型用 CSS clamp）、环比差值文案、日均对比、热力格内联样式
+ * （原型改用 color-mix 的 heat-dot）。**保留代码**，等交互态补齐时会再用上，
+ * 用 void 显式声明「有意保留」，比删掉再找回安全。
+ */
+void [
+  heroAmountStyle,
+  monthChangeDelta,
+  dailyCompareRatio,
+  heatCellStyle,
+  heroTitle,
+  // 以下为待办/还款文案的旧实现，原型改用 urgencyLevel + urgencyLabel
+  URGENCY_META,
+  urgencyOfOptional,
+  reminderStateLabel,
+  reminderToneOf,
+  formatMonthDay,
+  PaymentIcon,
+];
 
 async function handleAck(todoId: string): Promise<void> {
   await planTodosApi.ack(todoId);
@@ -336,479 +491,296 @@ async function handleSkip(todoId: string): Promise<void> {
 </script>
 
 <template>
-  <div class="pb-[calc(var(--bottom-bar-h)+var(--safe-bottom)+24px)]">
-    <!-- 概况一屏总览 -->
-    <header class="hero-section">
-      <!-- ① Hero 卡片（v5：静态稿布局 —— 顶行期间切换 + label + 发光大金额） -->
-      <div class="card hero-card relative overflow-hidden p-5 text-on-surface lg:p-7">
-        <!-- v5：Cyberpunk 终端卡头（交通灯） -->
-        <div class="terminal-head"><i></i><i></i><i></i><span>suenmoney · 2026</span></div>
-
-        <div class="relative z-1">
-          <div class="hero-toprow">
-          <!-- 期间切换与标题 -->
-          <div class="flex items-center gap-2">
-            <button
-              v-if="scope === 'month'"
-              type="button"
-              class="btn-v4 hero-nav-btn"
-              aria-label="上个月"
-              @click="month = shiftMonth(month, -1)"
-            >
-              ←
-            </button>
-            <h1 class="hero-title-sm">
-              {{ scope === 'month' ? formatMonthLabel(month) : scope === 'year' ? `${year} 年` : '全部时间' }}
-            </h1>
-            <button
-              v-if="scope === 'month'"
-              type="button"
-              class="btn-v4 hero-nav-btn"
-              :disabled="isCurrentSelectedMonth"
-              aria-label="下个月"
-              @click="month = shiftMonth(month, 1)"
-            >
-              →
-            </button>
-          </div>
-
-          <!-- 标题行行尾关闭按键（A24），返回流水落地页 -->
-          <RouterLink
-            :to="{ name: 'ledger' }"
-            class="btn-v4 hero-close"
-            aria-label="关闭概况，返回流水"
+  <div class="overview-grid">
+    <!-- ══════ ① 本期主卡（原型 og-hero：期间控件 + 大金额 + 环比 + 三指标 + 构成条）══════ -->
+    <section class="card card--pop og-hero">
+      <div class="hero-eyebrow">
+        <div class="seg" role="tablist" aria-label="期间">
+          <button
+            v-for="opt in SCOPE_OPTIONS"
+            :key="opt.value"
+            type="button"
+            role="tab"
+            class="seg-btn"
+            :class="{ 'is-on': scope === opt.value }"
+            :aria-selected="scope === opt.value"
+            @click="scope = opt.value"
           >
-            ✕
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="spacer" style="margin-left: auto" />
+        <div v-if="scope !== 'all'" class="period-nav">
+          <button type="button" class="icon-btn" aria-label="上一期间" @click="shiftBack">
+            <ChevronLeft :size="16" />
+          </button>
+          <span class="mono tiny" style="min-width: 92px; text-align: center">{{ periodLabel }}</span>
+          <button
+            type="button"
+            class="icon-btn"
+            aria-label="下一期间"
+            :disabled="scope === 'month' && isCurrentSelectedMonth"
+            @click="shiftForward"
+          >
+            <ChevronRight :size="16" />
+          </button>
+        </div>
+        <span v-else class="tag tag--dash">全部记录</span>
+      </div>
+
+      <div class="hero-amt">
+        <span class="cur">¥</span>{{ heroFormattedAmount }}
+      </div>
+
+      <div class="hero-delta">
+        <span v-if="activeChangeRatio !== null" class="delta-pill" :class="activeChangeRatio > 0 ? 'neg' : 'pos'">
+          <component :is="activeChangeRatio > 0 ? TrendingUp : TrendingDown" :size="11" />
+          {{ (activeChangeRatio * 100).toFixed(1) }}%
+        </span>
+        <span v-else class="delta-pill pos">—</span>
+        <span>较{{ scope === 'month' ? '上月' : scope === 'year' ? '去年' : '上一段' }}</span>
+        <span v-if="isOffline" class="muted tiny">· 离线数据</span>
+      </div>
+
+      <div class="hero-metrics">
+        <div class="stat">
+          <span class="stat-v">{{ scope === 'month' ? formatYuan(dailyAverageCents) : formatYuan(summaryMonthlyAvg) }}</span>
+          <span class="stat-l">{{ scope === 'month' ? '日均支出' : '月均支出' }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-v">{{ activeCount }} 笔</span>
+          <span class="stat-l">笔数</span>
+        </div>
+        <div class="stat">
+          <span class="stat-v">
+            {{ scope === 'month'
+              ? (estimatedMonthEndCents !== null ? formatYuan(estimatedMonthEndCents) : '—')
+              : (yearPeakMonth ? formatMonthLabel(yearPeakMonth.month) : '—') }}
+          </span>
+          <span class="stat-l">{{ scope === 'month' ? '预计月末' : '最高月' }}</span>
+        </div>
+      </div>
+
+      <div class="og-hero-foot">
+        <div class="stack-bar" role="img" aria-label="支出构成堆叠条">
+          <span
+            v-for="row in composeRows"
+            :key="row.id"
+            :style="{ flex: row.cents, background: row.color }"
+          />
+        </div>
+        <div class="compose-legend">
+          <span v-for="row in composeRows" :key="row.id" class="cl-item">
+            <i class="cl-dot" :style="{ background: row.color }" />
+            {{ row.name }}
+            <b class="mono" style="font-weight: 600">{{ percentOf(row.cents) }}%</b>
+          </span>
+        </div>
+        <div class="toolbar" style="margin-top: 14px">
+          <span class="desktop-only">
+            <button type="button" class="btn btn--primary" @click="ui.openCreate()">
+              <Plus :size="14" :stroke-width="2.4" />记一笔
+            </button>
+          </span>
+          <RouterLink :to="{ name: 'ledger' }" class="btn btn--ghost">
+            <ReceiptText :size="14" />查看流水
+          </RouterLink>
+          <span class="tiny muted mono" style="margin-left: auto">
+            {{ isOffline ? '离线数据 · 联网后自动校准' : '已与服务器同步' }}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════ ② 待办与要还（原型 og-todo：提醒条 + 本月要还 + 待办提醒）══════ -->
+    <section class="card og-todo og-card">
+      <button
+        type="button"
+        class="alert-strip"
+        :aria-expanded="isPopoverOpen"
+        @click="isPopoverOpen = !isPopoverOpen"
+      >
+        <TriangleAlert :size="15" />
+        <span>
+          {{ dueTodos.length === 0 ? '暂无待办' : `${dueTodos.length} 笔待处理 · ${formatYuan(dueTotalAmount)}` }}
+        </span>
+        <span class="spacer" style="margin-left: auto" />
+        <component :is="isPopoverOpen ? ChevronUp : ChevronDown" :size="13" />
+      </button>
+
+      <div v-if="isPopoverOpen" class="alert-pop" style="margin-top: 8px">
+        <div v-if="dueTodos.length === 0" class="empty">
+          <Check :size="18" />待办已清空
+        </div>
+        <div v-for="item in dueTodos" v-else :key="item.id" class="alert-item">
+          <i class="todo-mark" :class="`is-${urgencyLevel(item.repaymentDate)}`" style="height: 18px; width: 3px" />
+          <span style="min-width: 0; flex: 1 1 auto">{{ item.planName }} · {{ item.periodSeq }} 期</span>
+          <span class="urgency" :class="`urgency--${urgencyLevel(item.repaymentDate)}`">
+            {{ urgencyLabel(item.repaymentDate) }}
+          </span>
+          <div class="row-end">
+            <button
+              v-if="item.willAutoPost"
+              type="button"
+              class="btn btn--ghost btn--sm"
+              @click="handleAck(item.id)"
+            >
+              确认
+            </button>
+            <template v-else>
+              <button type="button" class="btn btn--ghost btn--sm" @click="handleConfirm(item)">入账</button>
+              <button type="button" class="btn btn--ghost btn--sm" @click="handleSkip(item.id)">忽略</button>
+            </template>
+          </div>
+        </div>
+        <div v-if="dueTodos.length" class="split" style="border-top: 1px dashed var(--line); padding-top: 8px">
+          <span class="tiny muted">
+            待办合计 <b class="mono" style="color: var(--ink)">{{ formatYuan(dueTotalAmount) }}</b>
+          </span>
+          <RouterLink
+            :to="{ name: 'settings' }"
+            class="btn btn--ghost btn--sm"
+            style="margin-left: auto"
+          >
+            全部待办
           </RouterLink>
         </div>
+      </div>
 
-        <p class="hero-eyebrow">
-          {{ heroTitle }}
-        </p>
-
-        <!-- 自适应金额展示区：根据数字长短和屏幕宽度平滑缩放，永不折行、永不溢出 -->
-        <div ref="heroAmountContainerRef" class="hero-amount-wrap w-full min-w-0 overflow-hidden">
-          <p v-if="loading && heroTotalCents === 0" class="skeleton h-[44px] w-56 rounded-sm lg:h-[52px]" />
-          <p
-            v-else
-            ref="heroAmountTextRef"
-            class="amount-hero font-extrabold leading-none tracking-tight tabular-nums whitespace-nowrap"
-            :style="heroAmountStyle"
-          >
-            {{ heroFormattedAmount }}
-          </p>
+      <div class="og-card-body">
+        <div class="card-h card-h--tight">
+          <span class="card-t">本月要还</span>
+          <span class="card-cap">信用卡 · {{ creditDue.length }} 张</span>
         </div>
-
-        <!-- 期间比对副标题 -->
-        <p class="mt-2 text-xs opacity-85">
-          <template v-if="scope === 'month'">
-            {{ formatMonthLabel(month) }} ·
-            <span v-if="monthChangeRatio !== null">
-              较上月
-              <b :class="monthChangeRatio > 0 ? 'text-tertiary' : 'text-secondary'">
-                {{ monthChangeRatio > 0 ? '+' : '' }}{{ (monthChangeRatio * 100).toFixed(1) }}%
-              </b>
-              （{{ monthChangeDelta >= 0 ? '+' : '' }}{{ formatYuan(monthChangeDelta) }}）
-            </span>
-            <span v-else>较上月 —</span>
-          </template>
-          <template v-else-if="scope === 'year'">
-            {{ year }} 年 ·
-            <span v-if="yearChangeRatio !== null">
-              与去年全年
-              <b :class="yearChangeRatio > 0 ? 'text-tertiary' : 'text-secondary'">
-                {{ yearChangeRatio > 0 ? '+' : '' }}{{ (yearChangeRatio * 100).toFixed(1) }}%
-              </b>
-            </span>
-            <span v-else>与去年全年 —</span>
-          </template>
-          <template v-else>
-            跨度 {{ summary?.recordedDays ?? 0 }} 天 · 共记 {{ summary?.years.length ?? 0 }} 年
-          </template>
-        </p>
-
-        <!-- 3 个子指标，随 tab 切换 -->
-        <div class="metrics-row">
-          <template v-if="scope === 'month'">
-            <div>
-              <span class="block opacity-75">日均</span>
-              <b class="mt-1 block text-base font-bold">{{ formatCompact(dailyAverageCents) }}</b>
-              <span class="mt-0.5 block opacity-60">已过 {{ monthElapsed }} 天</span>
-            </div>
-            <div>
-              <span class="block opacity-75">笔数</span>
-              <b class="mt-1 block text-base font-bold">{{ monthly?.count ?? 0 }} 笔</b>
-              <span class="mt-0.5 block opacity-60">笔</span>
-            </div>
-            <div>
-              <span class="block opacity-75">预计月末</span>
-              <b class="mt-1 block text-base font-bold">
-                {{ estimatedMonthEndCents !== null ? formatCompact(estimatedMonthEndCents) : '—' }}
-              </b>
-              <span class="mt-0.5 block opacity-60">
-                {{ estimatedMonthEndCents !== null ? '按当前速度' : '数据太少' }}
-              </span>
-            </div>
-          </template>
-
-          <template v-else-if="scope === 'year'">
-            <div>
-              <span class="block opacity-75">月均</span>
-              <b class="mt-1 block text-base font-bold">
-                {{ formatCompact(Math.round((yearly?.totalCents ?? 0) / 12)) }}
-              </b>
-              <span class="mt-0.5 block opacity-60">12 个月</span>
-            </div>
-            <div>
-              <span class="block opacity-75">笔数</span>
-              <b class="mt-1 block text-base font-bold">{{ yearly?.count ?? 0 }} 笔</b>
-              <span class="mt-0.5 block opacity-60">笔</span>
-            </div>
-            <div>
-              <span class="block opacity-75">最高月</span>
-              <b class="mt-1 block text-base font-bold">
-                {{ yearPeakMonth ? formatCompact(yearPeakMonth.totalCents) : '—' }}
-              </b>
-              <span class="mt-0.5 block opacity-60">
-                {{ yearPeakMonth ? `${Number(yearPeakMonth.month.slice(5))} 月` : '—' }}
-              </span>
-            </div>
-          </template>
-
-          <template v-else>
-            <div>
-              <span class="block opacity-75">月均</span>
-              <b class="mt-1 block text-base font-bold">
-                {{ formatCompact(summary?.monthlyAverageCents ?? 0) }}
-              </b>
-              <span class="mt-0.5 block opacity-60">历史月均</span>
-            </div>
-            <div>
-              <span class="block opacity-75">每笔均</span>
-              <b class="mt-1 block text-base font-bold">
-                {{ formatCompact(summary?.perExpenseAverageCents ?? 0) }}
-              </b>
-              <span class="mt-0.5 block opacity-60">累计 ÷ 笔数</span>
-            </div>
-            <div>
-              <span class="block opacity-75">最高月</span>
-              <b class="mt-1 block text-base font-bold">
-                {{ summary?.peakMonth ? formatCompact(summary.peakMonth.totalCents) : '—' }}
-              </b>
-              <span class="mt-0.5 block opacity-60">
-                {{ summary?.peakMonth ? summary.peakMonth.month : '—' }}
-              </span>
-            </div>
-          </template>
+        <div v-if="creditDue.length === 0" class="empty">
+          <CreditCard :size="18" />本月没有信用卡账单
         </div>
+        <div v-for="item in creditDue" v-else :key="item.paymentMethodId" class="due-row">
+          <span class="due-card-badge"><CreditCard :size="15" /></span>
+          <div style="min-width: 0; flex: 1 1 auto">
+            <div style="font-size: 12px; font-weight: 600">{{ item.name }}</div>
+            <div class="tiny muted">{{ item.count }} 笔</div>
+          </div>
+          <div class="row-end">
+            <div class="row-amt">{{ formatYuan(item.cents) }}</div>
+          </div>
+        </div>
+      </div>
 
-        <!-- 提醒条（仅桌面渲染）：收起态仅一行，点击向下展开动作面板 -->
-        <div
-          ref="chipbarRef"
-          class="chipbar hidden lg:flex"
-          :class="dueTodos.length === 0 ? 'chipbar--clean' : ''"
-          :data-open="isPopoverOpen ? 'true' : 'false'"
-          tabindex="0"
-          @click="isPopoverOpen = !isPopoverOpen"
-        >
-          <span v-if="dueTodos.length === 0">没有待处理</span>
-          <span v-else>{{ dueTodos.length }} 期待处理 · {{ formatYuan(dueTotalAmount) }}</span>
-
-          <span class="chipbar__spacer" />
-
-          <span class="chipbar__hint">
-            {{ isPopoverOpen ? '收起详情' : '点击查看详情' }}
-            <i
-              class="rchev ml-1"
-              :class="
-                reminderTone === 'late'
-                  ? 'rchev--late'
-                  : reminderTone === 'manual'
-                    ? 'rchev--manual'
-                    : 'rchev--none'
-              "
-            >
-              ▾
-            </i>
+      <div class="og-sub">
+        <div class="card-h card-h--tight">
+          <span class="card-t">待办提醒</span>
+          <span class="card-cap">{{ dueTodos.length }} 笔待处理</span>
+        </div>
+        <div v-if="dueTodos.length === 0" class="empty"><Check :size="18" />待办已清空</div>
+        <div v-for="item in dueTodos.slice(0, 3)" v-else :key="item.id" class="og-todo-row">
+          <span class="todo-mark" :class="`is-${urgencyLevel(item.repaymentDate)}`" />
+          <span class="og-todo-t">{{ item.planName }} · {{ item.periodSeq }} 期</span>
+          <span class="urgency" :class="`urgency--${urgencyLevel(item.repaymentDate)}`">
+            {{ urgencyLabel(item.repaymentDate) }}
           </span>
+          <b class="mono tiny">{{ formatYuan(item.amountCents) }}</b>
+        </div>
+      </div>
 
-          <!-- 桌面 Popover 展开区 -->
-          <div
-            v-if="dueTodos.length > 0"
-            class="popover text-ink"
-            @click.stop
+      <div class="og-card-foot">
+        <span class="tiny muted">
+          合计应还 <b class="mono" style="color: var(--ink)">{{ formatYuan(creditDueTotalCents) }}</b>
+        </span>
+        <RouterLink :to="{ name: 'settings' }" class="btn btn--ghost btn--sm">全部待办</RouterLink>
+      </div>
+    </section>
+
+    <!-- ══════ ③ 月度支出热力（原型 og-heat）══════ -->
+    <section class="card og-heat og-card">
+      <div class="card-h">
+        <span class="orb" style="background: var(--amber); color: #1E293B"><CalendarDays :size="16" /></span>
+        <span class="card-t">月度支出热力</span>
+        <span class="card-cap">近 12 个月 · 点击下钻</span>
+      </div>
+      <div class="og-card-body">
+        <div class="heat-grid">
+          <button
+            v-for="cell in rolling12"
+            :key="cell.month"
+            type="button"
+            class="heat-cell"
+            :class="{ 'is-now': cell.month === month }"
+            :title="`${cell.month} ${formatYuan(cell.totalCents ?? 0)}`"
+            @click="onHeatCellClick(cell.month)"
           >
-            <div class="flex items-center justify-between border-b border-line pb-2">
-              <h4 class="text-xs font-bold text-ink">待处理期次</h4>
-              <span class="text-xs text-ink-muted">{{ dueTodos.length }} 期待办</span>
-            </div>
-
-            <div class="mt-2 divide-y divide-line/60">
-              <div
-                v-for="item in dueTodos"
-                :key="item.id"
-                class="flex items-center justify-between gap-3 py-2 text-xs"
-              >
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <b class="font-bold tabular-nums text-ink">{{ formatYuan(item.amountCents) }}</b>
-                    <span class="truncate text-ink-muted">
-                      {{ item.periodSeq }}期 · {{ item.planName }}
-                    </span>
-                  </div>
-                  <div class="mt-0.5 flex items-center gap-2 text-[11px]">
-                    <span :class="URGENCY_META[urgencyOfOptional(item.repaymentDate)]">
-                      {{ formatMonthDay(item.repaymentDate) }} · {{ urgencyLabel(item.repaymentDate) }}
-                    </span>
-                    <span class="text-ink-muted">
-                      {{ reminderStateLabel(item.willAutoPost) }}
-                    </span>
-                  </div>
-                </div>
-
-                <div class="flex shrink-0 items-center gap-1.5">
-                  <template v-if="item.willAutoPost">
-                    <button
-                      type="button"
-                      class="rounded-sm bg-sunken px-2.5 py-1 text-xs font-semibold text-ink transition-colors hover:bg-line"
-                      @click="handleAck(item.id)"
-                    >
-                      确认
-                    </button>
-                  </template>
-                  <template v-else>
-                    <button
-                      type="button"
-                      class="rounded-sm bg-primary-fill px-2.5 py-1 text-xs font-semibold text-on-primary transition-colors hover:opacity-90"
-                      @click="handleConfirm(item)"
-                    >
-                      入账
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-sm bg-sunken px-2 py-1 text-xs font-semibold text-ink-muted transition-colors hover:bg-line"
-                      @click="handleSkip(item.id)"
-                    >
-                      忽略
-                    </button>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            <span class="heat-m">{{ Number(cell.month.slice(5, 7)) }}月</span>
+            <span class="heat-v">{{ formatCompact(cell.totalCents ?? 0) }}</span>
+            <span class="heat-dot" :style="{ background: heatDotColor(cell.totalCents) }" />
+          </button>
         </div>
       </div>
-
-      <!-- 档位切换（本月 / 今年 / 汇总）平铺三列按钮 -->
-      <div class="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-sunken p-1 shadow-2xs" role="tablist" aria-label="统计范围">
-        <button
-          type="button"
-          :aria-pressed="scope === 'month'"
-          class="rounded-md py-2 text-center text-xs font-semibold transition-all duration-150 cursor-pointer"
-          :class="
-            scope === 'month'
-              ? 'bg-surface text-ink font-bold shadow-2xs'
-              : 'text-ink-muted hover:text-ink'
-          "
-          @click="scope = 'month'"
-        >
-          本月
-        </button>
-        <button
-          type="button"
-          :aria-pressed="scope === 'year'"
-          class="rounded-md py-2 text-center text-xs font-semibold transition-all duration-150 cursor-pointer"
-          :class="
-            scope === 'year'
-              ? 'bg-surface text-ink font-bold shadow-2xs'
-              : 'text-ink-muted hover:text-ink'
-          "
-          @click="scope = 'year'"
-        >
-          今年
-        </button>
-        <button
-          type="button"
-          :aria-pressed="scope === 'all'"
-          class="rounded-md py-2 text-center text-xs font-semibold transition-all duration-150 cursor-pointer"
-          :class="
-            scope === 'all'
-              ? 'bg-surface text-ink font-bold shadow-2xs'
-              : 'text-ink-muted hover:text-ink'
-          "
-          @click="scope = 'all'"
-        >
-          汇总
-        </button>
+      <div class="og-card-foot">
+        <span class="tiny muted">
+          近 12 个月合计
+          <b class="mono" style="color: var(--ink)">{{ formatYuan(rolling12TotalCents) }}</b>
+        </span>
+        <RouterLink :to="{ name: 'report' }" class="btn btn--ghost btn--sm">打开报表</RouterLink>
       </div>
+    </section>
 
-      <p v-if="errorMessage !== null" class="mt-4 text-center text-sm font-semibold text-danger-text">
-        {{ errorMessage }}
-      </p>
-      <p v-if="isOffline" class="mt-4 text-center text-xs text-ink-muted">
-        离线数据，联网后自动校准
-      </p>
-    </header>
-
-    <main class="dash-main mx-auto mt-6 w-full max-w-[var(--content-max)] space-y-6 px-4 lg:px-6">
-      <!-- ② 第二行：本月要还 + 支出进度（双列等高卡片） -->
-      <section class="facts-grid" aria-label="当期事实">
-        <!-- 本月要还 -->
-        <div class="card fact-card">
-          <div>
-            <div class="flex items-center justify-between">
-              <h2 class="label-cn">本月要还</h2>
-              <span class="text-xs text-ink-muted">信用卡账单</span>
-            </div>
-
-            <p class="fact-amount num">
-              {{ formatYuan(creditDueTotalCents) }}
-            </p>
-
-            <div v-if="creditDue.length === 0" class="mt-3 text-xs text-ink-muted">
-              本月无待还款信用卡
-            </div>
-            <ul v-else class="mt-3 divide-y divide-line/60 max-h-[160px] overflow-y-auto pr-0.5">
-              <li
-                v-for="item in creditDue"
-                :key="item.paymentMethodId"
-                class="flex items-center justify-between py-2 text-xs"
-              >
-                <PaymentIcon :name="item.name" :size="20" class="mr-2.5" />
-                <div class="min-w-0 flex-1">
-                  <span class="block truncate font-semibold text-ink">{{ item.name }}</span>
-                  <span
-                    v-if="item.repaymentDate !== null"
-                    class="block text-[11px]"
-                    :class="URGENCY_META[urgencyOfOptional(item.repaymentDate)]"
-                  >
-                    {{ formatMonthDay(item.repaymentDate) }} · {{ urgencyLabel(item.repaymentDate) }} · 已记 {{ item.count }} 笔
-                  </span>
-                </div>
-                <b class="shrink-0 text-sm font-bold tabular-nums text-ink">
-                  {{ formatYuan(item.cents) }}
-                </b>
-              </li>
-            </ul>
-          </div>
-
-          <p class="mt-3 border-t border-line/60 pt-2 text-xs text-ink-muted">
-            <template v-if="creditDue.length > 0">
-              共 <b class="font-bold tabular-nums text-ink">{{ creditDue.length }}</b> 笔待还款信用卡
-            </template>
-            <template v-else>
-              全部信用卡账单已结清或无待还
-            </template>
-          </p>
+    <!-- ══════ ④ 累计与跨度（原型 og-cum）══════ -->
+    <section class="card og-cum og-card">
+      <div class="card-h">
+        <span class="orb" style="background: var(--mint); color: #1E293B"><Layers :size="16" /></span>
+        <span class="card-t">累计与跨度</span>
+        <span class="card-cap">全部历史口径</span>
+      </div>
+      <div class="og-card-body">
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <div class="kv"><span class="tiny muted">历史累计</span><b>{{ formatYuan(summaryTotalCents) }}</b></div>
+          <div class="kv"><span class="tiny muted">记录笔数</span><b>{{ summaryCount }} 笔</b></div>
+          <div class="kv"><span class="tiny muted">记录跨度</span><b>{{ summarySpanMonths }} 个月 · {{ summary?.years.length ?? 0 }} 年</b></div>
+          <div class="kv"><span class="tiny muted">月均支出</span><b>{{ formatYuan(summaryMonthlyAvg) }}</b></div>
+          <div class="kv"><span class="tiny muted">单笔均值</span><b>{{ formatYuan(summary?.perExpenseAverageCents ?? 0) }}</b></div>
         </div>
+      </div>
+    </section>
 
-        <!-- 支出进度卡 -->
-        <div class="card fact-card">
-          <div>
-            <div class="flex items-center justify-between">
-              <h2 class="label-cn">本月支出进度</h2>
-              <span class="text-xs text-ink-muted">对近 3 个月日均</span>
-            </div>
-
-            <p class="mt-2 text-2xl font-extrabold text-ink">
-              {{ formatYuan(dailyAverageCents) }}
-              <span class="text-xs font-normal text-ink-muted"> / 天</span>
-            </p>
-
-            <p class="mt-1 text-xs text-ink-muted">
-              本月已过 {{ monthElapsed }} 天 · 已花 {{ formatYuan(monthly?.totalCents ?? 0) }}
-            </p>
-
-            <!-- 进度条 -->
-            <div class="mt-3.5 h-2 w-full overflow-hidden rounded-full bg-sunken">
-              <div
-                class="h-full rounded-full transition-all duration-300"
-                :class="
-                  progressBarPercent > 120
-                    ? 'bg-danger-fill'
-                    : progressBarPercent > 100
-                      ? 'bg-accent-fill'
-                      : 'bg-primary-fill'
-                "
-                :style="{ width: `${Math.min(100, progressBarPercent)}%` }"
+    <!-- ══════ ⑤ 还款进度（原型 og-progress）══════ -->
+    <section class="card og-progress og-card">
+      <div class="card-h">
+        <span class="card-t">还款进度</span>
+        <span class="card-cap">进行中计划 {{ activePlanCount }} 个</span>
+        <span style="margin-left: auto">
+          <RouterLink :to="{ name: 'settings' }" class="btn btn--ghost btn--sm">
+            管理计划<ChevronRight :size="12" />
+          </RouterLink>
+        </span>
+      </div>
+      <div class="op-row">
+        <div class="op-main">
+          <div class="split" style="align-items: baseline; gap: 8px">
+            <span class="op-num">{{ formatYuan(planPaidCents) }}</span>
+            <span class="tiny muted">/ {{ formatYuan(planMonthlyCents) }}</span>
+            <span class="mono tiny muted" style="margin-left: auto">{{ progressPct.toFixed(0) }}%</span>
+          </div>
+          <div style="margin-top: 8px">
+            <div class="bar">
+              <span
+                class="bar-fill"
+                :style="{
+                  width: `${Math.min(100, progressPct)}%`,
+                  background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
+                }"
               />
             </div>
-
-            <p class="mt-2 text-xs">
-              <template v-if="dailyCompareRatio !== null">
-                比近 3 个月日均
-                <b :class="dailyCompareRatio > 0 ? 'text-danger-text' : 'text-secondary-text'">
-                  {{ dailyCompareRatio > 0 ? '高' : '低' }} {{ Math.abs(Math.round(dailyCompareRatio * 100)) }}%
-                </b>
-              </template>
-              <template v-else>
-                近 3 个月无参考基准
-              </template>
-            </p>
-          </div>
-
-          <p class="mt-3 border-t border-line/60 pt-2 text-xs text-ink-muted">
-            预计月末
-            <b class="font-bold tabular-nums text-ink">
-              {{ estimatedMonthEndCents !== null ? formatYuan(estimatedMonthEndCents) : '—' }}
-            </b>
-            <span v-if="estimatedMonthEndCents === null" class="ml-1 text-[11px]">（前 3 天不显示）</span>
-          </p>
-        </div>
-      </section>
-
-      <!-- ③ 第三行：月度支出热力（最近 12 个月滚动，通栏） -->
-      <section class="card heat-section" aria-label="月度支出热力">
-        <div class="flex items-center justify-between">
-          <h2 class="label-cn">月度支出热力</h2>
-          <span class="text-xs text-ink-muted">最近 12 个月 · 滚动</span>
-        </div>
-
-        <div class="heat mt-3.5">
-          <div
-            v-for="(c, idx) in rolling12"
-            :key="c.month"
-            class="heat__cell"
-            :class="[
-              c.totalCents === null || c.totalCents === 0 ? 'heat__cell--empty' : '',
-              idx === rolling12.length - 1 ? 'heat__cell--now' : '',
-            ]"
-            :style="heatCellStyle(c.totalCents)"
-            :title="`${c.month} · ${c.totalCents === null ? '无记录' : formatYuan(c.totalCents)}`"
-            @click="onHeatCellClick(c.month)"
-          >
-            <span class="heat__m">{{ Number(c.month.slice(5)) }}月</span>
-            <span class="heat__v heat__v--full">
-              {{ c.totalCents === null ? '—' : formatCompact(c.totalCents) }}
-            </span>
-            <span class="heat__v heat__v--short">
-              {{ c.totalCents === null ? '—' : formatCompact(c.totalCents) }}
-            </span>
+            <div class="progress-line">
+              <span>本月计划固定还款</span><span>已入账 {{ formatYuan(planPaidCents) }}</span>
+            </div>
           </div>
         </div>
-      </section>
-
-      <!-- ④ 第四行：累计条（通栏一行） -->
-      <div class="strip" role="region" aria-label="累计数据">
-        <span class="strip__label">累计</span>
-        <div class="strip__items">
-          <span>已记 <b>{{ summary?.recordedDays ?? 0 }}</b> 天</span>
-          <span><b>{{ summary?.count ?? 0 }}</b> 笔</span>
-          <span>
-            平均
-            <b>
-              {{
-                summary && summary.recordedDays > 0
-                  ? (summary.count / summary.recordedDays).toFixed(1)
-                  : '0.0'
-              }}
-            </b>
-            笔 / 天
-          </span>
-          <span>首笔 <b>{{ summary?.firstRepaymentDate ?? '—' }}</b></span>
+        <div class="op-stats">
+          <div class="stat"><span class="stat-v">{{ activePlanCount }}</span><span class="stat-l">进行中计划</span></div>
+          <div class="stat"><span class="stat-v">{{ dueTodos.length }}</span><span class="stat-l">待处理待办</span></div>
+          <div class="stat"><span class="stat-v">{{ formatYuan(dueTotalAmount) }}</span><span class="stat-l">待办金额</span></div>
         </div>
       </div>
-    </main>
+    </section>
   </div>
 </template>
