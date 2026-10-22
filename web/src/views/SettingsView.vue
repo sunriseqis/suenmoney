@@ -93,12 +93,18 @@ async function addMember(): Promise<void> {
 /**
  * 设置的当前分区。
  */
+/**
+ * v6：按「意图」分 3 组，不再按技术域。
+ *   账目 = 日常维护的字典与计划
+ *   数据 = 应用设置 + 数据进出（主题/服务端/导入导出/备份/更新都在 DataPanel 里）
+ *   家庭 = 成员与我
+ */
 const SETTING_TABS = [
   { id: 'categories', label: '分类', group: '账目' },
   { id: 'payments', label: '支付', group: '账目' },
   { id: 'plans', label: '计划', group: '账目' },
-  { id: 'system', label: '系统', group: '系统' },
-  { id: 'household', label: '账号', group: '系统' },
+  { id: 'system', label: '数据', group: '数据' },
+  { id: 'household', label: '账号', group: '家庭' },
 ] as const;
 type TabId = (typeof SETTING_TABS)[number]['id'];
 

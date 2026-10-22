@@ -553,6 +553,28 @@
                           text-transform: uppercase; color: var(--on-surface-variant); }
   @media (max-width: 960px) { .login-card { padding: 24px 20px; } }
 
+  /* ═══════ v6 布局重排：用 order 改区块顺序（不动 DOM）═══════════
+     概况页：热力（趋势）提到当期事实前面 —— 先看「这个月在什么水位」，
+     再看「具体要还多少」。累计条压到最后。
+     流水页：构成卡上移到列表上方（先看结构再看明细）。 */
+  .dash-main { display: flex; flex-direction: column; }
+  .dash-main > .facts-grid { order: 2; }
+  .dash-main > .heat-section { order: 1; }
+  .dash-main > :nth-child(3) { order: 3; }
+  .dash-main > :nth-child(4) { order: 4; }
+
+  .ledger-main { display: flex; flex-direction: column; }
+  .ledger-main > .ledger-composition { order: 1; }
+  .ledger-main > :not(.ledger-composition) { order: 2; }
+
+  @media (min-width: 1024px) {
+    /* 桌面：当期事实与热力并排（热力窄、事实宽），一行看完 */
+    .dash-main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .dash-main > .facts-grid { order: 0; display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .dash-main > .heat-section { order: 0; margin: 0; }
+    .dash-main > :nth-child(3), .dash-main > :nth-child(4) { grid-column: 1 / -1; }
+  }
+
   /* v6：构成卡贴着流水列表 */
   .ledger-composition { margin-top: 16px; }
 
