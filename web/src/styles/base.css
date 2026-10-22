@@ -553,6 +553,41 @@
                           text-transform: uppercase; color: var(--on-surface-variant); }
   @media (max-width: 960px) { .login-card { padding: 24px 20px; } }
 
+  /* ═══════ v6 流水顶卡（静态稿 hero 语言 + 构成一屏答完）═══════════ */
+  .topcard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .topcard-amount-row { display: flex; align-items: baseline; justify-content: space-between;
+                        gap: 12px; margin-top: 6px; }
+  .topcard-metrics {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-top: 14px; padding-top: 12px; border-top: var(--border-width) solid var(--outline);
+  }
+  .topcard-metrics > div { min-width: 0; }
+  .topcard-metrics .metric-label { font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--on-surface-variant); display: block; }
+  .topcard-metrics .metric-value { font-family: var(--font-head); font-size: 16px; font-weight: 700;
+    display: block; margin-top: 2px; }
+  :root:not([data-theme='light']) .topcard-metrics .metric-value { color: var(--primary); }
+  .topcard-metrics .metric-sub { font-size: 10.5px; color: var(--on-surface-variant);
+    display: block; margin-top: 1px; }
+
+  /* chip（静态稿：胶囊/切角 + 语义色 + 小圆点 + caret） */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    font-family: var(--font-sans); font-weight: 700; font-size: 12px;
+    padding: 5px 12px; border-radius: var(--radius-pill);
+    border: var(--border-width) solid var(--fg);
+    clip-path: var(--chamfer-sm);
+    cursor: pointer; transition: all var(--dur) var(--ease);
+  }
+  .chip-up { background: var(--tertiary); color: var(--on-tertiary); }
+  .chip-down { background: var(--quaternary); color: var(--on-quaternary); }
+  .chip-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .chip-dot-late { background: currentColor; animation: pulse 1.6s infinite; }
+  .chip-dot-ok { background: currentColor; opacity: .7; }
+  .chip-caret { font-size: 9px; transition: transform var(--dur) var(--ease); }
+  .chip-caret.open { transform: rotate(180deg); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
   /* 设置页条目（静态稿：行卡 + 图标列 + 主副文字） */
   .settings-row { grid-template-columns: 40px 1fr auto; gap: 12px; padding: 10px 16px; }
   :root[data-theme='light'] .settings-row { box-shadow: 4px 4px 0px 0px #E2E8F0; }

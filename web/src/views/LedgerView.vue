@@ -60,7 +60,6 @@ import {
 import { adaptiveAmountStyle, formatCents, formatCompact, formatYuan } from '@/utils/money';
 import {
   reminderStateLabel,
-  reminderToneOf,
   URGENCY_META,
   urgencyLabel,
   urgencyOfOptional,
@@ -179,7 +178,6 @@ const dueTotalAmount = computed(() =>
 const hasOverdue = computed(() =>
   dueTodos.value.some((t) => urgencyOfOptional(t.repaymentDate) === 'overdue'),
 );
-const reminderTone = computed(() => reminderToneOf(dueTodos.value));
 
 async function handleAck(todoId: string): Promise<void> {
   await planTodosApi.ack(todoId);
@@ -711,36 +709,28 @@ function fullCategoryName(item: {
 
             <!-- 卡片内容区 -->
             <div class="relative z-1">
-              <!-- 顶栏：label + 内嵌提醒胶囊（chip） -->
-              <div class="flex items-center justify-between gap-2">
-                <div class="label lg:hidden">{{ topCardTitle }}</div>
+              <!-- 顶栏：label 左 + 待办 chip 右（v6：chip 独立化） -->
+              <div class="topcard-head">
+                <div class="label">{{ topCardTitle }}</div>
 
-                <!-- 缩小并包在卡片内部的提醒胶囊 -->
+                <!-- 待办 chip：独立入口，点开动作面板（桌面原 popover 逻辑） -->
                 <button
                   v-if="dueTodos.length > 0"
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all cursor-pointer shrink-0 shadow-2xs"
-                  :class="hasOverdue ? 'bg-tertiary-container text-tertiary' : 'bg-surface-high text-on-surface-variant'"
+                  class="chip"
+                  :class="hasOverdue ? 'chip-up' : 'chip-down'"
                   @click="isTopCardExpanded = !isTopCardExpanded"
                 >
-                  <span
-                    class="inline-block h-1.5 w-1.5 rounded-full shrink-0"
-                    :class="hasOverdue ? 'bg-white animate-pulse' : (reminderTone === 'manual' ? 'bg-amber-300' : 'bg-emerald-300')"
-                  />
+                  <span class="chip-dot" :class="hasOverdue ? 'chip-dot-late' : 'chip-dot-ok'" />
                   <span>{{ hasOverdue ? '待办逾期' : `${dueTodos.length} 期待处理` }}</span>
-                  <span class="font-bold tabular-nums">¥{{ formatCents(dueTotalAmount) }}</span>
-                  <span
-                    class="text-[9px] transition-transform duration-200"
-                    :class="isTopCardExpanded ? 'rotate-180' : ''"
-                  >
-                    ▾
-                  </span>
+                  <b class="tabular-nums">¥{{ formatCents(dueTotalAmount) }}</b>
+                  <span class="chip-caret" :class="{ open: isTopCardExpanded }">▾</span>
                 </button>
               </div>
 
-              <!-- 中间：大金额展示（自适应缩放） -->
-              <div class="mt-2.5 min-w-0 overflow-hidden">
-                <div class="amount-v3 lg whitespace-nowrap">
+              <!-- 中间：大金额 + 环比 chip（v6：一行，静态稿 hero 语言） -->
+              <div class="topcard-amount-row">
+                <div class="amount-v3 lg whitespace-nowrap min-w-0">
                   <span class="cur">¥</span>
                   <span
                     class="int font-extrabold tracking-tight tabular-nums"
@@ -749,6 +739,13 @@ function fullCategoryName(item: {
                     {{ formatCents(displayTotalCents) }}
                   </span>
                 </div>
+                <span
+                  v-if="scope === 'month' && monthChangeRatio !== null"
+                  class="chip"
+                  :class="monthChangeRatio > 0 ? 'chip-up' : 'chip-down'"
+                >
+                  {{ monthChangeRatio > 0 ? '▲' : '▼' }}{{ (monthChangeRatio * 100).toFixed(1) }}%
+                </span>
               </div>
 
               <!-- 期间环比与亮点说明 -->
@@ -780,7 +777,7 @@ function fullCategoryName(item: {
               </div>
 
               <!-- 底部：3 列结构化指标格（充实信息，消灭空洞感） -->
-              <div class="mt-3 grid grid-cols-3 gap-2 border-t border-outline pt-2.5 text-xs text-on-surface">
+              <div class="topcard-metrics">
                 <!-- 栏位 1: 日均 (月) / 月均 (年) -->
                 <div>
                   <span class="block text-[11px] opacity-70">
