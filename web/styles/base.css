@@ -139,3 +139,84 @@ html[data-theme='cyber'] {
   min-width: 0;
   flex: 1 1 auto;
 }
+
+/* ==========================================================================
+   计划卡与待办行的两个共用件（decisions「计划卡要有身份物，危险动作收进更多」）
+   --------------------------------------------------------------------------
+   1. .plan-ticks —— 期次进度刻度，**最多 12 段**：12 期一眼看得出还剩几格，
+      而 30 年房贷 360 期逐期画只会变成一片灰点。精确数字始终由旁边文字给出。
+   2. .more-menu —— 危险动作（终止/删除/跳过）收进「更多」，主按钮只留
+      确认/入账。跳过是不可逆的（跳过的期次不会回到待办），平铺会把误触代价
+      做得和正常操作一样低。
+   ========================================================================== */
+.plan-ticks {
+  display: flex;
+  gap: 2px;
+  margin-top: 6px;
+}
+.plan-ticks i {
+  flex: 1 1 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+.plan-ticks i.is-done {
+  background: var(--accent);
+}
+.app[data-theme='cyber'] .plan-ticks i {
+  border-radius: 0;
+}
+.app[data-theme='cyber'] .plan-ticks i.is-done {
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.more-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+.more-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+.more-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.more-menu > summary:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+.more-menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-card);
+}
+.more-menu-pop button {
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.more-menu-pop button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.more-menu-pop button.is-danger {
+  color: var(--danger);
+}

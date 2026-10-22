@@ -347,12 +347,16 @@ onMounted(() => {
             {{ t.willAutoPost ? '自动' : '需手动' }}
           </span>
           <b class="mono tiny">{{ formatYuan(t.amountCents) }}</b>
-          <button type="button" class="link-btn" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
+          <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
             {{ t.willAutoPost ? '确认' : '入账' }}
-          </button>
-          <button type="button" class="link-btn" style="color: var(--ink-3)" @click="todoAction(t, 'skip')">
-            忽略
-          </button>
+          </PBtn>
+          <!-- 跳过不可逆（跳过的期次不回到待办），收进「更多」降低误触 -->
+          <details class="more-menu">
+            <summary>更多</summary>
+            <div class="more-menu-pop">
+              <button type="button" class="is-danger" @click="todoAction(t, 'skip')">忽略本期</button>
+            </div>
+          </details>
         </div>
       </div>
     </PCard>
