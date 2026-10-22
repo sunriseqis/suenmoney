@@ -22,7 +22,16 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'docs/design/tokens.json');
-const OUT_CSS = join(ROOT, 'web/src/styles/tokens.generated.css');
+/**
+ * CSS 产物落在 docs/design/generated/ 而不是 web/src/styles/。
+ *
+ * 为什么：重构后的 Web 端视觉来源是用户原型的设计系统（styles/proto/*.css），
+ * 不再消费 tokens.json 生成的 CSS 变量。tokens.json 现在的角色是
+ * 「设计令牌的单一真相源」，供 **iOS（Swift）/ 鸿蒙（ArkTS）** 与文档使用；
+ * Web 侧保留一份 CSS 产物只作对照，不参与构建。
+ * 这样 `npm run tokens:check` 仍然能守住漂移，但不再假装是 Web 的样式源。
+ */
+const OUT_CSS = join(ROOT, 'docs/design/generated/tokens.css');
 const OUT_DIR = join(ROOT, 'docs/design/generated');
 const CHECK = process.argv.includes('--check');
 

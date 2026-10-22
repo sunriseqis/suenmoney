@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * 概况（原「首页」）：一屏总览，只回答「多少」（横跨月 / 年 / 总）。
+ * 概况（原型 `views/Dashboard.jsx`）。
  *
- * 铁律（§五 第 3 条 · §6.1）：
- *   1. 概况 DOM 里彻底不出现任何分类名（分类构成整体归报表页）。
- *   2. 概况不再放流水（流水页是唯一的明细出口）。
- *   3. 桌面 hero 底部挂提醒条（popover 展开后能动手），移动端提醒归流水页顶卡。
- *   4. 卡片一律按内容高（.card-grid），最后一行内容离底边 < 40px。
+ * 五卡布局：主卡（期间 + 大金额 + 环比 + 三指标 + 构成条）/ 待办与要还 /
+ * 月度热力 / 累计与跨度 / 还款进度。
+ *
+ * 数据全部来自报表接口，**不从前端明细重算**：合计、构成、环比、热力
+ * 都有服务端口径，前端再算一遍迟早与报表页对不上。
  */
 import {
   CalendarDays,
@@ -18,612 +18,304 @@ import {
   Layers,
   Plus,
   ReceiptText,
-  Settings2,
   TrendingDown,
   TrendingUp,
   TriangleAlert,
 } from '@lucide/vue';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, ref, watch } from 'vue';
 
-import {
-  ApiError,
-  planTodos as planTodosApi,
-  reports as reportsApi,
-  type MonthlyReport,
-  type PlanTodo,
-  type SummaryReport,
-  type YearlyReport,
-} from '@/api';
-import type { CategoryBucket } from '@/api/types';
-import PaymentIcon from '@/components/PaymentIcon.vue';
-import {
-  PBar,
-  PBtn,
-  PEmpty,
-  PIconBtn,
-  POrb,
-  PSeg,
-  PStat,
-  PTag,
-} from '@/components/proto';
+import { reports, type CategoryBucket, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
+import { useToast } from '@/composables/useToast';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
-import { useSyncStore } from '@/stores/sync';
 import { useUiStore } from '@/stores/ui';
-import {
-  currentMonth,
-  daysInMonth,
-  elapsedDays,
-  formatMonthDay,
-  formatMonthLabel,
-  shiftMonth,
-} from '@/utils/dates';
-import { getCachedExpenses } from '@/utils/idb';
-import { createLatestGuard } from '@/utils/latest-request';
-import { adaptiveAmountStyle, formatCompact, formatYuan } from '@/utils/money';
-import {
-  buildMonthlyReportFallback,
-  buildSummaryReportFallback,
-  buildYearlyReportFallback,
-} from '@/utils/offline-stats';
-import {
-  reminderStateLabel,
-  reminderToneOf,
-  URGENCY_META,
-  urgencyLabel,
-  urgencyOfOptional,
-} from '@/utils/urgency';
+import { PBtn, PCard, PEmpty, PIconBtn, POrb, PSeg, PStat, PTag } from '@/ui';
+import { currentMonth, daysInMonth, elapsedDays, formatMonthLabel, formatMonthDay, shiftMonth, todayLocal } from '@/utils/dates';
+import { formatCompact, formatYuan } from '@/utils/money';
 
-const router = useRouter();
 const ui = useUiStore();
-const plansStore = usePlansStore();
 const dict = useDictionariesStore();
-const syncStore = useSyncStore();
+const plans = usePlansStore();
+const toast = useToast();
 
-type Scope = 'month' | 'year' | 'all';
+type Tier = 'month' | 'year' | 'all';
 
-const scope = ref<Scope>('month');
-const month = ref(currentMonth());
-const year = computed(() => month.value.slice(0, 4));
-
-const monthly = ref<MonthlyReport | null>(null);
-const yearly = ref<YearlyReport | null>(null);
-const summary = ref<SummaryReport | null>(null);
-
-const loading = ref(true);
-const errorMessage = ref<string | null>(null);
-
-/**
- * 「只认最新一次」守卫。
- *
- * 概况有多个刷新触发源（切月、切档、ui.dataVersion、网络恢复），
- * 慢网下先发的请求可能后到并**覆盖**后发请求拿到的新数据 ——
- * 用户看到 hero 金额「跳回去」，还会以为是自己记错了。
- * 发请求前取序号，回来时不是最新就整段丢弃（含 loading 收尾，交给最新那次）。
- */
-const loadGuard = createLatestGuard();
-
-/**
- * 是否处于「离线本地口径」：最近一次请求因网络不可达（status 0）失败。
- * 为 true 时 monthly/yearly/summary 展示的是本地缓存流水聚合的结果。
- */
-const isOffline = ref(false);
-const isPopoverOpen = ref(false);
-
-const chipbarRef = ref<HTMLElement | null>(null);
-
-function handleClickOutside(event: MouseEvent): void {
-  if (chipbarRef.value && !chipbarRef.value.contains(event.target as Node)) {
-    isPopoverOpen.value = false;
-  }
-}
-
-const heroAmountContainerRef = ref<HTMLElement | null>(null);
-const heroAmountTextRef = ref<HTMLElement | null>(null);
-const heroCustomFontSizePx = ref<number | null>(null);
-
-let heroResizeObserver: ResizeObserver | null = null;
-
-function adjustHeroFontSize(): void {
-  heroCustomFontSizePx.value = null;
-  requestAnimationFrame(() => {
-    const container = heroAmountContainerRef.value;
-    const text = heroAmountTextRef.value;
-    if (!container || !text) return;
-    const cWidth = container.clientWidth;
-    const sWidth = text.scrollWidth;
-    if (cWidth > 0 && sWidth > cWidth) {
-      const currentSize = parseFloat(window.getComputedStyle(text).fontSize) || 24;
-      const targetSize = Math.max(14, Math.floor(currentSize * ((cWidth - 2) / sWidth)));
-      heroCustomFontSizePx.value = targetSize;
-    }
-  });
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside);
-  load();
-
-  if (typeof ResizeObserver !== 'undefined' && heroAmountContainerRef.value) {
-    heroResizeObserver = new ResizeObserver(() => {
-      adjustHeroFontSize();
-    });
-    heroResizeObserver.observe(heroAmountContainerRef.value);
-  }
-});
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside);
-  if (heroResizeObserver) {
-    heroResizeObserver.disconnect();
-    heroResizeObserver = null;
-  }
-});
-
-async function load(): Promise<void> {
-  const token = loadGuard.begin();
-  loading.value = true;
-  errorMessage.value = null;
-
-  try {
-    // 结算到期的自动入账待办，再并行拉取计划与三档报表
-    await plansStore.loadDueTodos();
-
-    const [, monthlyRes, yearlyRes, summaryRes] = await Promise.all([
-      plansStore.loadPlans(),
-      reportsApi.monthly(month.value),
-      reportsApi.yearly(year.value),
-      reportsApi.summary(),
-    ]);
-
-    // 期间又发生了刷新（切月/ 记了一笔 / 网络恢复）：这一份已经是旧数据，整段丢弃。
-    if (!loadGuard.isLatest(token)) return;
-
-    monthly.value = monthlyRes.report;
-    yearly.value = yearlyRes.report;
-    summary.value = summaryRes.report;
-    isOffline.value = false;
-  } catch (error) {
-    if (!loadGuard.isLatest(token)) return;
-    if (error instanceof ApiError && error.status === 0) {
-      // 离线：在线报表不可用，改用本地缓存流水聚合的报表。
-      // 这样离线记一笔后 ui.dataVersion 变化触发重算，hero 数字立刻刷新。
-      isOffline.value = true;
-      await loadOfflineReports();
-      return;
-    }
-    errorMessage.value = error instanceof ApiError ? error.message : '加载失败，请重试';
-  } finally {
-    // loading 也判序号：被丢弃的旧请求提前关掉加载态，界面会在数据还没到时就不转了。
-    if (loadGuard.isLatest(token)) loading.value = false;
-  }
-}
-
-/**
- * 用本地缓存流水构造报表形状的对象，塞回原来的 monthly/yearly/summary ref，
- * 使模板里既有的字段绑定（hero、本月要还、热力图…）无需改造即可消费。
- */
-async function loadOfflineReports(): Promise<void> {
-  const cached = await getCachedExpenses();
-  monthly.value = buildMonthlyReportFallback(cached, month.value);
-  yearly.value = buildYearlyReportFallback(cached, year.value);
-  summary.value = buildSummaryReportFallback(cached);
-}
-
-watch(month, load);
-watch(() => ui.dataVersion, load);
-
-// 网络恢复后重新拉服务端数据：服务端是权威，用在线口径覆盖本地回退。
-watch(
-  () => syncStore.isOnline,
-  (online) => {
-    if (online) void load();
-  },
-);
-
-// ---------------------------------------------------------------------------
-// 桌面 Hero 指标
-// ---------------------------------------------------------------------------
-
-const heroTitle = computed(() => {
-  if (scope.value === 'month') return '本月支出';
-  if (scope.value === 'year') return '今年支出';
-  return '累计支出';
-});
-
-const heroTotalCents = computed(() => {
-  if (scope.value === 'month') return monthly.value?.totalCents ?? 0;
-  if (scope.value === 'year') return yearly.value?.totalCents ?? 0;
-  return summary.value?.totalCents ?? 0;
-});
-
-const heroFormattedAmount = computed(() => formatYuan(heroTotalCents.value));
-
-const heroAmountStyle = computed(() => {
-  if (heroCustomFontSizePx.value !== null) {
-    return { fontSize: `${heroCustomFontSizePx.value}px` };
-  }
-  return adaptiveAmountStyle(heroFormattedAmount.value, 'hero');
-});
-
-watch([heroTotalCents, scope], () => {
-  adjustHeroFontSize();
-});
-
-const isCurrentSelectedMonth = computed(() => month.value === currentMonth());
-
-/** 本月日均 */
-const monthElapsed = computed(() => Math.max(1, elapsedDays(month.value)));
-const monthTotalDays = computed(() => daysInMonth(month.value));
-
-const dailyAverageCents = computed(() =>
-  Math.round((monthly.value?.totalCents ?? 0) / monthElapsed.value),
-);
-
-/**
- * 预计月末：已花 ÷ 已过天数 × 当月总天数。
- * 铁律：前 3 天不显示（数据太少，首日误差可达十倍），显示 null。
- */
-const estimatedMonthEndCents = computed<number | null>(() => {
-  if (monthElapsed.value < 3) return null;
-  return Math.round(
-    ((monthly.value?.totalCents ?? 0) / monthElapsed.value) * monthTotalDays.value,
-  );
-});
-
-const monthChangeRatio = computed(() => monthly.value?.change.ratio ?? null);
-const monthChangeDelta = computed(() => monthly.value?.change.deltaCents ?? 0);
-
-const yearChangeRatio = computed(() => yearly.value?.yearAgo.change.ratio ?? null);
-
-const yearPeakMonth = computed(() => yearly.value?.peakMonth ?? null);
-
-// ---------------------------------------------------------------------------
-// 本月要还与进度对比
-// ---------------------------------------------------------------------------
-
-const creditDue = computed(() =>
-  (monthly.value?.paymentMethods ?? []).filter((item) => item.type === 'credit'),
-);
-
-const creditDueTotalCents = computed(() =>
-  creditDue.value.reduce((sum, item) => sum + item.cents, 0),
-);
-
-/** 近 3 个月日均消费（分） */
-const baselineDailyAvgCents = computed(
-  () => monthly.value?.rolling3MonthsDailyAverageCents ?? 0,
-);
-
-const dailyCompareRatio = computed<number | null>(() => {
-  if (baselineDailyAvgCents.value === 0) return null;
-  return (dailyAverageCents.value - baselineDailyAvgCents.value) / baselineDailyAvgCents.value;
-});
-
-const progressBarPercent = computed(() => {
-  if (baselineDailyAvgCents.value === 0) return 100;
-  const ratio = (dailyAverageCents.value / baselineDailyAvgCents.value) * 100;
-  return Math.min(200, Math.max(0, Math.round(ratio)));
-});
-
-// ---------------------------------------------------------------------------
-// 热力图（最近 12 个月滚动）
-// ---------------------------------------------------------------------------
-
-const rolling12 = computed(() => monthly.value?.rolling12Months ?? []);
-
-const heatStats = computed(() => {
-  const vals = rolling12.value
-    .map((item) => item.totalCents)
-    .filter((v): v is number => v !== null && v > 0);
-  if (vals.length === 0) return { min: 0, max: 1 };
-  return { min: Math.min(...vals), max: Math.max(...vals) };
-});
-
-function heatCellStyle(val: number | null): Record<string, string> {
-  if (val === null || val === 0) return {};
-  const { min, max } = heatStats.value;
-  const t = (val - min) / (max - min || 1);
-  const alpha = (0.14 + t * 0.78).toFixed(2);
-  return {
-    backgroundColor: `rgb(37 99 235 / ${alpha})`,
-    color: '#ffffff',
-  };
-}
-
-function onHeatCellClick(targetMonth: string): void {
-  router.push({ name: 'report', query: { month: targetMonth } });
-}
-
-// ---------------------------------------------------------------------------
-// 桌面提醒条动作
-// ---------------------------------------------------------------------------
-
-// ── 原型模板：期间控件与档位映射 ──────────────────────────────────────────
-const SCOPE_OPTIONS = [
+const TIERS = [
   { value: 'month', label: '本月' },
   { value: 'year', label: '本年' },
   { value: 'all', label: '全部' },
 ] as const;
 
-/** 当前档位的环比（月=较上月 / 年=较去年 / 全部=None） */
-const activeChangeRatio = computed<number | null>(() => {
-  if (scope.value === 'month') return monthChangeRatio.value;
-  if (scope.value === 'year') return yearChangeRatio.value;
+const tier = ref<Tier>('month');
+const anchor = ref(currentMonth());
+const alertOpen = ref(false);
+
+const monthReport = ref<MonthlyReport | null>(null);
+const yearReport = ref<YearlyReport | null>(null);
+const summaryReport = ref<SummaryReport | null>(null);
+const loading = ref(true);
+
+const today = todayLocal();
+const currentYear = computed(() => anchor.value.slice(0, 4));
+
+/** 当期合计 / 上期合计 / 环比 */
+const totalCents = computed(() => {
+  if (tier.value === 'month') return monthReport.value?.totalCents ?? 0;
+  if (tier.value === 'year') return yearReport.value?.totalCents ?? 0;
+  return summaryReport.value?.totalCents ?? 0;
+});
+
+const prevCents = computed(() => {
+  if (tier.value === 'month') return monthReport.value?.previous.totalCents ?? 0;
+  if (tier.value === 'year') return yearReport.value?.yearAgo.totalCents ?? 0;
+  return 0;
+});
+
+const deltaRatio = computed<number | null>(() => {
+  if (tier.value === 'month') return monthReport.value?.change.ratio ?? null;
+  if (tier.value === 'year') return yearReport.value?.yearAgo.change.ratio ?? null;
   return null;
 });
 
-/** 当前档位笔数 */
-const activeCount = computed(() => {
-  if (scope.value === 'month') return monthly.value?.count ?? 0;
-  if (scope.value === 'year') return yearly.value?.count ?? 0;
-  return summary.value?.count ?? 0;
-});
-
-/** 期间标签（原型 hero 顶行） */
 const periodLabel = computed(() => {
-  if (scope.value === 'month') return formatMonthLabel(month.value);
-  if (scope.value === 'year') return `${year.value} 年`;
+  if (tier.value === 'month') return formatMonthLabel(anchor.value);
+  if (tier.value === 'year') return `${currentYear.value} 年`;
   return '全部记录';
 });
 
-/** 分段控件回传 string，收窄回 Scope */
-function onScopeChange(next: string): void {
-  scope.value = next as Scope;
-}
-
-function shiftBack(): void {
-  if (scope.value === 'month') month.value = shiftMonth(month.value, -1);
-  else if (scope.value === 'year') month.value = `${Number(year.value) - 1}-01`;
-}
-
-function shiftForward(): void {
-  if (scope.value === 'month') month.value = shiftMonth(month.value, 1);
-  else if (scope.value === 'year') month.value = `${Number(year.value) + 1}-01`;
-}
-
-// ---------------------------------------------------------------------------
-// 原型（同账）概况页派生数据
-// ---------------------------------------------------------------------------
-
-/** 当前档位对应的分类构成 */
-const activeCategories = computed<CategoryBucket[]>(() => {
-  if (scope.value === 'month') return monthly.value?.categories ?? [];
-  if (scope.value === 'year') return yearly.value?.categories ?? [];
-  return summary.value?.categories ?? [];
+const count = computed(() => {
+  if (tier.value === 'month') return monthReport.value?.count ?? 0;
+  if (tier.value === 'year') return yearReport.value?.count ?? 0;
+  return summaryReport.value?.count ?? 0;
 });
 
-/** 堆叠条：前 4 类 + 「其他」 */
+/** 三指标：月档看日均/预计月末，年档看月均/最高月，全部档看月均/跨度 */
+const metrics = computed(() => {
+  const monthAvg = summaryReport.value?.monthlyAverageCents ?? 0;
+  if (tier.value === 'month') {
+    const total = monthReport.value?.totalCents ?? 0;
+    const elapsed = Math.max(1, elapsedDays(anchor.value, today));
+    const days = daysInMonth(anchor.value);
+    const perDay = Math.round(total / elapsed);
+    const projected = Math.round((total / elapsed) * days);
+    return [
+      { label: '日均支出', value: formatYuan(perDay) },
+      { label: '笔数', value: `${count.value} 笔` },
+      { label: '预计月末', value: formatYuan(projected) },
+    ];
+  }
+  const peak = yearReport.value?.peakMonth ?? null;
+  const span = Math.max(1, Math.round((summaryReport.value?.recordedDays ?? 0) / 30));
+  return [
+    { label: '月均支出', value: formatYuan(monthAvg) },
+    { label: '笔数', value: `${count.value} 笔` },
+    tier.value === 'year'
+      ? { label: '最高月', value: peak ? formatMonthLabel(peak.month) : '—' }
+      : { label: '记录跨度', value: `${span} 个月` },
+  ];
+});
+
+/** 构成：前 4 类 + 其他（颜色走账本色 8 槽） */
 const composeRows = computed(() => {
-  const rows = activeCategories.value
-    .filter((c) => c.cents > 0)
-    .slice()
-    .sort((a, b) => b.cents - a.cents);
+  const cats: CategoryBucket[] =
+    tier.value === 'month'
+      ? (monthReport.value?.categories ?? [])
+      : tier.value === 'year'
+        ? (yearReport.value?.categories ?? [])
+        : (summaryReport.value?.categories ?? []);
+  const rows = cats.filter((c) => c.cents > 0).slice().sort((a, b) => b.cents - a.cents);
   const top = rows.slice(0, 4).map((c) => ({
     id: c.categoryId,
     name: c.name,
     cents: c.cents,
     color: `var(--chart-${((dict.colorOf(c.categoryId, c.name, c.color) - 1) % 8) + 1})`,
   }));
-  const restCents = rows.slice(4).reduce((a, c) => a + c.cents, 0);
-  if (restCents > 0) top.push({ id: '__rest', name: '其他', cents: restCents, color: 'var(--ink-3)' });
+  const rest = rows.slice(4).reduce((a, c) => a + c.cents, 0);
+  if (rest > 0) top.push({ id: '__rest', name: '其他', cents: rest, color: 'var(--ink-3)' });
   return top;
 });
 
-const summaryTotalCents = computed(() => summary.value?.totalCents ?? 0);
-const summaryCount = computed(() => summary.value?.count ?? 0);
-const summaryMonthlyAvg = computed(() => summary.value?.monthlyAverageCents ?? 0);
-const summarySpanMonths = computed(() => Math.max(1, Math.round((summary.value?.recordedDays ?? 0) / 30)));
-
-/** 进行中计划 × 每期金额 = 本月计划固定还款 */
-const planMonthlyCents = computed(() => plansStore.activePlans.reduce((a, p) => a + p.amountCents, 0));
-const activePlanCount = computed(() => plansStore.activePlans.length);
-const progressPct = computed(() => progressBarPercent.value);
-
-/** 本月已入账的计划金额 = 计划总额 − 本月仍待还 */
-const planPaidCents = computed(() => {
-  const nowMonth = currentMonth();
-  const stillDue = plansStore.dueTodos
-    .filter((t) => t.repaymentDate.slice(0, 7) === nowMonth)
-    .reduce((a, t) => a + t.amountCents, 0);
-  return Math.max(0, planMonthlyCents.value - stillDue);
-});
-
-const rolling12TotalCents = computed(() => rolling12.value.reduce((a, c) => a + (c.totalCents ?? 0), 0));
-
-/** 构成条百分比 */
 function percentOf(cents: number): number {
   const total = composeRows.value.reduce((a, r) => a + r.cents, 0);
   return total > 0 ? Math.round((cents / total) * 100) : 0;
 }
 
-/** 热力格点色（原型用 color-mix 按占比混强调色） */
-function heatDotColor(cents: number | null): string {
-  if (cents === null || cents === 0) return 'var(--surface-3)';
-  const max = heatStats.value.max;
-  const pct = max > 0 ? Math.min(1, cents / max) : 0;
-  return `color-mix(in srgb, var(--accent) ${Math.round(18 + pct * 82)}%, var(--surface-3))`;
+/** 近 12 个月（月档才有 rolling12） */
+const rolling12 = computed(() => monthReport.value?.rolling12Months ?? []);
+const rolling12Max = computed(() => Math.max(1, ...rolling12.value.map((m) => m.totalCents ?? 0)));
+const rolling12Total = computed(() => rolling12.value.reduce((a, m) => a + (m.totalCents ?? 0), 0));
+
+function heatDot(cents: number | null): Record<string, string> {
+  if (cents === null || cents === 0) return { background: 'var(--surface-3)' };
+  const pct = Math.min(1, cents / rolling12Max.value);
+  return { background: `color-mix(in srgb, var(--accent) ${Math.round(18 + pct * 82)}%, var(--surface-3))` };
 }
 
-/** 待办紧急度 → 原型三档 class（late / soon / calm） */
-function urgencyLevel(date: string | null): 'late' | 'soon' | 'calm' {
-  if (date === null) return 'calm';
-  const days = daysUntil(date);
-  if (days < 0) return 'late';
-  if (days <= 3) return 'soon';
-  return 'calm';
-}
+/** 本月要还 */
+const creditDue = computed(() =>
+  (monthReport.value?.paymentMethods ?? []).filter((p) => p.type === 'credit'),
+);
+const creditDueTotal = computed(() => creditDue.value.reduce((a, p) => a + p.cents, 0));
 
-function daysUntil(date: string): number {
-  const now = new Date();
-  const a = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const t = new Date(`${date}T00:00:00`);
-  const b = Date.UTC(t.getFullYear(), t.getMonth(), t.getDate());
-  return Math.round((b - a) / 86_400_000);
-}
-
-const dueTodos = computed(() => plansStore.dueTodos);
-
-/** 逾期笔数（提醒条文案：有逾期就先说逾期） */
+/** 待办 */
+const dueTodos = computed(() => plans.dueTodos);
+const dueTotal = computed(() => dueTodos.value.reduce((a, t) => a + t.amountCents, 0));
 const overdueCount = computed(
-  () => dueTodos.value.filter((t) => daysUntil(t.repaymentDate) < 0).length,
+  () => dueTodos.value.filter((t) => t.repaymentDate < today).length,
 );
-const dueTotalAmount = computed(() =>
-  dueTodos.value.reduce((acc, t) => acc + t.amountCents, 0),
-);
+
+/** 还款进度：本月计划固定还款 vs 已入账 */
+const planMonthly = computed(() => plans.activePlans.reduce((a, p) => a + p.amountCents, 0));
+const planPaid = computed(() => {
+  const stillDue = dueTodos.value
+    .filter((t) => t.repaymentDate.slice(0, 7) === currentMonth())
+    .reduce((a, t) => a + t.amountCents, 0);
+  return Math.max(0, planMonthly.value - stillDue);
+});
+const progressPct = computed(() => (planMonthly.value > 0 ? (planPaid.value / planMonthly.value) * 100 : 0));
+
+/** 累计卡 */
+const cumRows = computed(() => {
+  const s = summaryReport.value;
+  return [
+    { label: '历史累计', value: formatYuan(s?.totalCents ?? 0) },
+    { label: '记录笔数', value: `${s?.count ?? 0} 笔` },
+    { label: '记录跨度', value: `${Math.max(1, Math.round((s?.recordedDays ?? 0) / 30))} 个月 · ${s?.years.length ?? 0} 年` },
+    { label: '月均支出', value: formatYuan(s?.monthlyAverageCents ?? 0) },
+    { label: '单笔均值', value: formatYuan(s?.perExpenseAverageCents ?? 0) },
+  ];
+});
+
+function shift(delta: number): void {
+  if (tier.value === 'all') return;
+  if (tier.value === 'month') anchor.value = shiftMonth(anchor.value, delta);
+  else anchor.value = `${Number(currentYear.value) + delta}-01`;
+}
+
+function switchTier(next: string): void {
+  tier.value = next as Tier;
+  if (next === 'year') anchor.value = `${currentYear.value}-01`;
+  void load();
+}
+
+async function load(): Promise<void> {
+  loading.value = true;
+  try {
+    const [m, y, s] = await Promise.all([
+      reports.monthly(anchor.value.slice(0, 7)).catch(() => null),
+      reports.yearly(currentYear.value).catch(() => null),
+      reports.summary().catch(() => null),
+    ]);
+    monthReport.value = m?.report ?? null;
+    yearReport.value = y?.report ?? null;
+    summaryReport.value = s?.report ?? null;
+  } finally {
+    loading.value = false;
+  }
+}
 
 /**
- * 模板重写（原型骨架）后，以下几个派生量暂时没有引用点：
- * 自适应字号（原型用 CSS clamp）、环比差值文案、日均对比、热力格内联样式
- * （原型改用 color-mix 的 heat-dot）。**保留代码**，等交互态补齐时会再用上，
- * 用 void 显式声明「有意保留」，比删掉再找回安全。
+ * 待办三个动作：自动入账类只需「确认」（ack），手动类要「入账」（confirm），
+ * 两者都可「忽略」（skip）。分支放在这里而不是模板里，避免模板出现三目套三目。
  */
-void [
-  heroAmountStyle,
-  monthChangeDelta,
-  dailyCompareRatio,
-  heatCellStyle,
-  heroTitle,
-  // 以下为待办/还款文案的旧实现，原型改用 urgencyLevel + urgencyLabel
-  URGENCY_META,
-  urgencyOfOptional,
-  reminderStateLabel,
-  reminderToneOf,
-  formatMonthDay,
-  PaymentIcon,
-];
-
-async function handleAck(todoId: string): Promise<void> {
-  await planTodosApi.ack(todoId);
-  ui.markDataChanged();
+function todoAction(todo: { id: string; willAutoPost: boolean }, kind: 'ack' | 'confirm' | 'skip'): void {
+  void (async () => {
+    try {
+      if (kind === 'skip') await plans.skipTodo(todo.id);
+      else if (todo.willAutoPost) await plans.ackTodo(todo.id);
+      else await plans.confirmTodo(todo.id);
+      toast.show(kind === 'skip' ? '已忽略这笔待办' : todo.willAutoPost ? '已确认并自动入账' : '已手动入账');
+      await Promise.all([load(), plans.loadDueTodos()]);
+    } catch {
+      toast.show('操作失败，请重试');
+    }
+  })();
 }
 
-async function handleConfirm(todo: PlanTodo): Promise<void> {
-  await plansStore.confirmTodo(todo.id);
-  ui.markDataChanged();
-}
-
-async function handleSkip(todoId: string): Promise<void> {
-  await plansStore.skipTodo(todoId);
-  ui.markDataChanged();
-}
+watch(anchor, () => void load());
+onMounted(() => {
+  void plans.loadDueTodos().catch(() => undefined);
+  void plans.loadPlans().catch(() => undefined);
+  void load();
+});
 </script>
 
 <template>
   <div class="overview-grid">
-    <!-- ══════ ① 本期主卡（原型 og-hero：期间控件 + 大金额 + 环比 + 三指标 + 构成条）══════ -->
-    <section class="card card--pop og-hero">
+    <!-- ═══════ ① 主卡 ═══════ -->
+    <PCard class="og-hero card--pop">
       <div class="hero-eyebrow">
-        <PSeg :options="SCOPE_OPTIONS" :value="scope" label="期间" @change="onScopeChange" />
-        <span class="spacer" style="margin-left: auto" />
-        <div v-if="scope !== 'all'" class="period-nav">
-          <PIconBtn :icon="ChevronLeft" label="上一期间" @click="shiftBack" />
+        <PSeg :options="TIERS" :value="tier" label="期间" @change="switchTier" />
+        <span style="margin-left: auto" />
+        <div v-if="tier !== 'all'" class="period-nav">
+          <PIconBtn :icon="ChevronLeft" label="上一期间" @click="shift(-1)" />
           <span class="mono tiny" style="min-width: 92px; text-align: center">{{ periodLabel }}</span>
-          <PIconBtn
-            :icon="ChevronRight"
-            label="下一期间"
-            :disabled="scope === 'month' && isCurrentSelectedMonth"
-            @click="shiftForward"
-          />
+          <PIconBtn :icon="ChevronRight" label="下一期间" @click="shift(1)" />
         </div>
         <PTag v-else tone="dash">全部记录</PTag>
       </div>
 
-      <div class="hero-amt">
-        <span class="cur">¥</span>{{ heroFormattedAmount }}
-      </div>
+      <div class="hero-amt"><span class="cur">¥</span>{{ formatYuan(totalCents).replace('¥', '') }}</div>
 
       <div class="hero-delta">
-        <span v-if="activeChangeRatio !== null" class="delta-pill" :class="activeChangeRatio > 0 ? 'neg' : 'pos'">
-          <component :is="activeChangeRatio > 0 ? TrendingUp : TrendingDown" :size="11" />
-          {{ (activeChangeRatio * 100).toFixed(1) }}%
+        <span v-if="deltaRatio !== null" class="delta-pill" :class="deltaRatio > 0 ? 'neg' : 'pos'">
+          <component :is="deltaRatio > 0 ? TrendingUp : TrendingDown" :size="11" />
+          {{ (deltaRatio * 100).toFixed(1) }}%
         </span>
-        <span v-else class="delta-pill pos">—</span>
-        <span>较{{ scope === 'month' ? '上月' : scope === 'year' ? '去年' : '上一段' }}</span>
-        <span v-if="isOffline" class="muted tiny">· 离线数据</span>
+        <span>较{{ tier === 'month' ? '上月' : tier === 'year' ? '去年' : '上一段' }} {{ formatYuan(prevCents) }}</span>
       </div>
 
       <div class="hero-metrics">
-        <PStat
-          :label="scope === 'month' ? '日均支出' : '月均支出'"
-          :value="scope === 'month' ? formatYuan(dailyAverageCents) : formatYuan(summaryMonthlyAvg)"
-        />
-        <PStat label="笔数" :value="`${activeCount} 笔`" />
-        <PStat
-          :label="scope === 'month' ? '预计月末' : '最高月'"
-          :value="scope === 'month'
-            ? (estimatedMonthEndCents !== null ? formatYuan(estimatedMonthEndCents) : '—')
-            : (yearPeakMonth ? formatMonthLabel(yearPeakMonth.month) : '—')"
-        />
+        <PStat v-for="m in metrics" :key="m.label" :label="m.label" :value="m.value" />
       </div>
 
       <div class="og-hero-foot">
         <div class="stack-bar" role="img" aria-label="支出构成堆叠条">
-          <span
-            v-for="row in composeRows"
-            :key="row.id"
-            :style="{ flex: row.cents, background: row.color }"
-          />
+          <span v-for="r in composeRows" :key="r.id" :style="{ flex: r.cents, background: r.color }" />
         </div>
         <div class="compose-legend">
-          <span v-for="row in composeRows" :key="row.id" class="cl-item">
-            <i class="cl-dot" :style="{ background: row.color }" />
-            {{ row.name }}
-            <b class="mono" style="font-weight: 600">{{ percentOf(row.cents) }}%</b>
+          <span v-for="r in composeRows" :key="r.id" class="cl-item">
+            <i class="cl-dot" :style="{ background: r.color }" />
+            {{ r.name }}
+            <b class="mono" style="font-weight: 600">{{ percentOf(r.cents) }}%</b>
           </span>
         </div>
         <div class="toolbar" style="margin-top: 14px">
-          <span class="desktop-only">
-            <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
-          </span>
-          <PBtn variant="ghost" :icon="ReceiptText" @click="router.push({ name: 'ledger' })">查看流水</PBtn>
-          <span class="tiny muted mono" style="margin-left: auto">
-            {{ isOffline ? '离线数据 · 联网后自动校准' : '已与服务器同步' }}
-          </span>
+          <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
+          <PBtn variant="ghost" :icon="ReceiptText" @click="$router.push({ name: 'ledger' })">查看流水</PBtn>
         </div>
       </div>
-    </section>
+    </PCard>
 
-    <!-- ══════ ② 待办与要还（原型 og-todo：提醒条 + 本月要还 + 待办提醒）══════ -->
-    <section class="card og-todo og-card">
-      <!-- 提醒条：**没有待办时整条不渲染** —— 空提醒条常驻只会变成噪音。
-           有待办才出现，且默认收起，点一下才展开动作面板。 -->
+    <!-- ═══════ ② 待办与要还 ═══════ -->
+    <PCard class="og-todo og-card">
       <button
         v-if="dueTodos.length > 0"
         type="button"
         class="alert-strip"
-        :aria-expanded="isPopoverOpen"
-        @click="isPopoverOpen = !isPopoverOpen"
+        :aria-expanded="alertOpen"
+        @click="alertOpen = !alertOpen"
       >
         <TriangleAlert :size="15" />
-        <span>{{ overdueCount > 0 ? `${overdueCount} 笔已逾期` : `${dueTodos.length} 笔待处理` }} · {{ formatYuan(dueTotalAmount) }}</span>
-        <span class="spacer" style="margin-left: auto" />
-        <component :is="isPopoverOpen ? ChevronUp : ChevronDown" :size="13" />
+        <span>
+          {{ overdueCount > 0 ? `${overdueCount} 笔已逾期` : `${dueTodos.length} 笔待处理` }} ·
+          {{ formatYuan(dueTotal) }}
+        </span>
+        <span style="margin-left: auto" />
+        <component :is="alertOpen ? ChevronUp : ChevronDown" :size="13" />
       </button>
 
-      <div v-if="isPopoverOpen && dueTodos.length > 0" class="alert-pop" style="margin-top: 8px">
-        <div v-for="item in dueTodos" :key="item.id" class="alert-item">
-          <i class="todo-mark" :class="`is-${urgencyLevel(item.repaymentDate)}`" style="height: 18px; width: 3px" />
-          <span style="min-width: 0; flex: 1 1 auto">{{ item.planName }} · {{ item.periodSeq }} 期</span>
-          <span class="urgency" :class="`urgency--${urgencyLevel(item.repaymentDate)}`">
-            {{ urgencyLabel(item.repaymentDate) }}
-          </span>
+      <div v-if="alertOpen && dueTodos.length > 0" class="alert-pop" style="margin-top: 8px">
+        <div v-for="t in dueTodos" :key="t.id" class="alert-item">
+          <i class="todo-mark" :style="{ height: '18px', width: '3px' }" />
+          <span style="min-width: 0; flex: 1 1 auto">{{ t.planName }} · {{ t.periodSeq }} 期</span>
+          <span class="tiny muted">{{ formatMonthDay(t.repaymentDate) }}</span>
           <div class="row-end">
-            <PBtn v-if="item.willAutoPost" variant="ghost" size="sm" @click="handleAck(item.id)">确认</PBtn>
-            <template v-else>
-              <PBtn variant="ghost" size="sm" @click="handleConfirm(item)">入账</PBtn>
-              <PBtn variant="ghost" size="sm" @click="handleSkip(item.id)">忽略</PBtn>
-            </template>
+            <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
+              {{ t.willAutoPost ? '确认' : '入账' }}
+            </PBtn>
+            <PBtn size="sm" variant="ghost" @click="todoAction(t, 'skip')">忽略</PBtn>
           </div>
-        </div>
-        <div v-if="dueTodos.length" class="split" style="border-top: 1px dashed var(--line); padding-top: 8px">
-          <span class="tiny muted">
-            待办合计 <b class="mono" style="color: var(--ink)">{{ formatYuan(dueTotalAmount) }}</b>
-          </span>
-          <PBtn variant="ghost" size="sm" style="margin-left: auto" @click="router.push({ name: 'settings' })">
-            全部待办
-          </PBtn>
         </div>
       </div>
 
@@ -633,44 +325,24 @@ async function handleSkip(todoId: string): Promise<void> {
           <span class="card-cap">信用卡 · {{ creditDue.length }} 张</span>
         </div>
         <PEmpty v-if="creditDue.length === 0" :icon="CreditCard">本月没有信用卡账单</PEmpty>
-        <div v-for="item in creditDue" v-else :key="item.paymentMethodId" class="due-row">
+        <div v-for="p in creditDue" v-else :key="p.paymentMethodId" class="due-row">
           <span class="due-card-badge"><CreditCard :size="15" /></span>
           <div style="min-width: 0; flex: 1 1 auto">
-            <div style="font-size: 12px; font-weight: 600">{{ item.name }}</div>
-            <div class="tiny muted">{{ item.count }} 笔</div>
+            <div style="font-size: 12px; font-weight: 600">{{ p.name }}</div>
+            <div class="tiny muted">{{ p.count }} 笔</div>
           </div>
-          <div class="row-end">
-            <div class="row-amt">{{ formatYuan(item.cents) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 待办提醒：同样无待办时整块隐藏，让卡片只剩「本月要还」 -->
-      <div v-if="dueTodos.length > 0" class="og-sub">
-        <div class="card-h card-h--tight">
-          <span class="card-t">待办提醒</span>
-          <span class="card-cap">{{ dueTodos.length }} 笔待处理</span>
-        </div>
-        <div v-for="item in dueTodos.slice(0, 3)" :key="item.id" class="og-todo-row">
-          <span class="todo-mark" :class="`is-${urgencyLevel(item.repaymentDate)}`" />
-          <span class="og-todo-t">{{ item.planName }} · {{ item.periodSeq }} 期</span>
-          <span class="urgency" :class="`urgency--${urgencyLevel(item.repaymentDate)}`">
-            {{ urgencyLabel(item.repaymentDate) }}
-          </span>
-          <b class="mono tiny">{{ formatYuan(item.amountCents) }}</b>
+          <div class="row-end"><div class="row-amt">{{ formatYuan(p.cents) }}</div></div>
         </div>
       </div>
 
       <div class="og-card-foot">
-        <span class="tiny muted">
-          合计应还 <b class="mono" style="color: var(--ink)">{{ formatYuan(creditDueTotalCents) }}</b>
-        </span>
-        <PBtn variant="ghost" size="sm" @click="router.push({ name: 'settings' })">全部待办</PBtn>
+        <span class="tiny muted">合计应还 <b class="mono" style="color: var(--ink)">{{ formatYuan(creditDueTotal) }}</b></span>
+        <PBtn size="sm" variant="ghost" @click="$router.push({ name: 'settings' })">全部待办</PBtn>
       </div>
-    </section>
+    </PCard>
 
-    <!-- ══════ ③ 月度支出热力（原型 og-heat）══════ -->
-    <section class="card og-heat og-card">
+    <!-- ═══════ ③ 月度热力 ═══════ -->
+    <PCard class="og-heat og-card">
       <div class="card-h">
         <POrb :icon="CalendarDays" tone="var(--amber)" ink="#1E293B" />
         <span class="card-t">月度支出热力</span>
@@ -683,27 +355,24 @@ async function handleSkip(todoId: string): Promise<void> {
             :key="cell.month"
             type="button"
             class="heat-cell"
-            :class="{ 'is-now': cell.month === month }"
+            :class="{ 'is-now': cell.month === currentMonth() }"
             :title="`${cell.month} ${formatYuan(cell.totalCents ?? 0)}`"
-            @click="onHeatCellClick(cell.month)"
+            @click="$router.push({ name: 'report', query: { month: cell.month } })"
           >
             <span class="heat-m">{{ Number(cell.month.slice(5, 7)) }}月</span>
-            <span class="heat-v">{{ formatCompact(cell.totalCents ?? 0) }}</span>
-            <span class="heat-dot" :style="{ background: heatDotColor(cell.totalCents) }" />
+            <span class="heat-v">{{ cell.totalCents ? formatCompact(cell.totalCents) : '—' }}</span>
+            <span class="heat-dot" :style="heatDot(cell.totalCents)" />
           </button>
         </div>
       </div>
       <div class="og-card-foot">
-        <span class="tiny muted">
-          近 12 个月合计
-          <b class="mono" style="color: var(--ink)">{{ formatYuan(rolling12TotalCents) }}</b>
-        </span>
-        <PBtn variant="ghost" size="sm" @click="router.push({ name: 'report' })">打开报表</PBtn>
+        <span class="tiny muted">近 12 个月合计 <b class="mono" style="color: var(--ink)">{{ formatYuan(rolling12Total) }}</b></span>
+        <PBtn size="sm" variant="ghost" @click="$router.push({ name: 'report' })">打开报表</PBtn>
       </div>
-    </section>
+    </PCard>
 
-    <!-- ══════ ④ 累计与跨度（原型 og-cum）══════ -->
-    <section class="card og-cum og-card">
+    <!-- ═══════ ④ 累计与跨度 ═══════ -->
+    <PCard class="og-cum og-card">
       <div class="card-h">
         <POrb :icon="Layers" tone="var(--mint)" ink="#1E293B" />
         <span class="card-t">累计与跨度</span>
@@ -711,47 +380,52 @@ async function handleSkip(todoId: string): Promise<void> {
       </div>
       <div class="og-card-body">
         <div style="display: flex; flex-direction: column; gap: 10px">
-          <div class="kv"><span class="tiny muted">历史累计</span><b>{{ formatYuan(summaryTotalCents) }}</b></div>
-          <div class="kv"><span class="tiny muted">记录笔数</span><b>{{ summaryCount }} 笔</b></div>
-          <div class="kv"><span class="tiny muted">记录跨度</span><b>{{ summarySpanMonths }} 个月 · {{ summary?.years.length ?? 0 }} 年</b></div>
-          <div class="kv"><span class="tiny muted">月均支出</span><b>{{ formatYuan(summaryMonthlyAvg) }}</b></div>
-          <div class="kv"><span class="tiny muted">单笔均值</span><b>{{ formatYuan(summary?.perExpenseAverageCents ?? 0) }}</b></div>
+          <div v-for="row in cumRows" :key="row.label" class="kv">
+            <span class="tiny muted">{{ row.label }}</span><b>{{ row.value }}</b>
+          </div>
         </div>
       </div>
-    </section>
+    </PCard>
 
-    <!-- ══════ ⑤ 还款进度（原型 og-progress）══════ -->
-    <section class="card og-progress og-card">
+    <!-- ═══════ ⑤ 还款进度 ═══════ -->
+    <PCard class="og-progress og-card">
       <div class="card-h">
         <span class="card-t">还款进度</span>
-        <span class="card-cap">进行中计划 {{ activePlanCount }} 个</span>
+        <span class="card-cap">进行中计划 {{ plans.activePlans.length }} 个</span>
         <span style="margin-left: auto">
-          <PBtn variant="ghost" size="sm" :icon="Settings2" @click="router.push({ name: 'settings' })">管理计划</PBtn>
+          <PBtn size="sm" variant="ghost" @click="$router.push({ name: 'settings' })">管理计划</PBtn>
         </span>
       </div>
       <div class="op-row">
         <div class="op-main">
           <div class="split" style="align-items: baseline; gap: 8px">
-            <span class="op-num">{{ formatYuan(planPaidCents) }}</span>
-            <span class="tiny muted">/ {{ formatYuan(planMonthlyCents) }}</span>
+            <span class="op-num">{{ formatYuan(planPaid) }}</span>
+            <span class="tiny muted">/ {{ formatYuan(planMonthly) }}</span>
             <span class="mono tiny muted" style="margin-left: auto">{{ progressPct.toFixed(0) }}%</span>
           </div>
           <div style="margin-top: 8px">
-            <PBar
-              :pct="progressPct"
-              :tone="progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)'"
-            />
+            <div class="bar">
+              <span
+                class="bar-fill"
+                :style="{
+                  width: `${Math.min(100, progressPct)}%`,
+                  background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
+                }"
+              />
+            </div>
             <div class="progress-line">
-              <span>本月计划固定还款</span><span>已入账 {{ formatYuan(planPaidCents) }}</span>
+              <span>本月计划固定还款</span><span>已入账 {{ formatYuan(planPaid) }}</span>
             </div>
           </div>
         </div>
         <div class="op-stats">
-          <div class="stat"><span class="stat-v">{{ activePlanCount }}</span><span class="stat-l">进行中计划</span></div>
-          <div class="stat"><span class="stat-v">{{ dueTodos.length }}</span><span class="stat-l">待处理待办</span></div>
-          <div class="stat"><span class="stat-v">{{ formatYuan(dueTotalAmount) }}</span><span class="stat-l">待办金额</span></div>
+          <PStat label="进行中计划" :value="String(plans.activePlans.length)" />
+          <PStat label="待处理待办" :value="String(dueTodos.length)" />
+          <PStat label="待办金额" :value="formatYuan(dueTotal)" />
         </div>
       </div>
-    </section>
+    </PCard>
+
+    <p v-if="loading" class="tiny muted" style="text-align: center">加载中…</p>
   </div>
 </template>

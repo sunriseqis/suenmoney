@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SuenMoney 前端 —— Web 与移动端共用同一份代码（移动端由 Capacitor 包壳）",
+  "description": "SuenMoney 前端（重构版）—— 视觉层按用户原型重建，逻辑层沿用已验证实现",
   "engines": {
     "node": ">=22.12"
   },
@@ -36,7 +36,6 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
-    "@fontsource/outfit": "^5.1.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.10.5",
     "@vitejs/plugin-vue": "^5.2.1",

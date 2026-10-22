@@ -1,24 +1,30 @@
 <script setup lang="ts">
+/**
+ * 登录 / 首次初始化（原型语言重写）。
+ *
+ * 「初始化管理员」与「登录」是同一个表单的两种模式 —— 全新部署第一次打开时
+ * 如果只给登录表单，用户会困惑（他还没有账号）。页面加载时问一次服务端
+ * 初始化状态：需要初始化就直接进 setup 模式，并隐藏手动切换入口。
+ *
+ * 服务器地址配置只对**原生壳**出现：浏览器里前端就是服务端托管的那份，
+ * 永远同源，让用户填后端地址只会把自己锁在外面。
+ */
+import { ShieldCheck } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError, auth as authApi, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
-import { getPlatform } from '@/platform';
 import BrandMark from '@/components/BrandMark.vue';
+import { useTheme } from '@/composables/useTheme';
+import { getPlatform } from '@/platform';
 import { useAuthStore } from '@/stores/auth';
+import { PBtn, PField, PInput, PTag } from '@/ui';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const theme = useTheme();
 
-/**
- * 登录 / 首次初始化。
- *
- * 「初始化管理员」不做成独立页面而是同一个表单的另一种模式：两者字段几乎
- * 相同，而且新用户第一次打开时看到的是「登录」会很困惑 —— 他还没有账号。
- * 页面加载时查询服务端初始化状态：已有账号则隐藏切换入口（点了也会被 403
- * 打回，不如一开始就不给）；查询失败（如离线）保持入口可见，服务端兜底。
- */
 const mode = ref<'login' | 'setup'>('login');
 const needsSetup = ref<boolean | null>(null);
 
@@ -28,63 +34,32 @@ const password = ref('');
 const busy = ref(false);
 const errorMessage = ref<string | null>(null);
 
-// 服务器连接配置
-//
-// 只对原生壳出现：浏览器里前端就是服务端自己托管的那份，永远同源，
-// 「填后端地址」这件事本身已经不存在了（填错还只会把自己锁在外面）。
-const showServerConfigEntry = computed(() => getPlatform() !== 'web');
 const showServerConfig = ref(false);
 const customServerUrl = ref(readServerUrl());
-const serverTesting = ref(false);
-const serverUrlNotice = ref<string | null>(null);
+const testing = ref(false);
+const serverNotice = ref<string | null>(null);
+const isNative = computed(() => getPlatform() !== 'web');
 
-async function testServerConnection(): Promise<void> {
-  serverTesting.value = true;
-  serverUrlNotice.value = null;
-  const raw = customServerUrl.value.trim();
-  if (!raw) {
-    serverUrlNotice.value = '请填写服务器地址';
-    serverTesting.value = false;
-    return;
-  }
-  const probe = await probeServerUrl(raw, 3000);
-  if (probe.ok) {
-    serverUrlNotice.value = `连接正常 (${probe.latencyMs}ms)`;
-  } else {
-    serverUrlNotice.value = `连接失败 (${probe.error ?? '无法访问'})`;
-  }
-  serverTesting.value = false;
-}
-
-function saveServerConnection(): void {
-  writeServerUrl(customServerUrl.value.trim());
-  serverUrlNotice.value = '服务器地址已保存';
-}
-
-const canSubmit = computed(
-  () => username.value.trim() !== '' && password.value.length >= 8 && !busy.value,
-);
+const isSetup = computed(() => mode.value === 'setup');
+const themeLabel = computed(() => (theme.proto.value === 'cyber' ? 'CYBERPUNK' : 'PLAYFUL'));
+const canSubmit = computed(() => username.value.trim() !== '' && password.value.length >= 8 && !busy.value);
 
 async function submit(): Promise<void> {
   if (!canSubmit.value) return;
-
   errorMessage.value = null;
   busy.value = true;
-
   try {
-    if (mode.value === 'login') {
-      await auth.login(username.value.trim(), password.value);
-    } else {
+    if (isSetup.value) {
       await auth.setup(username.value.trim(), displayName.value.trim(), password.value);
+    } else {
+      await auth.login(username.value.trim(), password.value);
     }
-
     const next = typeof route.query['next'] === 'string' ? route.query['next'] : '/';
     await router.replace(next);
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : '操作失败，请重试';
-
-    // 初始化被拒绝通常意味着系统里已经有账号了，自动切回登录省用户一次点击
-    if (mode.value === 'setup' && error instanceof ApiError && error.status === 403) {
+    // 初始化被拒通常意味着已有账号，自动切回登录省一次点击
+    if (isSetup.value && error instanceof ApiError && error.status === 403) {
       mode.value = 'login';
     }
   } finally {
@@ -93,151 +68,177 @@ async function submit(): Promise<void> {
 }
 
 function switchMode(): void {
-  mode.value = mode.value === 'login' ? 'setup' : 'login';
+  mode.value = isSetup.value ? 'login' : 'setup';
   errorMessage.value = null;
+}
+
+async function testServer(): Promise<void> {
+  const raw = customServerUrl.value.trim();
+  if (!raw) {
+    serverNotice.value = '请填写服务器地址';
+    return;
+  }
+  testing.value = true;
+  serverNotice.value = null;
+  const probe = await probeServerUrl(raw, 3000);
+  serverNotice.value = probe.ok ? `连接正常（${probe.latencyMs}ms）` : `连接失败（${probe.error ?? '无法访问'}）`;
+  testing.value = false;
+}
+
+function saveServer(): void {
+  writeServerUrl(customServerUrl.value.trim());
+  serverNotice.value = '服务器地址已保存';
 }
 
 onMounted(async () => {
   try {
     const status = await authApi.status();
     needsSetup.value = status.needsSetup;
-    // 全新部署：直接进入初始化表单，省一次点击
     if (status.needsSetup) mode.value = 'setup';
   } catch {
-    // 查询失败（离线/服务器未起）：保持默认登录模式与入口可见，提交时服务端兜底
+    // 离线或服务未起：保持登录模式，提交时由服务端兜底
   }
 });
 </script>
 
 <template>
-  <div
-    class="flex min-h-full items-center justify-center bg-canvas px-4 py-[var(--safe-top)] text-ink"
-  >
-    <div class="login-card">
-      <div class="flex flex-col items-center gap-3">
-        <BrandMark :size="56" />
-      </div>
-      <h1 class="sr-only">SuenMoney</h1>
-      <p class="mt-2 text-sm text-ink-muted">家庭共用记账 · 只记支出</p>
+  <div class="app login-page" :data-theme="theme.proto.value" data-decor="on">
+    <span class="deco deco-a" />
+    <span class="deco deco-b" />
+    <span class="deco deco-c" />
+    <span class="deco deco-d" />
 
-      <form class="mt-8 space-y-4" @submit.prevent="submit">
-        <div>
-          <label class="label-cn" for="login-username">登录名</label>
-          <input
-            id="login-username"
-            v-model="username"
-            type="text"
-            autocomplete="username"
-            autocapitalize="off"
-            class="input-v4 mt-2 px-4 py-3 text-base"
-            placeholder="小写字母"
-          />
+    <div class="login-shell">
+      <div class="card card--pop login-card">
+        <div class="login-brand">
+          <BrandMark :size="56" />
+          <div>
+            <div class="brand-name">SuenMoney</div>
+            <div class="brand-sub">FAMILY LEDGER · 单账本</div>
+          </div>
         </div>
 
-        <div v-if="mode === 'setup'">
-          <label class="label-cn" for="login-displayname">显示名</label>
-          <input
-            id="login-displayname"
-            v-model="displayName"
-            type="text"
-            class="input-v4 mt-2 px-4 py-3 text-base"
-            placeholder="界面上显示的名字，如「我」"
-          />
+        <div class="card-h">
+          <span class="card-t">{{ isSetup ? '初始化账本' : '登录' }}</span>
+          <span class="card-cap">{{ isSetup ? '第一次使用' : '家庭共用' }}</span>
         </div>
 
-        <div>
-          <label class="label-cn" for="login-password">口令</label>
-          <input
-            id="login-password"
-            v-model="password"
-            type="password"
-            :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-            class="input-v4 mt-2 px-4 py-3 text-base"
-            placeholder="至少 8 位"
-          />
+        <p class="hint">
+          {{ isSetup ? '创建第一个账号（管理员），之后可添加家庭成员。' : '用你的账号进入账本。' }}
+        </p>
+
+        <form class="login-form" @submit.prevent="submit">
+          <PField label="登录名" id="login-username">
+            <PInput id="login-username" v-model="username" placeholder="小写字母" autocomplete="username" />
+          </PField>
+
+          <PField v-if="isSetup" label="显示名" id="login-display">
+            <PInput id="login-display" v-model="displayName" placeholder="界面上显示的名字，如「我」" />
+          </PField>
+
+          <PField label="口令（至少 8 位）" id="login-password">
+            <PInput
+              id="login-password"
+              v-model="password"
+              type="password"
+              placeholder="至少 8 位"
+              :autocomplete="isSetup ? 'new-password' : 'current-password'"
+            />
+          </PField>
+
+          <p v-if="errorMessage" class="login-error">{{ errorMessage }}</p>
+
+          <PBtn variant="primary" type="submit" :disabled="!canSubmit" style="width: 100%; justify-content: center">
+            <ShieldCheck :size="14" />
+            {{ busy ? '处理中…' : isSetup ? '创建并进入' : '登录' }}
+          </PBtn>
+        </form>
+
+        <div class="login-foot">
+          <button
+            v-if="needsSetup !== true"
+            type="button"
+            class="btn btn--ghost btn--sm"
+            @click="switchMode"
+          >
+            {{ isSetup ? '已有账号，去登录' : '首次部署？初始化账本' }}
+          </button>
+          <button
+            v-if="isNative"
+            type="button"
+            class="btn btn--ghost btn--sm"
+            @click="showServerConfig = !showServerConfig"
+          >
+            服务器设置
+          </button>
         </div>
 
-        <p v-if="errorMessage !== null" class="text-sm text-danger-text">{{ errorMessage }}</p>
-
-        <button
-          type="submit"
-          :disabled="!canSubmit"
-          class="btn-v4 w-full py-3.5 text-base disabled:opacity-40"
-        >
-          {{ busy ? '请稍候…' : mode === 'login' ? '登录' : '创建管理员账号' }}
-        </button>
-      </form>
-
-      <p v-if="mode === 'login' && needsSetup !== false" class="mt-6 text-center text-xs text-ink-muted">
-        首次部署？
-        <button
-          type="button"
-          class="font-semibold text-primary-text underline"
-          @click="switchMode"
-        >
-          初始化管理员账号
-        </button>
-      </p>
-
-      <!-- 状态未知（查询失败）时才给返回路；确认过已有账号则本就不该进 setup 模式 -->
-      <p v-if="mode === 'setup' && needsSetup === null" class="mt-6 text-center text-xs text-ink-muted">
-        系统已有账号？
-        <button
-          type="button"
-          class="font-semibold text-primary-text underline"
-          @click="switchMode"
-        >
-          返回登录
-        </button>
-      </p>
-
-      <p v-if="mode === 'setup'" class="mt-4 text-center text-xs leading-relaxed text-ink-muted">
-        该入口只在系统里一个账号都没有时可用，建好第一个账号后会自动关闭。
-      </p>
-
-      <!-- 自定义服务器连接配置（仅原生壳：换一台自建服务器时才用得上） -->
-      <div v-if="showServerConfigEntry" class="mt-8 border-t border-line pt-4 text-xs">
-        <button
-          type="button"
-          class="flex w-full items-center justify-between text-ink-muted transition-colors hover:text-ink"
-          @click="showServerConfig = !showServerConfig"
-        >
-          <span>后端服务器设置</span>
-          <span>{{ showServerConfig ? '收起' : '展开' }}</span>
-        </button>
-
-        <div v-if="showServerConfig" class="mt-3 space-y-2.5">
-          <input
-            v-model="customServerUrl"
-            type="url"
-            placeholder="http://192.168.1.100:3000"
-            class="input-v4 px-3 py-2 text-xs"
-          />
-          <div class="flex items-center justify-between gap-2">
-            <span v-if="serverUrlNotice" class="truncate text-[11px] text-ink-muted">
-              {{ serverUrlNotice }}
-            </span>
-            <span v-else class="flex-1" />
-            <div class="flex gap-2">
-              <button
-                type="button"
-                :disabled="serverTesting || !customServerUrl"
-                class="btn-v4 px-2.5 py-1 text-xs"
-                @click="testServerConnection"
-              >
-                {{ serverTesting ? '测试中…' : '测试连接' }}
-              </button>
-              <button
-                type="button"
-                class="btn-v4 px-2.5 py-1 text-xs"
-                @click="saveServerConnection"
-              >
-                保存
-              </button>
-            </div>
+        <div v-if="isNative && showServerConfig" class="login-server">
+          <PField label="服务器地址" id="server-url">
+            <PInput id="server-url" v-model="customServerUrl" placeholder="http://192.168.1.10:5310" />
+          </PField>
+          <div class="split">
+            <PBtn size="sm" :disabled="testing" @click="testServer">{{ testing ? '测试中…' : '测试' }}</PBtn>
+            <PBtn size="sm" variant="primary" @click="saveServer">保存</PBtn>
+            <PTag v-if="serverNotice" tone="dash">{{ serverNotice }}</PTag>
           </div>
         </div>
       </div>
+
+      <p class="build-stamp">{{ themeLabel }} · SuenMoney</p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  position: relative;
+  isolation: isolate;
+}
+.login-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+}
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+.login-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin: 0;
+}
+.login-foot {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.login-server {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
+</style>

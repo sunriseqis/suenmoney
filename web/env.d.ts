@@ -1,7 +1,4 @@
 /// <reference types="vite/client" />
 
-declare module '*.vue' {
-  import type { DefineComponent } from 'vue';
-  const component: DefineComponent<Record<string, unknown>, Record<string, unknown>, unknown>;
-  export default component;
-}
+/** 构建标记（版本 · 短 sha · 构建时间），由 vite.config.ts 的 define 注入 */
+declare const __BUILD_STAMP__: string;
