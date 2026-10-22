@@ -1,1 +1,0 @@
-import{d as t,o as l,a as o,Q as n,r as s}from"./index-Dwxw35kj.js";const f=t({__name:"PCard",props:{pop:{type:Boolean,default:!1},flat:{type:Boolean,default:!1},tint:{type:Boolean,default:!1}},setup(a){return(e,r)=>(l(),o("div",{class:n(["card",{"card--pop":a.pop,"card--flat":a.flat,"card--tint":a.tint}])},[s(e.$slots,"default")],2))}});export{f as _};
