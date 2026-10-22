@@ -52,3 +52,27 @@ html[data-theme='cyber'] {
   padding-top: 18px;
   user-select: text;
 }
+
+/* ==========================================================================
+   字体族名桥接
+   --------------------------------------------------------------------------
+   原型 theme.css 里写的是 `'Outfit'` / `'Plus Jakarta Sans'` / `'JetBrains Mono'`，
+   而我们通过 `@fontsource-variable/*` 引入，注册的族名带 ` Variable` 后缀。
+   名字对不上 = @font-face 不命中 = **静默回落到系统字体**（不报错、控制台也没有
+   提示），表现就是「字体没对齐原型」。这里补一层桥接，把原型变量指到真实族名。
+
+   原型 theme.css 保持逐字不改（它是对照基准），桥接只写在本文件。
+   ========================================================================== */
+.app[data-theme='candy'] {
+  --font-display: 'Outfit Variable', 'Outfit', 'MiSans VF', 'Noto Sans SC', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', 'MiSans VF', 'Noto Sans SC',
+    system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Plus Jakarta Sans Variable', 'MiSans VF', ui-monospace,
+    monospace;
+}
+
+.app[data-theme='cyber'] {
+  --font-display: 'Orbitron', 'JetBrains Mono Variable', 'MiSans VF', 'Noto Sans SC', monospace;
+  --font-body: 'JetBrains Mono Variable', 'MiSans VF', 'Noto Sans SC', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono Variable', 'Share Tech Mono', 'MiSans VF', ui-monospace, monospace;
+}

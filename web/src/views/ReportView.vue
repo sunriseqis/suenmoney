@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 import { reports, type CategoryBucket, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
 import { useDictionariesStore } from '@/stores/dictionaries';
+import PCatIcon from '@/components/PCatIcon.vue';
 import { PBar, PBtn, PCard, PDonut, PEmpty, PIconBtn, PSeg, PStat, PTag } from '@/ui';
 import { currentMonth, daysInMonth, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
 import { formatYuan } from '@/utils/money';
@@ -92,7 +93,7 @@ const movers = computed(() => {
   if (tier.value !== 'month' || prev === null) return [];
   const before = new Map(prev.categories.map((c) => [c.categoryId, c.cents]));
   return categories.value
-    .map((c) => ({ name: c.name, now: c.cents, before: before.get(c.categoryId) ?? 0 }))
+    .map((c) => ({ name: c.name, categoryId: c.categoryId, now: c.cents, before: before.get(c.categoryId) ?? 0 }))
     .map((c) => ({ ...c, diff: c.now - c.before }))
     .filter((c) => Math.abs(c.diff) > 0)
     .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
@@ -212,15 +213,15 @@ onMounted(() => void load());
         </div>
         <PEmpty v-if="donutData.length === 0" :icon="ChartPie">这个期间还没有记录</PEmpty>
         <div v-else class="compose-view">
-          <div class="donut-wrap">
+          <div class="compose-visual">
             <PDonut :data="donutData" center-label="合计" :center-value="formatYuan(activeTotal)" />
-            <div class="legend" style="flex: 1 1 200px">
-              <div v-for="d in donutData" :key="d.name" class="legend-row">
-                <i class="cl-dot" :style="{ background: d.color }" />
-                <span class="l-n">{{ d.name }}</span>
-                <span class="l-v mono">{{ formatYuan(d.value) }}</span>
-                <span class="l-p mono">{{ activeTotal > 0 ? Math.round((d.value / activeTotal) * 100) : 0 }}%</span>
-              </div>
+          </div>
+          <div class="compose-list">
+            <div v-for="d in donutData" :key="d.name" class="legend-row">
+              <i :style="{ background: d.color }" />
+              <span class="l-n">{{ d.name }}</span>
+              <span class="l-v">{{ formatYuan(d.value) }}</span>
+              <span class="l-p">{{ activeTotal > 0 ? Math.round((d.value / activeTotal) * 100) : 0 }}%</span>
             </div>
           </div>
         </div>
@@ -236,11 +237,17 @@ onMounted(() => void load());
         </PEmpty>
         <div v-else class="mover-grid">
           <div v-for="m in movers" :key="m.name" class="mover">
-            <span class="mover-t">{{ m.name }}</span>
-            <span class="mover-s mono">上期 {{ formatYuan(m.before) }} → 本期 {{ formatYuan(m.now) }}</span>
-            <span class="mono" :class="m.diff > 0 ? 'neg' : 'pos'" style="font-weight: 700">
-              {{ m.diff > 0 ? '+' : '' }}{{ formatYuan(m.diff) }}
-            </span>
+            <PCatIcon :category-id="m.categoryId" :name="m.name" :size="30" />
+            <div style="min-width: 0; flex: 1 1 auto">
+              <div class="mover-t">{{ m.name }}</div>
+              <div class="mover-s">{{ formatYuan(m.now) }} <span class="muted">/ 上期 {{ formatYuan(m.before) }}</span></div>
+            </div>
+            <div class="row-end mono tiny" :class="m.diff > 0 ? 'neg' : 'pos'">
+              {{ m.diff > 0 ? '+' : '-' }}{{ formatYuan(Math.abs(m.diff)) }}
+              <div class="mover-s" style="color: inherit; opacity: 0.75">
+                {{ m.before ? `${Math.round((m.diff / m.before) * 100)}%` : '新增' }}
+              </div>
+            </div>
           </div>
         </div>
       </PCard>
@@ -304,6 +311,13 @@ onMounted(() => void load());
       <PEmpty v-if="insights.length === 0" :icon="Sparkles">数据太少，得不出结论</PEmpty>
       <div v-else class="insight">
         <p v-for="(text, i) in insights" :key="i">{{ text }}</p>
+      </div>
+    </PCard>
+
+    <!-- 一句话结论（原型 .report-note） -->
+    <PCard v-if="insights.length > 0">
+      <div class="report-note" style="box-shadow: none; border: 0; background: transparent; padding: 0">
+        {{ insights[0] }}
       </div>
     </PCard>
 
