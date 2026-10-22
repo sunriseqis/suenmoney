@@ -76,3 +76,18 @@ html[data-theme='cyber'] {
   --font-body: 'JetBrains Mono Variable', 'MiSans VF', 'Noto Sans SC', ui-monospace, monospace;
   --font-mono: 'JetBrains Mono Variable', 'Share Tech Mono', 'MiSans VF', ui-monospace, monospace;
 }
+
+/* ==========================================================================
+   链接默认样式
+   --------------------------------------------------------------------------
+   原型 theme.css 只写了 `a { color: inherit }`，但 RouterLink 渲染出来是 <a>，
+   浏览器默认带下划线 —— 侧边栏导航、品牌位这些「像按钮的链接」全都会出现
+   一条下划线（用户直接指出了这一点）。这里统一去掉，需要下划线的地方
+   （如 .link-btn）自己声明。
+   ========================================================================== */
+.app a {
+  text-decoration: none;
+}
+.app a:hover {
+  text-decoration: none;
+}

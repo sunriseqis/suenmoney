@@ -354,16 +354,6 @@ onMounted(() => void load());
           </button>
         </PCard>
 
-        <PCard>
-          <div class="card-h">
-            <span class="card-t">口径提醒</span>
-            <span class="card-cap">这份报表怎么算的</span>
-          </div>
-          <p class="hint">
-            合计与构成取自服务端报表接口，**月份归属按还款日**；退款以负数冲销计入当期；
-            涨跌榜是「本期 vs 上期」两张报表的分类差值。
-          </p>
-        </PCard>
       </div>
     </div>
 
