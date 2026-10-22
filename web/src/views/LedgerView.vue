@@ -12,7 +12,7 @@
  *   · 档位汇总 `/api/reports/{monthly,yearly,summary}`（合计、构成、日历格）
  * 两条路各司其职，不互相推算 —— 前端自己按明细累加会与报表口径漂移。
  */
-import { ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
+import { CalendarDays, ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
@@ -24,7 +24,7 @@ import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
 import { PBtn, PCard, PChip, PEmpty, PIconBtn, PInput, PSeg, PTag } from '@/ui';
 import { currentMonth, formatLedgerDate, formatMonthDay, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
-import { formatCompact, formatYuan } from '@/utils/money';
+import { formatYuan } from '@/utils/money';
 
 const ui = useUiStore();
 const dict = useDictionariesStore();
@@ -180,14 +180,6 @@ function sum(rows: Expense[]): number {
   return rows.reduce((a, r) => a + r.amountCents, 0);
 }
 
-function cellTone(cents: number, max: number): Record<string, string> {
-  const pct = max > 0 ? Math.min(1, cents / max) : 0;
-  if (cents === 0) return { background: 'var(--surface-3)', color: 'var(--ink-3)' };
-  return {
-    background: `color-mix(in srgb, var(--accent) ${Math.round(12 + pct * 60)}%, var(--surface))`,
-    color: pct > 0.55 ? 'var(--accent-ink)' : 'var(--ink)',
-  };
-}
 
 /** 明细查询参数 */
 function listQuery() {
@@ -344,12 +336,25 @@ onMounted(async () => {
         <div class="mh-fact"><span>本月要还</span><b>{{ formatYuan(creditDueCents) }}</b></div>
       </div>
       <button v-if="nextTodo" type="button" class="mh-plan" @click="$router.push({ name: 'settings' })">
+        <span class="mh-plan-ic"><CalendarDays :size="14" /></span>
         <span class="mh-plan-txt">
           <b>{{ nextTodo.planName }} · {{ nextTodo.periodSeq }} 期</b>
           <span>{{ plans.dueTodos.length }} 笔待处理 · {{ formatMonthDay(nextTodo.repaymentDate) }}</span>
         </span>
         <span class="mh-plan-amt">{{ formatYuan(nextTodo.amountCents) }}</span>
+        <ChevronRight :size="13" />
       </button>
+      <div class="mh-nav">
+        <button type="button" class="mh-btn" @click="$router.push({ name: 'dashboard' })">
+          概况
+        </button>
+        <button type="button" class="mh-btn" @click="$router.push({ name: 'report' })">
+          报表
+        </button>
+        <button type="button" class="mh-btn" @click="$router.push({ name: 'settings' })">
+          设置
+        </button>
+      </div>
     </div>
 
     <!-- ════════ 工具栏（原型 ledger-toolbar）════════ -->
@@ -512,7 +517,7 @@ onMounted(async () => {
         </table>
 
         <!-- 移动行卡 -->
-        <div class="mobile-only">
+        <div class="m-list mobile-only">
           <div v-for="g in groupedSorted" :key="g.date">
             <div class="date-cap">
               {{ formatLedgerDate(g.date, today).dayText }}
@@ -570,18 +575,24 @@ onMounted(async () => {
         <span class="card-t">{{ yearOfAnchor }} 年</span>
         <span class="card-cap">合计 {{ formatYuan(periodTotalCents) }}</span>
       </div>
-      <div class="heat-grid">
+      <div class="cal-year-grid">
         <button
           v-for="cell in monthCells"
           :key="cell.key"
           type="button"
-          class="heat-cell"
-          :class="{ 'is-now': cell.key === currentMonth() }"
+          class="year-cell"
+          :style="{ borderColor: cell.key === currentMonth() ? 'var(--line-2)' : '' }"
           @click="drillMonth(cell.key)"
         >
-          <span class="heat-m">{{ cell.label }}</span>
-          <span class="heat-v">{{ cell.cents ? formatCompact(cell.cents) : '—' }}</span>
-          <span class="heat-dot" :style="cellTone(cell.cents, monthCellMax)" />
+          <div class="split" style="gap: 5px">
+            <span class="y-m">{{ cell.label }}</span>
+            <PTag v-if="cell.key === currentMonth()" tone="accent">本月</PTag>
+            <span style="margin-left: auto" class="tiny muted mono">{{ cell.count }} 笔</span>
+          </div>
+          <div class="y-v">{{ formatYuan(cell.cents) }}</div>
+          <div class="bar" style="height: 5px; margin-top: 2px">
+            <span class="bar-fill" :style="{ width: `${Math.round((cell.cents / monthCellMax) * 100)}%` }" />
+          </div>
         </button>
       </div>
     </PCard>
@@ -593,17 +604,25 @@ onMounted(async () => {
         <span class="card-cap">{{ yearCells.length }} 年 · 合计 {{ formatYuan(periodTotalCents) }}</span>
       </div>
       <PEmpty v-if="yearCells.length === 0" :icon="SlidersHorizontal">还没有任何记录</PEmpty>
-      <div class="heat-grid" v-else>
+      <div class="cal-year-grid" v-else>
         <button
           v-for="y in yearCells"
           :key="y.year"
           type="button"
-          class="heat-cell"
+          class="year-cell"
           @click="drillMonth(`${y.year}-01`)"
         >
-          <span class="heat-m">{{ y.year }}</span>
-          <span class="heat-v">{{ formatCompact(y.totalCents) }}</span>
-          <span class="heat-dot" :style="cellTone(y.totalCents, Math.max(1, ...yearCells.map((c) => c.totalCents)))" />
+          <div class="split" style="gap: 5px">
+            <span class="y-m">{{ y.year }}</span>
+            <span style="margin-left: auto" class="tiny muted mono">{{ y.count }} 笔</span>
+          </div>
+          <div class="y-v">{{ formatYuan(y.totalCents) }}</div>
+          <div class="bar" style="height: 5px; margin-top: 2px">
+            <span
+              class="bar-fill"
+              :style="{ width: `${Math.round((y.totalCents / Math.max(1, ...yearCells.map((c) => c.totalCents))) * 100)}%` }"
+            />
+          </div>
         </button>
       </div>
     </PCard>

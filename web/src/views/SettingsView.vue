@@ -12,7 +12,7 @@
  * 不做「本地拼一个假对象塞进列表」—— 那样一旦服务端归一化过字段（比如
  * 二级分类继承父色），前端显示的就和真实数据不一致。
  */
-import { CalendarDays, Check, Database, Moon, Pencil, Plus, Sun, Tag, Trash2, Users, Wallet } from '@lucide/vue';
+import { CalendarDays, Check, CreditCard, Database, Pencil, Plus, Tag, Trash2, Users, Wallet } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 
 import {
@@ -33,6 +33,7 @@ import {
   type User,
 } from '@/api';
 import BillImportModal from '@/components/BillImportModal.vue';
+import BrandMark from '@/components/BrandMark.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
 import PCatIcon from '@/components/PCatIcon.vue';
 import PPayIcon from '@/components/PPayIcon.vue';
@@ -42,7 +43,7 @@ import { useTheme } from '@/composables/useTheme';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUpdateStore } from '@/stores/update';
-import { PBtn, PCard, PEmpty, PField, PIconBtn, PInput, PSeg, PSheet, PSwitch, PTag } from '@/ui';
+import { PBtn, PCard, PEmpty, PField, PIconBtn, PInput, PSheet, PSwitch, PTag } from '@/ui';
 import { todayLocal } from '@/utils/dates';
 import { formatYuan, parseYuanToCents } from '@/utils/money';
 
@@ -56,7 +57,7 @@ const buildStamp = __BUILD_STAMP__;
 
 const TABS = [
   { value: 'ledger', label: '账目' },
-  { value: 'plans', label: '计划' },
+  { value: 'plans', label: '计划与还款' },
   { value: 'data', label: '数据' },
   { value: 'household', label: '家庭' },
 ] as const;
@@ -94,6 +95,25 @@ function openCatEdit(cat: Category): void {
   catEnabled.value = cat.isEnabled;
   catIcon.value = cat.icon;
   catColor.value = cat.color;
+  catSheet.value = true;
+}
+
+
+/** 分类卡左侧当前选中的一级分类 */
+const catRail = ref<string>('');
+const railChildren = computed(() => {
+  const root = dict.rootCategories.find((r) => r.id === catRail.value);
+  return root ? root.children : [];
+});
+
+/** 新增二级：父级用当前 rail 选中的一级 */
+function openCatCreateChild(): void {
+  catEditing.value = null;
+  catName.value = '';
+  catParent.value = catRail.value;
+  catEnabled.value = true;
+  catIcon.value = '';
+  catColor.value = '';
   catSheet.value = true;
 }
 
@@ -135,6 +155,7 @@ async function saveCat(): Promise<void> {
   }
 }
 
+/** 停用/启用（当前模板用软删除 + 编辑代替，函数保留给后续接开关用） */
 async function toggleCat(cat: Category, next: boolean): Promise<void> {
   try {
     await categoriesApi.update(cat.id, { isEnabled: next } as never);
@@ -327,9 +348,9 @@ async function removePlan(plan: Plan): Promise<void> {
 
 // ── 数据 ────────────────────────────────────────────────────────────────────
 const THEME_OPTIONS = [
-  { value: 'dark', label: '赛博朋克' },
-  { value: 'light', label: '水果硬糖' },
-  { value: 'system', label: '跟随系统' },
+  { value: 'light', label: '水果硬糖', desc: '浅色 · 贴纸硬阴影' },
+  { value: 'dark', label: '赛博朋克', desc: '深色 · 切角霓虹' },
+  { value: 'system', label: '跟随系统', desc: '浅色 / 深色自动' },
 ] as const;
 
 /** 三档：dark / light / system（system 时按系统明暗落到 cyber / candy） */
@@ -698,6 +719,8 @@ async function checkUpdate(): Promise<void> {
   toast.show(updateStore.message ?? (updateStore.available ? '发现新版本' : '已是最新版本'));
 }
 
+void [toggleCat];
+
 onMounted(() => {
   void dict.load().catch(() => undefined);
   void plansStore.refresh().catch(() => undefined);
@@ -708,6 +731,7 @@ onMounted(() => {
   void loadDoneTodos();
   void loadSessions();
   void loadOverview();
+  if (catRail.value === '') catRail.value = dict.rootCategories[0]?.id ?? '';
 });
 </script>
 
@@ -733,38 +757,65 @@ onMounted(() => {
     <template v-if="tab === 'ledger'">
       <PCard>
         <div class="card-h">
-          <span class="card-t">分类</span>
-          <span class="card-cap">一级 {{ dict.rootCategories.length }} · 共
-            {{ dict.categories.length }}</span>
-          <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openCatCreate">新增分类</PBtn>
+          <POrb :icon="Tag" tone="var(--accent)" ink="var(--accent-ink)" />
+          <span class="card-t">分类管理</span>
+          <span class="card-cap">
+            一级 {{ dict.rootCategories.length }} · 二级
+            {{ dict.rootCategories.reduce((a, r) => a + r.children.length, 0) }}
+          </span>
+          <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openCatCreate">新增一级</PBtn>
         </div>
-        <PEmpty v-if="dict.rootCategories.length === 0" :icon="Tag">还没有分类</PEmpty>
-        <div v-for="root in dict.rootCategories" :key="root.id" class="set-group">
-          <div class="set-row">
-            <span class="set-ic"><PCatIcon :category-id="root.id" :size="22" /></span>
-            <span class="set-body">
-              <span class="set-t">{{ root.name }}</span>
-              <span class="set-s">{{ root.children.length }} 个二级分类</span>
-            </span>
-            <PIconBtn :icon="Pencil" label="编辑" @click="openCatEdit(root)" />
-            <PIconBtn :icon="Trash2" label="删除" @click="removeCat(root)" />
-            <PSwitch :checked="root.isEnabled" label="启用" @change="(v) => toggleCat(root, v)" />
+
+        <div class="cat-admin">
+          <!-- 左：一级分类导航（带二级数量） -->
+          <div class="cat-rail">
+            <button
+              v-for="root in dict.rootCategories"
+              :key="root.id"
+              type="button"
+              class="cat-rail-btn"
+              :class="{ 'is-on': catRail === root.id }"
+              @click="catRail = root.id"
+            >
+              <PCatIcon :category-id="root.id" :size="18" />
+              <span style="flex: 1 1 auto">{{ root.name }}</span>
+              <span class="tiny muted mono">{{ root.children.length }}</span>
+            </button>
           </div>
-          <div v-for="child in root.children" :key="child.id" class="set-row" style="padding-left: 26px">
-            <span class="set-ic"><PCatIcon :category-id="child.id" :size="22" /></span>
-            <span class="set-body">
-              <span class="set-t">{{ child.name }}</span>
-              <span class="set-s">{{ child.expenseCount }} 笔</span>
-            </span>
-            <PIconBtn :icon="Pencil" label="编辑" @click="openCatEdit(child)" />
-            <PIconBtn :icon="Trash2" label="删除" @click="removeCat(child)" />
-            <PSwitch :checked="child.isEnabled" label="启用" @change="(v) => toggleCat(child, v)" />
+
+          <!-- 右：当前一级下的二级分类 -->
+          <div>
+            <div class="split" style="margin-bottom: 8px">
+              <span class="tiny muted mono">二级分类 · 继承父级图标与颜色</span>
+              <PBtn size="sm" variant="ghost" :icon="Plus" style="margin-left: auto" @click="openCatCreateChild">
+                新增二级
+              </PBtn>
+            </div>
+            <div class="cat-kid-list">
+              <div v-for="child in railChildren" :key="child.id" class="cat-kid">
+                <PCatIcon :category-id="child.id" :size="26" />
+                <span style="flex: 1 1 auto; min-width: 0">
+                  <span style="font-size: 12px; font-weight: 600; display: block">
+                    {{ child.name }}
+                    <PTag v-if="!child.isEnabled" tone="warn">已停用</PTag>
+                  </span>
+                  <span class="tiny muted" style="display: block">{{ child.expenseCount }} 笔引用</span>
+                </span>
+                <PIconBtn :icon="Pencil" label="编辑分类" @click="openCatEdit(child)" />
+                <PIconBtn :icon="Trash2" label="删除分类" @click="removeCat(child)" />
+              </div>
+              <PEmpty v-if="railChildren.length === 0" :icon="Tag">这个一级分类下还没有二级分类</PEmpty>
+            </div>
+            <div class="hint" style="margin-top: 10px">
+              分类与支付方式均为软删除：已有流水引用时拒绝删除，只能停用。
+            </div>
           </div>
         </div>
       </PCard>
 
       <PCard>
         <div class="card-h">
+          <POrb :icon="CreditCard" tone="var(--sky)" ink="#1E293B" />
           <span class="card-t">支付方式</span>
           <span class="card-cap">{{ dict.paymentMethods.length }} 个</span>
           <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openPayCreate">新增</PBtn>
@@ -855,11 +906,25 @@ onMounted(() => {
           <span class="card-t">主题</span>
           <span class="card-cap">两套设计语言</span>
         </div>
-        <PSeg v-model:value="themeChoice" :options="THEME_OPTIONS" label="主题" @change="(v) => (themeChoice = v)" />
-        <p class="hint" style="margin-top: 10px; display: flex; align-items: center; gap: 6px">
-          <component :is="theme.proto.value === 'cyber' ? Moon : Sun" :size="13" />
-          赛博朋克：黑底霓虹 / 水果硬糖：纸白糖果。顶栏右上角也能一键切换。
-        </p>
+        <div class="theme-cards theme-cards--3">
+          <button
+            v-for="opt in THEME_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="theme-card"
+            :class="{ 'is-on': themeChoice === opt.value }"
+            @click="themeChoice = opt.value"
+          >
+            <span class="theme-prev">
+              <i :class="opt.value === 'light' ? 'tp-candy' : opt.value === 'dark' ? 'tp-cyber' : 'tp-system'" />
+            </span>
+            <span style="font-size: 12px; font-weight: 700">{{ opt.label }}</span>
+            <span class="tiny muted">{{ opt.desc }}</span>
+          </button>
+        </div>
+        <div class="tiny muted mono" style="margin-top: 8px">
+          主题选择写入 localStorage；深色即赛博朋克。顶栏右上角也能一键切换。
+        </div>
       </PCard>
 
       <PCard>
@@ -979,10 +1044,20 @@ onMounted(() => {
           <span class="card-t">关于</span>
           <span class="card-cap">{{ buildStamp }}</span>
         </div>
-        <p class="hint">
-          SuenMoney · 单账本家庭记账。只记支出、整数分、退款以负数冲销；
-          账期按还款日归属。卡片配色取账本色 16 槽（存色号不存色值）。
-        </p>
+        <div class="about-card">
+          <BrandMark :size="68" />
+          <div>
+            <div class="about-name">SuenMoney</div>
+            <div class="about-slogan">一笔一笔，把家记清楚</div>
+          </div>
+          <div class="about-meta">
+            <span>{{ buildStamp.split(' · ')[0] }}</span>
+            <span>单账本</span>
+            <span>整数分</span>
+            <span>只记支出</span>
+          </div>
+          <div class="tiny muted">卡片配色取账本色 16 槽（存色号不存色值），换主题时整体重排。</div>
+        </div>
       </PCard>
 
       <PCard>
@@ -990,9 +1065,21 @@ onMounted(() => {
           <span class="card-t">危险操作</span>
           <span class="card-cap">不可撤销</span>
         </div>
-        <div class="split">
-          <PBtn variant="danger" @click="wipeAll">清空全部数据</PBtn>
-          <PBtn variant="ghost" @click="resetDemo">重置为演示数据</PBtn>
+        <div class="danger-zone">
+          <div class="split">
+            <span style="flex: 1 1 auto">
+              <b style="font-size: 12.5px">清空全部数据</b>
+              <div class="tiny muted">删除所有流水、计划与待办，不可恢复</div>
+            </span>
+            <PBtn size="sm" variant="danger" @click="wipeAll">清空</PBtn>
+          </div>
+          <div class="split">
+            <span style="flex: 1 1 auto">
+              <b style="font-size: 12.5px">重置为演示数据</b>
+              <div class="tiny muted">恢复初始演示账本</div>
+            </span>
+            <PBtn size="sm" variant="ghost" @click="resetDemo">重置</PBtn>
+          </div>
         </div>
       </PCard>
     </template>

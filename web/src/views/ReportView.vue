@@ -132,15 +132,14 @@ const dimRows = computed(() => {
       .filter((r) => r.cents > 0)
       .sort((a, b) => b.cents - a.cents);
   }
-  // 节奏：按「第几周」聚合日分布
-  const weeks = new Map<number, number>();
+  // 节奏：按「星期几」聚合（原型同款：周日 → 周六）
+  const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const byWeekday = [0, 0, 0, 0, 0, 0, 0];
   for (const d of monthReport.value?.daily ?? []) {
-    const week = Math.min(5, Math.ceil(Number(d.date.slice(8, 10)) / 7));
-    weeks.set(week, (weeks.get(week) ?? 0) + d.cents);
+    const day = new Date(`${d.date}T00:00:00`).getDay();
+    byWeekday[day] = (byWeekday[day] ?? 0) + d.cents;
   }
-  return [...weeks.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([w, cents], i) => ({ name: `第 ${w} 周`, cents, color: `var(--chart-${(i % 8) + 1})` }));
+  return WD.map((name, i) => ({ name, cents: byWeekday[i] ?? 0, color: 'var(--accent)' }));
 });
 
 const dimMax = computed(() => Math.max(1, ...dimRows.value.map((r) => r.cents)));
@@ -261,6 +260,13 @@ onMounted(() => void load());
             center-label="合计"
             :center-value="formatYuan(activeTotal)"
           />
+          <div v-else-if="dim === 'week'" class="week-bars">
+            <div v-for="r in dimRows" :key="r.name" class="week-bar">
+              <em class="mono">{{ r.cents > 0 ? formatCompact(r.cents) : '' }}</em>
+              <i :style="{ height: `${Math.max(3, (r.cents / dimMax) * 100)}%` }" />
+              <span>{{ r.name.slice(-1) }}</span>
+            </div>
+          </div>
           <div v-else class="dim-bars">
             <div v-for="r in dimRows" :key="r.name" class="dim-bar">
               <span class="db-l">{{ r.name }}</span>
@@ -326,6 +332,26 @@ onMounted(() => void load());
               <span>{{ Number(r.month.slice(5, 7)) }}月</span>
             </div>
           </div>
+        </PCard>
+
+        <PCard>
+          <div class="card-h">
+            <span class="card-t">{{ currentYear }} 年度报告</span>
+            <span class="card-cap">ANNUAL</span>
+          </div>
+          <button
+            type="button"
+            class="report-banner"
+            style="width: 100%; text-align: left"
+            @click="$router.push({ name: 'annual-summary', query: { year: currentYear } })"
+          >
+            <div>
+              <div class="rb-t">{{ currentYear }} 年度报告已生成</div>
+              <div class="rb-s">年度全貌 · 年度之最 · 单笔最贵 · 最集中月份 · 12 月走势</div>
+            </div>
+            <span style="margin-left: auto" class="spacer" />
+            <ChevronRight :size="18" />
+          </button>
         </PCard>
 
         <PCard>
