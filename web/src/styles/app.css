@@ -11,6 +11,7 @@
 @import 'tailwindcss';
 @import './tokens.css';
 @import './base.css';
+@import './proto/index.css';
 
 /**
  * 把设计令牌映射成 Tailwind 工具类。
