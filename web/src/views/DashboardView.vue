@@ -8,19 +8,17 @@
  * 数据全部来自报表接口，**不从前端明细重算**：合计、构成、环比、热力
  * 都有服务端口径，前端再算一遍迟早与报表页对不上。
  */
-import {
+import { Check,
   CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  CreditCard,
   Layers,
   Plus,
   ReceiptText,
   TrendingDown,
   TrendingUp,
-  TriangleAlert,
 } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
@@ -30,7 +28,7 @@ import ReminderRow from '@/components/ReminderRow.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
-import { PBtn, PCard, PEmpty, PIconBtn, POrb, PSeg, PStat, PTag } from '@/ui';
+import { PBtn, PCard, PIconBtn, POrb, PSeg, PStat, PTag } from '@/ui';
 import { currentMonth, daysInMonth, elapsedDays, formatMonthLabel, formatMonthDay, shiftMonth, todayLocal } from '@/utils/dates';
 import { formatCompact, formatYuan } from '@/utils/money';
 
@@ -243,7 +241,13 @@ onMounted(() => {
 
 <template>
   <div class="overview-grid">
-    <!-- ═══════ ① 主卡 ═══════ -->
+    <!-- ═══════════════════════════════════════════════════════════════
+         ① 主卡（独占一整行）
+         上半：期间 + 大金额 + 环比 + 三指标 + 构成条
+         下半：三个小组件 —— 本月要还 / 待办提醒 / 还款进度
+         （收纳进主卡：这三件事都是「这个月还要付多少」，与主金额同属一条事务线，
+           拆成独立卡片会把一屏切成四块，视线要来回跳）
+         ═══════════════════════════════════════════════════════════════ -->
     <PCard class="og-hero card--pop">
       <div class="hero-eyebrow">
         <PSeg :options="TIERS" :value="tier" label="期间" @change="switchTier" />
@@ -270,80 +274,115 @@ onMounted(() => {
         <PStat v-for="m in metrics" :key="m.label" :label="m.label" :value="m.value" />
       </div>
 
-      <div class="og-hero-foot">
-        <div class="stack-bar" role="img" aria-label="支出构成堆叠条">
-          <span v-for="r in composeRows" :key="r.id" :style="{ flex: r.cents, background: r.color }" />
-        </div>
-        <div class="compose-legend">
-          <span v-for="r in composeRows" :key="r.id" class="cl-item">
-            <i class="cl-dot" :style="{ background: r.color }" />
-            {{ r.name }}
-            <b class="mono" style="font-weight: 600">{{ percentOf(r.cents) }}%</b>
-          </span>
-        </div>
-        <div class="toolbar" style="margin-top: 14px">
-          <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
-          <PBtn variant="ghost" :icon="ReceiptText" @click="$router.push({ name: 'ledger' })">查看流水</PBtn>
-        </div>
+      <div class="stack-bar" role="img" aria-label="支出构成堆叠条" style="margin-top: 14px">
+        <span v-for="r in composeRows" :key="r.id" :style="{ flex: r.cents, background: r.color }" />
       </div>
-    </PCard>
-
-    <!-- ═══════ ② 待办与要还 ═══════ -->
-    <PCard class="og-todo og-card">
-      <button
-        v-if="dueTodos.length > 0"
-        type="button"
-        class="alert-strip"
-        :aria-expanded="alertOpen"
-        @click="alertOpen = !alertOpen"
-      >
-        <TriangleAlert :size="15" />
-        <span>
-          {{ overdueCount > 0 ? `${overdueCount} 笔已逾期` : `${dueTodos.length} 笔待处理` }} ·
-          {{ formatYuan(dueTotal) }}
+      <div class="compose-legend" style="margin-top: 8px">
+        <span v-for="r in composeRows" :key="r.id" class="cl-item">
+          <i class="cl-dot" :style="{ background: r.color }" />
+          {{ r.name }}
+          <b class="mono" style="font-weight: 600">{{ percentOf(r.cents) }}%</b>
         </span>
-        <span style="margin-left: auto" />
-        <component :is="alertOpen ? ChevronUp : ChevronDown" :size="13" />
-      </button>
-
-      <div v-if="alertOpen && dueTodos.length > 0" class="alert-pop" style="margin-top: 8px">
-        <ReminderRow
-          v-for="t in dueTodos"
-          :key="t.id"
-          :title="`${t.planName} · ${t.periodSeq} 期`"
-          :sub="`${formatMonthDay(t.repaymentDate)} · ${t.willAutoPost ? '到期自动入账' : '需手动入账'}`"
-          :amount="formatYuan(t.amountCents)"
-          @skip="todoAction(t, 'skip')"
-        >
-          <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
-            {{ t.willAutoPost ? '确认' : '入账' }}
-          </PBtn>
-        </ReminderRow>
       </div>
 
-      <div class="og-card-body">
-        <div class="card-h card-h--tight">
-          <span class="card-t">本月要还</span>
-          <span class="card-cap">信用卡 · {{ creditDue.length }} 张</span>
-        </div>
-        <PEmpty v-if="creditDue.length === 0" :icon="CreditCard">本月没有信用卡账单</PEmpty>
-        <div v-for="p in creditDue" v-else :key="p.paymentMethodId" class="due-row">
-          <span class="due-card-badge"><CreditCard :size="15" /></span>
-          <div style="min-width: 0; flex: 1 1 auto">
-            <div style="font-size: 12px; font-weight: 600">{{ p.name }}</div>
-            <div class="tiny muted">{{ p.count }} 笔</div>
+      <!-- ── 三个小组件：同一行的三列，窄屏堆叠 ── -->
+      <div class="hero-widgets">
+        <!-- 小组件 1：本月要还 -->
+        <section class="hero-widget">
+          <div class="hw-head">
+            <span class="hw-title">本月要还</span>
+            <span class="hw-cap">{{ creditDue.length }} 张卡</span>
           </div>
-          <div class="row-end"><div class="row-amt">{{ formatYuan(p.cents) }}</div></div>
-        </div>
+          <div class="hw-value">{{ formatYuan(creditDueTotal) }}</div>
+          <div v-if="creditDue.length === 0" class="hw-empty">本月没有信用卡账单</div>
+          <template v-else>
+            <div v-for="p in creditDue.slice(0, 3)" :key="p.paymentMethodId" class="hw-row">
+              <span class="hw-row-name">{{ p.name }}</span>
+              <span class="hw-row-val mono">{{ formatYuan(p.cents) }}</span>
+            </div>
+            <div v-if="creditDue.length > 3" class="hw-more">还有 {{ creditDue.length - 3 }} 张…</div>
+          </template>
+        </section>
+
+        <!-- 小组件 2：待办提醒（无待办时整块收起成一行绿字） -->
+        <section class="hero-widget">
+          <div class="hw-head">
+            <span class="hw-title">待办提醒</span>
+            <span v-if="dueTodos.length > 0" class="hw-cap">{{ dueTodos.length }} 笔</span>
+            <button
+              v-if="dueTodos.length > 0"
+              type="button"
+              class="hw-toggle"
+              :aria-expanded="alertOpen"
+              :aria-label="alertOpen ? '收起待办' : '展开待办'"
+              @click="alertOpen = !alertOpen"
+            >
+              <component :is="alertOpen ? ChevronUp : ChevronDown" :size="13" />
+            </button>
+          </div>
+          <div class="hw-value" :class="{ 'hw-value--late': overdueCount > 0 }">
+            {{ formatYuan(dueTotal) }}
+          </div>
+          <div v-if="dueTodos.length === 0" class="hw-empty hw-empty--ok">
+            <Check :size="12" />计划待办已清空
+          </div>
+          <template v-else>
+            <div class="hw-sub">
+              {{ overdueCount > 0 ? `${overdueCount} 笔已逾期` : '全部未到期' }} ·
+              {{ formatMonthDay(dueTodos[0]!.repaymentDate) }} 最近
+            </div>
+            <div v-if="alertOpen" class="hw-todos">
+              <ReminderRow
+                v-for="t in dueTodos"
+                :key="t.id"
+                :title="`${t.planName} · ${t.periodSeq} 期`"
+                :sub="`${formatMonthDay(t.repaymentDate)} · ${t.willAutoPost ? '到期自动入账' : '需手动入账'}`"
+                :amount="formatYuan(t.amountCents)"
+                @skip="todoAction(t, 'skip')"
+              >
+                <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
+                  {{ t.willAutoPost ? '确认' : '入账' }}
+                </PBtn>
+              </ReminderRow>
+            </div>
+          </template>
+        </section>
+
+        <!-- 小组件 3：还款进度 -->
+        <section class="hero-widget">
+          <div class="hw-head">
+            <span class="hw-title">还款进度</span>
+            <span class="hw-cap">{{ plans.activePlans.length }} 个计划</span>
+          </div>
+          <div class="hw-value">
+            {{ formatYuan(planPaid) }}
+            <span class="hw-value-sub">/ {{ formatYuan(planMonthly) }}</span>
+          </div>
+          <div class="bar" style="margin-top: 6px">
+            <span
+              class="bar-fill"
+              :style="{
+                width: `${Math.min(100, progressPct)}%`,
+                background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
+              }"
+            />
+          </div>
+          <div class="hw-sub">
+            {{ progressPct.toFixed(0) }}% · 本月计划固定还款
+            <button v-if="plans.activePlans.length > 0" type="button" class="hw-link" @click="$router.push({ name: 'settings' })">
+              管理
+            </button>
+          </div>
+        </section>
       </div>
 
-      <div class="og-card-foot">
-        <span class="tiny muted">合计应还 <b class="mono" style="color: var(--ink)">{{ formatYuan(creditDueTotal) }}</b></span>
-        <PBtn size="sm" variant="ghost" @click="$router.push({ name: 'settings' })">全部待办</PBtn>
+      <div class="toolbar" style="margin-top: 14px">
+        <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
+        <PBtn variant="ghost" :icon="ReceiptText" @click="$router.push({ name: 'ledger' })">查看流水</PBtn>
       </div>
     </PCard>
 
-    <!-- ═══════ ③ 月度热力 ═══════ -->
+    <!-- ═══════ ② 月度热力 ═══════ -->
     <PCard class="og-heat og-card">
       <div class="card-h">
         <POrb :icon="CalendarDays" tone="var(--amber)" ink="#1E293B" />
@@ -373,7 +412,7 @@ onMounted(() => {
       </div>
     </PCard>
 
-    <!-- ═══════ ④ 累计与跨度 ═══════ -->
+    <!-- ═══════ ③ 累计与跨度 ═══════ -->
     <PCard class="og-cum og-card">
       <div class="card-h">
         <POrb :icon="Layers" tone="var(--mint)" ink="#1E293B" />
@@ -389,61 +428,6 @@ onMounted(() => {
       </div>
     </PCard>
 
-    <!-- ═══════ ⑤ 还款进度 ═══════ -->
-    <PCard class="og-progress og-card">
-      <div class="card-h">
-        <span class="card-t">还款进度</span>
-        <span class="card-cap">进行中计划 {{ plans.activePlans.length }} 个</span>
-        <span style="margin-left: auto">
-          <PBtn size="sm" variant="ghost" @click="$router.push({ name: 'settings' })">管理计划</PBtn>
-        </span>
-      </div>
-      <div class="op-row">
-        <div class="op-main">
-          <div class="split" style="align-items: baseline; gap: 8px">
-            <span class="op-num">{{ formatYuan(planPaid) }}</span>
-            <span class="tiny muted">/ {{ formatYuan(planMonthly) }}</span>
-            <span class="mono tiny muted" style="margin-left: auto">{{ progressPct.toFixed(0) }}%</span>
-          </div>
-          <div style="margin-top: 8px">
-            <div class="bar">
-              <span
-                class="bar-fill"
-                :style="{
-                  width: `${Math.min(100, progressPct)}%`,
-                  background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
-                }"
-              />
-            </div>
-            <div class="progress-line">
-              <span>本月计划固定还款</span><span>已入账 {{ formatYuan(planPaid) }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="op-stats">
-          <PStat label="进行中计划" :value="String(plans.activePlans.length)" />
-          <PStat label="待处理待办" :value="String(dueTodos.length)" />
-          <PStat label="待办金额" :value="formatYuan(dueTotal)" />
-        </div>
-      </div>
-    </PCard>
-
     <p v-if="loading" class="tiny muted" style="text-align: center">加载中…</p>
   </div>
 </template>
-
-<style scoped>
-/*
- * 概况主卡独占一整行（用户 2026-10-22 指定）。
- * 原型的 og-hero 是 7/5 与待办卡并排；这里改成主卡通栏、待办卡到下一行 —— 
- * 大金额是这一页的主角，与它并排的卡片会把它挤窄。
- */
-.og-hero {
-  grid-column: 1 / -1;
-}
-@media (min-width: 1081px) {
-  .og-hero {
-    grid-column: span 12;
-  }
-}
-</style>
