@@ -18,12 +18,13 @@ import {
   Layers,
   Plus,
   ReceiptText,
+  Settings2,
   TrendingDown,
   TrendingUp,
   TriangleAlert,
 } from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { RouterLink, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 
 import {
   ApiError,
@@ -36,6 +37,16 @@ import {
 } from '@/api';
 import type { CategoryBucket } from '@/api/types';
 import PaymentIcon from '@/components/PaymentIcon.vue';
+import {
+  PBar,
+  PBtn,
+  PEmpty,
+  PIconBtn,
+  POrb,
+  PSeg,
+  PStat,
+  PTag,
+} from '@/components/proto';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useSyncStore } from '@/stores/sync';
@@ -357,6 +368,11 @@ const periodLabel = computed(() => {
   return '全部记录';
 });
 
+/** 分段控件回传 string，收窄回 Scope */
+function onScopeChange(next: string): void {
+  scope.value = next as Scope;
+}
+
 function shiftBack(): void {
   if (scope.value === 'month') month.value = shiftMonth(month.value, -1);
   else if (scope.value === 'year') month.value = `${Number(year.value) - 1}-01`;
@@ -499,37 +515,19 @@ async function handleSkip(todoId: string): Promise<void> {
     <!-- ══════ ① 本期主卡（原型 og-hero：期间控件 + 大金额 + 环比 + 三指标 + 构成条）══════ -->
     <section class="card card--pop og-hero">
       <div class="hero-eyebrow">
-        <div class="seg" role="tablist" aria-label="期间">
-          <button
-            v-for="opt in SCOPE_OPTIONS"
-            :key="opt.value"
-            type="button"
-            role="tab"
-            class="seg-btn"
-            :class="{ 'is-on': scope === opt.value }"
-            :aria-selected="scope === opt.value"
-            @click="scope = opt.value"
-          >
-            {{ opt.label }}
-          </button>
-        </div>
+        <PSeg :options="SCOPE_OPTIONS" :value="scope" label="期间" @change="onScopeChange" />
         <span class="spacer" style="margin-left: auto" />
         <div v-if="scope !== 'all'" class="period-nav">
-          <button type="button" class="icon-btn" aria-label="上一期间" @click="shiftBack">
-            <ChevronLeft :size="16" />
-          </button>
+          <PIconBtn :icon="ChevronLeft" label="上一期间" @click="shiftBack" />
           <span class="mono tiny" style="min-width: 92px; text-align: center">{{ periodLabel }}</span>
-          <button
-            type="button"
-            class="icon-btn"
-            aria-label="下一期间"
+          <PIconBtn
+            :icon="ChevronRight"
+            label="下一期间"
             :disabled="scope === 'month' && isCurrentSelectedMonth"
             @click="shiftForward"
-          >
-            <ChevronRight :size="16" />
-          </button>
+          />
         </div>
-        <span v-else class="tag tag--dash">全部记录</span>
+        <PTag v-else tone="dash">全部记录</PTag>
       </div>
 
       <div class="hero-amt">
@@ -547,22 +545,17 @@ async function handleSkip(todoId: string): Promise<void> {
       </div>
 
       <div class="hero-metrics">
-        <div class="stat">
-          <span class="stat-v">{{ scope === 'month' ? formatYuan(dailyAverageCents) : formatYuan(summaryMonthlyAvg) }}</span>
-          <span class="stat-l">{{ scope === 'month' ? '日均支出' : '月均支出' }}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-v">{{ activeCount }} 笔</span>
-          <span class="stat-l">笔数</span>
-        </div>
-        <div class="stat">
-          <span class="stat-v">
-            {{ scope === 'month'
-              ? (estimatedMonthEndCents !== null ? formatYuan(estimatedMonthEndCents) : '—')
-              : (yearPeakMonth ? formatMonthLabel(yearPeakMonth.month) : '—') }}
-          </span>
-          <span class="stat-l">{{ scope === 'month' ? '预计月末' : '最高月' }}</span>
-        </div>
+        <PStat
+          :label="scope === 'month' ? '日均支出' : '月均支出'"
+          :value="scope === 'month' ? formatYuan(dailyAverageCents) : formatYuan(summaryMonthlyAvg)"
+        />
+        <PStat label="笔数" :value="`${activeCount} 笔`" />
+        <PStat
+          :label="scope === 'month' ? '预计月末' : '最高月'"
+          :value="scope === 'month'
+            ? (estimatedMonthEndCents !== null ? formatYuan(estimatedMonthEndCents) : '—')
+            : (yearPeakMonth ? formatMonthLabel(yearPeakMonth.month) : '—')"
+        />
       </div>
 
       <div class="og-hero-foot">
@@ -582,13 +575,9 @@ async function handleSkip(todoId: string): Promise<void> {
         </div>
         <div class="toolbar" style="margin-top: 14px">
           <span class="desktop-only">
-            <button type="button" class="btn btn--primary" @click="ui.openCreate()">
-              <Plus :size="14" :stroke-width="2.4" />记一笔
-            </button>
+            <PBtn variant="primary" :icon="Plus" @click="ui.openCreate()">记一笔</PBtn>
           </span>
-          <RouterLink :to="{ name: 'ledger' }" class="btn btn--ghost">
-            <ReceiptText :size="14" />查看流水
-          </RouterLink>
+          <PBtn variant="ghost" :icon="ReceiptText" @click="router.push({ name: 'ledger' })">查看流水</PBtn>
           <span class="tiny muted mono" style="margin-left: auto">
             {{ isOffline ? '离线数据 · 联网后自动校准' : '已与服务器同步' }}
           </span>
@@ -621,17 +610,10 @@ async function handleSkip(todoId: string): Promise<void> {
             {{ urgencyLabel(item.repaymentDate) }}
           </span>
           <div class="row-end">
-            <button
-              v-if="item.willAutoPost"
-              type="button"
-              class="btn btn--ghost btn--sm"
-              @click="handleAck(item.id)"
-            >
-              确认
-            </button>
+            <PBtn v-if="item.willAutoPost" variant="ghost" size="sm" @click="handleAck(item.id)">确认</PBtn>
             <template v-else>
-              <button type="button" class="btn btn--ghost btn--sm" @click="handleConfirm(item)">入账</button>
-              <button type="button" class="btn btn--ghost btn--sm" @click="handleSkip(item.id)">忽略</button>
+              <PBtn variant="ghost" size="sm" @click="handleConfirm(item)">入账</PBtn>
+              <PBtn variant="ghost" size="sm" @click="handleSkip(item.id)">忽略</PBtn>
             </template>
           </div>
         </div>
@@ -639,13 +621,9 @@ async function handleSkip(todoId: string): Promise<void> {
           <span class="tiny muted">
             待办合计 <b class="mono" style="color: var(--ink)">{{ formatYuan(dueTotalAmount) }}</b>
           </span>
-          <RouterLink
-            :to="{ name: 'settings' }"
-            class="btn btn--ghost btn--sm"
-            style="margin-left: auto"
-          >
+          <PBtn variant="ghost" size="sm" style="margin-left: auto" @click="router.push({ name: 'settings' })">
             全部待办
-          </RouterLink>
+          </PBtn>
         </div>
       </div>
 
@@ -654,9 +632,7 @@ async function handleSkip(todoId: string): Promise<void> {
           <span class="card-t">本月要还</span>
           <span class="card-cap">信用卡 · {{ creditDue.length }} 张</span>
         </div>
-        <div v-if="creditDue.length === 0" class="empty">
-          <CreditCard :size="18" />本月没有信用卡账单
-        </div>
+        <PEmpty v-if="creditDue.length === 0" :icon="CreditCard">本月没有信用卡账单</PEmpty>
         <div v-for="item in creditDue" v-else :key="item.paymentMethodId" class="due-row">
           <span class="due-card-badge"><CreditCard :size="15" /></span>
           <div style="min-width: 0; flex: 1 1 auto">
@@ -689,14 +665,14 @@ async function handleSkip(todoId: string): Promise<void> {
         <span class="tiny muted">
           合计应还 <b class="mono" style="color: var(--ink)">{{ formatYuan(creditDueTotalCents) }}</b>
         </span>
-        <RouterLink :to="{ name: 'settings' }" class="btn btn--ghost btn--sm">全部待办</RouterLink>
+        <PBtn variant="ghost" size="sm" @click="router.push({ name: 'settings' })">全部待办</PBtn>
       </div>
     </section>
 
     <!-- ══════ ③ 月度支出热力（原型 og-heat）══════ -->
     <section class="card og-heat og-card">
       <div class="card-h">
-        <span class="orb" style="background: var(--amber); color: #1E293B"><CalendarDays :size="16" /></span>
+        <POrb :icon="CalendarDays" tone="var(--amber)" ink="#1E293B" />
         <span class="card-t">月度支出热力</span>
         <span class="card-cap">近 12 个月 · 点击下钻</span>
       </div>
@@ -722,14 +698,14 @@ async function handleSkip(todoId: string): Promise<void> {
           近 12 个月合计
           <b class="mono" style="color: var(--ink)">{{ formatYuan(rolling12TotalCents) }}</b>
         </span>
-        <RouterLink :to="{ name: 'report' }" class="btn btn--ghost btn--sm">打开报表</RouterLink>
+        <PBtn variant="ghost" size="sm" @click="router.push({ name: 'report' })">打开报表</PBtn>
       </div>
     </section>
 
     <!-- ══════ ④ 累计与跨度（原型 og-cum）══════ -->
     <section class="card og-cum og-card">
       <div class="card-h">
-        <span class="orb" style="background: var(--mint); color: #1E293B"><Layers :size="16" /></span>
+        <POrb :icon="Layers" tone="var(--mint)" ink="#1E293B" />
         <span class="card-t">累计与跨度</span>
         <span class="card-cap">全部历史口径</span>
       </div>
@@ -750,9 +726,7 @@ async function handleSkip(todoId: string): Promise<void> {
         <span class="card-t">还款进度</span>
         <span class="card-cap">进行中计划 {{ activePlanCount }} 个</span>
         <span style="margin-left: auto">
-          <RouterLink :to="{ name: 'settings' }" class="btn btn--ghost btn--sm">
-            管理计划<ChevronRight :size="12" />
-          </RouterLink>
+          <PBtn variant="ghost" size="sm" :icon="Settings2" @click="router.push({ name: 'settings' })">管理计划</PBtn>
         </span>
       </div>
       <div class="op-row">
@@ -763,15 +737,10 @@ async function handleSkip(todoId: string): Promise<void> {
             <span class="mono tiny muted" style="margin-left: auto">{{ progressPct.toFixed(0) }}%</span>
           </div>
           <div style="margin-top: 8px">
-            <div class="bar">
-              <span
-                class="bar-fill"
-                :style="{
-                  width: `${Math.min(100, progressPct)}%`,
-                  background: progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)',
-                }"
-              />
-            </div>
+            <PBar
+              :pct="progressPct"
+              :tone="progressPct > 120 ? 'var(--danger)' : progressPct > 100 ? 'var(--warn)' : 'var(--accent)'"
+            />
             <div class="progress-line">
               <span>本月计划固定还款</span><span>已入账 {{ formatYuan(planPaidCents) }}</span>
             </div>
