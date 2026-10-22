@@ -1203,7 +1203,7 @@ function fullCategoryName(item: {
       </div>
     </header>
 
-    <main class="mx-auto mt-4 w-full max-w-[var(--content-max)] px-4 lg:px-6">
+    <main class="ledger-main mx-auto mt-4 w-full max-w-[var(--content-max)] px-4 lg:px-6">
       <p v-if="errorMessage !== null" class="py-4 text-center text-sm text-danger-text">{{ errorMessage }}</p>
       <p v-else-if="loading" class="py-12 text-center text-sm text-ink-muted">加载中…</p>
 

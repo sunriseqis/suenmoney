@@ -651,7 +651,7 @@ async function handleSkip(todoId: string): Promise<void> {
       </p>
     </header>
 
-    <main class="mx-auto mt-6 w-full max-w-[var(--content-max)] space-y-6 px-4 lg:px-6">
+    <main class="dash-main mx-auto mt-6 w-full max-w-[var(--content-max)] space-y-6 px-4 lg:px-6">
       <!-- ② 第二行：本月要还 + 支出进度（双列等高卡片） -->
       <section class="facts-grid" aria-label="当期事实">
         <!-- 本月要还 -->
