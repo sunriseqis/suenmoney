@@ -45,7 +45,7 @@ import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUpdateStore } from '@/stores/update';
 import { PBtn, PCard, PEmpty, PField, PIconBtn, PInput, PSheet, PSwitch, PTag } from '@/ui';
-import { todayLocal } from '@/utils/dates';
+import { formatMonthDay, todayLocal } from '@/utils/dates';
 import { formatYuan, parseYuanToCents } from '@/utils/money';
 
 const dict = useDictionariesStore();
@@ -342,6 +342,48 @@ async function savePlan(): Promise<void> {
     toast.show(errText(error, '创建失败'));
   } finally {
     busy.value = false;
+  }
+}
+
+/** 期次文案：已还 / 总期（总数 = 已确认 + 未执行，服务端不存冗余计数） */
+function planTotal(p: Plan): number {
+  return p.progress.paidCount + p.progress.pendingCount;
+}
+function planSeq(p: Plan): string {
+  const total = planTotal(p);
+  return total > 0 ? `${p.progress.paidCount}/${total} 期` : '—';
+}
+
+/** 待办紧急度（与概况页同一口径） */
+function urgencyTone(date: string): 'late' | 'soon' | 'done' {
+  const today = new Date();
+  const a = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const t = new Date(`${date}T00:00:00`);
+  const b = Date.UTC(t.getFullYear(), t.getMonth(), t.getDate());
+  const days = Math.round((b - a) / 86_400_000);
+  if (days < 0) return 'late';
+  if (days <= 1) return 'soon';
+  return 'done';
+}
+
+async function actTodo(t: { id: string; willAutoPost: boolean }): Promise<void> {
+  try {
+    if (t.willAutoPost) await plansStore.ackTodo(t.id);
+    else await plansStore.confirmTodo(t.id);
+    toast.show(t.willAutoPost ? '已确认并自动入账' : '已手动入账');
+    await plansStore.refresh();
+  } catch (error) {
+    toast.show(errText(error, '操作失败'));
+  }
+}
+
+async function skipTodo(t: { id: string }): Promise<void> {
+  try {
+    await plansStore.skipTodo(t.id);
+    toast.show('已忽略本期');
+    await Promise.all([plansStore.refresh(), loadDoneTodos()]);
+  } catch (error) {
+    toast.show(errText(error, '操作失败'));
   }
 }
 
@@ -865,19 +907,34 @@ onMounted(() => {
           <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="openPlanCreate">新建计划</PBtn>
         </div>
         <PEmpty v-if="plansStore.plans.length === 0" :icon="CalendarDays">还没有计划</PEmpty>
-        <div v-for="p in plansStore.plans" :key="p.id" class="set-row">
+        <div v-for="p in plansStore.plans" :key="p.id" class="set-row plan-row">
+          <PCatIcon :category-id="p.categoryId" :size="26" />
           <span class="set-body">
             <span class="set-t">
               {{ p.name }}
               <PTag v-if="p.state === 'ended'" tone="dash">已结束</PTag>
-              <PTag v-else-if="p.autoPost" tone="accent">自动入账</PTag>
+              <PTag v-else-if="p.autoPost" tone="accent">自动</PTag>
             </span>
             <span class="set-s">
-              每期 {{ formatYuan(p.amountCents) }} · 首期 {{ p.firstDueDate }}
+              {{ planSeq(p) }} · 每期 {{ formatYuan(p.amountCents) }}
+              <template v-if="p.progress.nextDueDate"> · 下次 {{ formatMonthDay(p.progress.nextDueDate) }}</template>
+            </span>
+            <!-- 进度刻度：最多 12 段（360 期房贷逐期画只会变一片灰点） -->
+            <span class="plan-ticks" :aria-label="`已还 ${p.progress.paidCount} / ${planTotal(p)} 期`">
+              <i
+                v-for="seg in 12"
+                :key="seg"
+                :class="{ 'is-done': seg <= Math.round((p.progress.paidCount / Math.max(1, planTotal(p))) * 12) }"
+              />
             </span>
           </span>
-          <PBtn v-if="p.state === 'active'" size="sm" variant="ghost" @click="endPlan(p)">终止</PBtn>
-          <PIconBtn :icon="Trash2" label="删除" @click="removePlan(p)" />
+          <details class="more-menu">
+            <summary>更多</summary>
+            <div class="more-menu-pop">
+              <button v-if="p.state === 'active'" type="button" @click="endPlan(p)">终止计划</button>
+              <button type="button" class="is-danger" @click="removePlan(p)">删除计划</button>
+            </div>
+          </details>
         </div>
       </PCard>
 
@@ -909,11 +966,20 @@ onMounted(() => {
         </div>
         <PEmpty v-if="plansStore.dueTodos.length === 0" :icon="Check">没有待处理的期次</PEmpty>
         <div v-for="t in plansStore.dueTodos" :key="t.id" class="set-row">
+          <i class="todo-mark" :class="`is-${urgencyTone(t.repaymentDate)}`" style="height: 24px" />
           <span class="set-body">
-            <span class="set-t">{{ t.planName }} · {{ t.periodSeq }} 期</span>
-            <span class="set-s">{{ t.repaymentDate }} · {{ formatYuan(t.amountCents) }}</span>
+            <span class="set-t">{{ t.periodSeq }}期 · {{ t.planName }}</span>
+            <span class="set-s">{{ formatMonthDay(t.repaymentDate) }} · {{ formatYuan(t.amountCents) }}</span>
           </span>
-          <PTag :tone="t.willAutoPost ? 'accent' : 'dash'">{{ t.willAutoPost ? '自动' : '手动' }}</PTag>
+          <PBtn size="sm" variant="primary" @click="actTodo(t)">
+            {{ t.willAutoPost ? '确认' : '入账' }}
+          </PBtn>
+          <details class="more-menu">
+            <summary>更多</summary>
+            <div class="more-menu-pop">
+              <button type="button" class="is-danger" @click="skipTodo(t)">忽略本期</button>
+            </div>
+          </details>
         </div>
       </PCard>
     </template>
