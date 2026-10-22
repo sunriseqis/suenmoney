@@ -4,25 +4,36 @@ const META_CACHE_MS = 5 * 60 * 1000;
 const MAX_SUBDIRS = 20;
 const PATH_NOT_EXIST_CODE = 1365;
 
-export type UpdatePlatform = 'android' | 'ios';
+/**
+ * 更新平台。
+ *
+ * harmony 在计划三加进来：鸿蒙原生端也会调 /api/update/check，
+ * 旧实现只认 android|ios → 请求被 400 打回，客户端只能当网络错误处理。
+ * 现在让它走同一套流程：没有 .hap 产物时返回「无可用更新」，
+ * 而不是报错（错误会让壳弹出无法处理的提示）。
+ */
+export type UpdatePlatform = 'android' | 'ios' | 'harmony';
 
 const ARTIFACT_PATTERNS: Record<UpdatePlatform, RegExp> = {
   android: /^SuenMoney-v(\d+(?:\.\d+)*)-release\.apk$/i,
   ios: /^SuenMoney-v(\d+(?:\.\d+)*)-release\.ipa$/i,
+  harmony: /^SuenMoney-v(\d+(?:\.\d+)*)-release\.hap$/i,
 };
 
 const MAX_ARTIFACT_BYTES: Record<UpdatePlatform, number> = {
   android: 100 * 1024 * 1024,
   ios: 200 * 1024 * 1024,
+  harmony: 200 * 1024 * 1024,
 };
 
 const ARTIFACT_LABEL: Record<UpdatePlatform, string> = {
   android: 'APK',
   ios: 'IPA',
+  harmony: 'HAP',
 };
 
 export function isUpdatePlatform(value: unknown): value is UpdatePlatform {
-  return value === 'android' || value === 'ios';
+  return value === 'android' || value === 'ios' || value === 'harmony';
 }
 
 type UgreenEnvelope<T> = { code?: number; msg?: string; data?: T };
