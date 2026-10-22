@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
@@ -15,7 +17,35 @@ import tailwindcss from '@tailwindcss/vite';
 const apiTarget = process.env['SUENMONEY_API'] ?? 'http://127.0.0.1:3310';
 const devPort = Number(process.env['SUENMONEY_WEB_PORT'] ?? 5310);
 
+/**
+ * 构建标记（版本 · 短 sha · 构建时间）。
+ *
+ * 为什么需要：换肤期间反复出现「我这边看到的是新版，你那边是旧版」——
+ * 浏览器缓存、原生壳内置的旧 dist、忘记重启服务，表现都一样。
+ * 把标记渲染在界面上，一眼就能确认看的是哪一版，省掉一轮互相猜。
+ */
+function buildStamp(): string {
+  let sha = 'nogit';
+  try {
+    sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
+  } catch {
+    /* 非 git 环境（例如打包机）忽略 */
+  }
+  let ver = '0.0.0';
+  try {
+    ver = readFileSync(fileURLToPath(new URL('../VERSION', import.meta.url)), 'utf8').trim();
+  } catch {
+    /* 没有 VERSION 文件就留默认 */
+  }
+  const at = new Date().toISOString().slice(5, 16).replace('T', ' ');
+  return `v${ver} · ${sha} · ${at}`;
+}
+
 export default defineConfig({
+  define: {
+    __BUILD_STAMP__: JSON.stringify(buildStamp()),
+  },
+
   plugins: [vue(), tailwindcss()],
 
   resolve: {

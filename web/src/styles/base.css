@@ -453,9 +453,13 @@
   button:not(:disabled) {
     transition: transform 140ms var(--ease-spring);
   }
-  button:not(:disabled):active {
-    transform: scale(0.96);
-  }
+  /*
+   * 注意：这里**不再**给所有按钮加 `:active { scale(0.96) }`。
+   * 原型按钮的按压反馈是「位移 + 阴影收缩」（.btn:active{transform:translate(2px,2px)}），
+   * 而 `button:not(:disabled):active` 的选择器权重 (0,2,1) 高于 `.btn:active` (0,2,0)，
+   * 会把原型的位移效果整条压掉 —— 表现就是「按下去只是微微缩一下」。
+   * 交互反馈交给各组件自己的类，不要在这里统一改。
+   */
 }
 
 @layer components {
