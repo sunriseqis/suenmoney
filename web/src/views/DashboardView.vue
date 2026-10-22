@@ -452,6 +452,21 @@ onMounted(() => {
   grid-column: 1 / -1;
 }
 
+/*
+ * 两列卡片必须等高：.overview-grid 本身是 align-items: stretch，
+ * 但卡片内部是 flex column，若不把正文撑开，矮卡会在底部留一截空白、
+ * 视觉上像没对齐。这里让正文区 flex:1，页脚自动贴底。
+ */
+.og-heat,
+.og-cum {
+  display: flex;
+  flex-direction: column;
+}
+.og-heat .og-card-body,
+.og-cum .og-card-body {
+  flex: 1 1 auto;
+}
+
 /* 主卡内的三个小组件：一行三列，竖线分隔（同一个事务线的三件事） */
 .hero-widgets {
   display: grid;
