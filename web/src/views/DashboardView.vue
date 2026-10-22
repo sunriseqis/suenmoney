@@ -10,7 +10,6 @@
  */
 import {
   CalendarDays,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -449,6 +448,11 @@ function daysUntil(date: string): number {
 }
 
 const dueTodos = computed(() => plansStore.dueTodos);
+
+/** 逾期笔数（提醒条文案：有逾期就先说逾期） */
+const overdueCount = computed(
+  () => dueTodos.value.filter((t) => daysUntil(t.repaymentDate) < 0).length,
+);
 const dueTotalAmount = computed(() =>
   dueTodos.value.reduce((acc, t) => acc + t.amountCents, 0),
 );
@@ -594,25 +598,23 @@ async function handleSkip(todoId: string): Promise<void> {
 
     <!-- ══════ ② 待办与要还（原型 og-todo：提醒条 + 本月要还 + 待办提醒）══════ -->
     <section class="card og-todo og-card">
+      <!-- 提醒条：**没有待办时整条不渲染** —— 空提醒条常驻只会变成噪音。
+           有待办才出现，且默认收起，点一下才展开动作面板。 -->
       <button
+        v-if="dueTodos.length > 0"
         type="button"
         class="alert-strip"
         :aria-expanded="isPopoverOpen"
         @click="isPopoverOpen = !isPopoverOpen"
       >
         <TriangleAlert :size="15" />
-        <span>
-          {{ dueTodos.length === 0 ? '暂无待办' : `${dueTodos.length} 笔待处理 · ${formatYuan(dueTotalAmount)}` }}
-        </span>
+        <span>{{ overdueCount > 0 ? `${overdueCount} 笔已逾期` : `${dueTodos.length} 笔待处理` }} · {{ formatYuan(dueTotalAmount) }}</span>
         <span class="spacer" style="margin-left: auto" />
         <component :is="isPopoverOpen ? ChevronUp : ChevronDown" :size="13" />
       </button>
 
-      <div v-if="isPopoverOpen" class="alert-pop" style="margin-top: 8px">
-        <div v-if="dueTodos.length === 0" class="empty">
-          <Check :size="18" />待办已清空
-        </div>
-        <div v-for="item in dueTodos" v-else :key="item.id" class="alert-item">
+      <div v-if="isPopoverOpen && dueTodos.length > 0" class="alert-pop" style="margin-top: 8px">
+        <div v-for="item in dueTodos" :key="item.id" class="alert-item">
           <i class="todo-mark" :class="`is-${urgencyLevel(item.repaymentDate)}`" style="height: 18px; width: 3px" />
           <span style="min-width: 0; flex: 1 1 auto">{{ item.planName }} · {{ item.periodSeq }} 期</span>
           <span class="urgency" :class="`urgency--${urgencyLevel(item.repaymentDate)}`">
@@ -667,13 +669,13 @@ async function handleSkip(todoId: string): Promise<void> {
         </div>
       </div>
 
-      <div class="og-sub">
+      <!-- 待办提醒：同样无待办时整块隐藏，让卡片只剩「本月要还」 -->
+      <div v-if="dueTodos.length > 0" class="og-sub">
         <div class="card-h card-h--tight">
           <span class="card-t">待办提醒</span>
           <span class="card-cap">{{ dueTodos.length }} 笔待处理</span>
         </div>
-        <div v-if="dueTodos.length === 0" class="empty"><Check :size="18" />待办已清空</div>
-        <div v-for="item in dueTodos.slice(0, 3)" v-else :key="item.id" class="og-todo-row">
+        <div v-for="item in dueTodos.slice(0, 3)" :key="item.id" class="og-todo-row">
           <span class="todo-mark" :class="`is-${urgencyLevel(item.repaymentDate)}`" />
           <span class="og-todo-t">{{ item.planName }} · {{ item.periodSeq }} 期</span>
           <span class="urgency" :class="`urgency--${urgencyLevel(item.repaymentDate)}`">
