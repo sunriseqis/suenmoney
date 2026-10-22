@@ -34,6 +34,8 @@ import {
 } from '@/api';
 import BillImportModal from '@/components/BillImportModal.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
+import PCatIcon from '@/components/PCatIcon.vue';
+import PPayIcon from '@/components/PPayIcon.vue';
 import IconPicker from '@/components/IconPicker.vue';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
@@ -733,6 +735,7 @@ onMounted(() => {
         <PEmpty v-if="dict.rootCategories.length === 0" :icon="Tag">还没有分类</PEmpty>
         <div v-for="root in dict.rootCategories" :key="root.id" class="set-group">
           <div class="set-row">
+            <span class="set-ic"><PCatIcon :category-id="root.id" :size="22" /></span>
             <span class="set-body">
               <span class="set-t">{{ root.name }}</span>
               <span class="set-s">{{ root.children.length }} 个二级分类</span>
@@ -741,7 +744,8 @@ onMounted(() => {
             <PIconBtn :icon="Trash2" label="删除" @click="removeCat(root)" />
             <PSwitch :checked="root.isEnabled" label="启用" @change="(v) => toggleCat(root, v)" />
           </div>
-          <div v-for="child in root.children" :key="child.id" class="set-row" style="padding-left: 16px">
+          <div v-for="child in root.children" :key="child.id" class="set-row" style="padding-left: 26px">
+            <span class="set-ic"><PCatIcon :category-id="child.id" :size="22" /></span>
             <span class="set-body">
               <span class="set-t">{{ child.name }}</span>
               <span class="set-s">{{ child.expenseCount }} 笔</span>
@@ -761,6 +765,7 @@ onMounted(() => {
         </div>
         <PEmpty v-if="dict.paymentMethods.length === 0" :icon="Wallet">还没有支付方式</PEmpty>
         <div v-for="p in dict.paymentMethods" :key="p.id" class="set-row">
+          <span class="set-ic"><PPayIcon :name="p.name" :size="18" /></span>
           <span class="set-body">
             <span class="set-t">{{ p.name }}</span>
             <span class="set-s">

@@ -431,3 +431,152 @@ onMounted(() => {
     <p v-if="loading" class="tiny muted" style="text-align: center">加载中…</p>
   </div>
 </template>
+
+<style scoped>
+/*
+ * 概况主卡独占一整行（用户指定）：大金额是这一页的主角，与它并排的卡片会把它挤窄。
+ */
+.og-hero {
+  grid-column: 1 / -1;
+}
+
+/* 主卡内的三个小组件：一行三列，竖线分隔（同一个事务线的三件事） */
+.hero-widgets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.hero-widget {
+  min-width: 0;
+  padding: 0 16px;
+}
+.hero-widget:first-child {
+  padding-left: 0;
+}
+.hero-widget + .hero-widget {
+  border-left: 1px solid var(--line);
+}
+.hw-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hw-title {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hw-cap {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  opacity: 0.8;
+}
+.hw-toggle {
+  margin-left: auto;
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+.hw-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+.hw-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.2;
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+}
+.hw-value--late {
+  color: var(--danger);
+}
+.hw-value-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+}
+.hw-sub {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hw-link {
+  color: var(--accent);
+  font-size: 10.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hw-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 11.5px;
+}
+.hw-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.hw-row-val {
+  margin-left: auto;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.hw-more {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+.hw-empty {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hw-empty--ok {
+  color: var(--ok);
+}
+.hw-todos {
+  margin-top: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+@media (max-width: 1080px) {
+  .hero-widgets {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .hero-widget {
+    padding: 0;
+  }
+  .hero-widget + .hero-widget {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+}
+</style>

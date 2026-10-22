@@ -46,6 +46,8 @@ const filterPay = ref('');
 const filterOwner = ref('');
 const sortBy = ref<'date' | 'amount'>('date');
 const showFilters = ref(false);
+/** 窄屏：工具栏高级控件默认收起（原型 .ledger-toolbar.is-open 控制） */
+const advOpen = ref(false);
 
 const items = ref<Expense[]>([]);
 const cursor = ref<string | null>(null);
@@ -264,6 +266,10 @@ function switchTier(next: string): void {
   void reloadReports();
 }
 
+function openAdvOnNarrow(): void {
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches) advOpen.value = true;
+}
+
 function clearFilters(): void {
   filterCat.value = '';
   filterPay.value = '';
@@ -348,12 +354,15 @@ onMounted(async () => {
 
     <!-- ════════ 工具栏（原型 ledger-toolbar）════════ -->
     <PCard>
-      <div class="ledger-toolbar">
-        <div class="lt-search">
+      <div class="ledger-toolbar" :class="{ 'is-open': advOpen }">
+        <div class="lt-search" @click="openAdvOnNarrow">
           <div class="search-wrap">
             <Search class="ic" :size="15" />
             <PInput v-model="query" class="input--search" placeholder="搜索备注或分类" />
           </div>
+          <button v-if="advOpen" type="button" class="btn btn--ghost btn--sm lt-collapse" @click.stop="advOpen = false">
+            收起
+          </button>
         </div>
 
         <div class="lt-adv">
@@ -513,7 +522,7 @@ onMounted(async () => {
               v-for="row in g.rows"
               :key="row.id"
               type="button"
-              class="ledger-row"
+              class="m-row"
               @click="ui.openEdit(row)"
             >
               <PCatIcon
@@ -521,13 +530,27 @@ onMounted(async () => {
                 :name="row.categoryName"
                 :icon="row.categoryIcon"
                 :color="row.parentCategoryColor ?? row.categoryColor"
-                :size="36"
+                :size="34"
               />
-              <span class="lr-main">
-                <span class="lr-t">{{ row.categoryName }}</span>
-                <span class="lr-s">{{ row.paymentMethodName }}<template v-if="row.note"> · {{ row.note }}</template></span>
+              <span class="m-row-main">
+                <span class="m-row-t">
+                  <span>{{ row.categoryName }}</span>
+                  <PTag v-if="row.amountCents < 0" tone="danger">退款</PTag>
+                </span>
+                <span class="m-row-s">
+                  <span>{{ row.note || '—' }}</span>
+                  <span>·</span>
+                  <span>{{ row.paymentMethodName }}</span>
+                  <span>·</span>
+                  <span>{{ row.ownerName }}</span>
+                </span>
               </span>
-              <span class="lr-amt mono" :class="row.amountCents < 0 ? 'pos' : ''">{{ formatYuan(row.amountCents) }}</span>
+              <span class="row-end">
+                <span class="row-amt" :class="row.amountCents < 0 ? 'pos' : ''">{{ formatYuan(row.amountCents) }}</span>
+                <span class="tiny muted mono" style="display: block">
+                  {{ row.paymentMethodType === 'credit' ? `${row.repaymentDate.slice(5)} 还` : '即时' }}
+                </span>
+              </span>
             </button>
           </div>
         </div>
@@ -588,139 +611,8 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.ledger-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.lt-search {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 /* 搜索框：图标绝对定位在框内左侧（原型 .search-wrap .ic），
    输入框左侧留出图标宽度 —— 否则图标和输入内容会挤在一起 */
-.search-wrap {
-  position: relative;
-  flex: 1 1 220px;
-  min-width: 160px;
-}
-.search-wrap .ic {
-  position: absolute;
-  left: 11px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--ink-3);
-  pointer-events: none;
-}
-.search-wrap :deep(.input) {
-  padding-left: 34px;
-  min-height: 38px;
-}
-.lt-adv {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.period-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.period-label {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  min-width: 96px;
-  text-align: center;
-  color: var(--ink-2);
-}
-.ledger-sum {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--ink-2);
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.ls-sep {
-  opacity: 0.5;
-}
-.filter-row {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line);
-}
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.filter-l {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  width: 40px;
-  flex: 0 0 auto;
-}
-.date-cap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 2px 4px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.date-cap .sum {
-  margin-left: auto;
-  color: var(--ink-2);
-}
-.ledger-row {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  padding: 9px 2px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-}
-.ledger-row:last-child {
-  border-bottom: 0;
-}
-.lr-main {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.lr-t {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-}
-.lr-s {
-  display: block;
-  font-size: 10.5px;
-  color: var(--ink-3);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lr-amt {
-  font-size: 13px;
-  font-weight: 600;
-  flex: 0 0 auto;
-}
 @media (max-width: 860px) {
   .lt-adv {
     gap: 8px;
