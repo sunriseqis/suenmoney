@@ -26,6 +26,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 import { reports, type CategoryBucket, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
 import { useToast } from '@/composables/useToast';
+import ReminderRow from '@/components/ReminderRow.vue';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
@@ -306,17 +307,18 @@ onMounted(() => {
       </button>
 
       <div v-if="alertOpen && dueTodos.length > 0" class="alert-pop" style="margin-top: 8px">
-        <div v-for="t in dueTodos" :key="t.id" class="alert-item">
-          <i class="todo-mark" :style="{ height: '18px', width: '3px' }" />
-          <span style="min-width: 0; flex: 1 1 auto">{{ t.planName }} · {{ t.periodSeq }} 期</span>
-          <span class="tiny muted">{{ formatMonthDay(t.repaymentDate) }}</span>
-          <div class="row-end">
-            <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
-              {{ t.willAutoPost ? '确认' : '入账' }}
-            </PBtn>
-            <PBtn size="sm" variant="ghost" @click="todoAction(t, 'skip')">忽略</PBtn>
-          </div>
-        </div>
+        <ReminderRow
+          v-for="t in dueTodos"
+          :key="t.id"
+          :title="`${t.planName} · ${t.periodSeq} 期`"
+          :sub="`${formatMonthDay(t.repaymentDate)} · ${t.willAutoPost ? '到期自动入账' : '需手动入账'}`"
+          :amount="formatYuan(t.amountCents)"
+          @skip="todoAction(t, 'skip')"
+        >
+          <PBtn size="sm" variant="ghost" @click="todoAction(t, t.willAutoPost ? 'ack' : 'confirm')">
+            {{ t.willAutoPost ? '确认' : '入账' }}
+          </PBtn>
+        </ReminderRow>
       </div>
 
       <div class="og-card-body">
