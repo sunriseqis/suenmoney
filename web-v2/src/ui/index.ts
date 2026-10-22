@@ -9,6 +9,7 @@ export { default as PBar } from './PBar.vue';
 export { default as PBtn } from './PBtn.vue';
 export { default as PCard } from './PCard.vue';
 export { default as PChip } from './PChip.vue';
+export { default as PDonut } from './PDonut.vue';
 export { default as PEmpty } from './PEmpty.vue';
 export { default as PField } from './PField.vue';
 export { default as PIconBtn } from './PIconBtn.vue';
