@@ -24,7 +24,8 @@
     "icons": "node scripts/gen-brand.mjs",
     "fn:build": "node scripts/build-fn.mjs",
     "tokens": "node scripts/gen-tokens.mjs",
-    "tokens:check": "node scripts/gen-tokens.mjs --check"
+    "tokens:check": "node scripts/gen-tokens.mjs --check",
+    "check:vue": "node scripts/vue-check.mjs"
   },
   "devDependencies": {
     "sharp": "^0.34.0"
