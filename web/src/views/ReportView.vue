@@ -661,7 +661,7 @@ const memberRows = computed(() => {
       </div>
 
       <template v-else>
-        <!-- 年度报告横幅入口 (仅在 year 档显示) -->
+        <!-- 年度报告横幅入口（v6：移到顶部，作为「还可以看更多」的入口） -->
         <RouterLink
           v-if="scope === 'year'"
           :to="{ name: 'annual-summary', query: { year } }"

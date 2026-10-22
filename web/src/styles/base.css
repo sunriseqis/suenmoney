@@ -553,6 +553,9 @@
                           text-transform: uppercase; color: var(--on-surface-variant); }
   @media (max-width: 960px) { .login-card { padding: 24px 20px; } }
 
+  /* 报表页：分类构成（看结构）提到对照指标之前，涨跌榜与还款节奏并排 */
+  .report-banner { order: 0; }
+
   /* ═══════ v6 布局重排：用 order 改区块顺序（不动 DOM）═══════════
      概况页：热力（趋势）提到当期事实前面 —— 先看「这个月在什么水位」，
      再看「具体要还多少」。累计条压到最后。
