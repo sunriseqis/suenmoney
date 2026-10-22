@@ -12,7 +12,7 @@
  *   · 档位汇总 `/api/reports/{monthly,yearly,summary}`（合计、构成、日历格）
  * 两条路各司其职，不互相推算 —— 前端自己按明细累加会与报表口径漂移。
  */
-import { CalendarDays, ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
+import { ChevronLeft, ChevronRight, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
@@ -23,7 +23,7 @@ import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
 import { useUiStore } from '@/stores/ui';
 import { PBtn, PCard, PChip, PEmpty, PIconBtn, PInput, PSeg, PTag } from '@/ui';
-import { currentMonth, formatLedgerDate, formatMonthDay, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
+import { currentMonth, formatLedgerDate, formatMonthLabel, shiftMonth, todayLocal } from '@/utils/dates';
 import { formatYuan } from '@/utils/money';
 
 const ui = useUiStore();
@@ -210,6 +210,8 @@ function paymentIconOf(id: string): string {
   return dict.findPaymentMethod(id)?.icon ?? '';
 }
 
+void [prevTotalCents];
+
 function sum(rows: Expense[]): number {
   return rows.reduce((a, r) => a + r.amountCents, 0);
 }
@@ -361,7 +363,6 @@ onMounted(async () => {
           <span v-if="deltaRatio !== null" class="delta-pill" :class="deltaRatio > 0 ? 'neg' : 'pos'">
             {{ (deltaRatio * 100).toFixed(1) }}%
           </span>
-          <span>较上月 {{ formatYuan(prevTotalCents) }}</span>
         </div>
       </div>
       <div class="mh-facts">
@@ -370,10 +371,12 @@ onMounted(async () => {
         <div class="mh-fact"><span>本月要还</span><b>{{ formatYuan(creditDueCents) }}</b></div>
       </div>
       <button v-if="nextTodo" type="button" class="mh-plan" @click="$router.push({ name: 'settings' })">
-        <span class="mh-plan-ic"><CalendarDays :size="14" /></span>
+        <i class="todo-mark" :class="nextTodo.willAutoPost ? 'is-soon' : 'is-late'" style="height: 20px" />
         <span class="mh-plan-txt">
-          <b>{{ nextTodo.planName }} · {{ nextTodo.periodSeq }} 期</b>
-          <span>{{ plans.dueTodos.length }} 笔待处理 · {{ formatMonthDay(nextTodo.repaymentDate) }}</span>
+          <b>{{ nextTodo.periodSeq }}期 · {{ nextTodo.planName }}</b>
+        </span>
+        <span class="urgency" :class="nextTodo.willAutoPost ? 'urgency--soon' : 'urgency--late'">
+          {{ nextTodo.willAutoPost ? '自动' : '需手动' }}
         </span>
         <span class="mh-plan-amt">{{ formatYuan(nextTodo.amountCents) }}</span>
         <ChevronRight :size="13" />
