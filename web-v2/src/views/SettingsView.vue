@@ -22,6 +22,7 @@ import {
   data as dataApi,
   paymentMethods as paymentsApi,
   plans as plansApi,
+  planTodos as planTodosApi,
   snapshots as snapshotsApi,
   users as usersApi,
   webdavBackup,
@@ -31,6 +32,9 @@ import {
   type PlanSource,
   type User,
 } from '@/api';
+import BillImportModal from '@/components/BillImportModal.vue';
+import ColorPicker from '@/components/ColorPicker.vue';
+import IconPicker from '@/components/IconPicker.vue';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { useDictionariesStore } from '@/stores/dictionaries';
@@ -67,12 +71,16 @@ const catEditing = ref<Category | null>(null);
 const catName = ref('');
 const catParent = ref<string>('');
 const catEnabled = ref(true);
+const catIcon = ref('');
+const catColor = ref('');
 
 function openCatCreate(): void {
   catEditing.value = null;
   catName.value = '';
   catParent.value = dict.rootCategories[0]?.id ?? '';
   catEnabled.value = true;
+  catIcon.value = '';
+  catColor.value = '';
   catSheet.value = true;
 }
 
@@ -81,6 +89,8 @@ function openCatEdit(cat: Category): void {
   catName.value = cat.name;
   catParent.value = cat.parentId ?? '';
   catEnabled.value = cat.isEnabled;
+  catIcon.value = cat.icon;
+  catColor.value = cat.color;
   catSheet.value = true;
 }
 
@@ -93,11 +103,20 @@ async function saveCat(): Promise<void> {
   busy.value = true;
   try {
     if (catEditing.value === null) {
-      await categoriesApi.create({ name, parentId: catParent.value === '' ? null : catParent.value });
+      await categoriesApi.create({
+        name,
+        parentId: catParent.value === '' ? null : catParent.value,
+        ...(catIcon.value !== '' ? { icon: catIcon.value } : {}),
+        ...(catColor.value !== '' ? { color: catColor.value } : {}),
+      });
       toast.show('分类已新增');
     } else {
       const editing = catEditing.value;
-      await categoriesApi.update(editing.id, { name });
+      await categoriesApi.update(editing.id, {
+        name,
+        icon: catIcon.value,
+        color: catColor.value,
+      } as never);
       // 停用/启用单独走 isEnabled，避免一次提交里混两种语义
       if (editing.isEnabled !== catEnabled.value) {
         await categoriesApi.update(editing.id, { isEnabled: catEnabled.value } as never);
@@ -133,6 +152,9 @@ async function removeCat(cat: Category): Promise<void> {
 }
 
 // ── 支付方式 ────────────────────────────────────────────────────────────────
+const mergeSheet = ref(false);
+const mergeFrom = ref<PaymentMethod | null>(null);
+const mergeTo = ref('');
 const paySheet = ref(false);
 const payEditing = ref<PaymentMethod | null>(null);
 const payName = ref('');
@@ -189,6 +211,29 @@ async function savePay(): Promise<void> {
     await dict.load(true);
   } catch (error) {
     toast.show(errText(error, '保存失败'));
+  } finally {
+    busy.value = false;
+  }
+}
+
+function openMerge(p: PaymentMethod): void {
+  mergeFrom.value = p;
+  mergeTo.value = dict.paymentMethods.find((x) => x.id !== p.id)?.id ?? '';
+  mergeSheet.value = true;
+}
+
+/** 合并：把 A 的全部流水转到 B，然后停用 A（服务端一个事务做完） */
+async function runMerge(): Promise<void> {
+  const from = mergeFrom.value;
+  if (from === null || mergeTo.value === '') return;
+  busy.value = true;
+  try {
+    await paymentsApi.merge(from.id, { targetId: mergeTo.value });
+    toast.show('已合并');
+    mergeSheet.value = false;
+    await dict.load(true);
+  } catch (error) {
+    toast.show(errText(error, '合并失败'));
   } finally {
     busy.value = false;
   }
@@ -281,11 +326,13 @@ async function removePlan(plan: Plan): Promise<void> {
 const THEME_OPTIONS = [
   { value: 'dark', label: '赛博朋克' },
   { value: 'light', label: '水果硬糖' },
+  { value: 'system', label: '跟随系统' },
 ] as const;
 
+/** 三档：dark / light / system（system 时按系统明暗落到 cyber / candy） */
 const themeChoice = computed({
-  get: () => theme.proto.value as string,
-  set: (v: string) => theme.set(v === 'cyber' ? 'dark' : 'light'),
+  get: () => theme.choice.value as string,
+  set: (v: string) => theme.set(v === 'dark' ? 'dark' : v === 'light' ? 'light' : 'system'),
 });
 
 const importBusy = ref(false);
@@ -400,6 +447,66 @@ async function saveMember(): Promise<void> {
 
 
 
+
+
+// ── 已处理期次（撤销 / 恢复）────────────────────────────────────────────────
+const doneTodos = ref<Array<{ id: string; planName: string; periodSeq: number; amountCents: number; repaymentDate: string; status: string }>>([]);
+
+async function loadDoneTodos(): Promise<void> {
+  try {
+    const [skipped, done] = await Promise.all([
+      planTodosApi.list({ status: 'skipped' }).catch(() => ({ settled: 0, todos: [] })),
+      planTodosApi.list({ status: 'confirmed' }).catch(() => ({ settled: 0, todos: [] })),
+    ]);
+    doneTodos.value = [...skipped.todos, ...done.todos].map((t) => ({
+      id: t.id,
+      planName: t.planName,
+      periodSeq: t.periodSeq,
+      amountCents: t.amountCents,
+      repaymentDate: t.repaymentDate,
+      status: t.status,
+    }));
+  } catch {
+    doneTodos.value = [];
+  }
+}
+
+/** 已忽略的期次可以「恢复」成待处理；已入账的可以「撤销」（会把那笔支出一起撤掉） */
+async function restoreTodo(id: string, status: string): Promise<void> {
+  try {
+    if (status === 'skipped') await plansStore.restoreTodo(id);
+    else await plansStore.revertTodo(id);
+    toast.show(status === 'skipped' ? '已恢复为待处理' : '已撤销入账');
+    await Promise.all([loadDoneTodos(), plansStore.refresh()]);
+  } catch (error) {
+    toast.show(errText(error, '操作失败'));
+  }
+}
+
+// ── 登录设备 ────────────────────────────────────────────────────────────────
+const sessions = ref<Array<{ id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }>>([]);
+
+async function loadSessions(): Promise<void> {
+  try {
+    sessions.value = (await authApi.sessions()).sessions;
+  } catch {
+    sessions.value = [];
+  }
+}
+
+async function revokeOthers(): Promise<void> {
+  if (!window.confirm('让其他设备全部退出登录？')) return;
+  try {
+    const res = await authApi.revokeOthers();
+    toast.show(`已退出 ${res.revoked} 个设备`);
+    await loadSessions();
+  } catch (error) {
+    toast.show(errText(error, '操作失败'));
+  }
+}
+
+// ── 账单导入 ────────────────────────────────────────────────────────────────
+const billOpen = ref(false);
 
 // ── 备份与快照 ──────────────────────────────────────────────────────────────
 const webdav = ref<{ url: string; username: string; path: string; isEnabled: boolean; hasPassword?: boolean } | null>(null);
@@ -584,6 +691,8 @@ onMounted(() => {
   void loadMe();
   void loadWebdav();
   void loadSnapshots();
+  void loadDoneTodos();
+  void loadSessions();
 });
 </script>
 
@@ -645,6 +754,7 @@ onMounted(() => {
               {{ p.type === 'credit' ? `信用卡 · ${p.billingDay} 日账单 / ${p.repaymentDay} 日还款` : '即时结算' }}
             </span>
           </span>
+          <PBtn size="sm" variant="ghost" @click="openMerge(p)">合并</PBtn>
           <PIconBtn :icon="Pencil" label="编辑" @click="openPayEdit(p)" />
           <PIconBtn :icon="Trash2" label="删除" @click="removePay(p)" />
         </div>
@@ -674,6 +784,27 @@ onMounted(() => {
           </span>
           <PBtn v-if="p.state === 'active'" size="sm" variant="ghost" @click="endPlan(p)">终止</PBtn>
           <PIconBtn :icon="Trash2" label="删除" @click="removePlan(p)" />
+        </div>
+      </PCard>
+
+      <PCard v-if="doneTodos.length > 0">
+        <div class="card-h">
+          <span class="card-t">已处理 / 已忽略</span>
+          <span class="card-cap">{{ doneTodos.length }} 条</span>
+        </div>
+        <div v-for="t in doneTodos" :key="t.id" class="set-row">
+          <span class="set-body">
+            <span class="set-t">
+              {{ t.planName }} · {{ t.periodSeq }} 期
+              <PTag :tone="t.status === 'skipped' ? 'dash' : 'accent'">
+                {{ t.status === 'skipped' ? '已忽略' : '已入账' }}
+              </PTag>
+            </span>
+            <span class="set-s">{{ t.repaymentDate }} · {{ formatYuan(t.amountCents) }}</span>
+          </span>
+          <PBtn size="sm" variant="ghost" @click="restoreTodo(t.id, t.status)">
+            {{ t.status === 'skipped' ? '恢复' : '撤销' }}
+          </PBtn>
         </div>
       </PCard>
 
@@ -724,11 +855,16 @@ onMounted(() => {
           <span class="card-t">导入</span>
           <span class="card-cap">账本 JSON</span>
         </div>
-        <label class="btn btn--ghost" style="cursor: pointer">
-          {{ importBusy ? '导入中…' : '选择 JSON 文件' }}
-          <input type="file" accept="application/json,.json" style="display: none" @change="onImportFile" />
-        </label>
-        <p class="hint" style="margin-top: 8px">导入是**追加**，不会清空现有数据。</p>
+        <div class="split">
+          <label class="btn btn--ghost" style="cursor: pointer">
+            {{ importBusy ? '导入中…' : '选择 JSON 文件' }}
+            <input type="file" accept="application/json,.json" style="display: none" @change="onImportFile" />
+          </label>
+          <PBtn variant="primary" @click="billOpen = true">账单导入（微信 / 支付宝）</PBtn>
+        </div>
+        <p class="hint" style="margin-top: 8px">
+          账本 JSON 导入是**追加**，不会清空现有数据；账单 CSV 导入会先解析再让你逐行确认分类与支付方式。
+        </p>
       </PCard>
 
       <PCard>
@@ -829,6 +965,24 @@ onMounted(() => {
           <PTag v-if="m.role === 'admin'" tone="accent">管理员</PTag>
         </div>
       </PCard>
+      <PCard>
+        <div class="card-h">
+          <span class="card-t">登录设备</span>
+          <span class="card-cap">{{ sessions.length }} 个会话</span>
+          <PBtn size="sm" variant="ghost" style="margin-left: auto" @click="revokeOthers">其他设备退出</PBtn>
+        </div>
+        <PEmpty v-if="sessions.length === 0" :icon="Users">没有会话记录</PEmpty>
+        <div v-for="sn in sessions" :key="sn.id" class="set-row">
+          <span class="set-body">
+            <span class="set-t">
+              {{ sn.deviceLabel }}
+              <PTag v-if="sn.current" tone="accent">当前</PTag>
+            </span>
+            <span class="set-s">最近活跃 {{ sn.lastSeenAt }}</span>
+          </span>
+        </div>
+      </PCard>
+
       <PCard v-if="me">
         <div class="card-h">
           <span class="card-t">我的账号</span>
@@ -853,10 +1007,18 @@ onMounted(() => {
       </PCard>
     </template>
 
+    <BillImportModal :open="billOpen" @close="billOpen = false" @imported="() => { void dict.load(true); }" />
+
     <!-- ════════ 分类表单 ════════ -->
     <PSheet :open="catSheet" :title="catEditing ? '编辑分类' : '新增分类'" @close="catSheet = false">
       <PField label="名称" id="cat-name">
         <PInput id="cat-name" v-model="catName" placeholder="如：外卖" />
+      </PField>
+      <PField label="图标" id="cat-icon">
+        <IconPicker v-model="catIcon" />
+      </PField>
+      <PField label="颜色" id="cat-color">
+        <ColorPicker v-model="catColor" />
       </PField>
       <PField v-if="!catEditing" label="归属一级分类" id="cat-parent">
         <select id="cat-parent" v-model="catParent" class="input">
@@ -891,6 +1053,25 @@ onMounted(() => {
       <template #foot>
         <PBtn variant="primary" :disabled="busy" @click="savePay">保存</PBtn>
         <PBtn variant="ghost" @click="paySheet = false">取消</PBtn>
+      </template>
+    </PSheet>
+
+    <!-- ════════ 支付方式合并 ════════ -->
+    <PSheet :open="mergeSheet" title="合并支付方式" @close="mergeSheet = false">
+      <p class="hint">
+        把「{{ mergeFrom?.name }}」下的全部流水转到另一个支付方式，然后停用「{{ mergeFrom?.name }}」。
+        这一步在服务端一个事务里完成，不会出现「转了一半」。
+      </p>
+      <PField label="转到" id="merge-to">
+        <select id="merge-to" v-model="mergeTo" class="input">
+          <option v-for="p in dict.paymentMethods.filter((x) => x.id !== mergeFrom?.id)" :key="p.id" :value="p.id">
+            {{ p.name }}
+          </option>
+        </select>
+      </PField>
+      <template #foot>
+        <PBtn variant="primary" :disabled="busy" @click="runMerge">合并</PBtn>
+        <PBtn variant="ghost" @click="mergeSheet = false">取消</PBtn>
       </template>
     </PSheet>
 

@@ -1,0 +1,1 @@
+import{d as o,b as e,e as a,f as n,t,k as c}from"./index-B3QioDqi.js";const l={class:"stat"},i={class:"stat-v"},r={class:"stat-l"},u={key:0,class:"stat-sub"},b=o({__name:"PStat",props:{label:{},value:{},sub:{}},setup(s){return(d,_)=>(e(),a("div",l,[n("span",i,t(s.value),1),n("span",r,t(s.label),1),s.sub?(e(),a("span",u,t(s.sub),1)):c("",!0)]))}});export{b as _};
