@@ -4,7 +4,10 @@
   },
   "execution": {
     // "analyze": "normal",                     /* Define the build analyze mode. Value: [ "normal" | "advanced" | "ultrafine" | false ]. Default: "normal" */
-    // "daemon": true,                          /* Enable daemon compilation. Value: [ true | false ]. Default: true */
+    /* 守护进程默认关闭（本机只有 2GB 内存）。开启时 hvigor 会留 3–4 个
+       --max-old-space-size=8192 的 node 守护进程 + 一个 java 守护进程，
+       构建结束后不退出，把内存吃到 1.4G/2G，同机的 Web 服务会明显变慢。 */
+    "daemon": false,
     // "incremental": true,                     /* Enable incremental compilation. Value: [ true | false ]. Default: true */
     // "parallel": true,                        /* Enable parallel compilation. Value: [ true | false ]. Default: true */
     // "typeCheck": false,                      /* Enable typeCheck. Value: [ true | false ]. Default: false */
