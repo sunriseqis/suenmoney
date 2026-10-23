@@ -17,6 +17,7 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { Db } from '../common/store/Db';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ThemeManager } from '../common/theme/ThemeManager';
+import { Fonts } from '../common/theme/Fonts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 
@@ -26,6 +27,7 @@ export default class EntryAbility extends UIAbility {
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
     // 底座三件套：主题、服务端与令牌、本地库。
     // 顺序无关，但都必须在这里完成 —— 页面 aboutToAppear 时就要能拿到。
+    await Fonts.register(this.context);
     await ThemeManager.get().init(this.context);
     await ServerConfig.get().init(this.context);
     try {

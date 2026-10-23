@@ -6,12 +6,19 @@
  */
 import { ThemeManager, ThemeName } from '../common/theme/ThemeManager';
 import { ThemeTokens } from '../common/theme/AppTheme';
+import { VectorRunner } from '../common/contract/VectorRunner';
+import { Db } from '../common/store/Db';
+import { bodyFont, displayFont } from '../common/theme/Fonts';
 
 @Entry
 @Component
 struct Index {
   @State tokens: ThemeTokens = CYBER_FALLBACK();
   @State themeName: ThemeName = 'cyber';
+  /** H0-5 的上机证据：点一下跑 30 条向量，结果直接可贴进验收包 */
+  @State vectorReport: string = '';
+  /** H0-4 的上机证据：七张表与列名 */
+  @State schemaReport: string = '';
 
   aboutToAppear(): void {
     const mgr = ThemeManager.get();
@@ -24,11 +31,48 @@ struct Index {
       Text('SuenMoney')
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
+        .fontFamily(displayFont(this.themeName === 'candy'))
         .fontColor(this.tokens.ink)
 
       Text('鸿蒙端 · H0 骨架')
         .fontSize(12)
+        .fontFamily(bodyFont(this.themeName === 'candy'))
         .fontColor(this.tokens.ink3)
+
+      Button('跑测试向量')
+        .fontSize(12)
+        .backgroundColor(this.tokens.surface2)
+        .fontColor(this.tokens.ink)
+        .onClick(() => {
+          this.vectorReport = VectorRunner.runAll();
+        })
+
+      Button('看表结构')
+        .fontSize(12)
+        .backgroundColor(this.tokens.surface2)
+        .fontColor(this.tokens.ink)
+        .onClick(() => {
+          Db.schemaReport()
+            .then((text: string) => {
+              this.schemaReport = text;
+            })
+            .catch((e: Error) => {
+              this.schemaReport = `读表结构失败：${e.message}`;
+            });
+        })
+
+      if (this.vectorReport !== '') {
+        Text(this.vectorReport)
+          .fontSize(10)
+          .fontColor(this.tokens.ink2)
+          .width('92%')
+      }
+      if (this.schemaReport !== '') {
+        Text(this.schemaReport)
+          .fontSize(9)
+          .fontColor(this.tokens.ink3)
+          .width('92%')
+      }
 
       Row({ space: 10 }) {
         Button('水果硬糖')
