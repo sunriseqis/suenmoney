@@ -21,6 +21,7 @@ import { Fonts } from '../common/theme/Fonts';
 import { AuthStore } from '../common/auth/AuthStore';
 import { LastPick } from '../common/store/LastPick';
 import { SyncEngine } from '../common/sync/SyncEngine';
+import { NetworkMonitor } from '../common/sync/NetworkMonitor';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 
@@ -34,6 +35,7 @@ export default class EntryAbility extends UIAbility {
     await ThemeManager.get().init(this.context);
     await ServerConfig.get().init(this.context);
     await LastPick.init(this.context);
+    NetworkMonitor.start();
     try {
       await Db.open(this.context);
     } catch (e) {
@@ -48,6 +50,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    NetworkMonitor.stop();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
