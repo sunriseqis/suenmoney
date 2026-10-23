@@ -114,6 +114,15 @@ export interface ExpenseCreateBody {
   expense: ExpenseItem;
 }
 
+/** 编辑用：所有字段可选（服务端按传入字段更新） */
+export interface ExpensePatchRequest {
+  amountCents: number;
+  categoryId: string;
+  paymentMethodId: string;
+  spendDate: string;
+  note: string;
+}
+
 // ── 报表 ────────────────────────────────────────────────────────────────────
 export interface CategoryBucket {
   categoryId: string;
@@ -334,6 +343,17 @@ export class Api {
     const o = Api.http().options('POST');
     o.body = JSON.stringify(req);
     return Api.http().request<ExpenseCreateBody>('/api/expenses', o);
+  }
+
+  static updateExpense(id: string, req: ExpensePatchRequest): Promise<ExpenseCreateBody> {
+    const o = Api.http().options('PATCH');
+    o.body = JSON.stringify(req);
+    return Api.http().request<ExpenseCreateBody>(`/api/expenses/${id}`, o);
+  }
+
+  static deleteExpense(id: string): Promise<void> {
+    const o = Api.http().options('DELETE');
+    return Api.http().request<void>(`/api/expenses/${id}`, o);
   }
 
   static monthlyReport(month: string): Promise<MonthlyReportBody> {

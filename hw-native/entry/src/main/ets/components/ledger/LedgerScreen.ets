@@ -63,6 +63,8 @@ export struct LedgerScreen {
   @State ownerOptions: CachedCategory[] = [];
   /** 记账抽屉开关（移动 Web 的唯一写入入口是下拉手势，这里同一机制） */
   @State sheetOpen: boolean = false;
+  /** 非 null 表示抽屉处于编辑态 */
+  @State editingRow: ExpenseItem | null = null;
   private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
@@ -513,6 +515,10 @@ export struct LedgerScreen {
     .backgroundColor(this.tokens.surface)
     .borderRadius(this.tokens.rMd)
     .border({ width: 1, color: this.tokens.line })
+    .onClick(() => {
+      this.editingRow = row;
+      this.sheetOpen = true;
+    })
   }
 
   @Builder
@@ -629,12 +635,15 @@ export struct LedgerScreen {
   expenseSheet() {
     ExpenseEditor({
       props: {
+        editing: this.editingRow,
         onSaved: () => {
           this.sheetOpen = false;
+          this.editingRow = null;
           this.reload();
         },
         onCancel: () => {
           this.sheetOpen = false;
+          this.editingRow = null;
         }
       }
     })
@@ -694,6 +703,7 @@ export struct LedgerScreen {
           }
           const atTop = this.scroller.currentOffset().yOffset <= 0;
           if (atTop && event.offsetY > 80) {
+            this.editingRow = null;
             this.sheetOpen = true;
           }
         })
