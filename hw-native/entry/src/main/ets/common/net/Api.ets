@@ -245,6 +245,10 @@ export interface PlanTodoItem {
   status: string;
 }
 
+export interface TodoConfirmRequest {
+  spendDate: string;
+}
+
 export interface PlanTodoList {
   settled: number;
   todos: PlanTodoItem[];
@@ -375,6 +379,32 @@ export class Api {
   /** 传 today 才会触发服务端「到期自动入账」结算 */
   static planTodos(today: string): Promise<PlanTodoList> {
     return Api.http().get<PlanTodoList>(`/api/plan-todos?status=pending&today=${today}`);
+  }
+
+  /** 入账（手动确认）：可带 spendDate，但报表月份归属仍按还款日，不受影响 */
+  static confirmTodo(id: string, spendDate: string = ''): Promise<object> {
+    const o = Api.http().options('POST');
+    if (spendDate === '') {
+      o.body = '{}';
+    } else {
+      const body: TodoConfirmRequest = { spendDate: spendDate };
+      o.body = JSON.stringify(body);
+    }
+    return Api.http().request<object>(`/api/plan-todos/${id}/confirm`, o);
+  }
+
+  /** 确认（自动入账型待办） */
+  static ackTodo(id: string): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = '{}';
+    return Api.http().request<object>(`/api/plan-todos/${id}/ack`, o);
+  }
+
+  /** 忽略本期（不可逆：跳过的期次不会回到待办） */
+  static skipTodo(id: string): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = '{}';
+    return Api.http().request<object>(`/api/plan-todos/${id}/skip`, o);
   }
 
   static syncStatus(): Promise<SyncStatusBody> {
