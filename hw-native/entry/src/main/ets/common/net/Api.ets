@@ -292,6 +292,64 @@ export interface PlanTodoList {
 }
 
 // ── 同步 ────────────────────────────────────────────────────────────────────
+export interface SyncCreateExpense {
+  id: string;
+  amountCents: number;
+  categoryId: string;
+  paymentMethodId: string;
+  spendDate: string;
+  note: string;
+}
+
+export interface SyncUpdateExpense {
+  id: string;
+  amountCents?: number;
+  categoryId?: string;
+  paymentMethodId?: string;
+  spendDate?: string;
+  note?: string;
+}
+
+export interface SyncConfirmTodo {
+  id: string;
+  spendDate: string;
+}
+
+export interface SyncPushRequest {
+  expenses: SyncCreateExpense[];
+  updatedExpenses: SyncUpdateExpense[];
+  deletedExpenseIds: string[];
+  confirmedTodos: SyncConfirmTodo[];
+  skippedTodoIds: string[];
+  ackedTodoIds: string[];
+  revertedTodoIds: string[];
+  restoredTodoIds: string[];
+}
+
+export interface SyncPushBody {
+  pushedExpensesCount: number;
+  updatedExpensesCount: number;
+  deletedExpensesCount: number;
+  latestVersion: number;
+}
+
+export interface SyncChange {
+  version: number;
+  entityType: string;
+  entityId: string;
+  op: string;
+  actorId: string;
+  payload: object;
+  deviceId: string;
+  createdAt: string;
+}
+
+export interface SyncPullBody {
+  changes: SyncChange[];
+  latestVersion: number;
+  hasMore: boolean;
+}
+
 export interface SyncStatusBody {
   latestVersion: number;
 }
@@ -552,6 +610,17 @@ export class Api {
   static deletePlan(id: string): Promise<void> {
     const o = Api.http().options('DELETE');
     return Api.http().request<void>(`/api/plans/${id}`, o);
+  }
+
+  static syncPush(req: SyncPushRequest): Promise<SyncPushBody> {
+    const o = Api.http().options('POST');
+    o.readTimeoutMs = 20000;
+    o.body = JSON.stringify(req);
+    return Api.http().request<SyncPushBody>('/api/sync/push', o);
+  }
+
+  static syncPull(since: number, limit: number): Promise<SyncPullBody> {
+    return Api.http().get<SyncPullBody>(`/api/sync/pull?since=${since}&limit=${limit}`);
   }
 
   static syncStatus(): Promise<SyncStatusBody> {

@@ -25,6 +25,8 @@ import { ApiError } from '../../common/net/ApiError';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
 import { VectorRunner } from '../../common/contract/VectorRunner';
+import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
+import { SyncEngine } from '../../common/sync/SyncEngine';
 import { ThemeManager, ThemeName } from '../../common/theme/ThemeManager';
 import { ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
@@ -66,12 +68,36 @@ export struct SettingsScreen {
   @State formFirstDue: string = '';
   @State formAutoPost: boolean = false;
   @State formError: string = '';
+  @State pendingCount: number = 0;
+  @State deadLetters: OutboxEntry[] = [];
+  @State syncMessage: string = '';
   @State vectorReport: string = '';
   @State schemaReport: string = '';
   @State railRootId: string = '';
 
   aboutToAppear(): void {
     this.reload();
+    this.refreshQueue();
+  }
+
+  /** 队列状态（待发送 / 死信）—— 死信必须可见，不许静默丢弃 */
+  private async refreshQueue(): Promise<void> {
+    try {
+      this.pendingCount = await Outbox.pendingCount();
+      this.deadLetters = await Outbox.deadLetters();
+    } catch (e) {
+      this.pendingCount = 0;
+      this.deadLetters = [];
+    }
+  }
+
+  private async syncNow(): Promise<void> {
+    this.syncMessage = '同步中…';
+    const report = await SyncEngine.syncNow();
+    this.syncMessage = report.error !== ''
+      ? report.error
+      : `推送 ${report.pushed} · 拉取 ${report.pulled} · 游标 ${report.cursor}`;
+    await this.refreshQueue();
   }
 
   private async reload(): Promise<void> {
@@ -616,6 +642,63 @@ export struct SettingsScreen {
           })
       }
       .width('100%')
+
+      Divider().color(this.tokens.line)
+
+      Text('同步')
+        .fontSize(11)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.tokens.ink)
+        .width('100%')
+
+      Row({ space: 8 }) {
+        Text(`待发送 ${this.pendingCount} 条`)
+          .fontSize(10)
+          .fontColor(this.tokens.ink2)
+          .layoutWeight(1)
+        Button('立即同步')
+          .fontSize(11)
+          .height(30)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.syncNow();
+          })
+      }
+      .width('100%')
+
+      if (this.syncMessage !== '') {
+        Text(this.syncMessage)
+          .fontSize(9)
+          .fontColor(this.tokens.ink3)
+          .width('100%')
+      }
+
+      // 死信：重试用尽的条目，必须让用户看见并能重投
+      if (this.deadLetters.length > 0) {
+        Text(`发送失败 ${this.deadLetters.length} 条`)
+          .fontSize(10)
+          .fontColor(this.tokens.danger)
+          .width('100%')
+        ForEach(this.deadLetters, (entry: OutboxEntry) => {
+          Text(`${entry.action} · ${entry.lastError !== '' ? entry.lastError : '未知原因'}`)
+            .fontSize(9)
+            .fontColor(this.tokens.ink3)
+            .width('100%')
+        }, (entry: OutboxEntry) => entry.id)
+        Button('全部重试')
+          .fontSize(11)
+          .height(30)
+          .width('100%')
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            Outbox.retryDeadLetters().then(() => {
+              this.refreshQueue();
+              this.syncNow();
+            });
+          })
+      }
 
       Divider().color(this.tokens.line)
 

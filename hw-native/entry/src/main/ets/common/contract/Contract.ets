@@ -169,6 +169,40 @@ export function buildDonutArcs(slices: DonutSlice[]): DonutArc[] {
   return out;
 }
 
+// ── 标识 ────────────────────────────────────────────────────────────────────
+
+const ULID_CHARS = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+let lastUlidTime = 0;
+let ulidSeq = 0;
+
+/**
+ * ULID：26 位、Crockford Base32、前 10 位时间戳。
+ *
+ * 与服务端/Web 同构：主键由**客户端**生成（decisions：主键全部 ULID，客户端生成），
+ * 这样离线记的账在入队时就已有最终 id，联网后不会「换一个 id」。
+ * 同毫秒内用序号避免撞车（不保证字典序单调，与 Web 实现一致）。
+ */
+export function ulid(): string {
+  const now = Date.now();
+  if (now !== lastUlidTime) {
+    lastUlidTime = now;
+    ulidSeq = 0;
+  } else {
+    ulidSeq = (ulidSeq + 1) % 32;
+  }
+  let timePart = '';
+  let t = now;
+  for (let i = 0; i < 10; i++) {
+    timePart = ULID_CHARS.charAt(t % 32) + timePart;
+    t = Math.floor(t / 32);
+  }
+  let randomPart = '';
+  for (let i = 0; i < 15; i++) {
+    randomPart += ULID_CHARS.charAt(Math.floor(Math.random() * 32));
+  }
+  return timePart + ULID_CHARS.charAt(ulidSeq) + randomPart.substring(0, 15);
+}
+
 // ── 内部工具 ────────────────────────────────────────────────────────────────
 
 function pad2(n: number): string {
