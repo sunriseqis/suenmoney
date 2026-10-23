@@ -10,6 +10,7 @@ import { AuthStore } from '../common/auth/AuthStore';
 import { VectorRunner } from '../common/contract/VectorRunner';
 import { Db } from '../common/store/Db';
 import { LedgerScreen } from '../components/ledger/LedgerScreen';
+import { DashboardScreen } from '../components/dashboard/DashboardScreen';
 import { ThemeManager, ThemeName } from '../common/theme/ThemeManager';
 import { ThemeTokens } from '../common/theme/AppTheme';
 import { bodyFont, displayFont } from '../common/theme/Fonts';
@@ -39,7 +40,7 @@ struct MainPage {
         .tabBar('流水')
 
         TabContent() {
-          this.placeholder('概况', 'H4')
+          DashboardScreen()
         }
         .tabBar('概况')
 
