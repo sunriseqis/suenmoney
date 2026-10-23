@@ -270,10 +270,35 @@ export class Api {
     return Api.http().get<UserList>('/api/users');
   }
 
-  static expenses(month: string, limit: number, cursor: string | null): Promise<ExpensePage> {
+  /**
+   * 流水列表。检索条件交给服务端（q / categoryId / paymentMethodId / ownerId），
+   * **排序在本地做** —— 服务端不提供 sort 参数，而「按金额」只是在当前页内重排，
+   * 与 Web 的实现一致（Web 也是在拿到的一页里排）。
+   */
+  static expenses(
+    month: string,
+    limit: number,
+    cursor: string | null,
+    q: string = '',
+    categoryId: string = '',
+    paymentMethodId: string = '',
+    ownerId: string = ''
+  ): Promise<ExpensePage> {
     let path = `/api/expenses?month=${month}&limit=${limit}`;
     if (cursor !== null && cursor !== '') {
-      path += `&cursor=${cursor}`;
+      path += `&cursor=${encodeURIComponent(cursor)}`;
+    }
+    if (q !== '') {
+      path += `&q=${encodeURIComponent(q)}`;
+    }
+    if (categoryId !== '') {
+      path += `&categoryId=${encodeURIComponent(categoryId)}`;
+    }
+    if (paymentMethodId !== '') {
+      path += `&paymentMethodId=${encodeURIComponent(paymentMethodId)}`;
+    }
+    if (ownerId !== '') {
+      path += `&ownerId=${encodeURIComponent(ownerId)}`;
     }
     return Api.http().get<ExpensePage>(path);
   }
