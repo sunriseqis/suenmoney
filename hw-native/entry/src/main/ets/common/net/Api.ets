@@ -278,6 +278,10 @@ export interface PlanTodoItem {
   status: string;
 }
 
+export interface PaymentMergeRequest {
+  intoId: string;
+}
+
 export interface TodoConfirmRequest {
   spendDate: string;
 }
@@ -290,6 +294,55 @@ export interface PlanTodoList {
 // ── 同步 ────────────────────────────────────────────────────────────────────
 export interface SyncStatusBody {
   latestVersion: number;
+}
+
+// ── 设置类写操作的请求体 ────────────────────────────────────────────────────
+export interface CategoryCreateRequest {
+  name: string;
+  parentId: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+}
+
+export interface CategoryPatchRequest {
+  name: string;
+  icon: string;
+  color: string;
+  parentId: string | null;
+  isEnabled: boolean;
+}
+
+export interface PaymentCreateRequest {
+  name: string;
+  type: string;
+  icon: string;
+  billingDay: number;
+  repaymentDay: number;
+  sortOrder: number;
+}
+
+export interface PaymentPatchRequest {
+  name: string;
+  icon: string;
+  billingDay: number;
+  repaymentDay: number;
+  sortOrder: number;
+  isEnabled: boolean;
+}
+
+export interface PlanCreateRequest {
+  name: string;
+  categoryId: string;
+  paymentMethodId: string;
+  source: string;
+  amountCents: number;
+  totalAmountCents: number;
+  periods: number;
+  firstDueDate: string;
+  remindDaysBefore: number;
+  autoPost: boolean;
+  note: string;
 }
 
 /** 24 条路径的客户端封装（H0 阶段先落只读 + 登录，写操作随 H3 接） */
@@ -438,6 +491,67 @@ export class Api {
     const o = Api.http().options('POST');
     o.body = '{}';
     return Api.http().request<object>(`/api/plan-todos/${id}/skip`, o);
+  }
+
+  // ── 分类 ──
+  static createCategory(req: CategoryCreateRequest): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>('/api/categories', o);
+  }
+
+  static patchCategory(id: string, req: CategoryPatchRequest): Promise<object> {
+    const o = Api.http().options('PATCH');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>(`/api/categories/${id}`, o);
+  }
+
+  static deleteCategory(id: string): Promise<void> {
+    const o = Api.http().options('DELETE');
+    return Api.http().request<void>(`/api/categories/${id}`, o);
+  }
+
+  // ── 支付方式 ──
+  static createPayment(req: PaymentCreateRequest): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>('/api/payment-methods', o);
+  }
+
+  static patchPayment(id: string, req: PaymentPatchRequest): Promise<object> {
+    const o = Api.http().options('PATCH');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>(`/api/payment-methods/${id}`, o);
+  }
+
+  static mergePayment(id: string, intoId: string): Promise<object> {
+    const o = Api.http().options('POST');
+    const body: PaymentMergeRequest = { intoId: intoId };
+    o.body = JSON.stringify(body);
+    return Api.http().request<object>(`/api/payment-methods/${id}/merge`, o);
+  }
+
+  static deletePayment(id: string): Promise<void> {
+    const o = Api.http().options('DELETE');
+    return Api.http().request<void>(`/api/payment-methods/${id}`, o);
+  }
+
+  // ── 计划 ──
+  static createPlan(req: PlanCreateRequest): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>('/api/plans', o);
+  }
+
+  static endPlan(id: string): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = '{}';
+    return Api.http().request<object>(`/api/plans/${id}/end`, o);
+  }
+
+  static deletePlan(id: string): Promise<void> {
+    const o = Api.http().options('DELETE');
+    return Api.http().request<void>(`/api/plans/${id}`, o);
   }
 
   static syncStatus(): Promise<SyncStatusBody> {
