@@ -74,3 +74,11 @@ output/
 
 # 品牌渲染产物：由 npm run icons 从矢量母版重新生成，不入库
 docs/design/brand/dist/
+
+# ---- hw-native：鸿蒙原生端（计划三）构建产物 ----
+hw-native/.hvigor/
+hw-native/.idea/
+hw-native/oh_modules/
+hw-native/build/
+hw-native/entry/build/
+hw-native/entry/oh_modules/
