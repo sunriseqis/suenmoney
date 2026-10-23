@@ -18,6 +18,7 @@ import { ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
 import { formatYuan } from '../../common/contract/Contract';
 import { LengthMetrics } from '@kit.ArkUI';
+import { ExpenseEditor } from '../expense/ExpenseEditor';
 
 const PAGE_SIZE = 100;
 
@@ -60,6 +61,9 @@ export struct LedgerScreen {
   @State rootCategories: CachedCategory[] = [];
   @State paymentOptions: CachedCategory[] = [];
   @State ownerOptions: CachedCategory[] = [];
+  /** 记账抽屉开关（移动 Web 的唯一写入入口是下拉手势，这里同一机制） */
+  @State sheetOpen: boolean = false;
+  private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.reload();
@@ -419,7 +423,7 @@ export struct LedgerScreen {
       .width('100%')
       .padding({ left: 4, right: 4, bottom: 6 })
 
-      List({ space: 6 }) {
+      List({ space: 6, scroller: this.scroller }) {
         ForEach(this.grouped(), (group: LedgerDayGroup) => {
           ListItemGroup({ header: this.dayHeader(group) }) {
             ForEach(group.rows, (row: ExpenseItem) => {
@@ -621,6 +625,21 @@ export struct LedgerScreen {
     .layoutWeight(1)
   }
 
+  @Builder
+  expenseSheet() {
+    ExpenseEditor({
+      props: {
+        onSaved: () => {
+          this.sheetOpen = false;
+          this.reload();
+        },
+        onCancel: () => {
+          this.sheetOpen = false;
+        }
+      }
+    })
+  }
+
   build() {
     Column({ space: 10 }) {
       this.tierTabs()
@@ -660,6 +679,25 @@ export struct LedgerScreen {
     .height('100%')
     .padding(12)
     .backgroundColor(this.tokens.bg)
+    .bindSheet($$this.sheetOpen, this.expenseSheet(), {
+      height: SheetSize.LARGE,
+      dragBar: true,
+      showClose: true,
+      backgroundColor: this.tokens.bg
+    })
+    // 下拉记一笔：与移动 Web 同一机制（顶部下拉），不留兜底按钮
+    .parallelGesture(
+      PanGesture({ direction: PanDirection.Down, distance: 40 })
+        .onActionEnd((event: GestureEvent) => {
+          if (this.tier !== 0) {
+            return;
+          }
+          const atTop = this.scroller.currentOffset().yOffset <= 0;
+          if (atTop && event.offsetY > 80) {
+            this.sheetOpen = true;
+          }
+        })
+    )
   }
 }
 

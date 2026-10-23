@@ -102,6 +102,18 @@ export interface ExpensePreview {
   repaymentDate: string;
 }
 
+export interface ExpenseCreateRequest {
+  amountCents: number;
+  categoryId: string;
+  paymentMethodId: string;
+  spendDate: string;
+  note: string;
+}
+
+export interface ExpenseCreateBody {
+  expense: ExpenseItem;
+}
+
 // ── 报表 ────────────────────────────────────────────────────────────────────
 export interface CategoryBucket {
   categoryId: string;
@@ -301,6 +313,27 @@ export class Api {
       path += `&ownerId=${encodeURIComponent(ownerId)}`;
     }
     return Api.http().get<ExpensePage>(path);
+  }
+
+  /** 账期预览：这笔会记在哪个月（服务端算，不在客户端重实现账单周期） */
+  static previewExpense(spendDate: string, paymentMethodId: string): Promise<ExpensePreview> {
+    const o = Api.http().options('POST');
+    const body: ExpenseCreateRequest = {
+      amountCents: 0,
+      categoryId: '',
+      paymentMethodId: paymentMethodId,
+      spendDate: spendDate,
+      note: ''
+    };
+    // 预览只需要日期与支付方式；其余字段服务端忽略
+    o.body = JSON.stringify(body);
+    return Api.http().request<ExpensePreview>('/api/expenses/preview', o);
+  }
+
+  static createExpense(req: ExpenseCreateRequest): Promise<ExpenseCreateBody> {
+    const o = Api.http().options('POST');
+    o.body = JSON.stringify(req);
+    return Api.http().request<ExpenseCreateBody>('/api/expenses', o);
   }
 
   static monthlyReport(month: string): Promise<MonthlyReportBody> {
