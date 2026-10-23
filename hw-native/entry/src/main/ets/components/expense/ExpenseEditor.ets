@@ -12,22 +12,29 @@
  *      全程不出现浮点（`parseFloat*100` 会差一分钱）。
  *   3. 退款不加负号输入，用开关把正值翻成负数。
  */
-import { Api, CategoryNode, ExpenseCreateRequest, ExpensePreview, PaymentMethodItem } from '../../common/net/Api';
+import { Api, CategoryNode, ExpenseCreateRequest, ExpenseItem, ExpensePatchRequest, ExpensePreview, PaymentMethodItem } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { ThemeManager } from '../../common/theme/ThemeManager';
+import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { ThemeTokens } from '../../common/theme/AppTheme';
 
 export interface ExpenseEditorProps {
+  /** 非 null 即编辑已有记录（标题变「编辑」，底部出现删除） */
+  editing: ExpenseItem | null;
   onSaved: () => void;
   onCancel: () => void;
 }
 
 @Component
 export struct ExpenseEditor {
-  props: ExpenseEditorProps = { onSaved: () => {
-  }, onCancel: () => {
-  } };
+  props: ExpenseEditorProps = {
+    editing: null,
+    onSaved: () => {
+    },
+    onCancel: () => {
+    }
+  };
 
   @State tokens: ThemeTokens = ThemeManager.get().tokens;
   @State amountText: string = '';
@@ -61,14 +68,54 @@ export struct ExpenseEditor {
         }
       }
       this.payments = usable;
-      // 默认选第一个可选分类与第一个支付方式
       if (this.categories.length > 0) {
         this.railRootId = this.categories[0].id;
-        const kids = this.categories[0].children;
-        this.categoryId = kids.length > 0 ? kids[0].id : this.categories[0].id;
       }
-      if (this.payments.length > 0) {
-        this.paymentId = this.payments[0].id;
+
+      const editing = this.props.editing;
+      if (editing !== null) {
+        // 编辑：回填原值（含退款符号）
+        this.amountText = formatCents(Math.abs(editing.amountCents)).replace(/,/g, '');
+        this.categoryId = editing.categoryId;
+        this.paymentId = editing.paymentMethodId;
+        this.spendDate = editing.spendDate;
+        this.note = editing.note;
+        this.isRefund = editing.amountCents < 0;
+        for (const root of this.categories) {
+          if (root.id === editing.categoryId) {
+            this.railRootId = root.id;
+          }
+          for (const kid of root.children) {
+            if (kid.id === editing.categoryId) {
+              this.railRootId = root.id;
+            }
+          }
+        }
+      } else {
+        // 新建：沿用上次选择，但必须先校验「仍然可选」（分类可能已停用）
+        const last: LastPickValue | null = await LastPick.read();
+        const lastCat = last === null ? null : this.findCategory(last.categoryId);
+        const lastPay = last === null ? null : this.findPayment(last.paymentMethodId);
+        const firstRoot = this.categories.length > 0 ? this.categories[0] : null;
+        if (lastCat !== null && lastCat.isEnabled) {
+          this.categoryId = lastCat.id;
+          for (const root of this.categories) {
+            if (root.id === lastCat.parentId) {
+              this.railRootId = root.id;
+            }
+            for (const kid of root.children) {
+              if (kid.id === lastCat.id) {
+                this.railRootId = root.id;
+              }
+            }
+          }
+        } else if (firstRoot !== null) {
+          const kids = firstRoot.children;
+          this.categoryId = kids.length > 0 ? kids[0].id : firstRoot.id;
+        }
+        this.paymentId = lastPay !== null && lastPay.isEnabled
+          ? lastPay.id
+          : (this.payments.length > 0 ? this.payments[0].id : '');
       }
       this.refreshPreview();
     } catch (e) {
@@ -101,6 +148,29 @@ export struct ExpenseEditor {
       return false;
     }
     return due.repaymentDate.substring(0, 7) !== this.spendDate.substring(0, 7);
+  }
+
+  private findCategory(id: string): CategoryNode | null {
+    for (const root of this.categories) {
+      if (root.id === id) {
+        return root;
+      }
+      for (const kid of root.children) {
+        if (kid.id === id) {
+          return kid;
+        }
+      }
+    }
+    return null;
+  }
+
+  private findPayment(id: string): PaymentMethodItem | null {
+    for (const p of this.payments) {
+      if (p.id === id) {
+        return p;
+      }
+    }
+    return null;
   }
 
   private categoryName(): string {
@@ -167,14 +237,29 @@ export struct ExpenseEditor {
     }
     this.saving = true;
     try {
-      const req: ExpenseCreateRequest = {
-        amountCents: this.isRefund ? -cents : cents,
-        categoryId: this.categoryId,
-        paymentMethodId: this.paymentId,
-        spendDate: this.spendDate,
-        note: this.note
-      };
-      await Api.createExpense(req);
+      const editing = this.props.editing;
+      if (editing !== null) {
+        const patch: ExpensePatchRequest = {
+          amountCents: this.isRefund ? -cents : cents,
+          categoryId: this.categoryId,
+          paymentMethodId: this.paymentId,
+          spendDate: this.spendDate,
+          note: this.note
+        };
+        await Api.updateExpense(editing.id, patch);
+      } else {
+        const req: ExpenseCreateRequest = {
+          amountCents: this.isRefund ? -cents : cents,
+          categoryId: this.categoryId,
+          paymentMethodId: this.paymentId,
+          spendDate: this.spendDate,
+          note: this.note
+        };
+        await Api.createExpense(req);
+        // 成功后才记住这次选择（失败的记账不该影响下次默认值）
+        const pick: LastPickValue = { categoryId: this.categoryId, paymentMethodId: this.paymentId };
+        await LastPick.write(pick);
+      }
       this.props.onSaved();
     } catch (e) {
       const err = e as ApiError;
@@ -182,6 +267,55 @@ export struct ExpenseEditor {
     } finally {
       this.saving = false;
     }
+  }
+
+  /** 日期选择（系统 DatePickerDialog，不自己画日历） */
+  private pickDate(): void {
+    const selected = parseDateKey(this.spendDate);
+    const start = new Date(2000, 0, 1);
+    const end = new Date(2100, 11, 31);
+    DatePickerDialog.show({
+      start: start,
+      end: end,
+      selected: selected,
+      onDateAccept: (value: Date) => {
+        this.spendDate = toDateKey(value);
+        this.refreshPreview();
+      }
+    });
+  }
+
+  /** 删除是软删（墓碑），但仍要二次确认 —— 用户看到的是「没了」 */
+  private confirmDelete(): void {
+    const editing = this.props.editing;
+    if (editing === null) {
+      return;
+    }
+    AlertDialog.show({
+      title: '删除这笔记录？',
+      message: `${this.categoryName()} ${formatYuan(editing.amountCents)} · ${editing.spendDate}`,
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: this.tokens.danger,
+        action: () => {
+          this.saving = true;
+          Api.deleteExpense(editing.id)
+            .then(() => {
+              this.saving = false;
+              this.props.onSaved();
+            })
+            .catch((e: ApiError) => {
+              this.saving = false;
+              this.errorText = e.message;
+            });
+        }
+      }
+    });
   }
 
   @Builder
@@ -265,8 +399,8 @@ export struct ExpenseEditor {
 
   build() {
     Column({ space: 10 }) {
-      Row() {
-        Text('记一笔')
+      Row({ space: 8 }) {
+        Text(this.props.editing === null ? '记一笔' : '编辑')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.tokens.ink)
@@ -296,7 +430,7 @@ export struct ExpenseEditor {
         this.categoryOpen = !this.categoryOpen;
       })
       this.fieldRow('消费日期', this.spendDate, () => {
-        // 日期选择在 H3 第二批接 DatePicker；先用今天，避免假交互
+        this.pickDate();
       })
       this.fieldRow('支付方式', this.paymentName(), () => {
         this.paymentOpen = !this.paymentOpen;
@@ -444,6 +578,16 @@ export struct ExpenseEditor {
           .onClick(() => {
             this.save();
           })
+        if (this.props.editing !== null) {
+          Button('删除')
+            .fontSize(13)
+            .height(42)
+            .backgroundColor(this.tokens.surface2)
+            .fontColor(this.tokens.danger)
+            .onClick(() => {
+              this.confirmDelete();
+            })
+        }
         Button('取消')
           .fontSize(13)
           .height(42)
@@ -472,6 +616,22 @@ export struct ExpenseEditor {
 }
 
 const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.', '0'];
+
+/** 'YYYY-MM-DD' → Date（本地时区零点，避免时区偏移一天） */
+function parseDateKey(key: string): Date {
+  return new Date(
+    Number(key.substring(0, 4)),
+    Number(key.substring(5, 7)) - 1,
+    Number(key.substring(8, 10))
+  );
+}
+
+/** Date → 'YYYY-MM-DD'（本地时区） */
+function toDateKey(d: Date): string {
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${d.getFullYear()}-${m < 10 ? '0' + m : String(m)}-${day < 10 ? '0' + day : String(day)}`;
+}
 
 /** 今天（YYYY-MM-DD，本地时区） */
 function todayKey(): string {
