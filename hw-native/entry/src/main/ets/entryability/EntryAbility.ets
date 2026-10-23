@@ -14,13 +14,25 @@
  */
 
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { Db } from '../common/store/Db';
+import { ServerConfig } from '../common/net/ServerConfig';
+import { ThemeManager } from '../common/theme/ThemeManager';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
-  onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+  async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
+    // 底座三件套：主题、服务端与令牌、本地库。
+    // 顺序无关，但都必须在这里完成 —— 页面 aboutToAppear 时就要能拿到。
+    await ThemeManager.get().init(this.context);
+    await ServerConfig.get().init(this.context);
+    try {
+      await Db.open(this.context);
+    } catch (e) {
+      hilog.error(DOMAIN, 'testTag', 'DB open failed: %{public}s', JSON.stringify(e));
+    }
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
