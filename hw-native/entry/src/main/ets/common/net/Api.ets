@@ -278,6 +278,18 @@ export interface PlanTodoItem {
   status: string;
 }
 
+export interface UserCreateRequest {
+  username: string;
+  displayName: string;
+  password: string;
+  role: string;
+}
+
+export interface UserPatchRequest {
+  displayName: string;
+  role: string;
+}
+
 export interface PaymentMergeRequest {
   intoId: string;
 }
@@ -610,6 +622,18 @@ export class Api {
   static deletePlan(id: string): Promise<void> {
     const o = Api.http().options('DELETE');
     return Api.http().request<void>(`/api/plans/${id}`, o);
+  }
+
+  static createUser(req: UserCreateRequest): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>('/api/users', o);
+  }
+
+  static patchUser(id: string, req: UserPatchRequest): Promise<object> {
+    const o = Api.http().options('PATCH');
+    o.body = JSON.stringify(req);
+    return Api.http().request<object>(`/api/users/${id}`, o);
   }
 
   static syncPush(req: SyncPushRequest): Promise<SyncPushBody> {

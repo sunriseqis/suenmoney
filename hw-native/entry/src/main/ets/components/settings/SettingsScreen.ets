@@ -19,6 +19,7 @@ import {
   PlanCreateRequest,
   PlanItem,
   PlanTodoItem,
+  UserCreateRequest,
   UserSummary
 } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
@@ -67,6 +68,9 @@ export struct SettingsScreen {
   @State formPeriods: number = 12;
   @State formFirstDue: string = '';
   @State formAutoPost: boolean = false;
+  @State formUsername: string = '';
+  @State formPassword: string = '';
+  @State formRole: string = 'member';
   @State formError: string = '';
   @State pendingCount: number = 0;
   @State deadLetters: OutboxEntry[] = [];
@@ -164,6 +168,36 @@ export struct SettingsScreen {
     this.formFirstDue = todayKey();
     this.formAutoPost = false;
     this.sheetMode = 'plan';
+  }
+
+  private openMemberSheet(): void {
+    this.formError = '';
+    this.formName = '';
+    this.formUsername = '';
+    this.formPassword = '';
+    this.formRole = 'member';
+    this.sheetMode = 'member';
+  }
+
+  private async saveMember(): Promise<void> {
+    this.formError = '';
+    if (this.formUsername.trim() === '' || this.formPassword.length < 6) {
+      this.formError = '登录名必填，口令至少 6 位';
+      return;
+    }
+    try {
+      const req: UserCreateRequest = {
+        username: this.formUsername.trim(),
+        displayName: this.formName.trim() === '' ? this.formUsername.trim() : this.formName.trim(),
+        password: this.formPassword,
+        role: this.formRole
+      };
+      await Api.createUser(req);
+      this.sheetMode = '';
+      await this.reload();
+    } catch (e) {
+      this.formError = (e as ApiError).message;
+    }
   }
 
   private async saveCategory(): Promise<void> {
@@ -774,11 +808,22 @@ export struct SettingsScreen {
   @Builder
   familySection() {
     Column({ space: 10 }) {
-      Text('成员')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
-        .width('100%')
+      Row({ space: 8 }) {
+        Text('成员')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tokens.ink)
+          .layoutWeight(1)
+        Button('添加')
+          .fontSize(10)
+          .height(26)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.openMemberSheet();
+          })
+      }
+      .width('100%')
 
       ForEach(this.users, (user: UserSummary) => {
         Row({ space: 8 }) {
@@ -895,6 +940,8 @@ export struct SettingsScreen {
               this.saveCategory();
             } else if (this.sheetMode === 'payment') {
               this.savePayment();
+            } else if (this.sheetMode === 'member') {
+              this.saveMember();
             } else {
               this.savePlan();
             }
@@ -921,6 +968,9 @@ export struct SettingsScreen {
     }
     if (this.sheetMode === 'payment') {
       return this.editingPaymentId === '' ? '新增支付方式' : '编辑支付方式';
+    }
+    if (this.sheetMode === 'member') {
+      return '添加成员';
     }
     return '新建计划';
   }
@@ -1097,6 +1147,53 @@ export struct SettingsScreen {
       }
     }
     return out;
+  }
+
+  @Builder
+  memberForm() {
+    Column({ space: 8 }) {
+      TextInput({ placeholder: '显示名（如 爱人）', text: this.formName })
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formName = v;
+        })
+      TextInput({ placeholder: '登录名', text: this.formUsername })
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formUsername = v;
+        })
+      TextInput({ placeholder: '初始口令（至少 6 位）', text: this.formPassword })
+        .type(InputType.Password)
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formPassword = v;
+        })
+      Row({ space: 8 }) {
+        Button('成员')
+          .fontSize(11)
+          .height(32)
+          .layoutWeight(1)
+          .backgroundColor(this.formRole === 'member' ? this.tokens.accent : this.tokens.surface2)
+          .fontColor(this.formRole === 'member' ? this.tokens.accentInk : this.tokens.ink2)
+          .onClick(() => {
+            this.formRole = 'member';
+          })
+        Button('管理员')
+          .fontSize(11)
+          .height(32)
+          .layoutWeight(1)
+          .backgroundColor(this.formRole === 'admin' ? this.tokens.accent : this.tokens.surface2)
+          .fontColor(this.formRole === 'admin' ? this.tokens.accentInk : this.tokens.ink2)
+          .onClick(() => {
+            this.formRole = 'admin';
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
   }
 
   @Builder
