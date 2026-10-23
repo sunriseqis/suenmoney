@@ -249,14 +249,20 @@ export struct DashboardScreen {
                   .onClick(() => {
                     this.actTodo(todo, 'confirm');
                   })
-                Button('忽略')
+                // 危险动作收进「更多」：跳过不可逆，不能与主按钮同权重（decisions）
+                Button('更多')
                   .fontSize(10)
                   .height(26)
                   .backgroundColor(this.tokens.surface)
                   .fontColor(this.tokens.ink3)
-                  .onClick(() => {
-                    this.actTodo(todo, 'skip');
-                  })
+                  .bindMenu([
+                    {
+                      value: '忽略本期',
+                      action: () => {
+                        this.actTodo(todo, 'skip');
+                      }
+                    }
+                  ])
               }
               .width('100%')
               .padding({ left: 10, right: 10, top: 4, bottom: 4 })
