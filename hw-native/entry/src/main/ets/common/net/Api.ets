@@ -132,6 +132,35 @@ export interface CategoryBucket {
   cents: number;
   count: number;
   ratio: number;
+  /** 上期同分类金额（无上期时为 0 / 缺省） */
+  previousCents?: number;
+  /** 环比（上期为 0 时服务端给 null） */
+  changeRatio?: number | null;
+  children?: CategoryBucket[];
+}
+
+export interface MonthChange {
+  deltaCents: number;
+  ratio: number | null;
+}
+
+export interface MonthPointRef {
+  month: string;
+  totalCents: number;
+}
+
+export interface LargestExpense {
+  expenseId: string;
+  categoryName: string;
+  cents: number;
+  repaymentDate: string;
+}
+
+export interface DailyPoint {
+  date: string;
+  day: number;
+  cents: number;
+  count: number;
 }
 
 export interface PaymentBucket {
@@ -161,9 +190,13 @@ export interface MonthlyReport {
   month: string;
   totalCents: number;
   count: number;
+  previous: MonthPointRef;
+  change: MonthChange;
+  largest: LargestExpense | null;
   categories: CategoryBucket[];
   paymentMethods: PaymentBucket[];
   members: MemberBucket[];
+  daily: DailyPoint[];
   rolling12Months: RollingMonth[];
 }
 

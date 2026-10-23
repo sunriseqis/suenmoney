@@ -11,6 +11,7 @@ import { VectorRunner } from '../common/contract/VectorRunner';
 import { Db } from '../common/store/Db';
 import { LedgerScreen } from '../components/ledger/LedgerScreen';
 import { DashboardScreen } from '../components/dashboard/DashboardScreen';
+import { ReportScreen } from '../components/report/ReportScreen';
 import { ThemeManager, ThemeName } from '../common/theme/ThemeManager';
 import { ThemeTokens } from '../common/theme/AppTheme';
 import { bodyFont, displayFont } from '../common/theme/Fonts';
@@ -45,7 +46,7 @@ struct MainPage {
         .tabBar('概况')
 
         TabContent() {
-          this.placeholder('报表', 'H5')
+          ReportScreen()
         }
         .tabBar('报表')
 
