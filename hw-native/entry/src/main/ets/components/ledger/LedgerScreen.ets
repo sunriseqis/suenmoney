@@ -9,7 +9,7 @@
  * 数据来源：线上走接口，断网走本地库现算（离线 A 档）。
  * 金额一律来自服务端/本地的整数分，展示时才格式化。
  */
-import { Api, ExpenseItem, MonthPoint, YearPoint } from '../../common/net/Api';
+import { Api, ExpenseItem, MonthPoint, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
@@ -17,6 +17,7 @@ import { ThemeManager } from '../../common/theme/ThemeManager';
 import { ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
 import { formatYuan } from '../../common/contract/Contract';
+import { LengthMetrics } from '@kit.ArkUI';
 
 const PAGE_SIZE = 100;
 
@@ -48,6 +49,18 @@ export struct LedgerScreen {
   @State categoryNames: Map<string, CachedCategory> = new Map<string, CachedCategory>();
   @State paymentNames: Map<string, string> = new Map<string, string>();
 
+  // ── 检索（H2 第二批）──
+  @State keyword: string = '';
+  @State filterCategory: string = '';
+  @State filterPayment: string = '';
+  @State filterOwner: string = '';
+  /** 0=按日期 1=按金额 */
+  @State sortMode: number = 0;
+  @State filterOpen: boolean = false;
+  @State rootCategories: CachedCategory[] = [];
+  @State paymentOptions: CachedCategory[] = [];
+  @State ownerOptions: CachedCategory[] = [];
+
   aboutToAppear(): void {
     this.reload();
   }
@@ -64,6 +77,28 @@ export struct LedgerScreen {
         const pays = await Api.paymentMethods();
         await DictionaryDao.cachePayments(pays.paymentMethods);
         this.paymentNames = await DictionaryDao.paymentNames();
+
+        // 筛选项：分类只列一级（二级归属一级，列出来会重复）；支付列全部；记录人取 users
+        const roots: CachedCategory[] = [];
+        this.categoryNames.forEach((cat: CachedCategory) => {
+          if (cat.parentId === '' || cat.parentId === null) {
+            roots.push(cat);
+          }
+        });
+        this.rootCategories = roots;
+        const payOpts: CachedCategory[] = [];
+        pays.paymentMethods.forEach((p: PaymentMethodItem) => {
+          if (p.isEnabled) {
+            payOpts.push({ id: p.id, name: p.name, icon: p.icon, color: '', parentId: '' });
+          }
+        });
+        this.paymentOptions = payOpts;
+        const users = await Api.users();
+        const owners: CachedCategory[] = [];
+        users.users.forEach((u: UserSummary) => {
+          owners.push({ id: u.id, name: u.displayName, icon: '', color: '', parentId: '' });
+        });
+        this.ownerOptions = owners;
       }
       this.offline = false;
       await this.loadTier();
@@ -100,13 +135,21 @@ export struct LedgerScreen {
     if (this.offline) {
       const local = await ExpenseDao.byMonth(this.anchorMonth);
       const total = await ExpenseDao.monthTotal(this.anchorMonth);
-      this.rows = local;
+      this.rows = this.applyLocalFilters(local);
       this.monthTotalCents = total.totalCents;
       this.monthCount = total.count;
       this.hasMore = false;
       return;
     }
-    const page = await Api.expenses(this.anchorMonth, PAGE_SIZE, reset ? null : this.cursor);
+    const page = await Api.expenses(
+      this.anchorMonth,
+      PAGE_SIZE,
+      reset ? null : this.cursor,
+      this.keyword.trim(),
+      this.filterCategory,
+      this.filterPayment,
+      this.filterOwner
+    );
     this.rows = reset ? page.items : this.rows.concat(page.items);
     this.cursor = page.nextCursor ?? '';
     this.hasMore = page.hasMore;
@@ -129,10 +172,51 @@ export struct LedgerScreen {
     this.allTotalCents = body.report.totalCents;
   }
 
+  /** 本地筛选（离线路径用；线上由服务端过滤） */
+  private applyLocalFilters(source: ExpenseItem[]): ExpenseItem[] {
+    const q = this.keyword.trim();
+    const out: ExpenseItem[] = [];
+    for (const row of source) {
+      if (q !== '') {
+        const name = this.categoryNameOf(row);
+        const hit = name.indexOf(q) >= 0 || row.note.indexOf(q) >= 0;
+        if (!hit) {
+          continue;
+        }
+      }
+      if (this.filterCategory !== '') {
+        const cat = this.categoryNames.get(row.categoryId);
+        const rootId = cat !== undefined && cat.parentId !== '' ? cat.parentId : row.categoryId;
+        if (rootId !== this.filterCategory) {
+          continue;
+        }
+      }
+      if (this.filterPayment !== '' && row.paymentMethodId !== this.filterPayment) {
+        continue;
+      }
+      if (this.filterOwner !== '' && row.ownerId !== this.filterOwner) {
+        continue;
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  /** 排序后的行（按金额时同额保持日期序，避免每次刷新顺序抖动） */
+  private sortedRows(): ExpenseItem[] {
+    const list: ExpenseItem[] = this.rows.slice();
+    if (this.sortMode === 1) {
+      list.sort((a: ExpenseItem, b: ExpenseItem) => b.amountCents - a.amountCents);
+    } else {
+      list.sort((a: ExpenseItem, b: ExpenseItem) => a.spendDate < b.spendDate ? 1 : (a.spendDate > b.spendDate ? -1 : 0));
+    }
+    return list;
+  }
+
   /** 按消费日分组（组内小计），同一天的多笔归到一起 */
   private grouped(): LedgerDayGroup[] {
     const out: LedgerDayGroup[] = [];
-    for (const row of this.rows) {
+    for (const row of this.sortedRows()) {
       const last = out.length > 0 ? out[out.length - 1] : null;
       if (last !== null && last.date === row.spendDate) {
         last.cents += row.amountCents;
@@ -195,6 +279,129 @@ export struct LedgerScreen {
           this.errorText = e.message;
         });
       })
+  }
+
+  /** 检索区：搜索 + 筛选（折叠）+ 排序 */
+  @Builder
+  searchBar() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        TextInput({ placeholder: '搜索备注或分类', text: this.keyword })
+          .height(36)
+          .layoutWeight(1)
+          .backgroundColor(this.tokens.surface2)
+          .onChange((v: string) => {
+            this.keyword = v;
+          })
+          .onSubmit(() => {
+            this.reload();
+          })
+
+        Button(this.filterOpen ? '收起' : '筛选')
+          .fontSize(12)
+          .height(36)
+          .backgroundColor(this.activeFilterCount() > 0 ? this.tokens.accent : this.tokens.surface2)
+          .fontColor(this.activeFilterCount() > 0 ? this.tokens.accentInk : this.tokens.ink2)
+          .onClick(() => {
+            this.filterOpen = !this.filterOpen;
+          })
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        Button('按日期')
+          .fontSize(11)
+          .height(28)
+          .layoutWeight(1)
+          .backgroundColor(this.sortMode === 0 ? this.tokens.surface3 : this.tokens.surface2)
+          .fontColor(this.sortMode === 0 ? this.tokens.ink : this.tokens.ink3)
+          .onClick(() => {
+            this.sortMode = 0;
+          })
+        Button('按金额')
+          .fontSize(11)
+          .height(28)
+          .layoutWeight(1)
+          .backgroundColor(this.sortMode === 1 ? this.tokens.surface3 : this.tokens.surface2)
+          .fontColor(this.sortMode === 1 ? this.tokens.ink : this.tokens.ink3)
+          .onClick(() => {
+            this.sortMode = 1;
+          })
+      }
+      .width('100%')
+
+      if (this.filterOpen) {
+        Column({ space: 6 }) {
+          this.filterGroup('分类', this.rootCategories, this.filterCategory, 'category')
+          this.filterGroup('支付', this.paymentOptions, this.filterPayment, 'payment')
+          this.filterGroup('记录人', this.ownerOptions, this.filterOwner, 'owner')
+          Button('清除全部筛选')
+            .fontSize(11)
+            .height(28)
+            .backgroundColor(this.tokens.surface2)
+            .fontColor(this.tokens.ink3)
+            .onClick(() => {
+              this.filterCategory = '';
+              this.filterPayment = '';
+              this.filterOwner = '';
+              this.keyword = '';
+              this.reload();
+            })
+        }
+        .width('100%')
+        .padding(8)
+        .backgroundColor(this.tokens.surface2)
+        .borderRadius(this.tokens.rMd)
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  filterGroup(label: string, options: CachedCategory[], selected: string, kind: string) {
+    Column({ space: 4 }) {
+      Text(label)
+        .fontSize(9)
+        .fontColor(this.tokens.ink3)
+        .width('100%')
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+        ForEach(options, (opt: CachedCategory) => {
+          Button(opt.name)
+            .fontSize(11)
+            .height(26)
+            .backgroundColor(selected === opt.id ? this.tokens.accent : this.tokens.surface)
+            .fontColor(selected === opt.id ? this.tokens.accentInk : this.tokens.ink2)
+            .border({ width: 1, color: this.tokens.line })
+            .onClick(() => {
+              const next: string = selected === opt.id ? '' : opt.id;
+              if (kind === 'category') {
+                this.filterCategory = next;
+              } else if (kind === 'payment') {
+                this.filterPayment = next;
+              } else {
+                this.filterOwner = next;
+              }
+              this.reload();
+            })
+        }, (opt: CachedCategory) => `${kind}-${opt.id}`)
+      }
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  private activeFilterCount(): number {
+    let n = 0;
+    if (this.filterCategory !== '') {
+      n++;
+    }
+    if (this.filterPayment !== '') {
+      n++;
+    }
+    if (this.filterOwner !== '') {
+      n++;
+    }
+    return n;
   }
 
   @Builder
@@ -417,6 +624,10 @@ export struct LedgerScreen {
   build() {
     Column({ space: 10 }) {
       this.tierTabs()
+
+      if (this.tier === 0) {
+        this.searchBar()
+      }
 
       if (this.offline) {
         Text('离线：显示本地缓存')
