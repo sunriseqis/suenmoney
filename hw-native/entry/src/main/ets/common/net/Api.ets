@@ -150,6 +150,42 @@ export interface MonthlyReportBody {
   report: MonthlyReport;
 }
 
+export interface MonthPoint {
+  month: string;
+  totalCents: number;
+  count: number;
+}
+
+export interface YearlyReport {
+  year: string;
+  totalCents: number;
+  count: number;
+  months: MonthPoint[];
+  peakMonth: MonthPoint | null;
+}
+
+export interface YearlyReportBody {
+  report: YearlyReport;
+}
+
+export interface YearPoint {
+  year: string;
+  totalCents: number;
+  count: number;
+}
+
+export interface SummaryReport {
+  totalCents: number;
+  count: number;
+  recordedDays: number;
+  monthlyAverageCents: number;
+  years: YearPoint[];
+}
+
+export interface SummaryReportBody {
+  report: SummaryReport;
+}
+
 // ── 计划与待办 ──────────────────────────────────────────────────────────────
 export interface PlanProgress {
   paidCount: number;
@@ -244,6 +280,14 @@ export class Api {
 
   static monthlyReport(month: string): Promise<MonthlyReportBody> {
     return Api.http().get<MonthlyReportBody>(`/api/reports/monthly?month=${month}`);
+  }
+
+  static yearlyReport(year: string): Promise<YearlyReportBody> {
+    return Api.http().get<YearlyReportBody>(`/api/reports/yearly?year=${year}`);
+  }
+
+  static summaryReport(): Promise<SummaryReportBody> {
+    return Api.http().get<SummaryReportBody>('/api/reports/summary');
   }
 
   static plans(): Promise<PlanList> {

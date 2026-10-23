@@ -9,6 +9,7 @@ import { router } from '@kit.ArkUI';
 import { AuthStore } from '../common/auth/AuthStore';
 import { VectorRunner } from '../common/contract/VectorRunner';
 import { Db } from '../common/store/Db';
+import { LedgerScreen } from '../components/ledger/LedgerScreen';
 import { ThemeManager, ThemeName } from '../common/theme/ThemeManager';
 import { ThemeTokens } from '../common/theme/AppTheme';
 import { bodyFont, displayFont } from '../common/theme/Fonts';
@@ -33,7 +34,7 @@ struct MainPage {
     Column() {
       Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
         TabContent() {
-          this.placeholder('流水', 'H2')
+          LedgerScreen()
         }
         .tabBar('流水')
 
