@@ -6,9 +6,21 @@
  *
  * 危险动作一律收进「更多」菜单（decisions：跳过不可逆，不能与该做的动作同权重）。
  */
-import { router } from '@kit.ArkUI';
+import { LengthMetrics, router } from '@kit.ArkUI';
 
-import { Api, CategoryNode, PlanItem, PlanTodoItem, PaymentMethodItem, UserSummary } from '../../common/net/Api';
+import {
+  Api,
+  CategoryCreateRequest,
+  CategoryNode,
+  CategoryPatchRequest,
+  PaymentCreateRequest,
+  PaymentMethodItem,
+  PaymentPatchRequest,
+  PlanCreateRequest,
+  PlanItem,
+  PlanTodoItem,
+  UserSummary
+} from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
@@ -31,6 +43,29 @@ export struct SettingsScreen {
   @State users: UserSummary[] = [];
   @State errorText: string = '';
   @State loading: boolean = false;
+  /** 弹层：'' | category | payment | plan */
+  @State sheetMode: string = '';
+  @State editingCategoryId: string = '';
+  @State editingPaymentId: string = '';
+  @State editingPlanId: string = '';
+  // 表单字段（分类）
+  @State formName: string = '';
+  @State formIcon: string = '';
+  @State formColor: number = 0;
+  @State formParent: string = '';
+  // 表单字段（支付）
+  @State formType: string = 'cash';
+  @State formBillingDay: number = 0;
+  @State formRepaymentDay: number = 0;
+  @State formMergeInto: string = '';
+  // 表单字段（计划）
+  @State formCategoryId: string = '';
+  @State formPaymentId: string = '';
+  @State formAmount: string = '';
+  @State formPeriods: number = 12;
+  @State formFirstDue: string = '';
+  @State formAutoPost: boolean = false;
+  @State formError: string = '';
   @State vectorReport: string = '';
   @State schemaReport: string = '';
   @State railRootId: string = '';
@@ -70,15 +105,181 @@ export struct SettingsScreen {
     this.tokens = ThemeManager.get().tokens;
   }
 
+  // ── 弹层：打开与保存 ────────────────────────────────────────────────────
+  private openCategorySheet(cat: CategoryNode | null, parentId: string): void {
+    this.formError = '';
+    this.editingCategoryId = cat === null ? '' : cat.id;
+    this.formName = cat === null ? '' : cat.name;
+    this.formIcon = cat === null ? '' : cat.icon;
+    this.formColor = cat === null ? 0 : Number(cat.color) || 0;
+    this.formParent = cat === null ? parentId : (cat.parentId ?? '');
+    this.sheetMode = 'category';
+  }
+
+  private openPaymentSheet(pay: PaymentMethodItem | null): void {
+    this.formError = '';
+    this.editingPaymentId = pay === null ? '' : pay.id;
+    this.formName = pay === null ? '' : pay.name;
+    this.formType = pay === null ? 'cash' : pay.type;
+    this.formBillingDay = pay === null ? 0 : (pay.billingDay ?? 0);
+    this.formRepaymentDay = pay === null ? 0 : (pay.repaymentDay ?? 0);
+    this.formMergeInto = '';
+    this.sheetMode = 'payment';
+  }
+
+  private openPlanSheet(): void {
+    this.formError = '';
+    this.editingPlanId = '';
+    this.formName = '';
+    this.formCategoryId = '';
+    this.formPaymentId = '';
+    this.formAmount = '';
+    this.formPeriods = 12;
+    this.formFirstDue = todayKey();
+    this.formAutoPost = false;
+    this.sheetMode = 'plan';
+  }
+
+  private async saveCategory(): Promise<void> {
+    this.formError = '';
+    if (this.formName.trim() === '') {
+      this.formError = '请填写名称';
+      return;
+    }
+    try {
+      if (this.editingCategoryId === '') {
+        const req: CategoryCreateRequest = {
+          name: this.formName.trim(),
+          parentId: this.formParent,
+          icon: this.formIcon.trim(),
+          color: this.formParent === '' ? String(this.formColor) : '',
+          sortOrder: 0
+        };
+        await Api.createCategory(req);
+      } else {
+        const req: CategoryPatchRequest = {
+          name: this.formName.trim(),
+          icon: this.formIcon.trim(),
+          // 二级分类不设颜色：颜色跟一级走，这里传空串让服务端保持继承
+          color: this.formParent === '' ? String(this.formColor) : '',
+          parentId: this.formParent === '' ? null : this.formParent,
+          isEnabled: true
+        };
+        await Api.patchCategory(this.editingCategoryId, req);
+      }
+      this.sheetMode = '';
+      await this.reload();
+    } catch (e) {
+      const err = e as ApiError;
+      this.formError = err.message;
+    }
+  }
+
+  private async savePayment(): Promise<void> {
+    this.formError = '';
+    if (this.formName.trim() === '') {
+      this.formError = '请填写名称';
+      return;
+    }
+    if (this.formType === 'credit' && (this.formBillingDay < 1 || this.formRepaymentDay < 1)) {
+      this.formError = '信用卡需要填写账单日与还款日';
+      return;
+    }
+    try {
+      if (this.editingPaymentId === '') {
+        const req: PaymentCreateRequest = {
+          name: this.formName.trim(),
+          type: this.formType,
+          icon: '',
+          billingDay: this.formType === 'credit' ? this.formBillingDay : 0,
+          repaymentDay: this.formType === 'credit' ? this.formRepaymentDay : 0,
+          sortOrder: 0
+        };
+        await Api.createPayment(req);
+      } else {
+        const req: PaymentPatchRequest = {
+          name: this.formName.trim(),
+          icon: '',
+          billingDay: this.formType === 'credit' ? this.formBillingDay : 0,
+          repaymentDay: this.formType === 'credit' ? this.formRepaymentDay : 0,
+          sortOrder: 0,
+          isEnabled: true
+        };
+        await Api.patchPayment(this.editingPaymentId, req);
+        if (this.formMergeInto !== '') {
+          await Api.mergePayment(this.editingPaymentId, this.formMergeInto);
+        }
+      }
+      this.sheetMode = '';
+      await this.reload();
+    } catch (e) {
+      const err = e as ApiError;
+      this.formError = err.message;
+    }
+  }
+
+  private async savePlan(): Promise<void> {
+    this.formError = '';
+    if (this.formName.trim() === '' || this.formCategoryId === '' || this.formPaymentId === '') {
+      this.formError = '名称、分类、支付方式都要填';
+      return;
+    }
+    const cents = Math.round(Number(this.formAmount) * 100);
+    if (!Number.isFinite(cents) || cents <= 0) {
+      this.formError = '每期金额要大于 0';
+      return;
+    }
+    try {
+      const req: PlanCreateRequest = {
+        name: this.formName.trim(),
+        categoryId: this.formCategoryId,
+        paymentMethodId: this.formPaymentId,
+        source: 'manual',
+        amountCents: cents,
+        totalAmountCents: 0,
+        periods: this.formPeriods,
+        firstDueDate: this.formFirstDue,
+        remindDaysBefore: 3,
+        autoPost: this.formAutoPost,
+        note: ''
+      };
+      await Api.createPlan(req);
+      this.sheetMode = '';
+      await this.reload();
+    } catch (e) {
+      const err = e as ApiError;
+      this.formError = err.message;
+    }
+  }
+
   // ── 账目 ────────────────────────────────────────────────────────────────
   @Builder
   accountsSection() {
     Column({ space: 10 }) {
-      Text('分类')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
-        .width('100%')
+      Row({ space: 8 }) {
+        Text('分类')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tokens.ink)
+          .layoutWeight(1)
+        Button('新增类别')
+          .fontSize(10)
+          .height(26)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.openCategorySheet(null, '');
+          })
+        Button('新增分类')
+          .fontSize(10)
+          .height(26)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.openCategorySheet(null, this.railRootId);
+          })
+      }
+      .width('100%')
 
       Row({ space: 8 }) {
         List({ space: 4 }) {
@@ -129,6 +330,9 @@ export struct SettingsScreen {
             }
             .width('100%')
             .padding({ top: 4, bottom: 4 })
+            .onClick(() => {
+              this.openCategorySheet(kid, this.railRootId);
+            })
           }, (kid: CategoryNode) => kid.id)
         }
         .alignItems(HorizontalAlign.Start)
@@ -138,11 +342,22 @@ export struct SettingsScreen {
 
       Divider().color(this.tokens.line)
 
-      Text('支付方式')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
-        .width('100%')
+      Row({ space: 8 }) {
+        Text('支付方式')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tokens.ink)
+          .layoutWeight(1)
+        Button('新增')
+          .fontSize(10)
+          .height(26)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.openPaymentSheet(null);
+          })
+      }
+      .width('100%')
 
       ForEach(this.payments, (p: PaymentMethodItem) => {
         Row({ space: 8 }) {
@@ -175,6 +390,9 @@ export struct SettingsScreen {
         }
         .width('100%')
         .padding({ top: 6, bottom: 6 })
+        .onClick(() => {
+          this.openPaymentSheet(p);
+        })
       }, (p: PaymentMethodItem) => p.id)
     }
     .width('100%')
@@ -197,11 +415,22 @@ export struct SettingsScreen {
   @Builder
   plansSection() {
     Column({ space: 10 }) {
-      Text('计划')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
-        .width('100%')
+      Row({ space: 8 }) {
+        Text('计划')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tokens.ink)
+          .layoutWeight(1)
+        Button('新建计划')
+          .fontSize(10)
+          .height(26)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.openPlanSheet();
+          })
+      }
+      .width('100%')
 
       ForEach(this.plans, (plan: PlanItem) => {
         Column({ space: 4 }) {
@@ -221,6 +450,26 @@ export struct SettingsScreen {
                 .fontSize(9)
                 .fontColor(this.tokens.ink3)
             }
+            // 终止/删除是危险动作，收进「更多」
+            Button('更多')
+              .fontSize(9)
+              .height(24)
+              .backgroundColor(this.tokens.surface)
+              .fontColor(this.tokens.ink3)
+              .bindMenu([
+                {
+                  value: '终止计划',
+                  action: () => {
+                    this.endPlanById(plan.id);
+                  }
+                },
+                {
+                  value: '删除计划',
+                  action: () => {
+                    this.deletePlanById(plan.id);
+                  }
+                }
+              ])
           }
           .width('100%')
 
@@ -300,6 +549,24 @@ export struct SettingsScreen {
     .backgroundColor(this.tokens.surface)
     .borderRadius(this.tokens.rCard)
     .border({ width: 1, color: this.tokens.line })
+  }
+
+  private async endPlanById(id: string): Promise<void> {
+    try {
+      await Api.endPlan(id);
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
+
+  private async deletePlanById(id: string): Promise<void> {
+    try {
+      await Api.deletePlan(id);
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
   }
 
   private async actTodo(todo: PlanTodoItem, action: string): Promise<void> {
@@ -510,6 +777,401 @@ export struct SettingsScreen {
   }
 
   @Builder
+  sheetContent() {
+    Column({ space: 10 }) {
+      Text(this.sheetTitle())
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.tokens.ink)
+        .width('100%')
+
+      if (this.sheetMode === 'category') {
+        this.categoryForm()
+      } else if (this.sheetMode === 'payment') {
+        this.paymentForm()
+      } else {
+        this.planForm()
+      }
+
+      if (this.formError !== '') {
+        Text(this.formError)
+          .fontSize(10)
+          .fontColor(this.tokens.danger)
+          .width('100%')
+      }
+
+      Row({ space: 8 }) {
+        Button('保存')
+          .fontSize(13)
+          .height(40)
+          .layoutWeight(1)
+          .backgroundColor(this.tokens.accent)
+          .fontColor(this.tokens.accentInk)
+          .onClick(() => {
+            if (this.sheetMode === 'category') {
+              this.saveCategory();
+            } else if (this.sheetMode === 'payment') {
+              this.savePayment();
+            } else {
+              this.savePlan();
+            }
+          })
+        Button('取消')
+          .fontSize(13)
+          .height(40)
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.ink2)
+          .onClick(() => {
+            this.sheetMode = '';
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(16)
+    .backgroundColor(this.tokens.bg)
+  }
+
+  private sheetTitle(): string {
+    if (this.sheetMode === 'category') {
+      return this.editingCategoryId === '' ? '新增' : '编辑分类';
+    }
+    if (this.sheetMode === 'payment') {
+      return this.editingPaymentId === '' ? '新增支付方式' : '编辑支付方式';
+    }
+    return '新建计划';
+  }
+
+  @Builder
+  categoryForm() {
+    Column({ space: 8 }) {
+      TextInput({ placeholder: '名称', text: this.formName })
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formName = v;
+        })
+
+      // 图标：先用 1 个字符代替（图标库接入放到 H8 打磨）
+      TextInput({ placeholder: '图标（单个字符）', text: this.formIcon })
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formIcon = v;
+        })
+
+      // 颜色只在「一级」出现：二级分类继承父级颜色，不给选择器
+      if (this.formParent === '') {
+        Text('颜色')
+          .fontSize(9)
+          .fontColor(this.tokens.ink3)
+          .width('100%')
+        Row({ space: 6 }) {
+          ForEach(COLOR_SLOTS, (slot: number) => {
+            Row()
+              .width(26)
+              .height(26)
+              .backgroundColor(chartColor(this.tokens, slot))
+              .borderRadius(13)
+              .border({
+                width: this.formColor === slot + 1 ? 3 : 1,
+                color: this.formColor === slot + 1 ? this.tokens.ink : this.tokens.line
+              })
+              .onClick(() => {
+                this.formColor = slot + 1;
+              })
+          }, (slot: number) => `color-${slot}`)
+        }
+        .width('100%')
+      } else {
+        Text('颜色跟所属一级分类走')
+          .fontSize(9)
+          .fontColor(this.tokens.ink3)
+          .width('100%')
+      }
+
+      if (this.editingCategoryId !== '') {
+        Button('停用分类')
+          .fontSize(11)
+          .height(32)
+          .width('100%')
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.danger)
+          .onClick(() => {
+            this.deactivateCategory();
+          })
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  paymentForm() {
+    Column({ space: 8 }) {
+      TextInput({ placeholder: '名称', text: this.formName })
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formName = v;
+        })
+
+      Row({ space: 8 }) {
+        Button('现金/储蓄卡')
+          .fontSize(11)
+          .height(32)
+          .layoutWeight(1)
+          .backgroundColor(this.formType === 'cash' ? this.tokens.accent : this.tokens.surface2)
+          .fontColor(this.formType === 'cash' ? this.tokens.accentInk : this.tokens.ink2)
+          .onClick(() => {
+            this.formType = 'cash';
+          })
+        Button('信用卡')
+          .fontSize(11)
+          .height(32)
+          .layoutWeight(1)
+          .backgroundColor(this.formType === 'credit' ? this.tokens.accent : this.tokens.surface2)
+          .fontColor(this.formType === 'credit' ? this.tokens.accentInk : this.tokens.ink2)
+          .onClick(() => {
+            this.formType = 'credit';
+          })
+      }
+      .width('100%')
+
+      if (this.formType === 'credit') {
+        Row({ space: 8 }) {
+          Text(`账单日 ${this.formBillingDay} 日`)
+            .fontSize(11)
+            .fontColor(this.tokens.ink2)
+            .layoutWeight(1)
+          Counter() {
+            Text('')
+          }
+          .onInc(() => {
+            this.formBillingDay = Math.min(31, this.formBillingDay + 1);
+          })
+          .onDec(() => {
+            this.formBillingDay = Math.max(1, this.formBillingDay - 1);
+          })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Text(`还款日 ${this.formRepaymentDay} 日`)
+            .fontSize(11)
+            .fontColor(this.tokens.ink2)
+            .layoutWeight(1)
+          Counter() {
+            Text('')
+          }
+          .onInc(() => {
+            this.formRepaymentDay = Math.min(31, this.formRepaymentDay + 1);
+          })
+          .onDec(() => {
+            this.formRepaymentDay = Math.max(1, this.formRepaymentDay - 1);
+          })
+        }
+        .width('100%')
+      }
+
+      if (this.editingPaymentId !== '') {
+        Text('合并到（把本支付方式的记录并到另一个，然后停用本项）')
+          .fontSize(9)
+          .fontColor(this.tokens.ink3)
+          .width('100%')
+        Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+          ForEach(this.mergeTargets(), (p: PaymentMethodItem) => {
+            Button(p.name)
+              .fontSize(10)
+              .height(26)
+              .backgroundColor(this.formMergeInto === p.id ? this.tokens.accent : this.tokens.surface2)
+              .fontColor(this.formMergeInto === p.id ? this.tokens.accentInk : this.tokens.ink2)
+              .onClick(() => {
+                this.formMergeInto = this.formMergeInto === p.id ? '' : p.id;
+              })
+          }, (p: PaymentMethodItem) => `merge-${p.id}`)
+        }
+        .width('100%')
+
+        Button('停用支付方式')
+          .fontSize(11)
+          .height(32)
+          .width('100%')
+          .backgroundColor(this.tokens.surface2)
+          .fontColor(this.tokens.danger)
+          .onClick(() => {
+            this.deactivatePayment();
+          })
+      }
+    }
+    .width('100%')
+  }
+
+  private mergeTargets(): PaymentMethodItem[] {
+    const out: PaymentMethodItem[] = [];
+    for (const p of this.payments) {
+      if (p.id !== this.editingPaymentId && p.isEnabled) {
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  @Builder
+  planForm() {
+    Column({ space: 8 }) {
+      TextInput({ placeholder: '计划名称（如 房贷）', text: this.formName })
+        .height(38)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formName = v;
+        })
+
+      Text('分类')
+        .fontSize(9)
+        .fontColor(this.tokens.ink3)
+        .width('100%')
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+        ForEach(this.allCategories(), (cat: CategoryNode) => {
+          Button(cat.name)
+            .fontSize(10)
+            .height(26)
+            .backgroundColor(this.formCategoryId === cat.id ? this.tokens.accent : this.tokens.surface2)
+            .fontColor(this.formCategoryId === cat.id ? this.tokens.accentInk : this.tokens.ink2)
+            .onClick(() => {
+              this.formCategoryId = cat.id;
+            })
+        }, (cat: CategoryNode) => `pcat-${cat.id}`)
+      }
+      .width('100%')
+
+      Text('支付方式')
+        .fontSize(9)
+        .fontColor(this.tokens.ink3)
+        .width('100%')
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+        ForEach(this.enabledPayments(), (p: PaymentMethodItem) => {
+          Button(p.name)
+            .fontSize(10)
+            .height(26)
+            .backgroundColor(this.formPaymentId === p.id ? this.tokens.accent : this.tokens.surface2)
+            .fontColor(this.formPaymentId === p.id ? this.tokens.accentInk : this.tokens.ink2)
+            .onClick(() => {
+              this.formPaymentId = p.id;
+            })
+        }, (p: PaymentMethodItem) => `ppay-${p.id}`)
+      }
+      .width('100%')
+
+      TextInput({ placeholder: '每期金额（元）', text: this.formAmount })
+        .height(38)
+        .type(InputType.NUMBER_DECIMAL)
+        .backgroundColor(this.tokens.surface2)
+        .onChange((v: string) => {
+          this.formAmount = v;
+        })
+
+      Row({ space: 8 }) {
+        Text(`共 ${this.formPeriods} 期`)
+          .fontSize(11)
+          .fontColor(this.tokens.ink2)
+          .layoutWeight(1)
+        Counter() {
+          Text('')
+        }
+        .onInc(() => {
+          this.formPeriods = Math.min(360, this.formPeriods + 1);
+        })
+        .onDec(() => {
+          this.formPeriods = Math.max(1, this.formPeriods - 1);
+        })
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        Text('自动入账')
+          .fontSize(11)
+          .fontColor(this.tokens.ink2)
+          .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.formAutoPost })
+          .onChange((on: boolean) => {
+            this.formAutoPost = on;
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  private allCategories(): CategoryNode[] {
+    const out: CategoryNode[] = [];
+    for (const root of this.categories) {
+      if (root.children.length > 0) {
+        for (const kid of root.children) {
+          out.push(kid);
+        }
+      } else {
+        out.push(root);
+      }
+    }
+    return out;
+  }
+
+  private enabledPayments(): PaymentMethodItem[] {
+    const out: PaymentMethodItem[] = [];
+    for (const p of this.payments) {
+      if (p.isEnabled) {
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  private async deactivateCategory(): Promise<void> {
+    try {
+      const cat = this.findCategoryById(this.editingCategoryId);
+      if (cat === null) {
+        return;
+      }
+      const req: CategoryPatchRequest = {
+        name: cat.name,
+        icon: cat.icon,
+        color: cat.parentId === null ? cat.color : '',
+        parentId: cat.parentId,
+        isEnabled: false
+      };
+      await Api.patchCategory(cat.id, req);
+      this.sheetMode = '';
+      await this.reload();
+    } catch (e) {
+      this.formError = (e as ApiError).message;
+    }
+  }
+
+  private async deactivatePayment(): Promise<void> {
+    try {
+      await Api.deletePayment(this.editingPaymentId);
+      this.sheetMode = '';
+      await this.reload();
+    } catch (e) {
+      this.formError = (e as ApiError).message;
+    }
+  }
+
+  private findCategoryById(id: string): CategoryNode | null {
+    for (const root of this.categories) {
+      if (root.id === id) {
+        return root;
+      }
+      for (const kid of root.children) {
+        if (kid.id === id) {
+          return kid;
+        }
+      }
+    }
+    return null;
+  }
+
+  @Builder
   sectionButton(label: string, value: number) {
     Button(label)
       .fontSize(11)
@@ -522,6 +1184,8 @@ export struct SettingsScreen {
       })
   }
 }
+
+const COLOR_SLOTS: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
 
 /** 12 段进度刻度：按已还期数比例点亮（精确数字仍由旁边文字给出） */
 function planTicks(plan: PlanItem): boolean[] {
