@@ -17,6 +17,9 @@ import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { ThemeManager } from '../../common/theme/ThemeManager';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
+import { Outbox } from '../../common/sync/Outbox';
+import { SyncEngine } from '../../common/sync/SyncEngine';
+import { ulid } from '../../common/contract/Contract';
 import { ThemeTokens } from '../../common/theme/AppTheme';
 
 export interface ExpenseEditorProps {
@@ -263,10 +266,37 @@ export struct ExpenseEditor {
       this.props.onSaved();
     } catch (e) {
       const err = e as ApiError;
-      this.errorText = err.kind === 'network' ? '网络不可用（离线记账在 H7 接入）' : err.message;
+      if (err.kind === 'network' && this.props.editing === null) {
+        // 离线写：入队（队列落库，关掉 App 也不会丢），联网后自动补推
+        await this.enqueueOffline(cents);
+        this.props.onSaved();
+        return;
+      }
+      this.errorText = err.kind === 'network' ? '网络不可用，请稍后再试' : err.message;
     } finally {
       this.saving = false;
     }
+  }
+
+  /**
+   * 离线写入。
+   *
+   * 刻意**不做乐观行**：本地算不出还款日（账单周期那段逻辑只在服务端），
+   * 硬造一行会让「这个月的合计」先对后错。所以只入队 + 明确告知，
+   * 联网后同步进账，用户看到的是「已排队」而不是「已入账」。
+   */
+  private async enqueueOffline(cents: number): Promise<void> {
+    const id = ulid();
+    const payload = JSON.stringify({
+      amountCents: this.isRefund ? -cents : cents,
+      categoryId: this.categoryId,
+      paymentMethodId: this.paymentId,
+      spendDate: this.spendDate,
+      note: this.note
+    } as OfflineExpensePayload);
+    await Outbox.enqueue('create_expense', id, payload);
+    SyncEngine.schedulePush();
+    this.errorText = '网络不可用：已存入待发送队列，联网后自动记入';
   }
 
   /** 日期选择（系统 DatePickerDialog，不自己画日历） */
@@ -616,6 +646,14 @@ export struct ExpenseEditor {
 }
 
 const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.', '0'];
+
+interface OfflineExpensePayload {
+  amountCents: number;
+  categoryId: string;
+  paymentMethodId: string;
+  spendDate: string;
+  note: string;
+}
 
 /** 'YYYY-MM-DD' → Date（本地时区零点，避免时区偏移一天） */
 function parseDateKey(key: string): Date {

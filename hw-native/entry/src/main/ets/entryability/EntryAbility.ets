@@ -20,6 +20,7 @@ import { ThemeManager } from '../common/theme/ThemeManager';
 import { Fonts } from '../common/theme/Fonts';
 import { AuthStore } from '../common/auth/AuthStore';
 import { LastPick } from '../common/store/LastPick';
+import { SyncEngine } from '../common/sync/SyncEngine';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 
@@ -69,6 +70,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    // 回到前台补一次同步：离线期间记的账在这里补推（与 Web 的 onAppResume 同义）
+    SyncEngine.syncNow();
     // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
