@@ -14,8 +14,10 @@ import { ApiError } from '../common/net/ApiError';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ProbeResult, ServerRouter } from '../common/net/ServerRouter';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
+import { radiusOf } from '../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { displayFont, bodyFont } from '../common/theme/Fonts';
+import { ensureFonts } from '../common/theme/FontRegistry';
 
 @Entry
 @Component
@@ -76,6 +78,11 @@ struct LoginPage {
     return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
+  /** 是否深色（cyber）—— 决定圆角/阴影/切角/字体族 */
+  private isCyber(): boolean {
+    return this.themeName === 'cyber';
+  }
+
   build() {
     Column({ space: 14 }) {
       Text('SuenMoney')
@@ -94,7 +101,10 @@ struct LoginPage {
           this.username = v;
         })
         .height(44)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
 
       TextInput({ placeholder: '口令' })
         .type(InputType.Password)
@@ -102,7 +112,10 @@ struct LoginPage {
           this.password = v;
         })
         .height(44)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
 
       if (this.errorText !== '') {
         Text(this.errorText)
@@ -170,7 +183,10 @@ struct LoginPage {
         Button('添加')
           .fontSize(12)
           .height(40)
-          .backgroundColor(this.tok().surface2)
+          .backgroundColor(this.tok().surface)
+          .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .fontColor(this.tok().ink)
           .fontColor(this.tok().ink)
           .onClick(() => {
             if (this.newServer !== '' && this.servers.indexOf(this.newServer) < 0) {
@@ -186,7 +202,10 @@ struct LoginPage {
       Button('测试全部地址')
         .fontSize(12)
         .height(36)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .fontColor(this.tok().ink2)
         .onClick(() => {
           this.probeAll();

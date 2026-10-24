@@ -13,6 +13,7 @@ import { window } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { bodyFont } from '../common/theme/Fonts';
+import { ensureFonts } from '../common/theme/FontRegistry';
 
 /** 底栏按钮参数（单参数对象：多参数 @Builder 不刷新） */
 export interface TabItemView {
@@ -30,6 +31,7 @@ struct MainPage {
   @State themeIsCandy: boolean = ThemeManager.get().name === 'candy';
 
   aboutToAppear(): void {
+    ensureFonts(this.getUIContext());
     this.applySystemBars();
     // 主题在别的页面切换后回到这里要跟着变（同一个单例，读一次即可）
     this.themeIsCandy = this.themeName === 'candy';

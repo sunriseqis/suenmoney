@@ -15,6 +15,7 @@ import { Api, CategoryBucket, DailyPoint, MonthlyReport, PaymentBucket, YearlyRe
 import { ApiError } from '../../common/net/ApiError';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
+import { cardShadow, radiusOf } from '../../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan } from '../../common/contract/Contract';
@@ -211,10 +212,11 @@ export struct ReportScreen {
       .width('100%')
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   private dailyAverage(): number {
@@ -306,10 +308,11 @@ export struct ReportScreen {
       .width('100%')
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   @Builder
@@ -353,10 +356,11 @@ export struct ReportScreen {
       }, (cat: CategoryBucket) => cat.categoryId)
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   private changeText(cat: CategoryBucket): string {
@@ -407,10 +411,11 @@ export struct ReportScreen {
       }, (p: PaymentBucket) => p.paymentMethodId)
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   private creditPayments(): PaymentBucket[] {
@@ -478,10 +483,11 @@ export struct ReportScreen {
       }
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   private yearBarWidth(cents: number): number {

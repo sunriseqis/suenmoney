@@ -35,8 +35,13 @@ function parseVars(body) {
   return out;
 }
 
-const candy = parseVars(blockBody('.app[data-theme="candy"] {'));
-const cyber = parseVars(blockBody('.app[data-theme="cyber"] {'));
+/**
+ * `:root` 里的变量是所有主题共用的（密度间距等），必须一起收进来 ——
+ * 之前只解析两个主题块，导致 `--density-pad` 缺失、卡片内边距只能瞎写。
+ */
+const shared = parseVars(blockBody(':root {'));
+const candy = shared.concat(parseVars(blockBody('.app[data-theme="candy"] {')));
+const cyber = shared.concat(parseVars(blockBody('.app[data-theme="cyber"] {')));
 
 /** CSS 变量名 → ArkTS 字段名（camelCase，去掉 -- 前缀） */
 function toField(name) {

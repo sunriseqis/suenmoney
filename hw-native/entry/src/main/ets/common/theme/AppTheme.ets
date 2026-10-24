@@ -2,13 +2,15 @@
  * 主题令牌 —— **由 scripts/gen-hw-theme.mjs 从 web/styles/proto/theme.css 生成，请勿手改**。
  *
  * 两套设计语言：candy（水果硬糖 / 浅色）与 cyber（赛博朋克 / 深色）。
- * 共 49 个令牌，与原型 CSS 变量一一对应；映射表见 docs/design/generated/hw-theme-mapping.md。
+ * 共 51 个令牌，与原型 CSS 变量一一对应；映射表见 docs/design/generated/hw-theme-mapping.md。
  *
  * ArkTS 约束：不用对象字面量的动态 key 访问，所以这里是「接口 + 两个常量对象」，
  * 取字段一律走 `theme.bg` 这种静态成员访问。
  */
 
 export interface ThemeTokens {
+  densityPad: number;
+  densityRow: number;
   bg: string;
   bg2: string;
   bg3: string;
@@ -61,6 +63,8 @@ export interface ThemeTokens {
 }
 
 export const CANDY: ThemeTokens = {
+  densityPad: 18,
+  densityRow: 12,
   bg: "#FFFDF5",
   bg2: "#FFF8E7",
   bg3: "#F6F3FF",
@@ -113,6 +117,8 @@ export const CANDY: ThemeTokens = {
 };
 
 export const CYBER: ThemeTokens = {
+  densityPad: 18,
+  densityRow: 12,
   bg: "#0a0a0f",
   bg2: "#0d0d16",
   bg3: "#10101c",
