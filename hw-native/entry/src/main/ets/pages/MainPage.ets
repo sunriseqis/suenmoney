@@ -71,27 +71,42 @@ struct MainPage {
     .border({ width: { bottom: 1 }, color: this.tok().line })
   }
 
-  /** 顶栏：只有返回按钮；标题与右侧动作在移动端被隐藏（base.css:106-110） */
+  /**
+   * 二级页标题行（docs R17/R18/R19）：
+   * `设置                    ×` —— 关闭键收在**标题行行尾**，不单独占一行、**不吸顶**、19px、--fg-muted。
+   * 用 `×`（关闭这个页面）而不是 `‹`（返回上一页）：我们的场景是前者。
+   */
   @Builder
-  topbar() {
+  titleRow() {
     Row() {
-      Text('‹')
-        .fontSize(20)
-        .fontColor(this.tok().ink)
-        .width(38)
-        .height(38)
+      Text(this.titleOf())
+        .fontSize(19)
+        .fontWeight(FontWeight.Medium)
+        .fontFamily(fontDisplayOf(this.isCyber()))
+        .fontColor(this.tok().ink3)
+      Blank()
+      Text('×')
+        .fontSize(19)
+        .fontColor(this.tok().ink3)
+        .width(40)
+        .height(40)
         .textAlign(TextAlign.Center)
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-        .border({ width: this.tok().borderW, color: this.tok().line })
-        .backgroundColor(this.tok().surface)
         .onClick(() => {
           this.screen = 'ledger';
         })
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .backgroundColor(this.tok().surface)
-    .border({ width: { bottom: 1 }, color: this.tok().line })
+    .padding({ left: 2, right: 2, top: 6, bottom: 2 })
+  }
+
+  private titleOf(): string {
+    if (this.screen === 'dashboard') {
+      return '概况';
+    }
+    if (this.screen === 'report') {
+      return '报表';
+    }
+    return '设置';
   }
 
   /** 底部构建戳：含离线/待同步内联提示（C.1） */
@@ -110,7 +125,7 @@ struct MainPage {
     Column() {
       this.brandBar()
       if (this.screen !== 'ledger') {
-        this.topbar()
+        this.titleRow()
       }
       Column() {
         if (this.screen === 'ledger') {

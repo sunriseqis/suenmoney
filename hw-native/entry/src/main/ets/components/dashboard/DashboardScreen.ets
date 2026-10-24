@@ -204,78 +204,7 @@ export struct DashboardScreen {
       }
       .width('100%')
 
-      // 待办提醒：有则显示、无则整条不渲染（与移动 Web 同一机制）
-      if (this.todos.length > 0) {
-        Column() {
-          Row({ space: 6 }) {
-            Text(`${this.todos.length} 笔待办`)
-              .fontSize(12)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.todos[0].tone === 'late' ? this.tok().danger : this.tok().ink)
-            Blank()
-            Text(this.todoOpen ? '收起' : '展开')
-              .fontSize(10)
-              .fontColor(this.tok().ink3)
-          }
-          .width('100%')
-          .padding(10)
-          .onClick(() => {
-            this.todoOpen = !this.todoOpen;
-          })
-
-          if (this.todoOpen) {
-            ForEach(this.todos, (todo: TodoView) => {
-              Row({ space: 8 }) {
-                // 颜色标记只给一个：左侧 3px 条，不整卡上色
-                Divider()
-                  .vertical(true)
-                  .strokeWidth(3)
-                  .color(todo.tone === 'late' ? this.tok().danger : (todo.tone === 'soon' ? this.tok().amber : this.tok().line))
-                  .height(28)
-                Column({ space: 2 }) {
-                  Text(`${todo.periodSeq}期 · ${todo.planName}`)
-                    .fontSize(11)
-                    .fontColor(this.tok().ink)
-                    .maxLines(1)
-                  Text(`${todo.label} · ${formatYuan(todo.amountCents)}`)
-                    .fontSize(9)
-                    .fontColor(this.tok().ink3)
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                Button(todo.willAutoPost ? '确认' : '入账')
-                  .fontSize(11)
-                  .height(26)
-                  .backgroundColor(this.tok().surface2)
-                  .fontColor(this.tok().ink)
-                  .onClick(() => {
-                    this.actTodo(todo, 'confirm');
-                  })
-                // 危险动作收进「更多」：跳过不可逆，不能与主按钮同权重（decisions）
-                Button('更多')
-                  .fontSize(10)
-                  .height(26)
-                  .backgroundColor(this.tok().surface)
-                  .fontColor(this.tok().ink3)
-                  .bindMenu([
-                    {
-                      value: '忽略本期',
-                      action: () => {
-                        this.actTodo(todo, 'skip');
-                      }
-                    }
-                  ])
-              }
-              .width('100%')
-              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-            }, (todo: TodoView) => todo.id)
-          }
-        }
-        .width('100%')
-        .backgroundColor(this.tok().surface2)
-        .borderRadius(this.tok().rMd)
-      }
+      // 提醒条**不在概况页**（R07/R116：行动层只在流水页顶卡），此处删除
 
       // 大金额 + 环比
       Row({ space: 6 }) {
@@ -303,10 +232,7 @@ export struct DashboardScreen {
       }
       .width('100%')
 
-      // 构成堆叠条 + 图例（仅月档有分类构成）
-      if (this.tier === 0 && this.monthReport !== null && this.monthReport.categories.length > 0) {
-        this.composition(this.monthReport)
-      }
+      // 构成堆叠条**不做**：分类构成是报表页的活（F09/D14）；视图里不出现任何分类名（R67）
     }
     .width('100%')
     .padding(this.tok().densityPad)
@@ -402,22 +328,28 @@ export struct DashboardScreen {
         .fontSize(10)
         .fontColor(this.tok().ink3)
         .width('100%')
-      Row({ space: 4 }) {
+      Grid() {
         ForEach(this.heatPoints(), (point: MonthPoint) => {
-          Column({ space: 2 }) {
-            Column()
-              .width('100%')
-              .height(26)
-              .backgroundColor(this.tok().accent)
-              .opacity(heatOpacity(point.totalCents, this.maxHeat()))
-              .borderRadius(4)
-            Text(point.month.substring(5, 7))
-              .fontSize(8)
-              .fontColor(this.tok().ink3)
+          GridItem() {
+            Column({ space: 2 }) {
+              Column()
+                .width('100%')
+                .height(26)
+                .backgroundColor(this.tok().accent)
+                .opacity(heatOpacity(point.totalCents, this.maxHeat()))
+                .borderRadius(4)
+              Text(point.month.substring(5, 7))
+                .fontSize(8)
+                .fontColor(this.tok().ink3)
+            }
+            .width('100%')
           }
-          .layoutWeight(1)
         }, (point: MonthPoint) => point.month)
       }
+      .columnsTemplate('repeat(6, 1fr)')
+      .columnsGap(6)
+      .rowsGap(6)
+      .height(2 * 50)
       .width('100%')
     }
     .width('100%')
@@ -457,12 +389,11 @@ export struct DashboardScreen {
         .fontSize(10)
         .fontColor(this.tok().ink3)
         .width('100%')
-      Row() {
-        this.metric({ label: '累计支出', value: formatYuan(this.summary === null ? 0 : this.summary.totalCents) })
-        this.metric({ label: '记录天数', value: `${this.summary === null ? 0 : this.summary.recordedDays} 天` })
-        this.metric({ label: '月均', value: formatYuan(this.summary === null ? 0 : this.summary.monthlyAverageCents) })
-      }
-      .width('100%')
+      // 累计条（R71）：**通栏一行、不含金额**，四项：已记 N 天 · M 笔 · 平均 A 笔/天 · 首笔日期
+      Text(this.cumulativeLine())
+        .fontSize(10.5)
+        .fontColor(this.tok().ink3)
+        .width('100%')
     }
     .width('100%')
     .padding(12)
@@ -479,6 +410,17 @@ export struct DashboardScreen {
   /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
   private tok(): ThemeTokens {
     return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
+  /** 累计条一句话（R71）：不含金额，只说量 */
+  private cumulativeLine(): string {
+    const s = this.summary;
+    if (s === null) {
+      return '—';
+    }
+    const days = s.recordedDays;
+    const perDay = days > 0 ? (s.count / days).toFixed(1) : '0';
+    return `已记 ${days} 天 · ${s.count} 笔 · 平均 ${perDay} 笔/天 · 首笔 ${s.firstDate ?? '—'}`;
   }
 
   build() {

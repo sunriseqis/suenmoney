@@ -234,6 +234,8 @@ export interface SummaryReport {
   recordedDays: number;
   monthlyAverageCents: number;
   years: YearPoint[];
+  /** 首笔日期（服务端提供则显示，缺省显示 —） */
+  firstDate?: string;
 }
 
 export interface SummaryReportBody {
