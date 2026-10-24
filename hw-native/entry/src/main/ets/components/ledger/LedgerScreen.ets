@@ -83,6 +83,8 @@ export struct LedgerScreen {
   @State showHint: boolean = false;
   /** R114：刚保存的记录高亮 1.5s */
   @State highlightId: string = '';
+  /** R58 两段式下钻：第一次点只选中并切下方卡，再点同一格才进入该期间 */
+  @State selectedCell: string = '';
   @State errorText: string = '';
   @State yearPoints: MonthPoint[] = [];
   @State yearTotalCents: number = 0;
@@ -777,6 +779,49 @@ export struct LedgerScreen {
     .width('100%')
   }
 
+  /**
+   * 日历深浅四档（R30）：**只用强调色明度**，阈值按相对均值
+   * ≥1.5 → .42 / 1.15–1.5 → .24 / 0.85–1.15 → .12 / <0.85 → .05；**0 值只描边不填充**。
+   */
+  private heatOpacity4(cents: number, mean: number): number {
+    if (cents <= 0 || mean <= 0) {
+      return 0;
+    }
+    const r = cents / mean;
+    if (r >= 1.5) {
+      return 0.42;
+    }
+    if (r >= 1.15) {
+      return 0.24;
+    }
+    if (r >= 0.85) {
+      return 0.12;
+    }
+    return 0.05;
+  }
+
+  private yearMean(): number {
+    if (this.yearPoints.length === 0) {
+      return 0;
+    }
+    let sum = 0;
+    for (const p of this.yearPoints) {
+      sum += p.totalCents;
+    }
+    return sum / this.yearPoints.length;
+  }
+
+  private allMean(): number {
+    if (this.allYears.length === 0) {
+      return 0;
+    }
+    let sum = 0;
+    for (const y of this.allYears) {
+      sum += y.totalCents;
+    }
+    return sum / this.allYears.length;
+  }
+
   private activeFilterCount(): number {
     let n = 0;
     if (this.filterCategory !== '') {
@@ -936,16 +981,28 @@ export struct LedgerScreen {
             }
             .width('100%')
             .padding(8)
-            .backgroundColor(this.tok().surface)
-            .borderRadius(this.tok().rMd)
-            .border({ width: 1, color: this.tok().line })
+            // R30 四档明度（只用强调色）；0 值不填充
+            .backgroundColor(point.totalCents > 0
+              ? mixHex(this.tok().accent, this.tok().surface, this.heatOpacity4(point.totalCents, this.yearMean()))
+              : Color.Transparent)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+            // R31 选中态：2vp accent 描边 + 极淡底，不用实色填充
+            .border({
+              width: this.selectedCell === point.month ? 2 : 1,
+              color: this.selectedCell === point.month ? this.tok().accent : this.tok().line
+            })
+            // R58 两段式：第一次点只选中并把下方卡切到该月；再点同一格才进入
             .onClick(() => {
-              this.anchorMonth = point.month;
+              if (this.selectedCell !== point.month) {
+                this.selectedCell = point.month;
+                this.anchorMonth = point.month;
+                this.loading = true;
+                this.loadMonth(true).then(() => {
+                  this.loading = false;
+                });
+                return;
+              }
               this.tier = 0;
-              this.loading = true;
-              this.loadMonth(true).then(() => {
-                this.loading = false;
-              });
             })
           }
         }, (point: MonthPoint) => point.month)
@@ -991,16 +1048,25 @@ export struct LedgerScreen {
             }
             .width('100%')
             .padding(8)
-            .backgroundColor(this.tok().surface)
-            .borderRadius(this.tok().rMd)
-            .border({ width: 1, color: this.tok().line })
+            .backgroundColor(point.totalCents > 0
+              ? mixHex(this.tok().accent, this.tok().surface, this.heatOpacity4(point.totalCents, this.allMean()))
+              : Color.Transparent)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+            .border({
+              width: this.selectedCell === point.year ? 2 : 1,
+              color: this.selectedCell === point.year ? this.tok().accent : this.tok().line
+            })
             .onClick(() => {
-              this.anchorYear = point.year;
+              if (this.selectedCell !== point.year) {
+                this.selectedCell = point.year;
+                this.anchorYear = point.year;
+                this.loading = true;
+                this.loadYear().then(() => {
+                  this.loading = false;
+                });
+                return;
+              }
               this.tier = 1;
-              this.loading = true;
-              this.loadYear().then(() => {
-                this.loading = false;
-              });
             })
           }
         }, (point: YearPoint) => point.year)

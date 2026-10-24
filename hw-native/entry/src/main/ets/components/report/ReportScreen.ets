@@ -14,13 +14,13 @@
  *
  * 块纵向堆叠、块内允许两栏；桌面不分栏（R80）。
  */
-import { Api, CategoryBucket, DailyPoint, MonthlyReport, PaymentBucket, YearlyReport } from '../../common/net/Api';
+import { Api, CategoryBucket, DailyPoint, MemberBucket, MonthlyReport, PaymentBucket, SummaryReport, YearPoint, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, shiftMonth } from '../../common/contract/Contract';
-import { cardRadiusOf, cardShadow, fontDisplayOf, fontMonoOf, radiusOf } from '../../common/ui/UiStyle';
+import { CARD_PAD, cardRadiusOf, cardShadow, fontDisplayOf, fontMonoOf, radiusOf } from '../../common/ui/UiStyle';
 import { DonutChart, DonutSliceView } from './DonutChart';
 
 export interface TierChipModel {
@@ -36,6 +36,7 @@ export struct ReportScreen {
   @State anchorMonth: string = currentMonthKey();
   @State anchorYear: string = currentMonthKey().substring(0, 4);
   @State report: MonthlyReport | null = null;
+  @State summary: SummaryReport | null = null;
   @State year: YearlyReport | null = null;
   @State loading: boolean = false;
   @State errorText: string = '';
@@ -62,6 +63,9 @@ export struct ReportScreen {
       } else if (this.tier === 1) {
         const body = await Api.yearlyReport(this.anchorYear);
         this.year = body.report;
+      } else {
+        const body = await Api.summaryReport();
+        this.summary = body.report;
       }
     } catch (e) {
       this.errorText = (e as ApiError).message;
@@ -184,10 +188,15 @@ export struct ReportScreen {
         }
         this.headCard()
         if (this.tier === 2) {
-          this.summaryNote()
+          // 汇总档 5 块（R76）：年度对比 / 记录跨度 / 期内节奏(按年) / 洞察 2 条 / 累计
+          this.yearCompareCard()
+          this.rhythmCard()
+          this.insightCard()
+          this.spanCard()
         } else {
           this.composeCard()
           this.rankCard()
+          this.memberCard()
           this.rhythmCard()
           if (this.tier === 0) {
             this.compareCard()
@@ -289,6 +298,33 @@ export struct ReportScreen {
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
+  /** 按记录人排名（R79：中间必须有占比条；汇总档也有此块） */
+  @Builder
+  memberCard() {
+    Column({ space: 10 }) {
+      Text('按记录人').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
+      ForEach(this.memberBuckets(), (m: MemberBucket) => {
+        Row({ space: 8 }) {
+          Text(m.name).fontSize(11).fontColor(this.tok().ink2).width(84).maxLines(1)
+          Stack({ alignContent: Alignment.Start }) {
+            Row().width('100%').height(10).backgroundColor(this.tok().surface3).borderRadius(5)
+            Row().width(`${Math.round(m.ratio * 100)}%`).height(10)
+              .backgroundColor(chartColor(this.tok(), hashIndex(m.ownerId))).borderRadius(5)
+          }.layoutWeight(1)
+          Text(formatYuan(m.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
+        }.width('100%')
+      }, (m: MemberBucket) => m.ownerId)
+    }
+    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  private memberBuckets(): MemberBucket[] {
+    return this.report === null ? [] : this.report.members;
+  }
+
   /** 排名行（R79）：中间必须有占比条 */
   @Builder
   rankCard() {
@@ -377,7 +413,7 @@ export struct ReportScreen {
       Text('还款节奏').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
       Row() {
         this.repayFact({ label: '本月已刷', value: formatYuan(this.creditCents()) })
-        this.repayFact({ label: '下月要还', value: formatYuan(this.creditCents()) })
+        this.repayFact({ label: '下月要还', value: formatYuan(this.nextMonthDueCents()) })
       }.width('100%')
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
@@ -391,6 +427,26 @@ export struct ReportScreen {
       Text($$.label).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
       Text($$.value).fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
     }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+  }
+
+  /** 下月要还：还款日落在下个月的信用类金额（R84 与「本月已刷」是两个数） */
+  private nextMonthDueCents(): number {
+    const r = this.report;
+    if (r === null) {
+      return 0;
+    }
+    const next = shiftMonth(this.anchorMonth, 1);
+    let sum = 0;
+    for (const p of r.paymentMethods) {
+      if (p.type !== 'credit') {
+        continue;
+      }
+      const due = p.repaymentDate ?? '';
+      if (due.startsWith(next)) {
+        sum += p.cents;
+      }
+    }
+    return sum;
   }
 
   private creditCents(): number {
@@ -444,9 +500,49 @@ export struct ReportScreen {
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
+  /** 汇总档：年度对比（按年金额条） */
   @Builder
-  summaryNote() {
-    Text('')
+  yearCompareCard() {
+    Column({ space: 8 }) {
+      Text('年度对比').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
+      ForEach(this.summary === null ? [] : this.summary.years, (y: YearPoint) => {
+        Row({ space: 8 }) {
+          Text(y.year).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink2).width(56)
+          Stack({ alignContent: Alignment.Start }) {
+            Row().width('100%').height(10).backgroundColor(this.tok().surface3).borderRadius(5)
+            Row().width(`${this.yearBar(y.totalCents)}%`).height(10).backgroundColor(this.tok().accent).borderRadius(5)
+          }.layoutWeight(1)
+          Text(formatYuan(y.totalCents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
+        }.width('100%')
+      }, (y: YearPoint) => y.year)
+    }
+    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+  }
+
+  private yearBar(cents: number): number {
+    let max = 1;
+    const list = this.summary === null ? [] : this.summary.years;
+    for (const y of list) {
+      if (y.totalCents > max) {
+        max = y.totalCents;
+      }
+    }
+    return Math.max(2, Math.round((cents / max) * 100));
+  }
+
+  /** 汇总档：记录跨度 */
+  @Builder
+  spanCard() {
+    Row({ space: 10 }) {
+      this.repayFact({ label: '记录天数', value: `${this.summary === null ? 0 : this.summary.recordedDays} 天` })
+      this.repayFact({ label: '总笔数', value: `${this.summary === null ? 0 : this.summary.count} 笔` })
+      this.repayFact({ label: '月均', value: formatYuan(this.summary === null ? 0 : this.summary.monthlyAverageCents) })
+    }
+    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
   }
 }
 
