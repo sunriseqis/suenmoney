@@ -103,6 +103,9 @@ export interface PlanProgress {
 }
 
 export interface PlanApi {
+  /** 分类名与图标名（R121：计划卡要显示分类图标） */
+  categoryName?: string;
+  categoryIcon?: string;
   id: string;
   ownerId: string;
   name: string;
@@ -124,6 +127,8 @@ export interface PlanApi {
 }
 
 export interface PlanTodoApi {
+  /** 该期入账后对应支出的所属月份（YYYY-MM）；未入账时为空 —— R126 跨月撤销警告用 */
+  expenseMonth?: string | undefined;
   id: string;
   planId: string;
   planName: string;
@@ -210,11 +215,22 @@ export function toSyncTodo(row: PlanTodoRow): Record<string, unknown> {
   };
 }
 
-function toTodoApi(row: PlanTodoRow, plan: PlanRow): PlanTodoApi {
+function toTodoApi(db: DatabaseSync, row: PlanTodoRow, plan: PlanRow): PlanTodoApi {
+  // R126：该期入账后对应支出的所属月份（已入账时取实际支出的月份）
+  let expenseMonth = '';
+  if (row.expense_id !== null && row.expense_id !== '') {
+    const exp = db
+      .prepare('SELECT repayment_date FROM expenses WHERE id = ?')
+      .get(row.expense_id) as Record<string, unknown> | undefined;
+    if (exp !== undefined) {
+      expenseMonth = String(exp['repayment_date']).substring(0, 7);
+    }
+  }
   return {
     id: row.id,
     planId: row.plan_id,
     planName: plan.name,
+    expenseMonth: expenseMonth,
     categoryId: plan.category_id,
     paymentMethodId: plan.payment_method_id,
     periodSeq: row.period_seq,
@@ -276,11 +292,17 @@ export function planProgressOf(db: DatabaseSync, planId: string): PlanProgress {
 }
 
 function toPlanApi(db: DatabaseSync, row: PlanRow): PlanApi {
+  const cat = db
+    .prepare('SELECT name, icon FROM categories WHERE id = ?')
+    .get(row.category_id) as Record<string, unknown> | undefined;
   return {
     id: row.id,
     ownerId: row.owner_id,
     name: row.name,
     categoryId: row.category_id,
+    // R121：计划卡要显示分类图标，客户端不必再查本地字典
+    categoryName: cat === undefined ? '' : String(cat['name']),
+    categoryIcon: cat === undefined ? '' : String(cat['icon']),
     paymentMethodId: row.payment_method_id,
     amountCents: row.amount_cents,
     totalAmountCents: row.total_amount_cents,
@@ -391,7 +413,7 @@ export function listTodos(db: DatabaseSync, filter: TodoFilter = {}): PlanTodoAp
   // 计划已被删除的待办直接不返回 —— 它们已经无从展示了
   return todos
     .filter((todo) => plans.has(todo.plan_id))
-    .map((todo) => toTodoApi(todo, plans.get(todo.plan_id)!));
+    .map((todo) => toTodoApi(db, todo, plans.get(todo.plan_id)!));
 }
 
 export function findTodoRow(db: DatabaseSync, id: string): PlanTodoRow | null {
@@ -1088,7 +1110,7 @@ export function confirmTodo(
   });
 
   if (updated === null) throw new Error('确认后读取失败，数据库状态异常');
-  return { todo: toTodoApi(updated, plan), expenseId };
+  return { todo: toTodoApi(db, updated, plan), expenseId };
 }
 
 /** 跳过某一期（这个月没有这笔支出，比如房租免了一个月）。 */
@@ -1123,7 +1145,7 @@ export function skipTodo(db: DatabaseSync, todoId: string, actorId: string): Pla
     });
   });
 
-  return toTodoApi({ ...todo, status: 'skipped', updated_at: timestamp }, plan);
+  return toTodoApi(db, { ...todo, status: 'skipped', updated_at: timestamp }, plan);
 }
 
 /**
@@ -1152,7 +1174,7 @@ export function ackTodo(db: DatabaseSync, todoId: string, actorId: string): Plan
   if (todo.status !== 'pending') throw conflict(`这一期不是待确认状态（${todo.status}）`);
 
   // 已经确认过：直接返回，不覆盖第一次的时间戳
-  if (todo.ack_at !== null) return toTodoApi(todo, plan);
+  if (todo.ack_at !== null) return toTodoApi(db, todo, plan);
 
   const timestamp = nowIso();
   const updated: PlanTodoRow = { ...todo, ack_at: timestamp, updated_at: timestamp, rev: todo.rev + 1 };
@@ -1178,7 +1200,7 @@ export function ackTodo(db: DatabaseSync, todoId: string, actorId: string): Plan
     });
   });
 
-  return toTodoApi(findTodoRow(db, todoId) ?? updated, plan);
+  return toTodoApi(db, findTodoRow(db, todoId) ?? updated, plan);
 }
 
 /**
@@ -1240,7 +1262,7 @@ export function restoreSkippedTodo(db: DatabaseSync, todoId: string, actorId: st
   });
 
   if (updated === null) throw new Error('恢复后读取失败，数据库状态异常');
-  return toTodoApi(updated, plan);
+  return toTodoApi(db, updated, plan);
 }
 
 export interface RevertTodoResult {
@@ -1357,7 +1379,7 @@ export function revertTodoConfirm(db: DatabaseSync, todoId: string, actorId: str
   });
 
   if (updated === null) throw new Error('撤销后读取失败，数据库状态异常');
-  return { todo: toTodoApi(updated, plan), expenseId };
+  return { todo: toTodoApi(db, updated, plan), expenseId };
 }
 
 /**

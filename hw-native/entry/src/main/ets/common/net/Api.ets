@@ -50,6 +50,8 @@ export interface CategoryList {
 }
 
 export interface PaymentMethodItem {
+  /** 本月笔数（R139 设置页「本月 N 笔」）；expenseCount 是全历史 */
+  monthExpenseCount?: number;
   id: string;
   name: string;
   type: string; // 'credit' | 'cash'

@@ -37,7 +37,10 @@ export interface PaymentMethod {
   repaymentDay: number | null;
   isEnabled: boolean;
   sortOrder: number;
+  /** 全历史笔数 */
   expenseCount: number;
+  /** **本月**笔数（R139 设置页「本月 N 笔」用）；与 expenseCount 不同口径 */
+  monthExpenseCount: number;
 }
 
 const COLUMNS = `id, name, type, billing_day, repayment_day, icon, is_enabled, sort_order,
@@ -56,6 +59,7 @@ function toApi(row: PaymentMethodRow): PaymentMethod {
     isEnabled: row.is_enabled === 1,
     sortOrder: row.sort_order,
     expenseCount: row.expense_count ?? 0,
+    monthExpenseCount: Number((row as unknown as Record<string, unknown>)['month_expense_count'] ?? 0),
   };
 }
 
@@ -107,7 +111,11 @@ export function listPaymentMethods(db: DatabaseSync): PaymentMethod[] {
     .prepare(
       `SELECT ${COLUMNS},
               (SELECT COUNT(*) FROM expenses e
-                WHERE e.payment_method_id = payment_methods.id AND e.deleted_at IS NULL) AS expense_count
+                WHERE e.payment_method_id = payment_methods.id AND e.deleted_at IS NULL) AS expense_count,
+              (SELECT COUNT(*) FROM expenses e
+                WHERE e.payment_method_id = payment_methods.id
+                  AND e.deleted_at IS NULL
+                  AND substr(e.repayment_date, 1, 7) = substr(date('now', 'localtime'), 1, 7)) AS month_expense_count
          FROM payment_methods
         WHERE deleted_at IS NULL
         -- rowid 是精确的插入序兜底：created_at 只到毫秒，同一毫秒内建的两条会打平，
