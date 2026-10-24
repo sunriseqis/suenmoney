@@ -7,14 +7,15 @@
  *   2. 服务器地址只在这里出现（多地址 + 顺序探活 + 4s 快失败）。
  *   3. 错误按类型说人话：口令错就说口令错，别把 401 说成「网络不好」。
  */
-import { router } from '@kit.ArkUI';
 
+
+import { router } from '@kit.ArkUI';
 import { AuthStore } from '../common/auth/AuthStore';
 import { ApiError } from '../common/net/ApiError';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ProbeResult, ServerRouter } from '../common/net/ServerRouter';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
-import { radiusOf } from '../common/ui/UiStyle';
+import { radiusOf, outlineStrongOf } from '../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { displayFont, bodyFont } from '../common/theme/Fonts';
 import { ensureFonts } from '../common/theme/FontRegistry';
@@ -102,7 +103,7 @@ struct LoginPage {
         })
         .height(44)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
 
@@ -113,7 +114,7 @@ struct LoginPage {
         })
         .height(44)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
 
@@ -184,7 +185,7 @@ struct LoginPage {
           .fontSize(12)
           .height(40)
           .backgroundColor(this.tok().surface)
-          .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
           .fontColor(this.tok().ink)
           .fontColor(this.tok().ink)
@@ -203,7 +204,7 @@ struct LoginPage {
         .fontSize(12)
         .height(36)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .fontColor(this.tok().ink2)
