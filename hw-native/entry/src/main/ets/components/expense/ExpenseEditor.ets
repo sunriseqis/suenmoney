@@ -18,7 +18,7 @@ import { Api, CategoryNode, ExpenseCreateRequest, ExpenseItem, ExpensePatchReque
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { radiusOf, outlineStrongOf } from '../../common/ui/UiStyle';
+import { fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
@@ -58,6 +58,8 @@ export struct ExpenseEditor {
   @State isRefund: boolean = false;
   @State saving: boolean = false;
   @State errorText: string = '';
+  /** 本月已支出（R107：背景信息，不 await，拿不到显示占位） */
+  @State monthSpentCents: number | null = null;
   @State preview: ExpensePreview | null = null;
   @State categories: CategoryNode[] = [];
   @State payments: PaymentMethodItem[] = [];
@@ -67,6 +69,13 @@ export struct ExpenseEditor {
 
   aboutToAppear(): void {
     this.loadDict();
+    // R107：本月已支出是背景信息，**不 await**，拿不到就显示占位
+    const month = todayKey().substring(0, 7);
+    Api.monthlyReport(month).then((body) => {
+      this.monthSpentCents = body.report.totalCents;
+    }).catch(() => {
+      this.monthSpentCents = null;
+    });
   }
 
   private async loadDict(): Promise<void> {
@@ -186,6 +195,19 @@ export struct ExpenseEditor {
     return null;
   }
 
+  /** 支付方式快捷键名精炼到 2–3 字（R112） */
+  private shortName(name: string): string {
+    const map: Record<string, string> = {
+      '招商银行信用卡': '招行', '招行信用卡': '招行', '支付宝': '支付宝', '微信': '微信',
+      '花呗': '花呗', '现金': '现金', '工资卡': '工资卡', '建设银行': '建行'
+    };
+    const hit = map[name];
+    if (hit !== undefined) {
+      return hit;
+    }
+    return name.length > 3 ? name.substring(0, 2) : name;
+  }
+
   private categoryName(): string {
     for (const root of this.categories) {
       if (root.id === this.categoryId) {
@@ -235,6 +257,11 @@ export struct ExpenseEditor {
       return;
     }
     this.amountText = next;
+  }
+
+  /** 保存键可用条件：金额 > 0 且分类与支付方式都已选 */
+  private canSave(): boolean {
+    return this.cents() > 0 && this.categoryId !== '' && this.paymentId !== '';
   }
 
   private async save(): Promise<void> {
@@ -388,54 +415,80 @@ export struct ExpenseEditor {
     })
   }
 
+  /**
+   * 键盘（R101/R103）：**5 列** = 左支付列（独立，物理分割线）+ 右 4×4 数字键；
+   * 宽高比 ~1.35:1；数字键浮起（surface + 阴影）；完成键占右侧两行。
+   */
   @Builder
   keypad() {
-    Row({ space: 6 }) {
-      // 左：支付快捷列（前 4 个）
+    Row() {
+      // 左：支付快捷列（与键盘之间用 1vp 竖线物理分割）
       Column({ space: 6 }) {
         ForEach(this.payments.slice(0, 4), (p: PaymentMethodItem) => {
-          Button(p.name.substring(0, 2))
-            .fontSize(11)
-            .height(40)
+          Button(this.shortName(p.name))
+            .fontSize(9.5)
+            .layoutWeight(1)
             .width('100%')
             .backgroundColor(this.paymentId === p.id ? this.tok().accent : this.tok().surface)
             .fontColor(this.paymentId === p.id ? this.tok().accentInk : this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
             .border({ width: 1, color: this.tok().line })
             .onClick(() => {
               this.paymentId = p.id;
               this.refreshPreview();
             })
         }, (p: PaymentMethodItem) => p.id)
+        if (this.payments.length > 4) {
+          Button('更多')
+            .fontSize(9)
+            .layoutWeight(1)
+            .width('100%')
+            .backgroundColor(this.tok().surface3)
+            .fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.paymentOpen = true;
+            })
+        }
       }
-      .width(64)
+      .width(62)
+      .height(204)
+      .padding({ right: 6 })
 
-      // 右：4×4 数字键
+      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(204)
+
+      // 右：4×4（完成键跨两行）
       Grid() {
         ForEach(KEYPAD_KEYS, (key: string) => {
           GridItem() {
-            Button(key === 'B' ? '⌫' : (key === 'C' ? 'C' : (key === 'OK' ? '完成' : key)))
+            Button(key === 'B' ? '⌫' : (key === 'C' ? 'C' : (key === '' ? '' : key)))
               .width('100%')
               .height('100%')
-              .fontSize(key === 'OK' ? 13 : 18)
-              .backgroundColor(key === 'OK' ? this.tok().accent : this.tok().surface)
-              .fontColor(key === 'OK' ? this.tok().accentInk : this.tok().ink)
-              .border({ width: 1, color: this.tok().line })
+              .fontSize(19)
+              .fontWeight(FontWeight.Bold)
+              .fontFamily(fontDisplayOf(this.isCyber()))
+              .backgroundColor(key === '' ? Color.Transparent : this.tok().surface)
+              .fontColor(this.tok().ink)
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
+              .border({ width: key === '' ? 0 : 1, color: this.tok().line })
+              .shadow(key === '' ? { radius: 0, color: Color.Transparent } : parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
+              .enabled(key !== '')
               .onClick(() => {
-                if (key === 'OK') {
-                  this.save();
-                } else {
-                  this.press(key);
-                }
+                this.press(key);
               })
           }
-        }, (key: string) => key)
+          .rowStart(key === 'OK' ? 3 : undefined)
+          .rowEnd(key === 'OK' ? 4 : undefined)
+          .columnStart(key === 'OK' ? 4 : undefined)
+          .columnEnd(key === 'OK' ? 4 : undefined)
+        }, (key: string) => `k-${key}`)
       }
       .columnsTemplate('repeat(4, 1fr)')
       .rowsTemplate('repeat(4, 1fr)')
-      .columnsGap(6)
-      .rowsGap(6)
+      .columnsGap(5)
+      .rowsGap(5)
       .layoutWeight(1)
-      .height(190)
+      .height(204)
+      .padding({ left: 6 })
     }
     .width('100%')
   }
@@ -627,6 +680,14 @@ export struct ExpenseEditor {
         .height(120)
       }
 
+      // 键盘上方只保留一行摘要（R107）：本月已支出，不 await，拿不到显示占位
+      Row({ space: 6 }) {
+        Text('本月已支出').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+        Text(this.monthSpentCents === null ? '—' : formatYuan(this.monthSpentCents))
+          .fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink2)
+      }
+      .width('100%')
+
       this.keypad()
 
       Row({ space: 8 }) {
@@ -636,7 +697,7 @@ export struct ExpenseEditor {
           .layoutWeight(1)
           .backgroundColor(this.tok().accent)
           .fontColor(this.tok().accentInk)
-          .enabled(!this.saving)
+          .enabled(!this.saving && this.canSave())
           .onClick(() => {
             this.save();
           })
@@ -677,7 +738,7 @@ export struct ExpenseEditor {
   }
 }
 
-const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.', '0'];
+const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.', ''];
 
 interface OfflineExpensePayload {
   amountCents: number;
