@@ -91,6 +91,8 @@ export struct LedgerScreen {
   @State undoTodo: HeroTodo | null = null;
   @State undoKind: string = '';
   @State undoLabel: string = '';
+  /** 下拉手势累计位移（R24） */
+  @State pullMax: number = 0;
   /** cyber 切角需要卡片实际尺寸（W44） */
   @State cardW: number = 0;
   @State cardH: number = 0;
@@ -1313,17 +1315,29 @@ export struct LedgerScreen {
       backgroundColor: this.tok().bg
     })
     // 下拉记一笔：与移动 Web 同一机制（顶部下拉），不留兜底按钮
+    // R24：下拉是移动端**唯一**写入入口（不留兜底按钮）。
+    // 阈值 60vp；用 onActionUpdate 记录最大位移，避免合成/快速拖拽时 offsetY 为 0 的误判。
     .parallelGesture(
-      PanGesture({ direction: PanDirection.Down, distance: 40 })
-        .onActionEnd((event: GestureEvent) => {
+      PanGesture({ direction: PanDirection.Down, distance: 20 })
+        .onActionStart(() => {
+          this.pullMax = 0;
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          if (event.offsetY > this.pullMax) {
+            this.pullMax = event.offsetY;
+          }
+        })
+        .onActionEnd(() => {
           if (this.tier !== 0) {
+            this.pullMax = 0;
             return;
           }
           const atTop = this.scroller.currentOffset().yOffset <= 0;
-          if (atTop && event.offsetY > 80) {
+          if (atTop && this.pullMax > 60) {
             this.editingRow = null;
             this.sheetOpen = true;
           }
+          this.pullMax = 0;
         })
     )
   }
