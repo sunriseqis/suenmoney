@@ -60,6 +60,8 @@ export struct SettingsScreen {
   @State payments: PaymentMethodItem[] = [];
   @State plans: PlanItem[] = [];
   @State todos: PlanTodoItem[] = [];
+  /** 已处理期次（R125/R127：确认→撤销、跳过→恢复） */
+  @State doneTodos: PlanTodoItem[] = [];
   @State users: UserSummary[] = [];
   @State errorText: string = '';
   @State loading: boolean = false;
@@ -136,6 +138,9 @@ export struct SettingsScreen {
       this.plans = plans.plans;
       const todoBody = await Api.planTodos(todayKey());
       this.todos = todoBody.todos;
+      const confirmed = await Api.doneTodos('confirmed');
+      const skipped = await Api.doneTodos('skipped');
+      this.doneTodos = confirmed.todos.concat(skipped.todos);
       const userBody = await Api.users();
       this.users = userBody.users;
     } catch (e) {
@@ -573,6 +578,44 @@ export struct SettingsScreen {
         .padding({ top: 8, bottom: 8 })
       }, (plan: PlanItem) => plan.id)
 
+      if (this.doneTodos.length > 0) {
+        Divider().color(this.tok().line)
+        Text('已处理')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tok().ink)
+          .width('100%')
+        ForEach(this.doneTodos, (todo: PlanTodoItem) => {
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text(`${todo.periodSeq}期 · ${todo.planName}`)
+                .fontSize(11)
+                .fontColor(this.tok().ink)
+              Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
+                .fontSize(9)
+                .fontFamily(fontMonoOf())
+                .fontColor(this.tok().ink3)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            Text(todo.status === 'skipped' ? '已跳过' : '已入账')
+              .fontSize(9)
+              .fontColor(this.tok().ink3)
+            // R125/R127：已入账给「撤销」，已跳过给「恢复」
+            Button(todo.status === 'skipped' ? '恢复' : '撤销')
+              .fontSize(10)
+              .height(26)
+              .backgroundColor(this.tok().surface2)
+              .fontColor(this.tok().ink2)
+              .onClick(() => {
+                this.restoreOrRevert(todo);
+              })
+          }
+          .width('100%')
+          .padding({ top: 4, bottom: 4 })
+        }, (todo: PlanTodoItem) => `done-${todo.id}`)
+      }
+
       if (this.todos.length > 0) {
         Divider().color(this.tok().line)
         Text('待处理')
@@ -645,6 +688,20 @@ export struct SettingsScreen {
   private async deletePlanById(id: string): Promise<void> {
     try {
       await Api.deletePlan(id);
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
+
+  /** 撤销入账 / 恢复跳过（R125/R127） */
+  private async restoreOrRevert(todo: PlanTodoItem): Promise<void> {
+    try {
+      if (todo.status === 'skipped') {
+        await Api.restoreTodo(todo.id);
+      } else {
+        await Api.revertTodo(todo.id);
+      }
       await this.reload();
     } catch (e) {
       this.errorText = (e as ApiError).message;

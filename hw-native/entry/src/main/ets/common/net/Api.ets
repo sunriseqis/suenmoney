@@ -649,6 +649,25 @@ export class Api {
     return Api.http().get<SyncPullBody>(`/api/sync/pull?since=${since}&limit=${limit}`);
   }
 
+  /** 撤销入账（该期次回到待办，软删对应支出） */
+  static revertTodo(id: string): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = '{}';
+    return Api.http().request<object>(`/api/plan-todos/${id}/revert`, o);
+  }
+
+  /** 恢复被跳过的期次（恢复后不再当场自动入账） */
+  static restoreTodo(id: string): Promise<object> {
+    const o = Api.http().options('POST');
+    o.body = '{}';
+    return Api.http().request<object>(`/api/plan-todos/${id}/restore`, o);
+  }
+
+  /** 已处理期次（confirmed / skipped） */
+  static doneTodos(status: string): Promise<PlanTodoList> {
+    return Api.http().get<PlanTodoList>(`/api/plan-todos?status=${status}`);
+  }
+
   static syncStatus(): Promise<SyncStatusBody> {
     return Api.http().get<SyncStatusBody>('/api/sync/status');
   }
