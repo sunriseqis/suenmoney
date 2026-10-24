@@ -81,6 +81,8 @@ export struct LedgerScreen {
   @State todoOpen: boolean = false;
   @State pullHintShown: boolean = false;
   @State showHint: boolean = false;
+  /** R114：刚保存的记录高亮 1.5s */
+  @State highlightId: string = '';
   @State errorText: string = '';
   @State yearPoints: MonthPoint[] = [];
   @State yearTotalCents: number = 0;
@@ -901,7 +903,9 @@ export struct LedgerScreen {
     }
     .width('100%')
     .padding(10)
-    .backgroundColor(this.tok().surface)
+    .backgroundColor(this.highlightId === row.id
+      ? mixHex(this.tok().accent, this.tok().surface, 0.14)
+      : this.tok().surface)
     .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
     .onClick(() => {
@@ -1036,10 +1040,17 @@ export struct LedgerScreen {
     ExpenseEditor({
       props: {
         editing: this.editingRow,
-        onSaved: () => {
+        onSaved: (savedId: string) => {
           this.sheetOpen = false;
           this.editingRow = null;
-          this.reload();
+          // R114：保存后新记录滚到列表顶并高亮 1.5 秒
+          this.reload().then(() => {
+            this.highlightId = savedId;
+            this.scroller.scrollEdge(Edge.Top);
+            setTimeout(() => {
+              this.highlightId = '';
+            }, 1500);
+          });
         },
         onCancel: () => {
           this.sheetOpen = false;
