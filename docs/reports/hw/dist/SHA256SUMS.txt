@@ -1,1 +1,2 @@
-8a79e7cce380bbad8d08fc6f6459cb010b4b70d4850f66fa96c76d7ee3b07e97  docs/reports/hw/dist/SuenMoney-hw-v0.2.0-8d2ce2b-unsigned.hap
+8a79e7cce380bbad8d08fc6f6459cb010b4b70d4850f66fa96c76d7ee3b07e97  SuenMoney-hw-v0.2.0-8d2ce2b-unsigned.hap
+1a2bdeac4cf2cc37b576b127c3d4c94a19b2cc25a2829900072e445207008f06  SuenMoney-hw-v0.3.0-a7ba7fb-unsigned.hap
