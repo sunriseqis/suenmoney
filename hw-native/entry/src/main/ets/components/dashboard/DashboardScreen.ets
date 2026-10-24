@@ -8,6 +8,7 @@
  *
  * 刻意不做：桌面形态的左右分栏、说明式文字（判据：这句话改变你要做什么吗）。
  */
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Api, MonthlyReport, MonthPoint, PlanTodoItem, RollingMonth, SummaryReport, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { ThemeManager } from '../../common/theme/ThemeManager';
@@ -73,6 +74,8 @@ export struct DashboardScreen {
   private async loadTier(): Promise<void> {
     if (this.tier === 0) {
       const body = await Api.monthlyReport(this.anchorMonth);
+      hilog.info(0x0009, 'DashDbg', 'month=%{public}s total=%{public}s count=%{public}s cats=%{public}s',
+        body.report.month, String(body.report.totalCents), String(body.report.count), String(body.report.categories.length));
       this.monthReport = body.report;
       this.totalCents = body.report.totalCents;
       this.count = body.report.count;

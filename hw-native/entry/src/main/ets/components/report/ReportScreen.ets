@@ -11,6 +11,7 @@
  * 一条硬规则（decisions）：**排名行中间必须有占比条** ——
  * 名称与金额摆两端、中间空一大块时，眼睛要横跨整行才能对上，数据排名不能这样。
  */
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Api, CategoryBucket, DailyPoint, MonthlyReport, PaymentBucket, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { ThemeManager } from '../../common/theme/ThemeManager';
@@ -43,6 +44,8 @@ export struct ReportScreen {
     try {
       if (this.tier === 0) {
         const body = await Api.monthlyReport(this.anchorMonth);
+        hilog.info(0x0009, 'RepDbg', 'month=%{public}s total=%{public}s count=%{public}s',
+          body.report.month, String(body.report.totalCents), String(body.report.count));
         this.monthReport = body.report;
       } else {
         const body = await Api.yearlyReport(this.anchorYear);
