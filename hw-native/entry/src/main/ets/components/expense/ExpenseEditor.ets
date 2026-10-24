@@ -34,7 +34,8 @@ export interface FieldRowModel {
 export interface ExpenseEditorProps {
   /** 非 null 即编辑已有记录（标题变「编辑」，底部出现删除） */
   editing: ExpenseItem | null;
-  onSaved: () => void;
+  /** 保存成功回调：带上记录 id，外壳据此滚到顶并高亮（R114） */
+  onSaved: (savedId: string) => void;
   onCancel: () => void;
 }
 
@@ -267,6 +268,7 @@ export struct ExpenseEditor {
   }
 
   private async save(): Promise<void> {
+    let savedId: string = this.props.editing === null ? '' : this.props.editing.id;
     this.errorText = '';
     const cents = this.cents();
     if (cents === 0) {
@@ -297,18 +299,19 @@ export struct ExpenseEditor {
           spendDate: this.spendDate,
           note: this.note
         };
-        await Api.createExpense(req);
+        const created = await Api.createExpense(req);
+        savedId = created.expense.id;
         // 成功后才记住这次选择（失败的记账不该影响下次默认值）
         const pick: LastPickValue = { categoryId: this.categoryId, paymentMethodId: this.paymentId };
         await LastPick.write(pick);
       }
-      this.props.onSaved();
+      this.props.onSaved(savedId);
     } catch (e) {
       const err = e as ApiError;
       if (err.kind === 'network' && this.props.editing === null) {
         // 离线写：入队（队列落库，关掉 App 也不会丢），联网后自动补推
         await this.enqueueOffline(cents);
-        this.props.onSaved();
+        this.props.onSaved('');
         return;
       }
       this.errorText = err.kind === 'network' ? '网络不可用，请稍后再试' : err.message;
@@ -376,7 +379,7 @@ export struct ExpenseEditor {
           Api.deleteExpense(editing.id)
             .then(() => {
               this.saving = false;
-              this.props.onSaved();
+              this.props.onSaved('');
             })
             .catch((e: ApiError) => {
               this.saving = false;
@@ -462,18 +465,17 @@ export struct ExpenseEditor {
       Grid() {
         ForEach(KEYPAD_KEYS, (key: string) => {
           GridItem() {
-            Button(key === 'B' ? '⌫' : (key === 'C' ? 'C' : (key === '' ? '' : key)))
+            Button(key === 'B' ? '←' : (key === 'C' ? '清空' : key))
               .width('100%')
               .height('100%')
-              .fontSize(19)
+              .fontSize(key === 'OK' || key === 'C' ? 13 : 19)
               .fontWeight(FontWeight.Bold)
               .fontFamily(fontDisplayOf(this.isCyber()))
-              .backgroundColor(key === '' ? Color.Transparent : this.tok().surface)
-              .fontColor(this.tok().ink)
+              .backgroundColor(key === 'OK' ? this.tok().accent : this.tok().surface)
+              .fontColor(key === 'OK' ? this.tok().accentInk : this.tok().ink)
               .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
-              .border({ width: key === '' ? 0 : 1, color: this.tok().line })
-              .shadow(key === '' ? { radius: 0, color: Color.Transparent } : parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
-              .enabled(key !== '')
+              .border({ width: 1, color: this.tok().line })
+              .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
               .onClick(() => {
                 this.press(key);
               })
@@ -769,7 +771,7 @@ export struct ExpenseEditor {
   }
 }
 
-const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.', ''];
+const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.'];
 
 interface OfflineExpensePayload {
   amountCents: number;
