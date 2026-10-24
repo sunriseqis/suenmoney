@@ -1,17 +1,15 @@
 /**
- * 环图（H5）：Canvas 自绘，不引图表库。
+ * 环图（web PDonut 1:1）：stroke-dasharray 同款几何 —— r = size/2 - 12、
+ * 环宽 16、每段留 2.5px 的缝、12 点方向起笔；环心是「标签 + 数值」两行。
  *
- * 为什么自绘：这里只需要画圆弧，引库的成本（体积、样式对抗、生命周期）大于收益。
- * 为什么不用 SVG stroke-dasharray：ArkUI 没有 SVG；Canvas 直接按角度画弧更直接。
- *
- * 重绘触发：Canvas 不会自动重绘，所以父组件传一个 `signature`（数据指纹），
- * 变化时用 @Watch 重画。指纹比逐字段比较省事，也不会漏（金额/占比/颜色都进指纹）。
+ * Canvas 不会自动重绘，父组件传 `signature`（数据指纹），@Watch 触发重画。
  */
 import { ThemeTokens } from '../../common/theme/AppTheme';
+import { fontDisplayOf, fontMonoOf } from '../../common/ui/UiStyle';
 
+/** 环图一段（value 为绝对金额，图内按合计归一 —— 与 web sum 口径一致） */
 export interface DonutSliceView {
-  label: string;
-  ratio: number;
+  value: number;
   color: string;
 }
 
@@ -20,8 +18,13 @@ export struct DonutChart {
   @Prop slices: DonutSliceView[] = [];
   @Prop tokens: ThemeTokens = {} as ThemeTokens;
   @Prop @Watch('redraw') signature: string = '';
-  /** 环中间的文案（总支出） */
+  /** 直径（移动端报表 136，views.css:1146）；不能叫 size——会撞 CustomComponent.size() */
+  @Prop ringSize: number = 136;
+  /** 环心小标签（web donut-c-l） */
   @Prop centerLabel: string = '';
+  /** 环心数值（web donut-c-v） */
+  @Prop centerValue: string = '';
+  @Prop isCyber: boolean = false;
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -38,46 +41,43 @@ export struct DonutChart {
     }
     const cx = w / 2;
     const cy = h / 2;
-    const radius = Math.min(w, h) / 2 - 10;
-    // 环宽固定 16（原型 stroke-width:16；12 是半径内缩量，不是环宽）
+    const radius = this.ringSize / 2 - 12;
     const lineWidth = 16;
-    const gap = 0.025; // 段间空隙 ~2.5°
 
     this.ctx.clearRect(0, 0, w, h);
 
-    // 先画底环：没有任何数据时也要有形状，否则页面会缺一块
+    // 底环（surface-3）：没有任何数据时也要有形状
     this.ctx.beginPath();
     this.ctx.strokeStyle = this.tokens.surface3;
     this.ctx.lineWidth = lineWidth;
-    this.ctx.arc(cx, cy, radius - lineWidth / 2, 0, Math.PI * 2);
+    this.ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     this.ctx.stroke();
 
-    let start = -Math.PI / 2; // 12 点方向起笔
-    for (const slice of this.slices) {
-      const ratio = Math.max(0, slice.ratio);
-      if (ratio <= 0) {
-        continue;
-      }
-      const sweep = Math.min(1, ratio) * Math.PI * 2;
-      const drawSweep = this.slices.length > 1 ? Math.max(0.01, sweep - gap) : sweep;
-      this.ctx.beginPath();
-      this.ctx.strokeStyle = slice.color;
-      this.ctx.lineWidth = lineWidth;
-      this.ctx.lineCap = 'butt';
-      this.ctx.arc(cx, cy, radius - lineWidth / 2, start, start + drawSweep);
-      this.ctx.stroke();
-      start += sweep;
-      if (start >= Math.PI * 1.5) {
-        break;
-      }
+    let sum = 0;
+    for (const s of this.slices) {
+      sum += Math.max(0, s.value);
+    }
+    if (sum <= 0) {
+      return;
     }
 
-    if (this.centerLabel !== '') {
-      this.ctx.fillStyle = this.tokens.ink;
-      this.ctx.font = '14vp sans-serif';
-      this.ctx.textAlign = 'center';
-      this.ctx.textBaseline = 'middle';
-      this.ctx.fillText(this.centerLabel, cx, cy);
+    const circumference = 2 * Math.PI * radius;
+    const gapAngle = 2.5 / radius; // web：dash 里减 2.5px 换算成弧度
+    let start = -Math.PI / 2; // rotate(-90)：12 点方向起笔
+    for (const s of this.slices) {
+      const len = (Math.max(0, s.value) / sum) * circumference;
+      if (len <= 2.5) {
+        start += len / radius;
+        continue;
+      }
+      const drawSweep = (len - 2.5) / radius;
+      this.ctx.beginPath();
+      this.ctx.strokeStyle = s.color;
+      this.ctx.lineWidth = lineWidth;
+      this.ctx.lineCap = 'butt';
+      this.ctx.arc(cx, cy, radius, start, start + drawSweep);
+      this.ctx.stroke();
+      start += len / radius;
     }
   }
 
@@ -89,8 +89,30 @@ export struct DonutChart {
         .onReady(() => {
           this.draw();
         })
+      // 环心：donut-c-l（9.5 mono 大写 + 0.14em）+ donut-c-v（21 display 800）
+      Column({ space: 2 }) {
+        if (this.centerLabel !== '') {
+          Text(this.centerLabel)
+            .fontSize(9.5)
+            .letterSpacing(1.33)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.tokens.ink3)
+            .maxLines(1)
+        }
+        if (this.centerValue !== '') {
+          Text(this.centerValue)
+            .fontSize(21)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber))
+            .letterSpacing(-0.42)
+            .fontColor(this.tokens.ink)
+            .maxLines(1)
+        }
+      }
+      .alignItems(HorizontalAlign.Center)
+      .justifyContent(FlexAlign.Center)
     }
-    .width(160)
-    .height(160)
+    .width(this.ringSize)
+    .height(this.ringSize)
   }
 }

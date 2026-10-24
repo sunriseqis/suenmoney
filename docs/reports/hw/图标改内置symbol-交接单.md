@@ -1,5 +1,12 @@
 # 图标改用鸿蒙内置 Symbol —— 交接单（给 DevEco Code）
 
+> **状态（2026-10-25）：已落地，方案在第五节基础上升级。**
+> 品牌图形不再用 Path 手绘（方案 A 也放弃了），改为**随包 SVG 媒体**
+> （`resources/base/media/pay_*.svg`）+ `Image` 原生解码 + `fillColor` 染品牌色；
+> 非品牌 5 种用内置 Symbol。分类图标走 `CatIconView` + `CAT_ICON_OPTIONS`。
+> `IconPaths.ets` / `IconView.ets` 已删。经过与编译坑见
+> `docs/memory/2026-10-25-五屏对齐web移动端与内置Symbol.md`。
+
 > 目标：把现在基于 Lucide SVG 路径手绘的图标，全部换成**鸿蒙系统内置 Symbol**（`sys.symbol.*` + `SymbolGlyph`）。
 > 不做名字映射表：**每个分类直接指定一个内置符号**，改完删掉 Lucide 那套。
 
