@@ -12,18 +12,19 @@
  *      全程不出现浮点（`parseFloat*100` 会差一分钱）。
  *   3. 退款不加负号输入，用开关把正值翻成负数。
  */
+
+/** @Builder 单参数对象（多参数不刷新，见 fieldRow 注释） */
 import { Api, CategoryNode, ExpenseCreateRequest, ExpenseItem, ExpensePatchRequest, ExpensePreview, PaymentMethodItem } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { radiusOf } from '../../common/ui/UiStyle';
+import { radiusOf, outlineStrongOf } from '../../common/ui/UiStyle';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
 import { ulid } from '../../common/contract/Contract';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 
-/** @Builder 单参数对象（多参数不刷新，见 fieldRow 注释） */
 export interface FieldRowModel {
   label: string;
   value: string;
@@ -497,7 +498,7 @@ export struct ExpenseEditor {
       TextInput({ placeholder: '备注（选填）', text: this.note })
         .height(36)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {

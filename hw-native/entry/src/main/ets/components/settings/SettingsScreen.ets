@@ -6,8 +6,19 @@
  *
  * 危险动作一律收进「更多」菜单（decisions：跳过不可逆，不能与该做的动作同权重）。
  */
+
 import { LengthMetrics, router } from '@kit.ArkUI';
-import { cardShadow, radiusOf } from '../../common/ui/UiStyle';
+import { cardShadow, radiusOf, outlineStrongOf } from '../../common/ui/UiStyle';
+import { ApiError } from '../../common/net/ApiError';
+import { AuthStore } from '../../common/auth/AuthStore';
+import { Db } from '../../common/store/Db';
+import { VectorRunner } from '../../common/contract/VectorRunner';
+import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
+import { SyncEngine } from '../../common/sync/SyncEngine';
+import { THEME_STORAGE_KEY, ThemeManager, ThemeName } from '../../common/theme/ThemeManager';
+import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
+import { chartColor, hashIndex } from '../../common/theme/Palette';
+import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
 
 import {
   Api,
@@ -23,16 +34,6 @@ import {
   UserCreateRequest,
   UserSummary
 } from '../../common/net/Api';
-import { ApiError } from '../../common/net/ApiError';
-import { AuthStore } from '../../common/auth/AuthStore';
-import { Db } from '../../common/store/Db';
-import { VectorRunner } from '../../common/contract/VectorRunner';
-import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
-import { SyncEngine } from '../../common/sync/SyncEngine';
-import { THEME_STORAGE_KEY, ThemeManager, ThemeName } from '../../common/theme/ThemeManager';
-import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
-import { chartColor, hashIndex } from '../../common/theme/Palette';
-import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
 
 @Component
 export struct SettingsScreen {
@@ -459,7 +460,7 @@ export struct SettingsScreen {
     .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
     .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
-    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
@@ -609,7 +610,7 @@ export struct SettingsScreen {
     .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
     .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
-    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
@@ -803,7 +804,7 @@ export struct SettingsScreen {
     .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
     .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
-    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
@@ -860,7 +861,7 @@ export struct SettingsScreen {
     .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
     .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
-    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
@@ -964,7 +965,7 @@ export struct SettingsScreen {
           .fontSize(13)
           .height(40)
           .backgroundColor(this.tok().surface)
-          .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
           .fontColor(this.tok().ink)
           .fontColor(this.tok().ink2)
@@ -998,7 +999,7 @@ export struct SettingsScreen {
       TextInput({ placeholder: '名称', text: this.formName })
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
@@ -1009,7 +1010,7 @@ export struct SettingsScreen {
       TextInput({ placeholder: '图标（单个字符）', text: this.formIcon })
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
@@ -1067,7 +1068,7 @@ export struct SettingsScreen {
       TextInput({ placeholder: '名称', text: this.formName })
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
@@ -1181,7 +1182,7 @@ export struct SettingsScreen {
       TextInput({ placeholder: '显示名（如 爱人）', text: this.formName })
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
@@ -1190,7 +1191,7 @@ export struct SettingsScreen {
       TextInput({ placeholder: '登录名', text: this.formUsername })
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
@@ -1200,7 +1201,7 @@ export struct SettingsScreen {
         .type(InputType.Password)
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
@@ -1237,7 +1238,7 @@ export struct SettingsScreen {
       TextInput({ placeholder: '计划名称（如 房贷）', text: this.formName })
         .height(38)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
         .onChange((v: string) => {

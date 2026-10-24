@@ -126,3 +126,15 @@ export const CUT_LOGO = 8;
 export function cutPathCommands(w: number, h: number, n: number): string {
   return `M0 ${n} L${n} 0 L${w} 0 L${w} ${h - n} L${w - n} ${h} L0 ${h} Z`;
 }
+
+/**
+ * 可交互控件边界色（R34：≥3:1）。
+ *
+ * theme.css 的 `--line` 只适合当分隔线：cyber 的 #2a2a3a 在 #12121a 上只有 1.32:1，
+ * 拿它画输入框边界，控件在深色主题下"边界消失"。实测对比度：
+ *   candy  #1E293B on #FFFFFF = 14.63:1
+ *   cyber  #6f6f92 on #12121a =  3.87:1
+ */
+export function outlineStrongOf(isCyber: boolean): string {
+  return isCyber ? '#6f6f92' : '#1E293B';
+}
