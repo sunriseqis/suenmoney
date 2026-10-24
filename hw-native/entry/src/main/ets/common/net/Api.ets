@@ -31,6 +31,18 @@ export interface UserSummary {
   role: string;
 }
 
+/** POST /api/auth/me/password 响应：被退出登录的设备数 */
+export interface ChangePasswordBody {
+  revoked: number;
+  message: string;
+}
+
+/** POST /api/auth/me/password 请求体 */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
 // ── 字典 ────────────────────────────────────────────────────────────────────
 export interface CategoryNode {
   id: string;
@@ -261,6 +273,11 @@ export interface SummaryReport {
   years: YearPoint[];
   /** 首笔日期（服务端提供则显示，缺省显示 —） */
   firstDate?: string;
+  /** 单笔均值（服务端 /api/reports/summary 下发，与 Web SummaryReport 一致） */
+  perExpenseAverageCents?: number;
+  /** 全部分类聚合（概况页构成条用） */
+  categories?: CategoryBucket[];
+  members?: MemberBucket[];
 }
 
 export interface SummaryReportBody {
@@ -470,6 +487,15 @@ export class Api {
 
   static me(): Promise<UserSummary> {
     return Api.http().get<UserSummary>('/api/auth/me');
+  }
+
+  /** 修改自己的口令：验证当前口令，成功后其他设备全部退出（web auth.changePassword） */
+  static changePassword(currentPassword: string, newPassword: string): Promise<ChangePasswordBody> {
+    const body: ChangePasswordRequest = {
+      currentPassword: currentPassword,
+      newPassword: newPassword
+    };
+    return Api.http().post<ChangePasswordBody>('/api/auth/me/password', body);
   }
 
   static categories(): Promise<CategoryList> {

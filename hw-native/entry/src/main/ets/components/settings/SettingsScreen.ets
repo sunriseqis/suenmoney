@@ -1,28 +1,24 @@
 /**
- * 设置屏（H6）：四区 —— 账目 / 计划 / 数据 / 家庭。
+ * 设置屏（对齐 web SettingsView 移动端）：三区 —— 账目 / 计划与还款 / 设备。
  *
- * 与移动 Web 对齐：四个分段（不是二级页面层层点进去），
- * 一屏内切段即可看到对应内容。
+ * 用户裁决（2026-10-25）：hw 端把 web 的「数据 + 家庭」合并为「设备」，
+ * 仅保留 主题 / 修改密码 / 检查更新；文件流（导出/导入/备份/快照/WebDAV/
+ * 账单导入）与成员、登录设备在 hw 端不渲染。
  *
- * 危险动作一律收进「更多」菜单（decisions：跳过不可逆，不能与该做的动作同权重）。
+ * 危险动作一律收进「更多」菜单（more-menu）：跳过不可逆，不能与正常操作同权重。
  */
 
-import { LengthMetrics, router } from '@kit.ArkUI';
-import { CARD_PAD, cardRadiusOf, cardShadow, fontMonoOf, outlineStrongOf, radiusOf } from '../../common/ui/UiStyle';
+import { cardShadow, fontBodyOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { LengthMetrics } from '@kit.ArkUI';
 import { ApiError } from '../../common/net/ApiError';
-import { AuthStore } from '../../common/auth/AuthStore';
-import { Db } from '../../common/store/Db';
-import { VectorRunner } from '../../common/contract/VectorRunner';
-import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
-import { SyncEngine } from '../../common/sync/SyncEngine';
-import { THEME_STORAGE_KEY, ThemeManager, ThemeName } from '../../common/theme/ThemeManager';
+import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
-import { chartColor, hashIndex } from '../../common/theme/Palette';
-import { formatYuan, daysUntil } from '../../common/contract/Contract';
+import { formatYuan } from '../../common/contract/Contract';
 
-import { categoryIconPath } from '../../common/ui/CategoryIcon';
-import { IconView } from '../../common/ui/IconView';
-import { PayVisual, resolvePayVisual } from '../../common/ui/PaymentIcon';
+import { CatIconView } from '../../common/ui/CatIconView';
+import { PayIconView } from '../../common/ui/PayIconView';
+import { CATEGORY_COLORS, categoryColorOf } from '../../common/ui/CategoryIcon';
+import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
   Api,
   CategoryCreateRequest,
@@ -33,107 +29,138 @@ import {
   PaymentPatchRequest,
   PlanCreateRequest,
   PlanItem,
-  PlanTodoItem,
-  UserCreateRequest,
-  UserSummary
+  PlanTodoItem
 } from '../../common/net/Api';
-export interface ThemeOptionModel {
+
+/** 图标选择项（存 lucide 名字，web 端可直接解析；hw 端用内置 Symbol 近似渲染） */
+interface CatIconOption {
+  name: string;
   label: string;
-  value: string;
+  res: Resource;
 }
 
-export interface SectionTabModel {
-  label: string;
-  value: number;
+/** 分类图标精选（名字必须是 web ICON_REGISTRY 里的键；res 必须是已验证的 sys.symbol 字面量） */
+const CAT_ICON_OPTIONS: CatIconOption[] = [
+  { name: 'utensils', label: '餐饮', res: $r('sys.symbol.fork_knife') },
+  { name: 'shopping-basket', label: '买菜', res: $r('sys.symbol.cart') },
+  { name: 'shopping-cart', label: '购物', res: $r('sys.symbol.bag') },
+  { name: 'car-front', label: '打车', res: $r('sys.symbol.car') },
+  { name: 'bus', label: '公交', res: $r('sys.symbol.subway') },
+  { name: 'fuel', label: '加油', res: $r('sys.symbol.fuelpump') },
+  { name: 'house', label: '居住', res: $r('sys.symbol.house') },
+  { name: 'zap', label: '水电', res: $r('sys.symbol.bolt') },
+  { name: 'hand-coins', label: '红包', res: $r('sys.symbol.moneybag') },
+  { name: 'stethoscope', label: '医疗', res: $r('sys.symbol.hospital') },
+  { name: 'pill', label: '药品', res: $r('sys.symbol.drug') },
+  { name: 'gamepad-2', label: '娱乐', res: $r('sys.symbol.gamecontroller') },
+  { name: 'film', label: '电影', res: $r('sys.symbol.movie') },
+  { name: 'dumbbell', label: '健身', res: $r('sys.symbol.dumbbell') },
+  { name: 'book-open', label: '书籍', res: $r('sys.symbol.book') },
+  { name: 'graduation-cap', label: '教育', res: $r('sys.symbol.graduationcap') },
+  { name: 'gift', label: '礼物', res: $r('sys.symbol.gift') },
+  { name: 'cat', label: '宠物', res: $r('sys.symbol.pawprint') },
+  { name: 'smartphone', label: '话费', res: $r('sys.symbol.phone') },
+  { name: 'laptop', label: '电脑', res: $r('sys.symbol.computer') },
+  { name: 'shirt', label: '服饰', res: $r('sys.symbol.shirt') },
+  { name: 'credit-card', label: '信用卡', res: $r('sys.symbol.creditcard') },
+  { name: 'wallet', label: '钱包', res: $r('sys.symbol.wallet') },
+  { name: 'circle-ellipsis', label: '其他', res: $r('sys.symbol.doc_text') }
+];
+
+/** 待办紧急度（与概况页同口径）：迟到 danger / 明日 warn / 其余 ok */
+function urgencyColorOf(date: string, tokens: ThemeTokens): string {
+  const a = new Date();
+  const t = new Date(`${date}T00:00:00`);
+  const days = Math.round((Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())
+    - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
+  if (days < 0) {
+    return tokens.danger;
+  }
+  if (days <= 1) {
+    return tokens.warn;
+  }
+  return tokens.ok;
 }
 
+/** 今天（YYYY-MM-DD，本地时区） */
+function todayKey(): string {
+  const d = new Date();
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
-
-
+/** web formatMonthDay：'3月5日' */
+function formatMonthDay(date: string): string {
+  const parts = date.split('-');
+  if (parts.length < 3) {
+    return date;
+  }
+  return `${Number(parts[1])}月${Number(parts[2])}日`;
+}
 
 @Component
 export struct SettingsScreen {
-  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
+  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照） */
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
-  /** 三档：dark / light / system（R130） */
+  /** 三档：dark / light / system */
   @State themeMode: string = ThemeManager.get().themeMode;
-  /** 0=账目 1=计划 2=数据 3=家庭 */
+  /** 0=账目 1=计划与还款 2=设备 */
   @State section: number = 0;
   @State categories: CategoryNode[] = [];
   @State payments: PaymentMethodItem[] = [];
   @State plans: PlanItem[] = [];
+  /** 待处理期次（web plansStore.dueTodos） */
   @State todos: PlanTodoItem[] = [];
-  /** 已处理期次（R125/R127：确认→撤销、跳过→恢复） */
+  /** 已处理期次（skipped 在前 + confirmed 在后，web 顺序） */
   @State doneTodos: PlanTodoItem[] = [];
-  @State users: UserSummary[] = [];
   @State errorText: string = '';
   @State loading: boolean = false;
-  /** 弹层：'' | category | payment | plan */
-  @State sheetMode: string = '';
+  @State toastText: string = '';
+  /** 弹层：'' | cat | pay | merge | plan */
+  @State sheetKind: string = '';
   @State sheetOpen: boolean = false;
-  /** B03③ 合并二次确认 */
-  @State mergeConfirmOpen: boolean = false;
-  @State mergeConfirmText: string = '';
-  private mergeConfirmResolve: ((v: boolean) => void) | null = null;
-  /** R126 跨月撤销警告（状态驱动，不用 showAlertDialog 的返回值） */
-  @State revertDialogOpen: boolean = false;
-  @State revertWarn: string = '';
-  @State revertPendingId: string = '';
-  private pendingResolve: ((v: boolean) => void) | null = null;
+  @State busy: boolean = false;
+  @State formError: string = '';
+  // ── 分类表单 ──
+  @State railRootId: string = '';
   @State editingCategoryId: string = '';
-  @State editingPaymentId: string = '';
-  @State editingPlanId: string = '';
-  // 表单字段（分类）
   @State formName: string = '';
   @State formIcon: string = '';
-  @State formColor: number = 0;
+  /** '' = 自动；'1'..'16' = 色号（存索引不存色值，换主题整体重排） */
+  @State formColor: string = '';
   @State formParent: string = '';
-  // 表单字段（支付）
+  // ── 支付表单 ──
+  @State editingPaymentId: string = '';
   @State formType: string = 'cash';
-  @State formBillingDay: number = 0;
-  @State formRepaymentDay: number = 0;
-  @State formMergeInto: string = '';
-  // 表单字段（计划）
+  @State formBillingDay: string = '1';
+  @State formRepaymentDay: string = '20';
+  @State formPayIcon: string = '';
+  // ── 合并 ──
+  @State mergeFromId: string = '';
+  @State mergeIntoId: string = '';
+  // ── 计划表单 ──
   @State formCategoryId: string = '';
   @State formPaymentId: string = '';
   @State formAmount: string = '';
-  @State formPeriods: number = 12;
+  @State formPeriods: string = '12';
   @State formFirstDue: string = '';
   @State formAutoPost: boolean = false;
-  @State formUsername: string = '';
-  @State formPassword: string = '';
-  @State formRole: string = 'member';
-  @State formError: string = '';
-  @State pendingCount: number = 0;
-  @State syncMessage: string = '';
-  @State deadLetters: OutboxEntry[] = [];
-  @State railRootId: string = '';
+  // ── 设备区 ──
+  @State pwdCurrent: string = '';
+  @State pwdNew: string = '';
+  @State updateChecking: boolean = false;
+  @State updateMessage: string = '';
+  /** R126 跨月撤销警告（状态驱动，不用 AlertDialog） */
+  @State revertWarnOpen: boolean = false;
+  @State revertWarnText: string = '';
+  private pendingRevertId: string = '';
 
   aboutToAppear(): void {
     this.reload();
-    this.refreshQueue();
   }
 
-  /** 队列状态（待发送 / 死信）—— 死信必须可见，不许静默丢弃 */
-  private async refreshQueue(): Promise<void> {
-    try {
-      this.pendingCount = await Outbox.pendingCount();
-      this.deadLetters = await Outbox.deadLetters();
-    } catch (e) {
-      this.pendingCount = 0;
-      this.deadLetters = [];
-    }
-  }
-
-  private async syncNow(): Promise<void> {
-    this.syncMessage = '同步中…';
-    const report = await SyncEngine.syncNow();
-    this.syncMessage = report.error !== ''
-      ? report.error
-      : `推送 ${report.pushed} · 拉取 ${report.pulled}`;
-    await this.refreshQueue();
-  }
-
+  // ── 数据 ────────────────────────────────────────────────────────────────
   private async reload(): Promise<void> {
     this.loading = true;
     this.errorText = '';
@@ -145,15 +172,13 @@ export struct SettingsScreen {
       }
       const pays = await Api.paymentMethods();
       this.payments = pays.paymentMethods;
-      const plans = await Api.plans();
-      this.plans = plans.plans;
+      const planBody = await Api.plans();
+      this.plans = planBody.plans;
       const todoBody = await Api.planTodos(todayKey());
       this.todos = todoBody.todos;
-      const confirmed = await Api.doneTodos('confirmed');
       const skipped = await Api.doneTodos('skipped');
-      this.doneTodos = confirmed.todos.concat(skipped.todos);
-      const userBody = await Api.users();
-      this.users = userBody.users;
+      const done = await Api.doneTodos('confirmed');
+      this.doneTodos = skipped.todos.concat(done.todos);
     } catch (e) {
       const err = e as ApiError;
       this.errorText = err.kind === 'network' ? '离线：设置项需要联网' : err.message;
@@ -162,174 +187,326 @@ export struct SettingsScreen {
     }
   }
 
-  private async switchTheme(name: string): Promise<void> {
-    // set() 会把主题名广播到 AppStorage，所有订阅的屏一起重绘
-    await ThemeManager.get().setMode(name === 'light' ? 'light' : (name === 'system' ? 'system' : 'dark'));
+  private showToast(text: string): void {
+    this.toastText = text;
+    setTimeout(() => {
+      this.toastText = '';
+    }, 2000);
   }
 
-  // ── 弹层：打开与保存 ────────────────────────────────────────────────────
-  private openCategorySheet(cat: CategoryNode | null, parentId: string): void {
-    this.formError = '';
-    this.editingCategoryId = cat === null ? '' : cat.id;
-    this.formName = cat === null ? '' : cat.name;
-    this.formIcon = cat === null ? '' : cat.icon;
-    this.formColor = cat === null ? 0 : Number(cat.color) || 0;
-    this.formParent = cat === null ? parentId : (cat.parentId ?? '');
-    this.sheetMode = 'category';
-    this.sheetOpen = true;
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
-  /** B03③：合并支付方式要二次确认，并提示「历史记录会归属到目标」 */
-  private async confirmMerge(p: PaymentMethodItem): Promise<void> {
-    const ok = await this.askMerge(p.name);
-    if (!ok) {
-      return;
+  private isCyber(): boolean {
+    return this.themeName === 'cyber';
+  }
+
+  private async switchTheme(mode: string): Promise<void> {
+    this.themeMode = mode;
+    if (mode === 'light') {
+      await ThemeManager.get().setMode('light');
+    } else if (mode === 'system') {
+      await ThemeManager.get().setMode('system');
+    } else {
+      await ThemeManager.get().setMode('dark');
     }
-    await this.openPaymentSheet(p);
   }
 
-  /** 合并确认弹窗（状态驱动 + Promise，与跨月撤销同一套路） */
-  private askMerge(name: string): Promise<boolean> {
-    this.mergeConfirmText = `合并「${name}」到另一个支付方式后，它的历史记录会全部归属到目标项。`;
-    this.mergeConfirmOpen = true;
-    return new Promise<boolean>((resolve: (v: boolean) => void) => {
-      this.mergeConfirmResolve = resolve;
-    });
+  // ── 分类 ────────────────────────────────────────────────────────────────
+  /** 当前 rail 选中的一级分类 */
+  private railRoot(): CategoryNode | null {
+    for (const r of this.categories) {
+      if (r.id === this.railRootId) {
+        return r;
+      }
+    }
+    return null;
   }
 
-  private openPaymentSheet(pay: PaymentMethodItem | null): void {
+  private railChildren(): CategoryNode[] {
+    const root = this.railRoot();
+    return root === null ? [] : root.children;
+  }
+
+  /** 正在编辑的是否一级类别（决定颜色选择器 / 归属类别谁出现） */
+  private editingRoot(): boolean {
+    if (this.editingCategoryId === '') {
+      return this.formParent === '';
+    }
+    for (const r of this.categories) {
+      if (r.id === this.editingCategoryId) {
+        return r.parentId === null;
+      }
+      for (const kid of r.children) {
+        if (kid.id === this.editingCategoryId) {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** web openCatCreate：新增类别（parent 落到第一个一级 —— 与 web 现状一致） */
+  private openCatCreate(): void {
     this.formError = '';
-    this.editingPaymentId = pay === null ? '' : pay.id;
-    this.formName = pay === null ? '' : pay.name;
-    this.formType = pay === null ? 'cash' : pay.type;
-    this.formBillingDay = pay === null ? 0 : (pay.billingDay ?? 0);
-    this.formRepaymentDay = pay === null ? 0 : (pay.repaymentDay ?? 0);
-    this.formMergeInto = '';
-    this.sheetMode = 'payment';
-    this.sheetOpen = true;
-  }
-
-  private openPlanSheet(): void {
-    this.formError = '';
-    this.editingPlanId = '';
+    this.editingCategoryId = '';
     this.formName = '';
-    this.formCategoryId = '';
-    this.formPaymentId = '';
-    this.formAmount = '';
-    this.formPeriods = 12;
-    this.formFirstDue = todayKey();
-    this.formAutoPost = false;
-    this.sheetMode = 'plan';
+    this.formParent = this.categories.length > 0 ? this.categories[0].id : '';
+    this.formIcon = '';
+    this.formColor = '';
+    this.sheetKind = 'cat';
     this.sheetOpen = true;
   }
 
-  private openMemberSheet(): void {
+  /** 新增二级：父级用当前 rail 选中的一级 */
+  private openCatCreateChild(): void {
     this.formError = '';
+    this.editingCategoryId = '';
     this.formName = '';
-    this.formUsername = '';
-    this.formPassword = '';
-    this.formRole = 'member';
-    this.sheetMode = 'member';
+    this.formParent = this.railRootId;
+    this.formIcon = '';
+    this.formColor = '';
+    this.sheetKind = 'cat';
     this.sheetOpen = true;
   }
 
-  private async saveMember(): Promise<void> {
+  private openCatEdit(cat: CategoryNode): void {
     this.formError = '';
-    if (this.formUsername.trim() === '' || this.formPassword.length < 6) {
-      this.formError = '登录名必填，口令至少 6 位';
-      return;
-    }
-    try {
-      const req: UserCreateRequest = {
-        username: this.formUsername.trim(),
-        displayName: this.formName.trim() === '' ? this.formUsername.trim() : this.formName.trim(),
-        password: this.formPassword,
-        role: this.formRole
-      };
-      await Api.createUser(req);
-      this.sheetMode = '';
-      await this.reload();
-    } catch (e) {
-      this.formError = (e as ApiError).message;
-    }
+    this.editingCategoryId = cat.id;
+    this.formName = cat.name;
+    this.formParent = cat.parentId ?? '';
+    this.formIcon = cat.icon;
+    this.formColor = cat.color;
+    this.sheetKind = 'cat';
+    this.sheetOpen = true;
   }
 
-  private async saveCategory(): Promise<void> {
+  private async saveCat(): Promise<void> {
     this.formError = '';
     if (this.formName.trim() === '') {
-      this.formError = '请填写名称';
+      this.formError = '请填写分类名称';
       return;
     }
+    this.busy = true;
     try {
       if (this.editingCategoryId === '') {
         const req: CategoryCreateRequest = {
           name: this.formName.trim(),
           parentId: this.formParent,
-          icon: this.formIcon.trim(),
-          color: this.formParent === '' ? String(this.formColor) : '',
+          icon: this.formIcon,
+          color: this.formColor,
           sortOrder: 0
         };
         await Api.createCategory(req);
+        this.showToast('分类已新增');
       } else {
+        const isRoot = this.editingRoot();
+        let enabled = true;
+        for (const r of this.categories) {
+          if (r.id === this.editingCategoryId) {
+            enabled = r.isEnabled;
+          }
+          for (const kid of r.children) {
+            if (kid.id === this.editingCategoryId) {
+              enabled = kid.isEnabled;
+            }
+          }
+        }
         const req: CategoryPatchRequest = {
           name: this.formName.trim(),
-          icon: this.formIcon.trim(),
-          // 二级分类不设颜色：颜色跟一级走，这里传空串让服务端保持继承
-          color: this.formParent === '' ? String(this.formColor) : '',
-          parentId: this.formParent === '' ? null : this.formParent,
-          isEnabled: true
+          icon: this.formIcon,
+          // 二级分类不写颜色（跟随一级）；一级才写
+          color: isRoot ? this.formColor : '',
+          parentId: isRoot ? null : this.formParent,
+          isEnabled: enabled
         };
         await Api.patchCategory(this.editingCategoryId, req);
+        this.showToast('分类已更新');
       }
-      this.sheetMode = '';
+      this.sheetOpen = false;
       await this.reload();
     } catch (e) {
-      const err = e as ApiError;
-      this.formError = err.message;
+      this.formError = (e as ApiError).message;
+    } finally {
+      this.busy = false;
     }
   }
 
-  private async savePayment(): Promise<void> {
+  private async removeCat(cat: CategoryNode): Promise<void> {
+    try {
+      await Api.deleteCategory(cat.id);
+      this.showToast('分类已删除');
+      await this.reload();
+    } catch (e) {
+      this.showToast('该分类已有流水引用，请改为停用');
+    }
+  }
+
+  // ── 支付方式 ────────────────────────────────────────────────────────────
+  private openPayCreate(): void {
+    this.formError = '';
+    this.editingPaymentId = '';
+    this.formName = '';
+    this.formType = 'credit';
+    this.formBillingDay = '1';
+    this.formRepaymentDay = '20';
+    this.formPayIcon = '';
+    this.sheetKind = 'pay';
+    this.sheetOpen = true;
+  }
+
+  private openPayEdit(p: PaymentMethodItem): void {
+    this.formError = '';
+    this.editingPaymentId = p.id;
+    this.formName = p.name;
+    this.formType = p.type;
+    this.formBillingDay = `${p.billingDay ?? 1}`;
+    this.formRepaymentDay = `${p.repaymentDay ?? 20}`;
+    this.formPayIcon = p.icon;
+    this.sheetKind = 'pay';
+    this.sheetOpen = true;
+  }
+
+  private async savePay(): Promise<void> {
     this.formError = '';
     if (this.formName.trim() === '') {
-      this.formError = '请填写名称';
+      this.formError = '请填写支付方式名称';
       return;
     }
-    if (this.formType === 'credit' && (this.formBillingDay < 1 || this.formRepaymentDay < 1)) {
-      this.formError = '信用卡需要填写账单日与还款日';
-      return;
-    }
+    this.busy = true;
+    const isCredit = this.formType === 'credit';
     try {
       if (this.editingPaymentId === '') {
         const req: PaymentCreateRequest = {
           name: this.formName.trim(),
           type: this.formType,
-          icon: '',
-          billingDay: this.formType === 'credit' ? this.formBillingDay : 0,
-          repaymentDay: this.formType === 'credit' ? this.formRepaymentDay : 0,
+          icon: this.formPayIcon,
+          billingDay: isCredit ? Number(this.formBillingDay) : 0,
+          repaymentDay: isCredit ? Number(this.formRepaymentDay) : 0,
           sortOrder: 0
         };
         await Api.createPayment(req);
+        this.showToast('支付方式已新增');
       } else {
+        let enabled = true;
+        for (const p of this.payments) {
+          if (p.id === this.editingPaymentId) {
+            enabled = p.isEnabled;
+          }
+        }
         const req: PaymentPatchRequest = {
           name: this.formName.trim(),
-          icon: '',
-          billingDay: this.formType === 'credit' ? this.formBillingDay : 0,
-          repaymentDay: this.formType === 'credit' ? this.formRepaymentDay : 0,
+          icon: this.formPayIcon,
+          billingDay: isCredit ? Number(this.formBillingDay) : 0,
+          repaymentDay: isCredit ? Number(this.formRepaymentDay) : 0,
           sortOrder: 0,
-          isEnabled: true
+          isEnabled: enabled
         };
         await Api.patchPayment(this.editingPaymentId, req);
-        if (this.formMergeInto !== '') {
-          await Api.mergePayment(this.editingPaymentId, this.formMergeInto);
-        }
+        this.showToast('支付方式已更新');
       }
-      this.sheetMode = '';
+      this.sheetOpen = false;
       await this.reload();
     } catch (e) {
-      const err = e as ApiError;
-      this.formError = err.message;
+      this.formError = (e as ApiError).message;
+    } finally {
+      this.busy = false;
     }
+  }
+
+  private openMerge(p: PaymentMethodItem): void {
+    this.formError = '';
+    this.mergeFromId = p.id;
+    this.mergeIntoId = '';
+    for (const x of this.payments) {
+      if (x.id !== p.id) {
+        this.mergeIntoId = x.id;
+        break;
+      }
+    }
+    this.sheetKind = 'merge';
+    this.sheetOpen = true;
+  }
+
+  private mergeFromName(): string {
+    for (const p of this.payments) {
+      if (p.id === this.mergeFromId) {
+        return p.name;
+      }
+    }
+    return '';
+  }
+
+  private async runMerge(): Promise<void> {
+    if (this.mergeFromId === '' || this.mergeIntoId === '') {
+      return;
+    }
+    this.busy = true;
+    try {
+      await Api.mergePayment(this.mergeFromId, this.mergeIntoId);
+      this.showToast('已合并');
+      this.sheetOpen = false;
+      await this.reload();
+    } catch (e) {
+      this.formError = '合并失败';
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async removePay(p: PaymentMethodItem): Promise<void> {
+    try {
+      await Api.deletePayment(p.id);
+      this.showToast('支付方式已删除');
+      await this.reload();
+    } catch (e) {
+      this.showToast('该支付方式已有流水引用，请改为停用');
+    }
+  }
+
+  // ── 计划 ────────────────────────────────────────────────────────────────
+  private planTotal(p: PlanItem): number {
+    return p.progress.paidCount + p.progress.pendingCount;
+  }
+
+  private activePlansCount(): number {
+    let n = 0;
+    for (const p of this.plans) {
+      if (p.state === 'active') {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private endedPlansCount(): number {
+    let n = 0;
+    for (const p of this.plans) {
+      if (p.state !== 'active') {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private openPlanSheet(): void {
+    this.formError = '';
+    this.formName = '';
+    this.formCategoryId = this.categories.length > 0 ? this.categories[0].id : '';
+    this.formPaymentId = '';
+    for (const p of this.payments) {
+      if (p.isEnabled) {
+        this.formPaymentId = p.id;
+        break;
+      }
+    }
+    this.formAmount = '';
+    this.formPeriods = '12';
+    this.formFirstDue = todayKey();
+    this.formAutoPost = false;
+    this.sheetKind = 'plan';
+    this.sheetOpen = true;
   }
 
   private async savePlan(): Promise<void> {
@@ -340,9 +517,10 @@ export struct SettingsScreen {
     }
     const cents = Math.round(Number(this.formAmount) * 100);
     if (!Number.isFinite(cents) || cents <= 0) {
-      this.formError = '每期金额要大于 0';
+      this.formError = '请填写名称与每期金额';
       return;
     }
+    this.busy = true;
     try {
       const req: PlanCreateRequest = {
         name: this.formName.trim(),
@@ -351,1383 +529,1867 @@ export struct SettingsScreen {
         source: 'manual',
         amountCents: cents,
         totalAmountCents: 0,
-        periods: this.formPeriods,
+        periods: Number(this.formPeriods),
         firstDueDate: this.formFirstDue,
         remindDaysBefore: 3,
         autoPost: this.formAutoPost,
         note: ''
       };
       await Api.createPlan(req);
-      this.sheetMode = '';
+      this.showToast('计划已创建');
+      this.sheetOpen = false;
       await this.reload();
     } catch (e) {
-      const err = e as ApiError;
-      this.formError = err.message;
+      this.formError = (e as ApiError).message;
+    } finally {
+      this.busy = false;
     }
   }
 
-  // ── 账目 ────────────────────────────────────────────────────────────────
-  @Builder
-  accountsSection() {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
-        Text('分类')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.tok().ink)
-          .layoutWeight(1)
-        Button('新增类别')
-          .fontSize(10)
-          .height(26)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.openCategorySheet(null, '');
-          })
-        Button('新增分类')
-          .fontSize(10)
-          .height(26)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.openCategorySheet(null, this.railRootId);
-          })
+  private async endPlan(p: PlanItem): Promise<void> {
+    try {
+      await Api.endPlan(p.id);
+      this.showToast('计划已终止');
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
+
+  private async removePlan(p: PlanItem): Promise<void> {
+    try {
+      await Api.deletePlan(p.id);
+      this.showToast('计划已删除');
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
+
+  // ── 期次 ────────────────────────────────────────────────────────────────
+  private async actTodo(t: PlanTodoItem): Promise<void> {
+    try {
+      if (t.willAutoPost) {
+        await Api.ackTodo(t.id);
+        this.showToast('已确认并自动入账');
+      } else {
+        await Api.confirmTodo(t.id, '');
+        this.showToast('已手动入账');
       }
-      .width('100%')
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
 
-      Row({ space: 8 }) {
-        List({ space: 4 }) {
-          ForEach(this.categories, (root: CategoryNode) => {
-            ListItem() {
-              Row() {
-                Text(root.name)
-                  .fontSize(11)
-                  .fontColor(this.railRootId === root.id ? this.tok().ink : this.tok().ink3)
-                  .layoutWeight(1)
-                // R89：一级显示**累计笔数**（子类之和），不是子类个数
-                Text(String(root.expenseCount ?? 0))
-                  .fontSize(9)
-                  .fontFamily(fontMonoOf())
-                  .fontColor(this.tok().ink3)
-              }
-              .width('100%')
-              .padding(8)
-              .backgroundColor(this.railRootId === root.id ? this.tok().surface2 : this.tok().surface)
-              .borderRadius(6)
-              .onClick(() => {
-                this.railRootId = root.id;
-              })
-            }
-          }, (root: CategoryNode) => root.id)
-        }
-        .width(110)
-        .height(200)
+  private async skipTodo(t: PlanTodoItem): Promise<void> {
+    try {
+      await Api.skipTodo(t.id);
+      this.showToast('已忽略本期');
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
 
-        Column({ space: 6 }) {
-          ForEach(this.railChildren(), (kid: CategoryNode) => {
-            Row({ space: 6 }) {
-              Row()
-                .width(8)
-                .height(8)
-                .backgroundColor(chartColor(this.tok(), hashIndex(kid.id)))
-                .borderRadius(2)
-              Text(kid.name)
-                .fontSize(11)
-                .fontColor(this.tok().ink2)
-                .layoutWeight(1)
-              Text(`${kid.expenseCount} 笔`)
-                .fontSize(9)
-                .fontFamily(fontMonoOf())
-                .fontColor(this.tok().ink3)
-              if (!kid.isEnabled) {
-                Text('已停用').fontSize(9).fontColor(this.tok().ink3)
-              } else {
-                // 行内停用（R87 软删：有引用只能停用）
-                Text('停用')
-                  .fontSize(9)
-                  .fontColor(this.tok().ink3)
-                  .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-                  .border({ width: 1, color: this.tok().line })
-                  .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
-                  .onClick(() => {
-                    this.deactivateCategoryById(kid.id);
-                  })
-              }
-            }
-            .width('100%')
-            .padding({ top: 4, bottom: 4 })
-            .onClick(() => {
-              this.openCategorySheet(kid, this.railRootId);
-            })
-            .gesture(LongPressGesture().onAction(() => {
-              this.deactivateCategoryById(kid.id);
-            }))
-          }, (kid: CategoryNode) => kid.id)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
+  /** 撤销入账 / 恢复跳过；R126：撤销跨月入账先警告（不阻止） */
+  private restoreOrRevert(t: PlanTodoItem): void {
+    if (t.status !== 'skipped') {
+      const crossMonth = t.expenseMonth !== undefined && t.expenseMonth !== ''
+        && t.expenseMonth !== todayKey().substring(0, 7);
+      if (crossMonth) {
+        this.revertWarnText = `这笔 ${formatYuan(t.amountCents)} 记在 ${t.expenseMonth}，撤销后 ${t.expenseMonth} 的报表会跟着变。`;
+        this.pendingRevertId = t.id;
+        this.revertWarnOpen = true;
+        return;
       }
-      .width('100%')
+      this.doRevert(t.id);
+    } else {
+      this.doRestore(t.id);
+    }
+  }
 
-      Divider().color(this.tok().line)
+  private async doRevert(id: string): Promise<void> {
+    try {
+      await Api.revertTodo(id);
+      this.showToast('已撤销入账');
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
 
-      Row({ space: 8 }) {
-        Text('支付方式')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.tok().ink)
-          .layoutWeight(1)
-        Button('新增')
-          .fontSize(10)
-          .height(26)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.openPaymentSheet(null);
-          })
-      }
-      .width('100%')
+  private async doRestore(id: string): Promise<void> {
+    try {
+      await Api.restoreTodo(id);
+      this.showToast('已恢复为待处理');
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
 
-      ForEach(this.payments, (p: PaymentMethodItem) => {
-        Row({ space: 8 }) {
-          // 品牌图标（支付宝/微信/云闪付…填充色；信用卡/现金/银行/钱包走 Lucide 描边）
-          Stack() {
-            IconView({
-              path: this.payVisualOf(p).path,
-              iconSize: 16,
-              color: this.payVisualOf(p).color,
-              filled: this.payVisualOf(p).brand
-            })
-          }
-          .width(28)
-          .height(28)
-          .backgroundColor(this.tok().surface2)
-          .borderRadius(8)
-          Column({ space: 2 }) {
-            Text(p.name)
-              .fontSize(12)
-              .fontColor(this.tok().ink)
-            // 现金不显示账期说明（没有账单日），信用卡才显示
-            if (p.type === 'credit') {
-              Text(`${p.billingDay ?? 0} 日账单 · ${p.repaymentDay ?? 0} 日还款 · 本月 ${p.expenseCount} 笔`)
-                .fontSize(9)
-                .fontFamily(fontMonoOf())
-                .fontColor(this.tok().ink3)
-            } else {
-              Text(`本月 ${p.monthExpenseCount !== undefined ? p.monthExpenseCount : 0} 笔`)
-                .fontSize(9)
-                .fontFamily(fontMonoOf())
-                .fontColor(this.tok().ink3)
+  // ── 设备区 ──────────────────────────────────────────────────────────────
+  private async changePassword(): Promise<void> {
+    if (this.pwdNew.length < 8) {
+      this.showToast('新口令至少 8 位');
+      return;
+    }
+    try {
+      const res = await Api.changePassword(this.pwdCurrent, this.pwdNew);
+      this.pwdCurrent = '';
+      this.pwdNew = '';
+      this.showToast(res.message !== '' ? res.message : '口令已修改');
+    } catch (e) {
+      this.showToast('修改失败：当前口令不对？');
+    }
+  }
+
+  private async checkUpdate(): Promise<void> {
+    this.updateChecking = true;
+    try {
+      const health = await Api.health();
+      this.updateMessage = `服务端 v${health.version} · 连接正常`;
+    } catch (e) {
+      this.updateMessage = (e as ApiError).message;
+    } finally {
+      this.updateChecking = false;
+    }
+  }
+
+  // ── 弹层标题 ────────────────────────────────────────────────────────────
+  private sheetTitle(): string {
+    if (this.sheetKind === 'cat') {
+      return this.editingCategoryId === '' ? '新增分类' : '编辑分类';
+    }
+    if (this.sheetKind === 'pay') {
+      return this.editingPaymentId === '' ? '新增支付方式' : '编辑支付方式';
+    }
+    if (this.sheetKind === 'merge') {
+      return '合并支付方式';
+    }
+    return '新建计划';
+  }
+
+  // ══ UI ═════════════════════════════════════════════════════════════════
+  build() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Scroll() {
+        Column({ space: 12 }) {
+          this.settingsTabs()
+          if (this.section === 0) {
+            this.catCard()
+            this.payCard()
+          } else if (this.section === 1) {
+            this.plansCard()
+            if (this.doneTodos.length > 0) {
+              this.doneCard()
             }
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          if (!p.isEnabled) {
-            Text('已停用').fontSize(9).fontColor(this.tok().ink3)
+            this.dueCard()
           } else {
-            // 行内合并入口（合并后本项停用；历史记录归属到目标）
-            Text('合并')
-              .fontSize(9)
-              .fontColor(this.tok().ink3)
-              .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-              .border({ width: 1, color: this.tok().line })
-              .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
-              .onClick(() => {
-                this.confirmMerge(p);
-              })
+            this.themeCard()
+            this.passwordCard()
+            this.updateCard()
+          }
+          if (this.errorText !== '') {
+            Text(this.errorText)
+              .fontSize(11)
+              .fontColor(this.tok().danger)
+              .width('100%')
+              .textAlign(TextAlign.Center)
+          }
+          if (this.loading) {
+            Text('加载中…')
+              .fontSize(10.5)
+              .fontColor(this.tok().ink2)
+              .width('100%')
+              .textAlign(TextAlign.Center)
           }
         }
         .width('100%')
-        .padding({ top: 6, bottom: 6 })
-        .onClick(() => {
-          this.openPaymentSheet(p);
-        })
-      }, (p: PaymentMethodItem) => p.id)
+        .padding({ bottom: 8 })
+      }
+      .width('100%')
+      .height('100%')
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
+
+      // 轻提示（web .toast）：底部居中、2 秒消失
+      if (this.toastText !== '') {
+        Text(this.toastText)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tok().bg)
+          .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+          .backgroundColor(this.tok().ink)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .border({ width: 2, color: this.tok().line2 })
+          .shadow(parseShadow('4px 4px 0 rgba(0,0,0,0.18)') as ShadowOptions)
+          .margin({ bottom: 26 })
+      }
+
+      // R126 跨月撤销警告（状态驱动弹层）
+      if (this.revertWarnOpen) {
+        Column({ space: 10 }) {
+          Text('撤销跨月入账')
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink)
+          Text(this.revertWarnText)
+            .fontSize(11)
+            .fontColor(this.tok().ink2)
+          Row({ space: 8 }) {
+            Button('再想想')
+              .fontSize(11)
+              .height(32)
+              .layoutWeight(1)
+              .backgroundColor(this.tok().surface2)
+              .fontColor(this.tok().ink2)
+              .onClick(() => {
+                this.revertWarnOpen = false;
+              })
+            Button('仍然撤销')
+              .fontSize(11)
+              .height(32)
+              .layoutWeight(1)
+              .backgroundColor(this.tok().danger)
+              .fontColor('#FFFFFF')
+              .onClick(() => {
+                this.revertWarnOpen = false;
+                this.doRevert(this.pendingRevertId);
+              })
+          }
+          .width('100%')
+        }
+        .width('86%')
+        .padding(14)
+        .backgroundColor(this.tok().surface)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+        .border({ width: 2, color: this.tok().danger })
+        .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+      }
     }
     .width('100%')
-    .padding(CARD_PAD)
+    .height('100%')
+    .bindSheet($$this.sheetOpen, this.settingsSheet(), {
+      height: SheetSize.LARGE,
+      dragBar: true,
+      showClose: true,
+      backgroundColor: this.tok().bg
+    })
+  }
+
+  /** 分区页签（web .settings-tabs / .stab：下划线式） */
+  @Builder
+  settingsTabs() {
+    Row({ space: 4 }) {
+      this.stab('账目', 0)
+      this.stab('计划与还款', 1)
+      this.stab('设备', 2)
+    }
+    .width('100%')
+    .border({ width: { bottom: 1 }, color: this.tok().line })
+  }
+
+  @Builder
+  stab(label: string, value: number) {
+    Text(label)
+      .fontSize(11.5)
+      .fontWeight(FontWeight.Bold)
+      .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+      .fontColor(this.section === value ? this.tok().ink : this.tok().ink3)
+      .padding({ left: 10, right: 10, top: 7, bottom: 4 })
+      .border({
+        width: { bottom: 3 },
+        color: this.section === value ? this.tok().accent : Color.Transparent
+      })
+      .onClick(() => {
+        this.section = value;
+      })
+  }
+
+  /** 悬浮圆图标（web .orb） */
+  @Builder
+  orb(tone: string, icon: Resource) {
+    Stack() {
+      SymbolGlyph(icon)
+        .fontSize(16)
+        .fontColor([this.isCyber() ? this.tok().accent : '#1E293B'])
+    }
+    .width(34)
+    .height(34)
+    .borderRadius(this.isCyber() ? 1 : 17)
+    .backgroundColor(this.isCyber() ? Color.Transparent : tone)
+    .border({
+      width: this.isCyber() ? 1 : 2,
+      color: this.isCyber() ? this.tok().accent : this.tok().line2
+    })
+    .shadow(this.isCyber()
+      ? { radius: 10, offsetX: 0, offsetY: -2, color: 'rgba(0,255,136,0.4)' } as ShadowOptions
+      : parseShadow(`2px 2px 0 ${this.tok().line2}`) as ShadowOptions)
+  }
+
+  /** 卡片标题（web .card-h：orb + card-t + 右侧动作） */
+  @Builder
+  cardHead(title: string, hasOrb: boolean, orbTone: string, orbIcon: Resource) {
+    Row({ space: 10 }) {
+      if (hasOrb) {
+        this.orb(orbTone, orbIcon)
+      }
+      Text(title)
+        .fontSize(this.isCyber() ? 12.5 : 15)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+        .letterSpacing(this.isCyber() ? 1.25 : 0)
+        .fontColor(this.tok().ink)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .margin({ bottom: 13 })
+  }
+
+  /** 空态（web .empty） */
+  @Builder
+  emptyState(icon: Resource, text: string) {
+    Column({ space: 8 }) {
+      SymbolGlyph(icon)
+        .fontSize(18)
+        .fontColor([this.tok().ink3])
+      Text(text)
+        .fontSize(12)
+        .fontColor(this.tok().ink3)
+    }
+    .width('100%')
+    .padding({ top: 34, bottom: 34, left: 10, right: 10 })
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 小按钮（web .btn--sm）：默认变体 */
+  @Builder
+  smBtn(label: string) {
+    Text(label)
+      .fontSize(this.isCyber() ? 10 : 11.5)
+      .fontWeight(FontWeight.Bold)
+      .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+      .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+      .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+      .border({
+        width: this.tok().borderW,
+        color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
+      })
+      .shadow(this.isCyber()
+        ? { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions
+        : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
+  }
+
+  /** 幽灵小按钮（web .btn--ghost.btn--sm） */
+  @Builder
+  ghostSmBtn(label: string) {
+    Text(label)
+      .fontSize(11.5)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.tok().ink2)
+      .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+  }
+
+  /** 图标圆按钮（web .icon-btn：38px 胶囊） */
+  @Builder
+  iconBtn(icon: Resource) {
+    Stack() {
+      SymbolGlyph(icon)
+        .fontSize(15)
+        .fontColor([this.tok().ink2])
+    }
+    .width(34)
+    .height(34)
+    .borderRadius(this.isCyber() ? 1 : 17)
+    .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+    .border({
+      width: this.tok().borderW,
+      color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line
+    })
+  }
+
+  /** 药丸标签（web .tag） */
+  @Builder
+  tag(text: string, tone: string) {
+    Text(text)
+      .fontSize(10)
+      .fontWeight(FontWeight.Medium)
+      .fontFamily(fontMonoOf())
+      .fontColor(tone === 'accent' ? this.tok().accent
+        : (tone === 'warn' ? this.tok().warn : this.tok().ink2))
+      .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .border({
+        width: 1,
+        style: tone === 'dash' ? BorderStyle.Dashed : BorderStyle.Solid,
+        color: tone === 'accent' ? this.tok().accent
+          : (tone === 'warn' ? this.tok().warn : this.tok().line)
+      })
+      .backgroundColor(tone === '' || tone === 'dash' ? this.tok().surface2 : Color.Transparent)
+  }
+
+  // ── 账目区 ──────────────────────────────────────────────────────────────
+  /** 分类管理卡（web cat-admin 移动端：rail 横排换行 + 子类列表） */
+  @Builder
+  catCard() {
+    Column({ space: 10 }) {
+      Row({ space: 10 }) {
+        this.orb(this.tok().accent, $r('sys.symbol.label'))
+        Text('分类管理')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+          .layoutWeight(1)
+        Text('新增类别')
+          .fontSize(this.isCyber() ? 10 : 11.5)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+          .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+          .border({
+            width: this.tok().borderW,
+            color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
+          })
+          .onClick(() => {
+            this.openCatCreate();
+          })
+      }
+      .width('100%')
+      .margin({ bottom: 3 })
+
+      // 左侧一级导航（移动端：横排换行）
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(4), cross: LengthMetrics.px(4) } }) {
+        ForEach(this.categories, (root: CategoryNode) => {
+          Row({ space: 8 }) {
+            CatIconView({
+              catName: root.name,
+              iconSize: 18,
+              color: categoryColorOf(root.name, root.color)
+            })
+            Text(root.name)
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.railRootId === root.id ? this.tok().ink : this.tok().ink2)
+              .maxLines(1)
+            Text(`${root.children.length}`)
+              .fontSize(10)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+          }
+          .padding({ left: 9, right: 9, top: 7, bottom: 7 })
+          .borderRadius(this.isCyber() ? 1 : 9)
+          .backgroundColor(this.railRootId === root.id ? this.tok().surface2 : Color.Transparent)
+          .border({
+            width: this.railRootId === root.id ? this.tok().borderW : 2,
+            color: this.railRootId === root.id
+              ? (this.isCyber() ? this.tok().accent : this.tok().line2)
+              : Color.Transparent
+          })
+          .onClick(() => {
+            this.railRootId = root.id;
+          })
+        }, (root: CategoryNode) => root.id)
+      }
+      .width('100%')
+
+      // 右侧：当前一级下的二级分类（split 头 + 列表）
+      Column({ space: 8 }) {
+        Row({ space: 10 }) {
+          Text(this.railRootName() !== '' ? `${this.railRootName()} · 分类` : '分类')
+            .fontSize(10.5)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.tok().ink3)
+            .layoutWeight(1)
+          Text('新增分类')
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink2)
+            .onClick(() => {
+              this.openCatCreateChild();
+            })
+          Text('编辑类别')
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink2)
+            .onClick(() => {
+              const root = this.railRoot();
+              if (root !== null) {
+                this.openCatEdit(root);
+              }
+            })
+          Text('删除')
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink2)
+            .onClick(() => {
+              const root = this.railRoot();
+              if (root !== null) {
+                this.removeCat(root);
+              }
+            })
+        }
+        .width('100%')
+
+        if (this.railChildren().length === 0) {
+          this.emptyState($r('sys.symbol.label'), '这个一级分类下还没有二级分类')
+        } else {
+          ForEach(this.railChildren(), (kid: CategoryNode) => {
+            Row({ space: 8 }) {
+              CatIconView({
+                catName: kid.name,
+                iconSize: 26,
+                color: categoryColorOf(kid.name, kid.color)
+              })
+              Column({ space: 2 }) {
+                Row({ space: 6 }) {
+                  Text(kid.name)
+                    .fontSize(12)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.tok().ink)
+                    .maxLines(1)
+                  if (!kid.isEnabled) {
+                    this.tag('已停用', 'warn')
+                  }
+                }
+                Text(`${kid.expenseCount} 笔引用`)
+                  .fontSize(10.5)
+                  .fontColor(this.tok().ink3)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              Stack() {
+                SymbolGlyph($r('sys.symbol.square_and_pencil'))
+                  .fontSize(14)
+                  .fontColor([this.tok().ink2])
+              }
+              .width(34)
+              .height(34)
+              .borderRadius(this.isCyber() ? 1 : 17)
+              .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+              .border({
+                width: this.tok().borderW,
+                color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line
+              })
+              .onClick(() => {
+                this.openCatEdit(kid);
+              })
+              Stack() {
+                SymbolGlyph($r('sys.symbol.trash'))
+                  .fontSize(14)
+                  .fontColor([this.tok().ink2])
+              }
+              .width(34)
+              .height(34)
+              .borderRadius(this.isCyber() ? 1 : 17)
+              .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+              .border({
+                width: this.tok().borderW,
+                color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line
+              })
+              .onClick(() => {
+                this.removeCat(kid);
+              })
+            }
+            .width('100%')
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .borderRadius(this.isCyber() ? 1 : 10)
+            .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+            .border({ width: 1, color: this.tok().line })
+          }, (kid: CategoryNode) => kid.id)
+        }
+
+        Text('分类与支付方式均为软删除：已有流水引用时拒绝删除，只能停用。')
+          .fontSize(11)
+          .fontColor(this.tok().ink3)
+          .lineHeight(18)
+          .width('100%')
+          .margin({ top: 2 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
     .backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
-  private railChildren(): CategoryNode[] {
-    for (const root of this.categories) {
-      if (root.id === this.railRootId) {
-        return root.children.length > 0 ? root.children : [root];
-      }
-    }
-    return [];
+  /** rail 一级分类名（builder 内避免可空链） */
+  private railRootName(): string {
+    const root = this.railRoot();
+    return root === null ? '' : root.name;
   }
 
-  // ── 计划 ────────────────────────────────────────────────────────────────
+  /** 支付方式卡（web set-row） */
   @Builder
-  plansSection() {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
-        Text('计划')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
+  payCard() {
+    Column() {
+      Row({ space: 10 }) {
+        this.orb(this.tok().sky, $r('sys.symbol.creditcard'))
+        Text('支付方式')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
           .fontColor(this.tok().ink)
           .layoutWeight(1)
-        Button('新建计划')
-          .fontSize(10)
-          .height(26)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
+        Text('新增')
+          .fontSize(this.isCyber() ? 10 : 11.5)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+          .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+          .border({
+            width: this.tok().borderW,
+            color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
+          })
+          .onClick(() => {
+            this.openPayCreate();
+          })
+      }
+      .width('100%')
+      .margin({ bottom: 13 })
+
+      if (this.payments.length === 0) {
+        this.emptyState($r('sys.symbol.wallet'), '还没有支付方式')
+      } else {
+        ForEach(this.payments, (p: PaymentMethodItem, idx: number) => {
+          Row({ space: 12 }) {
+            Stack() {
+              PayIconView({
+                payName: p.name,
+                payIcon: p.icon,
+                iconSize: 18,
+                colorOverride: ''
+              })
+            }
+            .width(32)
+            .height(32)
+            .borderRadius(this.isCyber() ? 1 : 9)
+            .backgroundColor(this.tok().surface2)
+            .border({ width: 1, color: this.tok().line })
+
+            Column({ space: 2 }) {
+              Text(p.name)
+                .fontSize(12.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+                .maxLines(1)
+              if (p.type === 'credit') {
+                Text(`${p.billingDay ?? 1} 日账单 · ${p.repaymentDay ?? 20} 日还款`)
+                  .fontSize(10.5)
+                  .fontColor(this.tok().ink3)
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text('合并')
+              .fontSize(11.5)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.tok().ink2)
+              .onClick(() => {
+                this.openMerge(p);
+              })
+            Stack() {
+              SymbolGlyph($r('sys.symbol.square_and_pencil'))
+                .fontSize(14)
+                .fontColor([this.tok().ink2])
+            }
+            .width(34)
+            .height(34)
+            .borderRadius(this.isCyber() ? 1 : 17)
+            .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+            .border({
+              width: this.tok().borderW,
+              color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line
+            })
+            .onClick(() => {
+              this.openPayEdit(p);
+            })
+            Stack() {
+              SymbolGlyph($r('sys.symbol.trash'))
+                .fontSize(14)
+                .fontColor([this.tok().ink2])
+            }
+            .width(34)
+            .height(34)
+            .borderRadius(this.isCyber() ? 1 : 17)
+            .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+            .border({
+              width: this.tok().borderW,
+              color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line
+            })
+            .onClick(() => {
+              this.removePay(p);
+            })
+          }
+          .width('100%')
+          .padding({ top: 11, bottom: 11 })
+          .border(idx < this.payments.length - 1
+            ? { width: { bottom: 1 }, color: this.tok().line }
+            : { width: 0 })
+        }, (p: PaymentMethodItem) => p.id)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  // ── 计划区 ──────────────────────────────────────────────────────────────
+  /** 还款计划卡 */
+  @Builder
+  plansCard() {
+    Column() {
+      Row({ space: 10 }) {
+        Text('还款计划')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+          .layoutWeight(1)
+        Text(`进行中 ${this.activePlansCount()} · 已结束 ${this.endedPlansCount()}`)
+          .fontSize(9.5)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+        Text('新建计划')
+          .fontSize(this.isCyber() ? 10 : 11.5)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+          .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+          .border({
+            width: this.tok().borderW,
+            color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
+          })
           .onClick(() => {
             this.openPlanSheet();
           })
       }
       .width('100%')
+      .margin({ bottom: 13 })
 
-      ForEach(this.plans, (plan: PlanItem) => {
-        Column({ space: 4 }) {
-          Row({ space: 6 }) {
-            // R121：计划卡身份物 —— 分类图标（走 R134 解析链）
+      if (this.plans.length === 0) {
+        this.emptyState($r('sys.symbol.calendar'), '还没有计划')
+      } else {
+        ForEach(this.plans, (p: PlanItem, idx: number) => {
+          Row({ space: 12 }) {
             Stack() {
-              IconView({
-                path: categoryIconPath(plan.categoryIcon ?? '', plan.categoryName ?? plan.name),
-                iconSize: 11,
-                color: this.tok().ink2
+              CatIconView({
+                catName: p.categoryName !== undefined ? p.categoryName : p.name,
+                iconSize: 18,
+                color: categoryColorOf(p.categoryName !== undefined ? p.categoryName : p.name, '')
               })
             }
-            .width(18)
-            .height(18)
-            .backgroundColor(this.tok().surface2)
-            .borderRadius(radiusOf(this.tok(), this.isCyber(), 6))
-            Text(plan.name)
-              .fontSize(12)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.tok().ink)
-              .layoutWeight(1)
-            if (plan.autoPost) {
-              Text('自动入账')
-                .fontSize(9)
+            .width(26)
+            .height(26)
+            .borderRadius(this.isCyber() ? 1 : 9)
+            .backgroundColor(Color.Transparent)
+
+            Column({ space: 2 }) {
+              Row({ space: 6 }) {
+                Text(p.name)
+                  .fontSize(12.5)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.tok().ink)
+                  .maxLines(1)
+                if (p.state !== 'active') {
+                  this.tag('已结束', 'dash')
+                } else if (p.autoPost) {
+                  this.tag('自动', 'accent')
+                }
+              }
+              Text(this.planSeqText(p))
+                .fontSize(10.5)
                 .fontColor(this.tok().ink3)
+              // 进度刻度：最多 12 段（360 期逐期画只会变一片灰点）
+              Row({ space: 2 }) {
+                ForEach(this.planTicks(p), (filled: boolean, tIdx: number) => {
+                  Row()
+                    .layoutWeight(1)
+                    .height(4)
+                    .borderRadius(2)
+                    .backgroundColor(filled ? this.tok().accent : this.tok().surface3)
+                }, (filled: boolean, tIdx: number) => `${p.id}-${tIdx}`)
+              }
+              .width('100%')
+              .margin({ top: 4 })
             }
-            if (plan.state === 'ended') {
-              Text('已结束')
-                .fontSize(9)
-                .fontColor(this.tok().ink3)
-            }
-            // 终止/删除是危险动作，收进「更多」
-            Button('更多')
-              .fontSize(9)
-              .height(24)
-              .backgroundColor(this.tok().surface)
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            // more-menu：危险动作（终止/删除）收进「更多」
+            Text('更多')
+              .fontSize(11)
+              .fontFamily(fontMonoOf())
               .fontColor(this.tok().ink3)
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+              .border({ width: 1, color: this.tok().line })
               .bindMenu([
                 {
-                  value: '终止计划',
+                  value: p.state === 'active' ? '终止计划' : '已结束',
                   action: () => {
-                    this.endPlanById(plan.id);
+                    if (p.state === 'active') {
+                      this.endPlan(p);
+                    }
                   }
                 },
                 {
                   value: '删除计划',
                   action: () => {
-                    this.deletePlanById(plan.id);
+                    this.removePlan(p);
                   }
                 }
               ])
           }
           .width('100%')
-
-          Text(`${plan.progress.paidCount}/${plan.progress.paidCount + plan.progress.pendingCount} 期 · 每期 ${formatYuan(plan.amountCents)}${plan.progress.nextDueDate !== null ? ' · 下次 ' + plan.progress.nextDueDate : ''}`)
-              .fontFeature('"tnum" on')
-            .fontSize(10)
-              .fontFeature('"tnum" on')
-            .fontColor(this.tok().ink3)
-            .width('100%')
-
-          // 进度刻度最多 12 段：12 期一眼看得出还剩几格；360 期逐期画只会变一片灰点
-          Row({ space: 2 }) {
-            ForEach(planTicks(plan), (filled: boolean, index: number) => {
-              Row()
-                .layoutWeight(1)
-                .height(4)
-                .backgroundColor(filled ? this.tok().accent : this.tok().surface3)
-                .borderRadius(2)
-            }, (filled: boolean, index: number) => `${plan.id}-${index}`)
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .padding({ top: 8, bottom: 8 })
-      }, (plan: PlanItem) => plan.id)
-
-      if (this.doneTodos.length > 0) {
-        Divider().color(this.tok().line)
-        Text('已处理')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.tok().ink)
-          .width('100%')
-        ForEach(this.doneTodos, (todo: PlanTodoItem) => {
-          Row({ space: 8 }) {
-            Column({ space: 2 }) {
-              Text(`${todo.periodSeq}期 · ${todo.planName}`)
-                .fontSize(11)
-                .fontColor(this.tok().ink)
-              Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
-                  .fontFeature('"tnum" on')
-                .fontSize(9)
-                  .fontFeature('"tnum" on')
-                .fontFamily(fontMonoOf())
-                .fontColor(this.tok().ink3)
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-            Text(todo.status === 'skipped' ? '已跳过' : '已入账')
-              .fontSize(9)
-              .fontColor(this.tok().ink3)
-            // R125/R127：已入账给「撤销」，已跳过给「恢复」
-            Button(todo.status === 'skipped' ? '恢复' : '撤销')
-              .fontSize(10)
-              .height(26)
-              .backgroundColor(this.tok().surface2)
-              .fontColor(this.tok().ink2)
-              .onClick(() => {
-                this.restoreOrRevert(todo);
-              })
-          }
-          .width('100%')
-          .padding({ top: 4, bottom: 4 })
-        }, (todo: PlanTodoItem) => `done-${todo.id}`)
-      }
-
-      if (this.todos.length > 0) {
-        Divider().color(this.tok().line)
-        Text('待处理')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.tok().ink)
-          .width('100%')
-
-        ForEach(this.todos, (todo: PlanTodoItem) => {
-          Row({ space: 8 }) {
-            Column({ space: 2 }) {
-              Text(`${todo.periodSeq}期 · ${todo.planName}`)
-                .fontSize(11)
-                .fontColor(this.tok().ink)
-              Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
-                  .fontFeature('"tnum" on')
-                .fontSize(9)
-                  .fontFeature('"tnum" on')
-                .fontColor(this.tok().ink3)
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            Button(todo.willAutoPost ? '确认' : '入账')
-              .fontSize(11)
-              .height(28)
-              .backgroundColor(this.tok().surface2)
-              .fontColor(this.tok().ink)
-              .onClick(() => {
-                this.actTodo(todo, 'confirm');
-              })
-
-            // F36：自动入账期次不提供「忽略」；只有需手动入账的期次才能跳过
-            if (!todo.willAutoPost) {
-              Button('更多')
-                .fontSize(10)
-                .height(28)
-                .backgroundColor(this.tok().surface)
-                .fontColor(this.tok().ink3)
-                .bindMenu([
-                  {
-                    value: '忽略本期',
-                    action: () => {
-                      this.actTodo(todo, 'skip');
-                    }
-                  }
-                ])
-            }
-          }
-          .width('100%')
-          .padding({ top: 4, bottom: 4 })
-        }, (todo: PlanTodoItem) => todo.id)
+          .alignItems(VerticalAlign.Top)
+          .padding({ top: 11, bottom: 11 })
+          .border(idx < this.plans.length - 1
+            ? { width: { bottom: 1 }, color: this.tok().line }
+            : { width: 0 })
+        }, (p: PlanItem) => p.id)
       }
     }
     .width('100%')
-    .padding(CARD_PAD)
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
     .backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
-  }
-
-  private async endPlanById(id: string): Promise<void> {
-    try {
-      await Api.endPlan(id);
-      await this.reload();
-    } catch (e) {
-      this.errorText = (e as ApiError).message;
-    }
-  }
-
-  private async deletePlanById(id: string): Promise<void> {
-    try {
-      await Api.deletePlan(id);
-      await this.reload();
-    } catch (e) {
-      this.errorText = (e as ApiError).message;
-    }
-  }
-
-  /** 跨月撤销的警告确认（R126）：说清"会改动哪个月的报表"，不阻止操作 */
-  private async confirmRevert(month: string, cents: number): Promise<boolean> {
-    // 用 AlertDialog 的回调把结果写回状态（showAlertDialog 返回 void）
-    this.revertWarn = `这笔 ${formatYuan(cents)} 记在 ${month}，撤销后 ${month} 的报表会跟着变。`;
-    this.revertPendingId = month;
-    return await new Promise<boolean>((resolve: (v: boolean) => void) => {
-      this.pendingResolve = resolve;
-      this.revertDialogOpen = true;
-    });
-  }
-
-  /** 撤销入账 / 恢复跳过（R125/R127） */
-  private async restoreOrRevert(todo: PlanTodoItem): Promise<void> {
-    try {
-      // R126：撤销跨月入账要给警告（不是拒绝）—— 支出落在别的月份，撤销后那边报表会变
-      if (todo.status !== 'skipped') {
-        const crossMonth = todo.expenseMonth !== undefined && todo.expenseMonth !== ''
-          && todo.expenseMonth !== todayKey().substring(0, 7);
-        if (crossMonth) {
-          const ok = await this.confirmRevert(todo.expenseMonth ?? '', todo.amountCents);
-          if (!ok) {
-            return;
-          }
-        }
-      }
-      if (todo.status === 'skipped') {
-        await Api.restoreTodo(todo.id);
-      } else {
-        await Api.revertTodo(todo.id);
-      }
-      await this.reload();
-    } catch (e) {
-      this.errorText = (e as ApiError).message;
-    }
-  }
-
-  private async actTodo(todo: PlanTodoItem, action: string): Promise<void> {
-    try {
-      if (action === 'skip') {
-        await Api.skipTodo(todo.id);
-      } else if (todo.willAutoPost) {
-        await Api.ackTodo(todo.id);
-      } else {
-        await Api.confirmTodo(todo.id);
-      }
-      await this.reload();
-    } catch (e) {
-      const err = e as ApiError;
-      this.errorText = err.message;
-    }
-  }
-
-  // ── 数据 ────────────────────────────────────────────────────────────────
-  /** 外观（R130/R140）：主题三档 + 品牌徽章 + 版本；**不挂任何导入导出**（D15/R99） */
-  @Builder
-  appearanceSection() {
-    Column({ space: 14 }) {
-      Text('主题')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tok().ink)
-        .width('100%')
-
-      Column({ space: 8 }) {
-        this.themeOption({ label: '深色 · Cyberpunk', value: 'dark' })
-        this.themeOption({ label: '浅色 · Playful', value: 'light' })
-        this.themeOption({ label: '跟随系统', value: 'system' })
-      }
-      .width('100%')
-
-      Divider().color(this.tok().line)
-
-      // 品牌徽章（R140）：Logo + Slogan + 版本
-      Row({ space: 10 }) {
-        Image($r('app.media.layered_image')).width(46).height(46).borderRadius(12)
-        Column({ space: 2 }) {
-          Text('SuenMoney').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
-          Text('单账本家庭记账').fontSize(9.5).fontColor(this.tok().ink3)
-          Text('v1.0.0 · HarmonyOS').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-      }
-      .width('100%')
-
-      // R142/R145：同步状态与死信必须可见（并入「外观」，不新开数据区 → 符合 D15）
-      Row({ space: 8 }) {
-        Text(this.pendingCount > 0 ? '有未上传记录' : '已全部同步')
-          .fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).layoutWeight(1)
-        if (this.pendingCount > 0) {
-          Button('立即同步').fontSize(10).height(28)
-            .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
-            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-            .onClick(() => {
-              this.syncNow();
-            })
-        }
-      }
-      .width('100%')
-
-      if (this.deadLetters.length > 0) {
-        Text(`发送失败 ${this.deadLetters.length} 条`)
-          .fontSize(10).fontColor(this.tok().danger).width('100%')
-        ForEach(this.deadLetters, (e: OutboxEntry) => {
-          Text(`${e.action} · ${e.lastError !== '' ? e.lastError : '未知原因'}`)
-            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width('100%')
-        }, (e: OutboxEntry) => e.id)
-        Button('全部重试').fontSize(10).height(28).width('100%')
-          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
-          .onClick(() => {
-            Outbox.retryDeadLetters().then(() => {
-              this.refreshQueue();
-              this.syncNow();
-            });
-          })
-      }
-
-
-      Button('退出登录')
-        .fontSize(12)
-        .height(36)
-        .width('100%')
-        .backgroundColor(this.tok().surface2)
-        .fontColor(this.tok().danger)
-        .onClick(() => {
-          AuthStore.logout().then(() => {
-            router.replaceUrl({ url: 'pages/LoginPage' });
-          });
-        })
-    }
-    .width('100%')
-    .padding(CARD_PAD)
-    .backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
     .border({ width: this.tok().borderW, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
-  /** 主题三档选项（选中态用左侧色块 + 文案，不用实色填充） */
-  @Builder
-  themeOption($$: ThemeOptionModel) {
-    Row({ space: 10 }) {
-      Row()
-        .width(16).height(16)
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
-        .backgroundColor(this.themeMode === $$.value ? this.tok().accent : this.tok().surface3)
-        .border({ width: 1, color: outlineStrongOf(this.isCyber()) })
-      Text($$.label).fontSize(12).fontColor(this.tok().ink2).layoutWeight(1)
-        .fontFeature('"tnum" on')
-      if (this.themeMode === $$.value) {
-        Text('已选').fontSize(9.5).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-          .fontFeature('"tnum" on')
-      }
-    }
-    .width('100%')
-    .padding({ top: 6, bottom: 6 })
-    .onClick(() => {
-      this.switchTheme($$.value);
-    })
+  /** 期次文案（web planSeq） */
+  private planSeqText(p: PlanItem): string {
+    const total = this.planTotal(p);
+    const seq = total > 0 ? `${p.progress.paidCount}/${total} 期` : '—';
+    const next = p.progress.nextDueDate !== null ? ` · 下次 ${formatMonthDay(p.progress.nextDueDate)}` : '';
+    return `${seq} · 每期 ${formatYuan(p.amountCents)}${next}`;
   }
 
-  // ── 家庭 ────────────────────────────────────────────────────────────────
+  /** 12 段进度刻度 */
+  private planTicks(p: PlanItem): boolean[] {
+    const total = Math.max(1, this.planTotal(p));
+    const done = Math.round((p.progress.paidCount / total) * 12);
+    const out: boolean[] = [];
+    for (let i = 0; i < 12; i++) {
+      out.push(i < done);
+    }
+    return out;
+  }
+
+  /** 已处理 / 已忽略卡 */
   @Builder
-  familySection() {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
-        Text('成员')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
+  doneCard() {
+    Column() {
+      Row({ space: 10 }) {
+        Text('已处理 / 已忽略')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
           .fontColor(this.tok().ink)
           .layoutWeight(1)
-        Button('添加')
-          .fontSize(10)
-          .height(26)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.openMemberSheet();
-          })
+        Text(`${this.doneTodos.length} 条`)
+          .fontSize(9.5)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
       }
       .width('100%')
+      .margin({ bottom: 13 })
 
-      ForEach(this.users, (user: UserSummary) => {
-        Row({ space: 8 }) {
-          Text(user.displayName.substring(0, 1))
-            .width(28)
-            .height(28)
-            .textAlign(TextAlign.Center)
-            .fontSize(12)
-            .fontColor(this.tok().ink)
-            .backgroundColor(this.tok().surface2)
-            .borderRadius(14)
+      ForEach(this.doneTodos, (t: PlanTodoItem, idx: number) => {
+        Row({ space: 12 }) {
           Column({ space: 2 }) {
-            Text(user.displayName)
-              .fontSize(12)
-              .fontColor(this.tok().ink)
-            Text(user.username)
-              .fontSize(9)
+            Row({ space: 6 }) {
+              Text(`${t.planName} · ${t.periodSeq} 期`)
+                .fontSize(12.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+                .maxLines(1)
+              this.tag(t.status === 'skipped' ? '已忽略' : '已入账', t.status === 'skipped' ? 'dash' : 'accent')
+            }
+            Text(`${t.repaymentDate} · ${formatYuan(t.amountCents)}`)
+              .fontSize(10.5)
               .fontColor(this.tok().ink3)
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
-          Text(user.role === 'owner' ? '管理员' : '成员')
-            .fontSize(9)
-            .fontColor(this.tok().ink3)
+
+          Text(t.status === 'skipped' ? '恢复' : '撤销')
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink2)
+            .onClick(() => {
+              this.restoreOrRevert(t);
+            })
         }
         .width('100%')
-        .padding({ top: 6, bottom: 6 })
-      }, (user: UserSummary) => user.id)
+        .padding({ top: 11, bottom: 11 })
+        .border(idx < this.doneTodos.length - 1
+          ? { width: { bottom: 1 }, color: this.tok().line }
+          : { width: 0 })
+      }, (t: PlanTodoItem) => `done-${t.id}`)
     }
     .width('100%')
-    .padding(CARD_PAD)
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
     .backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
-  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
-  private tok(): ThemeTokens {
-    return this.themeName === 'candy' ? CANDY : CYBER;
-  }
-
-  /** 是否深色（cyber）—— 决定圆角/阴影/切角/字体族 */
-  private isCyber(): boolean {
-    return this.themeName === 'cyber';
-  }
-
-  /** 支付方式图标（与 Web PPayIcon 同源：品牌填充 / 其余 Lucide 描边） */
-  private payVisualOf(p: PaymentMethodItem): PayVisual {
-    return resolvePayVisual(p.name, p.icon ?? '');
-  }
-
-  build() {
-    Column({ space: 10 }) {
-      // 四个分段页签（R 系列：设置页用 tab 分组）
-      Row({ space: 6 }) {
-        this.sectionButton({ label: '账目', value: 0 })
-        this.sectionButton({ label: '计划与还款', value: 1 })
-        this.sectionButton({ label: '外观', value: 2 })
-        this.sectionButton({ label: '家庭', value: 3 })
+  /** 待处理期次卡 */
+  @Builder
+  dueCard() {
+    Column() {
+      Row({ space: 10 }) {
+        Text('待处理期次')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+          .layoutWeight(1)
+        Text(`${this.todos.length} 笔`)
+          .fontSize(9.5)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
       }
       .width('100%')
+      .margin({ bottom: 13 })
 
-      // 固定动作条（不滚动，保证可点）
-      this.actionBar()
-
-      if (this.errorText !== '') {
-        Text(this.errorText)
-          .fontSize(10)
-          .fontColor(this.tok().danger)
-          .width('100%')
-      }
-
-      // B-NEW2：跨月撤销警告（同样状态驱动，避免 Promise 永久挂起）
-      if (this.revertDialogOpen) {
-        Column({ space: 10 }) {
-          Text('撤销跨月入账').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
-          Text(this.revertWarn).fontSize(11).fontColor(this.tok().ink2)
-          Row({ space: 8 }) {
-            Button('再想想')
-              .fontSize(11).height(32).layoutWeight(1)
-              .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
-              .onClick(() => {
-                this.revertDialogOpen = false;
-                const r = this.pendingResolve;
-                this.pendingResolve = null;
-                if (r !== null) {
-                  r(false);
-                }
-              })
-            Button('仍然撤销')
-              .fontSize(11).height(32).layoutWeight(1)
-              .backgroundColor(this.tok().danger).fontColor(this.tok().bg)
-              .onClick(() => {
-                this.revertDialogOpen = false;
-                const r = this.pendingResolve;
-                this.pendingResolve = null;
-                if (r !== null) {
-                  r(true);
-                }
-              })
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .padding(14)
-        .backgroundColor(this.tok().surface)
-        .borderRadius(cardRadiusOf(this.isCyber()))
-        .border({ width: 2, color: this.tok().danger })
-      }
-
-      // B-NEW1：合并二次确认（状态驱动，Promise 解析）
-      if (this.mergeConfirmOpen) {
-        Column({ space: 10 }) {
-          Text('合并支付方式').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
-          Text(this.mergeConfirmText).fontSize(11).fontColor(this.tok().ink2)
-          Row({ space: 8 }) {
-            Button('取消')
-              .fontSize(11).height(32).layoutWeight(1)
-              .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
-              .onClick(() => {
-                this.mergeConfirmOpen = false;
-                const r = this.mergeConfirmResolve;
-                this.mergeConfirmResolve = null;
-                if (r !== null) {
-                  r(false);
-                }
-              })
-            Button('继续合并')
-              .fontSize(11).height(32).layoutWeight(1)
-              .backgroundColor(this.tok().warn).fontColor(this.tok().bg)
-              .onClick(() => {
-                this.mergeConfirmOpen = false;
-                const r = this.mergeConfirmResolve;
-                this.mergeConfirmResolve = null;
-                if (r !== null) {
-                  r(true);
-                }
-              })
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .padding(14)
-        .backgroundColor(this.tok().surface)
-        .borderRadius(cardRadiusOf(this.isCyber()))
-        .border({ width: 2, color: this.tok().warn })
-      }
-
-      // 表单态：内容区整体切换成表单（不做浮层，避免层叠与命中问题）
-      if (this.sheetOpen) {
-        Scroll() {
-          Column({ space: 10 }) {
-            this.sheetContent()
-          }
-          .width('100%')
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
+      if (this.todos.length === 0) {
+        this.emptyState($r('sys.symbol.checkmark'), '没有待处理的期次')
       } else {
-        Scroll() {
-          Column({ space: 10 }) {
-            if (this.section === 0) {
-              this.accountsSection()
-            } else if (this.section === 1) {
-              this.plansSection()
-            } else if (this.section === 2) {
-              this.appearanceSection()
-            } else {
-              this.familySection()
-            }
-            if (this.loading) {
-              Text('加载中…')
-                .fontSize(10)
+        ForEach(this.todos, (t: PlanTodoItem, idx: number) => {
+          Row({ space: 12 }) {
+            Row()
+              .width(4)
+              .height(24)
+              .borderRadius(2)
+              .backgroundColor(urgencyColorOf(t.repaymentDate, this.tok()))
+
+            Column({ space: 2 }) {
+              Text(`${t.periodSeq}期 · ${t.planName}`)
+                .fontSize(12.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+                .maxLines(1)
+              Text(`${formatMonthDay(t.repaymentDate)} · ${formatYuan(t.amountCents)}`)
+                .fontSize(10.5)
                 .fontColor(this.tok().ink3)
             }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text(t.willAutoPost ? '确认' : '入账')
+              .fontSize(11.5)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
+              .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+              .backgroundColor(this.tok().accent)
+              .onClick(() => {
+                this.actTodo(t);
+              })
+
+            // more-menu：跳过不可逆，收进「更多」
+            Text('更多')
+              .fontSize(11)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+              .border({ width: 1, color: this.tok().line })
+              .bindMenu([
+                {
+                  value: '忽略本期',
+                  action: () => {
+                    this.skipTodo(t);
+                  }
+                }
+              ])
           }
           .width('100%')
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
+          .padding({ top: 11, bottom: 11 })
+          .border(idx < this.todos.length - 1
+            ? { width: { bottom: 1 }, color: this.tok().line }
+            : { width: 0 })
+        }, (t: PlanTodoItem) => t.id)
       }
     }
     .width('100%')
-    .height('100%')
-    .padding(12)
-    .backgroundColor(this.tok().bg)
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
+  // ── 设备区 ──────────────────────────────────────────────────────────────
+  /** 主题卡（web theme-cards--3：移动端单列，56px 预览 + 标签 + 描述） */
   @Builder
-  sheetContent() {
-    Column({ space: 10 }) {
-      Text(this.sheetTitle())
-        .fontSize(15)
+  themeCard() {
+    Column() {
+      Row({ space: 10 }) {
+        Text('主题')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .margin({ bottom: 13 })
+
+      Column({ space: 12 }) {
+        this.themeOption('light', '水果硬糖', '浅色 · 贴纸硬阴影')
+        this.themeOption('dark', '赛博朋克', '深色 · 切角霓虹')
+        this.themeOption('system', '跟随系统', '浅色 / 深色自动')
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** 单个主题选项（web .theme-card） */
+  @Builder
+  themeOption(value: string, label: string, desc: string) {
+    Column({ space: 8 }) {
+      if (value === 'light') {
+        this.prevCandy()
+      } else if (value === 'dark') {
+        this.prevCyber()
+      } else {
+        this.prevSystem()
+      }
+      Text(label)
+        .fontSize(12)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.tok().ink)
-        .width('100%')
+      Text(desc)
+        .fontSize(10.5)
+        .fontColor(this.tok().ink3)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(10)
+    .borderRadius(this.isCyber() ? 1 : this.tok().rMd)
+    .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+    .border({
+      width: this.themeMode === value
+        ? (this.isCyber() ? 1 : 2)
+        : (this.isCyber() ? 1 : 2),
+      color: this.themeMode === value
+        ? (this.isCyber() ? this.tok().accent : this.tok().line2)
+        : this.tok().line
+    })
+    .shadow(this.themeMode === value
+      ? (this.isCyber()
+        ? { radius: 10, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.6)' } as ShadowOptions
+        : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
+      : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
+    .onClick(() => {
+      this.switchTheme(value);
+    })
+  }
 
-      if (this.sheetMode === 'category') {
-        this.categoryForm()
-      } else if (this.sheetMode === 'payment') {
-        this.paymentForm()
-      } else if (this.sheetMode === 'member') {
-        this.memberForm()
-      } else {
-        this.planForm()
+  /** 水果硬糖预览（web .tp-candy） */
+  @Builder
+  prevCandy() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row()
+          .position({ x: 16, y: 18 })
+          .width(34)
+          .height(7)
+          .borderRadius(4)
+          .backgroundColor('#8B5CF6')
+        Row()
+          .position({ x: 16, y: 31 })
+          .width(34)
+          .height(6)
+          .borderRadius(4)
+          .backgroundColor('#F472B6')
       }
+      .width('100%')
+      .height('100%')
+      .margin(8)
+      .borderRadius(6)
+      .backgroundColor('#FFFFFF')
+      .border({ width: 2, color: '#1E293B' })
+      .shadow(parseShadow('3px 3px 0 #E2E8F0') as ShadowOptions)
+    }
+    .width('100%')
+    .height(56)
+    .borderRadius(8)
+    .backgroundColor('#FFFDF5')
+    .border({ width: 1, color: 'rgba(0,0,0,0.12)' })
+    .clip(true)
+  }
 
-      if (this.formError !== '') {
-        Text(this.formError)
-          .fontSize(10)
-          .fontColor(this.tok().danger)
-          .width('100%')
+  /** 赛博朋克预览（web .tp-cyber） */
+  @Builder
+  prevCyber() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row()
+          .position({ x: 16, y: 18 })
+          .width(30)
+          .height(5)
+          .backgroundColor('#00ff88')
+          .shadow({ radius: 6, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.8)' } as ShadowOptions)
+        Row()
+          .position({ x: 16, y: 30 })
+          .width(30)
+          .height(4)
+          .backgroundColor('#ff00ff')
       }
+      .width('100%')
+      .height('100%')
+      .margin(7)
+      .backgroundColor('#12121a')
+      .border({ width: 1, color: '#00ff88' })
+      .shadow({ radius: 8, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.4)' } as ShadowOptions)
+    }
+    .width('100%')
+    .height(56)
+    .borderRadius(8)
+    .backgroundColor('#0a0a0f')
+    .border({ width: 1, color: 'rgba(0,0,0,0.12)' })
+    .clip(true)
+  }
 
-      Row({ space: 8 }) {
-        Button('保存')
-          .fontSize(13)
-          .height(40)
+  /** 跟随系统预览（web .tp-system：左右分色） */
+  @Builder
+  prevSystem() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row()
+          .position({ x: 16, y: 20 })
+          .width(30)
+          .height(6)
+          .borderRadius(4)
+          .backgroundColor('#8B5CF6')
+        Row()
+          .position({ x: 16, y: 32 })
+          .width(30)
+          .height(5)
+          .backgroundColor('#00ff88')
+      }
+      .width('100%')
+      .height('100%')
+      .margin(8)
+      .borderRadius(6)
+      .border({ width: 2, color: '#1E293B' })
+      .linearGradient({
+        angle: 105,
+        colors: [['#FFFFFF', 0], ['#FFFFFF', 0.5], ['#12121a', 0.5], ['#12121a', 1]]
+      })
+    }
+    .width('100%')
+    .height(56)
+    .borderRadius(8)
+    .linearGradient({
+      angle: 105,
+      colors: [['#FFFDF5', 0], ['#FFFDF5', 0.5], ['#0a0a0f', 0.5], ['#0a0a0f', 1]]
+    })
+    .border({ width: 1, color: 'rgba(0,0,0,0.12)' })
+    .clip(true)
+  }
+
+  /** 修改口令卡（web「我的账号」口令部分） */
+  @Builder
+  passwordCard() {
+    Column({ space: 12 }) {
+      Row({ space: 10 }) {
+        Text('修改密码')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
           .layoutWeight(1)
-          .backgroundColor(this.tok().accent)
-          .fontColor(this.tok().accentInk)
-          .onClick(() => {
-            if (this.sheetMode === 'category') {
-              this.saveCategory();
-            } else if (this.sheetMode === 'payment') {
-              this.savePayment();
-            } else if (this.sheetMode === 'member') {
-              this.saveMember();
-            } else {
-              this.savePlan();
-            }
-          })
-        Button('取消')
-          .fontSize(13)
+      }
+      .width('100%')
+
+      Column({ space: 6 }) {
+        Text('当前口令')
+          .fontSize(9.5)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+        TextInput({ text: this.pwdCurrent, placeholder: '••••••' })
+          .type(InputType.Password)
           .height(40)
+          .fontSize(13)
+          .fontColor(this.tok().ink)
           .backgroundColor(this.tok().surface)
           .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .onChange((v: string) => {
+            this.pwdCurrent = v;
+          })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Column({ space: 6 }) {
+        Text('新口令（至少 8 位）')
+          .fontSize(9.5)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+        TextInput({ text: this.pwdNew, placeholder: '至少 8 位' })
+          .type(InputType.Password)
+          .height(40)
+          .fontSize(13)
           .fontColor(this.tok().ink)
+          .backgroundColor(this.tok().surface)
+          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .onChange((v: string) => {
+            this.pwdNew = v;
+          })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Text('修改口令')
+        .fontSize(this.isCyber() ? 10 : 11.5)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+        .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+        .backgroundColor(this.tok().accent)
+        .onClick(() => {
+          this.changePassword();
+        })
+
+      Text('改口令后其他设备会被退出登录。')
+        .fontSize(11)
+        .fontColor(this.tok().ink3)
+        .lineHeight(18)
+        .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** 检查更新卡 */
+  @Builder
+  updateCard() {
+    Column() {
+      Row({ space: 10 }) {
+        Text('检查更新')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .margin({ bottom: 13 })
+
+      Row({ space: 10 }) {
+        Text(this.updateChecking ? '检查中…' : '检查更新')
+          .fontSize(this.isCyber() ? 10 : 11.5)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+          .border({
+            width: this.tok().borderW,
+            color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
+          })
+          .shadow(this.isCyber()
+        ? { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions
+        : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
+          .onClick(() => {
+            this.checkUpdate();
+          })
+        Text(this.updateMessage)
+          .fontSize(10.5)
+          .fontColor(this.tok().ink3)
+          .layoutWeight(1)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  // ── 弹层 ────────────────────────────────────────────────────────────────
+  /** 设置弹层（web PSheet 移动端：底部上滑 93dvh；bindSheet LARGE 近似） */
+  @Builder
+  settingsSheet() {
+    Column() {
+      // sheet-head
+      Text(this.sheetTitle())
+        .fontSize(this.isCyber() ? 13 : 15)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+        .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 12 })
+        .border({ width: { bottom: 1 }, color: this.tok().line })
+
+      Scroll() {
+        Column({ space: 12 }) {
+          if (this.sheetKind === 'cat') {
+            this.catForm()
+          } else if (this.sheetKind === 'pay') {
+            this.payForm()
+          } else if (this.sheetKind === 'merge') {
+            this.mergeForm()
+          } else {
+            this.planForm()
+          }
+          if (this.formError !== '') {
+            Text(this.formError)
+              .fontSize(10.5)
+              .fontColor(this.tok().danger)
+              .width('100%')
+          }
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 8 })
+        .alignItems(HorizontalAlign.Start)
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+
+      // sheet-foot
+      Row({ space: 8 }) {
+        Text(this.footPrimaryLabel())
+          .fontSize(this.isCyber() ? 10 : 12.5)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .backgroundColor(this.tok().accent)
+          .onClick(() => {
+            this.runFootPrimary();
+          })
+        Text('取消')
+          .fontSize(12.5)
+          .fontWeight(FontWeight.Bold)
           .fontColor(this.tok().ink2)
           .onClick(() => {
             this.sheetOpen = false;
-            this.sheetMode = '';
           })
       }
       .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 14 })
+      .border({ width: { top: 1 }, color: this.tok().line })
     }
     .width('100%')
-    .padding(16)
+    .height('100%')
     .backgroundColor(this.tok().bg)
   }
 
-  private sheetTitle(): string {
-    if (this.sheetMode === 'category') {
-      return this.editingCategoryId === '' ? '新增' : '编辑分类';
+  private footPrimaryLabel(): string {
+    if (this.sheetKind === 'merge') {
+      return '合并';
     }
-    if (this.sheetMode === 'payment') {
-      return this.editingPaymentId === '' ? '新增支付方式' : '编辑支付方式';
+    if (this.sheetKind === 'plan') {
+      return '创建';
     }
-    if (this.sheetMode === 'member') {
-      return '添加成员';
-    }
-    return '新建计划';
+    return '保存';
   }
 
+  private runFootPrimary(): void {
+    if (this.sheetKind === 'cat') {
+      this.saveCat();
+    } else if (this.sheetKind === 'pay') {
+      this.savePay();
+    } else if (this.sheetKind === 'merge') {
+      this.runMerge();
+    } else {
+      this.savePlan();
+    }
+  }
+
+  /** 表单字段标签（web .field-l） */
   @Builder
-  categoryForm() {
-    Column({ space: 8 }) {
-      TextInput({ placeholder: '名称', text: this.formName })
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
+  fieldLabel(text: string) {
+    Text(text)
+      .fontSize(9.5)
+      .fontFamily(fontMonoOf())
+      .fontColor(this.tok().ink3)
+      .width('100%')
+  }
+
+  /** 表单输入框（web .input） */
+  @Builder
+  fieldInput(text: string, placeholder: string, password: boolean, onChange: (v: string) => void) {
+    TextInput({ text: text, placeholder: placeholder })
+      .type(password ? InputType.Password : InputType.Normal)
+      .height(40)
+      .fontSize(13)
+      .fontColor(this.tok().ink)
+      .backgroundColor(this.tok().surface)
+      .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+      .onChange((v: string) => {
+        onChange(v);
+      })
+      .width('100%')
+  }
+
+  /** 分类表单 */
+  @Builder
+  catForm() {
+    Column({ space: 12 }) {
+      Column({ space: 6 }) {
+        this.fieldLabel('名称')
+        this.fieldInput(this.formName, '如：外卖', false, (v: string) => {
           this.formName = v;
         })
-
-      // 图标：先用 1 个字符代替（图标库接入放到 H8 打磨）
-      TextInput({ placeholder: '图标（单个字符）', text: this.formIcon })
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
-          this.formIcon = v;
-        })
-
-      // 颜色只在「一级」出现：二级分类继承父级颜色，不给选择器
-      if (this.formParent === '') {
-        Text('颜色')
-          .fontSize(9)
-          .fontColor(this.tok().ink3)
-          .width('100%')
-        Row({ space: 6 }) {
-          ForEach(COLOR_SLOTS, (slot: number) => {
-            Row()
-              .width(26)
-              .height(26)
-              .backgroundColor(chartColor(this.tok(), slot))
-              .borderRadius(13)
-              .border({
-                width: this.formColor === slot + 1 ? 3 : 1,
-                color: this.formColor === slot + 1 ? this.tok().ink : this.tok().line
-              })
-              .onClick(() => {
-                this.formColor = slot + 1;
-              })
-          }, (slot: number) => `color-${slot}`)
-        }
-        .width('100%')
-      } else {
-        Text('颜色跟所属一级分类走')
-          .fontSize(9)
-          .fontColor(this.tok().ink3)
-          .width('100%')
       }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      // R92：只有"二级"能给归属一级（同深度移动）；一级分类不提供跨深度移动入口
-      if (this.formParent !== '' && this.editingCategoryId !== '') {
-        Text('归属一级').fontSize(9).fontColor(this.tok().ink3).width('100%')
+      Column({ space: 6 }) {
+        this.fieldLabel('图标')
         Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
-          ForEach(this.categories, (root: CategoryNode) => {
-            Button(root.name)
-              .fontSize(10)
-              .height(26)
-              .backgroundColor(this.formParent === root.id ? this.tok().accent : this.tok().surface2)
-              .fontColor(this.formParent === root.id ? this.tok().accentInk : this.tok().ink2)
-              .onClick(() => {
-                this.formParent = root.id;
-              })
-          }, (root: CategoryNode) => `parent-${root.id}`)
+          Text('自动')
+            .fontSize(11)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.formIcon === '' ? this.tok().accent : this.tok().ink2)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .border({
+              width: 1,
+              color: this.formIcon === '' ? this.tok().accent : this.tok().line
+            })
+            .onClick(() => {
+              this.formIcon = '';
+            })
+          ForEach(CAT_ICON_OPTIONS, (opt: CatIconOption) => {
+            Stack() {
+              SymbolGlyph(opt.res)
+                .fontSize(17)
+                .fontColor([this.formIcon === opt.name ? this.tok().accent : this.tok().ink2])
+            }
+            .width(38)
+            .height(38)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .backgroundColor(this.tok().surface)
+            .border({
+              width: this.formIcon === opt.name ? 2 : 1,
+              color: this.formIcon === opt.name ? this.tok().accent : this.tok().line
+            })
+            .onClick(() => {
+              this.formIcon = opt.name;
+            })
+          }, (opt: CatIconOption) => opt.name)
         }
         .width('100%')
       }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      if (this.editingCategoryId !== '') {
-        Button('停用分类')
-          .fontSize(11)
-          .height(32)
+      // 只有一级类别能选颜色；二级分类的颜色跟随一级
+      if (this.editingRoot()) {
+        Column({ space: 6 }) {
+          this.fieldLabel('颜色')
+          Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+            Text('自动')
+              .fontSize(11)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.formColor === '' ? this.tok().accent : this.tok().ink2)
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+              .border({
+                width: 1,
+                color: this.formColor === '' ? this.tok().accent : this.tok().line
+              })
+              .onClick(() => {
+                this.formColor = '';
+              })
+            ForEach(CATEGORY_COLORS, (hex: string, cIdx: number) => {
+              Row()
+                .width(26)
+                .height(26)
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), 8))
+                .backgroundColor(hex)
+                .border({
+                  width: this.formColor === `${cIdx + 1}` ? 2 : 0,
+                  color: this.tok().ink
+                })
+                .onClick(() => {
+                  this.formColor = `${cIdx + 1}`;
+                })
+            }, (hex: string, cIdx: number) => `color-${cIdx}`)
+          }
           .width('100%')
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().danger)
-          .onClick(() => {
-            this.deactivateCategory();
-          })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+
+      // 二级分类可以移动到别的类别下（同深度平移）
+      if (!this.editingRoot() && this.editingCategoryId !== '') {
+        Column({ space: 6 }) {
+          this.fieldLabel('归属类别')
+          Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+            ForEach(this.categories, (root: CategoryNode) => {
+              Text(root.name)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.formParent === root.id ? this.tok().ink : this.tok().ink2)
+                .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                .backgroundColor(this.formParent === root.id ? '#FBBF24' : this.tok().surface)
+                .border({
+                  width: 2,
+                  color: this.formParent === root.id ? this.tok().line2 : this.tok().line
+                })
+                .onClick(() => {
+                  this.formParent = root.id;
+                })
+            }, (root: CategoryNode) => `parent-${root.id}`)
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
       }
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
+  /** 支付方式表单 */
   @Builder
-  paymentForm() {
-    Column({ space: 8 }) {
-      TextInput({ placeholder: '名称', text: this.formName })
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
+  payForm() {
+    Column({ space: 12 }) {
+      Column({ space: 6 }) {
+        this.fieldLabel('名称')
+        this.fieldInput(this.formName, '如：招商信用卡', false, (v: string) => {
           this.formName = v;
         })
-
-      Row({ space: 8 }) {
-        Button('现金/储蓄卡')
-          .fontSize(11)
-          .height(32)
-          .layoutWeight(1)
-          .backgroundColor(this.formType === 'cash' ? this.tok().accent : this.tok().surface2)
-          .fontColor(this.formType === 'cash' ? this.tok().accentInk : this.tok().ink2)
-          .onClick(() => {
-            this.formType = 'cash';
-          })
-        Button('信用卡')
-          .fontSize(11)
-          .height(32)
-          .layoutWeight(1)
-          .backgroundColor(this.formType === 'credit' ? this.tok().accent : this.tok().surface2)
-          .fontColor(this.formType === 'credit' ? this.tok().accentInk : this.tok().ink2)
-          .onClick(() => {
-            this.formType = 'credit';
-          })
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      if (this.formType === 'credit') {
-        Row({ space: 8 }) {
-          Text(`账单日 ${this.formBillingDay} 日`)
+      Column({ space: 6 }) {
+        this.fieldLabel('图标')
+        Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+          Text('自动')
             .fontSize(11)
-            .fontColor(this.tok().ink2)
-            .layoutWeight(1)
-          Counter() {
-            Text('')
-          }
-          .onInc(() => {
-            this.formBillingDay = Math.min(31, this.formBillingDay + 1);
-          })
-          .onDec(() => {
-            this.formBillingDay = Math.max(1, this.formBillingDay - 1);
-          })
-        }
-        .width('100%')
-
-        Row({ space: 8 }) {
-          Text(`还款日 ${this.formRepaymentDay} 日`)
-            .fontSize(11)
-            .fontColor(this.tok().ink2)
-            .layoutWeight(1)
-          Counter() {
-            Text('')
-          }
-          .onInc(() => {
-            this.formRepaymentDay = Math.min(31, this.formRepaymentDay + 1);
-          })
-          .onDec(() => {
-            this.formRepaymentDay = Math.max(1, this.formRepaymentDay - 1);
-          })
+            .fontFamily(fontMonoOf())
+            .fontColor(this.formPayIcon === '' ? this.tok().accent : this.tok().ink2)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .border({
+              width: 1,
+              color: this.formPayIcon === '' ? this.tok().accent : this.tok().line
+            })
+            .onClick(() => {
+              this.formPayIcon = '';
+            })
+          ForEach(PAY_OPTIONS, (opt: PayOption) => {
+            Row({ space: 6 }) {
+              PayIconView({
+                payName: opt.label,
+                payIcon: opt.id,
+                iconSize: 18,
+                colorOverride: ''
+              })
+              Text(opt.label)
+                .fontSize(10.5)
+                .fontColor(this.formPayIcon === opt.id ? this.tok().ink : this.tok().ink2)
+                .maxLines(1)
+            }
+            .constraintSize({ minWidth: 84 })
+            .padding({ left: 8, right: 8, top: 7, bottom: 7 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .backgroundColor(this.tok().surface)
+            .border({
+              width: 1,
+              color: this.formPayIcon === opt.id ? this.tok().accent : this.tok().line
+            })
+            .shadow(this.formPayIcon === opt.id
+              ? { radius: 4, offsetX: 0, offsetY: 0, color: `#38${this.tok().accent.substring(1)}` } as ShadowOptions
+              : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
+            .onClick(() => {
+              this.formPayIcon = opt.id;
+            })
+          }, (opt: PayOption) => opt.id)
         }
         .width('100%')
       }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      if (this.editingPaymentId !== '') {
+      Column({ space: 6 }) {
+        this.fieldLabel('类型')
+        Row({ space: 8 }) {
+          Text('信用卡（有账单/还款日）')
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.formType === 'credit' ? this.tok().ink : this.tok().ink2)
+            .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .backgroundColor(this.formType === 'credit' ? '#FBBF24' : this.tok().surface)
+            .border({
+              width: 2,
+              color: this.formType === 'credit' ? this.tok().line2 : this.tok().line
+            })
+            .onClick(() => {
+              this.formType = 'credit';
+            })
+          Text('即时结算')
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.formType === 'cash' ? this.tok().ink : this.tok().ink2)
+            .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .backgroundColor(this.formType === 'cash' ? '#FBBF24' : this.tok().surface)
+            .border({
+              width: 2,
+              color: this.formType === 'cash' ? this.tok().line2 : this.tok().line
+            })
+            .onClick(() => {
+              this.formType = 'cash';
+            })
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      if (this.formType === 'credit') {
+        Column({ space: 6 }) {
+          this.fieldLabel('账单日')
+          this.fieldInput(this.formBillingDay, '1-31', false, (v: string) => {
+            this.formBillingDay = v;
+          })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+
+        Column({ space: 6 }) {
+          this.fieldLabel('还款日')
+          this.fieldInput(this.formRepaymentDay, '1-31', false, (v: string) => {
+            this.formRepaymentDay = v;
+          })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 合并支付方式表单 */
+  @Builder
+  mergeForm() {
+    Column({ space: 12 }) {
+      Text(`把「${this.mergeFromName()}」下的全部流水转到另一个支付方式，然后停用「${this.mergeFromName()}」。这一步在服务端一个事务里完成，不会出现「转了一半」。`)
+        .fontSize(11)
+        .fontColor(this.tok().ink3)
+        .lineHeight(18)
+        .width('100%')
+
+      Column({ space: 6 }) {
+        this.fieldLabel('转到')
         Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
-          ForEach(this.mergeTargets(), (p: PaymentMethodItem) => {
-            Button(p.name)
-              .fontSize(10)
-              .height(26)
-              .backgroundColor(this.formMergeInto === p.id ? this.tok().accent : this.tok().surface2)
-              .fontColor(this.formMergeInto === p.id ? this.tok().accentInk : this.tok().ink2)
-              .onClick(() => {
-                this.formMergeInto = this.formMergeInto === p.id ? '' : p.id;
-              })
+          ForEach(this.payments, (p: PaymentMethodItem) => {
+            if (p.id !== this.mergeFromId) {
+              Text(p.name)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.mergeIntoId === p.id ? this.tok().ink : this.tok().ink2)
+                .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                .backgroundColor(this.mergeIntoId === p.id ? '#FBBF24' : this.tok().surface)
+                .border({
+                  width: 2,
+                  color: this.mergeIntoId === p.id ? this.tok().line2 : this.tok().line
+                })
+                .onClick(() => {
+                  this.mergeIntoId = p.id;
+                })
+            }
           }, (p: PaymentMethodItem) => `merge-${p.id}`)
         }
         .width('100%')
-
-        Button('停用支付方式')
-          .fontSize(11)
-          .height(32)
-          .width('100%')
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().danger)
-          .onClick(() => {
-            this.deactivatePayment();
-          })
-      }
-    }
-    .width('100%')
-  }
-
-  private mergeTargets(): PaymentMethodItem[] {
-    const out: PaymentMethodItem[] = [];
-    for (const p of this.payments) {
-      if (p.id !== this.editingPaymentId && p.isEnabled) {
-        out.push(p);
-      }
-    }
-    return out;
-  }
-
-  @Builder
-  memberForm() {
-    Column({ space: 8 }) {
-      TextInput({ placeholder: '显示名（如 爱人）', text: this.formName })
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
-          this.formName = v;
-        })
-      TextInput({ placeholder: '登录名', text: this.formUsername })
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
-          this.formUsername = v;
-        })
-      TextInput({ placeholder: '初始口令（至少 6 位）', text: this.formPassword })
-        .type(InputType.Password)
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
-          this.formPassword = v;
-        })
-      Row({ space: 8 }) {
-        Button('成员')
-          .fontSize(11)
-          .height(32)
-          .layoutWeight(1)
-          .backgroundColor(this.formRole === 'member' ? this.tok().accent : this.tok().surface2)
-          .fontColor(this.formRole === 'member' ? this.tok().accentInk : this.tok().ink2)
-          .onClick(() => {
-            this.formRole = 'member';
-          })
-        Button('管理员')
-          .fontSize(11)
-          .height(32)
-          .layoutWeight(1)
-          .backgroundColor(this.formRole === 'admin' ? this.tok().accent : this.tok().surface2)
-          .fontColor(this.formRole === 'admin' ? this.tok().accentInk : this.tok().ink2)
-          .onClick(() => {
-            this.formRole = 'admin';
-          })
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
+  /** 新建计划表单 */
   @Builder
   planForm() {
-    Column({ space: 8 }) {
-      TextInput({ placeholder: '计划名称（如 房贷）', text: this.formName })
-        .height(38)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .onChange((v: string) => {
+    Column({ space: 12 }) {
+      Column({ space: 6 }) {
+        this.fieldLabel('名称')
+        this.fieldInput(this.formName, '如：房贷', false, (v: string) => {
           this.formName = v;
         })
-
-      Text('分类')
-        .fontSize(9)
-        .fontColor(this.tok().ink3)
-        .width('100%')
-      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
-        ForEach(this.allCategories(), (cat: CategoryNode) => {
-          Button(cat.name)
-            .fontSize(10)
-            .height(26)
-            .backgroundColor(this.formCategoryId === cat.id ? this.tok().accent : this.tok().surface2)
-            .fontColor(this.formCategoryId === cat.id ? this.tok().accentInk : this.tok().ink2)
-            .onClick(() => {
-              this.formCategoryId = cat.id;
-            })
-        }, (cat: CategoryNode) => `pcat-${cat.id}`)
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      Text('支付方式')
-        .fontSize(9)
-        .fontColor(this.tok().ink3)
+      Column({ space: 6 }) {
+        this.fieldLabel('分类')
+        Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+          ForEach(this.categories, (root: CategoryNode) => {
+            Text(root.name)
+              .fontSize(11.5)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.formCategoryId === root.id ? this.tok().ink : this.tok().ink2)
+              .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+              .backgroundColor(this.formCategoryId === root.id ? '#FBBF24' : this.tok().surface)
+              .border({
+                width: 2,
+                color: this.formCategoryId === root.id ? this.tok().line2 : this.tok().line
+              })
+              .onClick(() => {
+                this.formCategoryId = root.id;
+              })
+          }, (root: CategoryNode) => `plan-cat-${root.id}`)
+        }
         .width('100%')
-      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
-        ForEach(this.enabledPayments(), (p: PaymentMethodItem) => {
-          Button(p.name)
-            .fontSize(10)
-            .height(26)
-            .backgroundColor(this.formPaymentId === p.id ? this.tok().accent : this.tok().surface2)
-            .fontColor(this.formPaymentId === p.id ? this.tok().accentInk : this.tok().ink2)
-            .onClick(() => {
-              this.formPaymentId = p.id;
-            })
-        }, (p: PaymentMethodItem) => `ppay-${p.id}`)
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      TextInput({ placeholder: '每期金额（元）', text: this.formAmount })
-        .height(38)
-        .type(InputType.NUMBER_DECIMAL)
-        .backgroundColor(this.tok().surface2)
-        .onChange((v: string) => {
+      Column({ space: 6 }) {
+        this.fieldLabel('支付方式')
+        Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+          ForEach(this.payments, (p: PaymentMethodItem) => {
+            if (p.isEnabled) {
+              Text(p.name)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.formPaymentId === p.id ? this.tok().ink : this.tok().ink2)
+                .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                .backgroundColor(this.formPaymentId === p.id ? '#FBBF24' : this.tok().surface)
+                .border({
+                  width: 2,
+                  color: this.formPaymentId === p.id ? this.tok().line2 : this.tok().line
+                })
+                .onClick(() => {
+                  this.formPaymentId = p.id;
+                })
+            }
+          }, (p: PaymentMethodItem) => `plan-pay-${p.id}`)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Column({ space: 6 }) {
+        this.fieldLabel('每期金额')
+        this.fieldInput(this.formAmount, '1000.00', false, (v: string) => {
           this.formAmount = v;
         })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      Row({ space: 8 }) {
-        Text(`共 ${this.formPeriods} 期`)
-          .fontSize(11)
-          .fontColor(this.tok().ink2)
-          .layoutWeight(1)
-        Counter() {
-          Text('')
-        }
-        .onInc(() => {
-          this.formPeriods = Math.min(360, this.formPeriods + 1);
-        })
-        .onDec(() => {
-          this.formPeriods = Math.max(1, this.formPeriods - 1);
+      Column({ space: 6 }) {
+        this.fieldLabel('期数')
+        this.fieldInput(this.formPeriods, '12', false, (v: string) => {
+          this.formPeriods = v;
         })
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
-      Row({ space: 8 }) {
-        Text('自动入账')
-          .fontSize(11)
-          .fontColor(this.tok().ink2)
-          .layoutWeight(1)
+      Column({ space: 6 }) {
+        this.fieldLabel('首期还款日')
+        this.fieldInput(this.formFirstDue, todayKey(), false, (v: string) => {
+          this.formFirstDue = v;
+        })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Row({ space: 12 }) {
+        Column({ space: 2 }) {
+          Text('到期自动入账')
+            .fontSize(12.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.tok().ink)
+          Text('关闭则每期需要手动点「入账」')
+            .fontSize(10.5)
+            .fontColor(this.tok().ink3)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
         Toggle({ type: ToggleType.Switch, isOn: this.formAutoPost })
-          .onChange((on: boolean) => {
-            this.formAutoPost = on;
+          .width(42)
+          .height(24)
+          .selectedColor(this.tok().accent)
+          .onChange((v: boolean) => {
+            this.formAutoPost = v;
           })
       }
       .width('100%')
+      .padding({ top: 11, bottom: 11 })
+      .border({ width: { bottom: 1 }, color: this.tok().line })
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
-
-  private allCategories(): CategoryNode[] {
-    const out: CategoryNode[] = [];
-    for (const root of this.categories) {
-      if (root.children.length > 0) {
-        for (const kid of root.children) {
-          out.push(kid);
-        }
-      } else {
-        out.push(root);
-      }
-    }
-    return out;
-  }
-
-  private enabledPayments(): PaymentMethodItem[] {
-    const out: PaymentMethodItem[] = [];
-    for (const p of this.payments) {
-      if (p.isEnabled) {
-        out.push(p);
-      }
-    }
-    return out;
-  }
-
-  /** 行内停用（R87 软删：有引用只能停用） */
-  private async deactivateCategoryById(id: string): Promise<void> {
-    try {
-      const cat = this.findCategoryById(id);
-      if (cat === null) {
-        return;
-      }
-      const req: CategoryPatchRequest = {
-        name: cat.name,
-        icon: cat.icon,
-        color: cat.parentId === null ? cat.color : '',
-        parentId: cat.parentId,
-        isEnabled: false
-      };
-      await Api.patchCategory(cat.id, req);
-      await this.reload();
-    } catch (e) {
-      this.errorText = (e as ApiError).message;
-    }
-  }
-
-  private async deactivateCategory(): Promise<void> {
-    try {
-      const cat = this.findCategoryById(this.editingCategoryId);
-      if (cat === null) {
-        return;
-      }
-      const req: CategoryPatchRequest = {
-        name: cat.name,
-        icon: cat.icon,
-        color: cat.parentId === null ? cat.color : '',
-        parentId: cat.parentId,
-        isEnabled: false
-      };
-      await Api.patchCategory(cat.id, req);
-      this.sheetMode = '';
-      await this.reload();
-    } catch (e) {
-      this.formError = (e as ApiError).message;
-    }
-  }
-
-  private async deactivatePayment(): Promise<void> {
-    try {
-      await Api.deletePayment(this.editingPaymentId);
-      this.sheetMode = '';
-      await this.reload();
-    } catch (e) {
-      this.formError = (e as ApiError).message;
-    }
-  }
-
-  private findCategoryById(id: string): CategoryNode | null {
-    for (const root of this.categories) {
-      if (root.id === id) {
-        return root;
-      }
-      for (const kid of root.children) {
-        if (kid.id === id) {
-          return kid;
-        }
-      }
-    }
-    return null;
-  }
-
-  /** 当前分段的动作条（固定在页签下方，不随内容滚动） */
-  @Builder
-  actionBar() {
-    Row({ space: 8 }) {
-      if (this.section === 0) {
-        Button('新增类别').fontSize(11).height(32)
-          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-          .onClick(() => {
-            this.openCategorySheet(null, '');
-          })
-        Button('新增分类').fontSize(11).height(32)
-          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-          .onClick(() => {
-            this.openCategorySheet(null, this.railRootId);
-          })
-      } else if (this.section === 1) {
-        Button('新建计划').fontSize(11).height(32)
-          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-          .onClick(() => {
-            this.openPlanSheet();
-          })
-      } else if (this.section === 3) {
-        Button('添加成员').fontSize(11).height(32)
-          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-          .onClick(() => {
-            this.openMemberSheet();
-          })
-      } else {
-        Text('').width(0)
-      }
-      Blank()
-    }
-    .width('100%')
-  }
-
-  @Builder
-  sectionButton($$: SectionTabModel) {
-    Button($$.label)
-      .fontSize(11)
-      .height(30)
-      .layoutWeight(1)
-      .backgroundColor(this.section === $$.value ? this.tok().accent : this.tok().surface2)
-      .fontColor(this.section === $$.value ? this.tok().accentInk : this.tok().ink3)
-      .onClick(() => {
-        this.section = $$.value;
-      })
-  }
-}
-
-const COLOR_SLOTS: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
-
-/** 12 段进度刻度：按已还期数比例点亮（精确数字仍由旁边文字给出） */
-function planTicks(plan: PlanItem): boolean[] {
-  const total = plan.progress.paidCount + plan.progress.pendingCount;
-  const filled = total > 0 ? Math.round((plan.progress.paidCount / total) * 12) : 0;
-  const out: boolean[] = [];
-  for (let i = 0; i < 12; i++) {
-    out.push(i < filled);
-  }
-  return out;
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
-}
-
-function todayKey(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 }

@@ -1,713 +1,1044 @@
 /**
- * 报表屏（docs 优先，R76–R86）。
+ * 报表屏 —— 照 Web 移动端现状（ReportView.vue ≤860px）1:1 复刻。
  *
- * 结构（照 docs 的块集合，月 8 / 年 7 / 汇总 5）：
- *   标题行由外壳给（`报表 ×`）
- *   1 档位 + 期间（无页首大数字、无「共 N 笔」—— R86）
- *   2 分类构成（环图 + 可展开二级图例；**环心显示分类数**，不显示合计 —— R78）
- *   3 按支付方式 / 按记录人（排名行**中间必须有占比条** —— R79）
- *   4 期内节奏（月档按天折线逐点标值 / 年档按月 / 汇总按年 —— R82）
- *   5 对照四格（月：上月 / 去年同月 / 近12月均值 / 单笔最高 —— R83）
- *   6 还款节奏（**仅月档**：本月已刷 + 下月要还 —— R84）
- *   7 本期洞察（月 3 / 年 3 / 汇总 2，纯规则引擎 —— R85）
- *   8 涨跌榜（涨红跌绿，阈值 ±¥50 或 ±3% 取高 —— R37）
+ * 单列五块（.stack gap 12）：
+ *   report-head     紧凑事实条：Seg 三档 + period-nav + 年度报告入口 + 期间支出/环比/日均/笔数
+ *   report-compose  支出构成四维（分类环图 / 支付 / 记录人 / 节奏），图例移动端全宽虚线行
+ *   report-pair     涨跌榜（月档 vs 上期）+ 还款节奏（近 6 月柱）—— 移动端单列
+ *   report-banner   {年} 年度报告渐变大横幅 → 年度报告屏
  *
- * 块纵向堆叠、块内允许两栏；桌面不分栏（R80）。
+ * 四个接口并发拉（月 / 上月 / 年 / 汇总），失败置 null 不清屏。
  */
-import { Api, CategoryBucket, DailyPoint, MemberBucket, MonthlyReport, PaymentBucket, SummaryReport, YearPoint, YearlyReport } from '../../common/net/Api';
-import { ApiError } from '../../common/net/ApiError';
+import { Api, CategoryBucket, DailyPoint, MemberBucket, MonthlyReport, PaymentBucket, RollingMonth, SummaryReport, YearlyReport } from '../../common/net/Api';
+import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
-import { chartColor, hashIndex } from '../../common/theme/Palette';
-import { formatYuan, shiftMonth } from '../../common/contract/Contract';
-import { CARD_PAD, cardRadiusOf, cardShadow, fontDisplayOf, fontMonoOf, radiusOf } from '../../common/ui/UiStyle';
+import { chartColor, slotOf } from '../../common/theme/Palette';
+import { formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
+import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { categoryColorOf } from '../../common/ui/CategoryIcon';
+import { CatIconView } from '../../common/ui/CatIconView';
 import { DonutChart, DonutSliceView } from './DonutChart';
 
-export interface TierChipModel {
-  label: string;
-  value: number;
+/** 四维行（分类/支付/记录人/节奏共用） */
+interface DimRow {
+  name: string;
+  cents: number;
+  color: string;
+}
+
+/** 涨跌榜一行（web movers） */
+interface MoverView {
+  name: string;
+  categoryId: string;
+  color: string;
+  now: number;
+  before: number;
+  diff: number;
 }
 
 @Component
 export struct ReportScreen {
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
-  /** 0=本月 1=本年 2=汇总 */
+  /** 0=本月 1=本年 2=全部 */
   @State tier: number = 0;
   @State anchorMonth: string = currentMonthKey();
-  @State anchorYear: string = currentMonthKey().substring(0, 4);
-  @State report: MonthlyReport | null = null;
-  @State summary: SummaryReport | null = null;
-  @State year: YearlyReport | null = null;
-  @State loading: boolean = false;
-  @State errorText: string = '';
+  /** cat / pay / owner / week */
+  @State dim: string = 'cat';
 
-  private tok(): ThemeTokens {
-    return this.themeName === 'candy' ? CANDY : CYBER;
+  @State monthReport: MonthlyReport | null = null;
+  @State prevMonthReport: MonthlyReport | null = null;
+  @State yearReport: YearlyReport | null = null;
+  @State summary: SummaryReport | null = null;
+  @State loading: boolean = true;
+
+  aboutToAppear(): void {
+    this.load();
   }
 
   private isCyber(): boolean {
     return this.themeName === 'cyber';
   }
 
-  aboutToAppear(): void {
-    this.reload();
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
-  private async reload(): Promise<void> {
+  private anchorYear(): string {
+    return this.anchorMonth.substring(0, 4);
+  }
+
+  /** 四个报表并发拉（web load()：失败置 null，不清屏以外的状态） */
+  private async load(): Promise<void> {
     this.loading = true;
-    this.errorText = '';
+    let m: MonthlyReport | null = null;
+    let p: MonthlyReport | null = null;
+    let y: YearlyReport | null = null;
+    let s: SummaryReport | null = null;
     try {
-      if (this.tier === 0) {
-        const body = await Api.monthlyReport(this.anchorMonth);
-        this.report = body.report;
-      } else if (this.tier === 1) {
-        const body = await Api.yearlyReport(this.anchorYear);
-        this.year = body.report;
-      } else {
-        const body = await Api.summaryReport();
-        this.summary = body.report;
-      }
+      m = (await Api.monthlyReport(this.anchorMonth)).report;
     } catch (e) {
-      this.errorText = (e as ApiError).message;
-    } finally {
-      this.loading = false;
+      m = null;
     }
+    try {
+      p = (await Api.monthlyReport(shiftMonth(this.anchorMonth, -1))).report;
+    } catch (e) {
+      p = null;
+    }
+    try {
+      y = (await Api.yearlyReport(this.anchorYear())).report;
+    } catch (e) {
+      y = null;
+    }
+    try {
+      s = (await Api.summaryReport()).report;
+    } catch (e) {
+      s = null;
+    }
+    this.monthReport = m;
+    this.prevMonthReport = p;
+    this.yearReport = y;
+    this.summary = s;
+    this.loading = false;
   }
 
-  // ── 数据派生 ────────────────────────────────────────────────────────────
+  // ── 派生数据（与 Web computed 一一对应）──────────────────────────────
+
+  private activeTotal(): number {
+    if (this.tier === 0) {
+      return this.monthReport !== null ? this.monthReport.totalCents : 0;
+    }
+    if (this.tier === 1) {
+      return this.yearReport !== null ? this.yearReport.totalCents : 0;
+    }
+    return this.summary !== null ? this.summary.totalCents : 0;
+  }
+
+  private activeCount(): number {
+    if (this.tier === 0) {
+      return this.monthReport !== null ? this.monthReport.count : 0;
+    }
+    if (this.tier === 1) {
+      return this.yearReport !== null ? this.yearReport.count : 0;
+    }
+    return this.summary !== null ? this.summary.count : 0;
+  }
+
+  private prevTotal(): number {
+    if (this.tier === 0) {
+      return this.monthReport !== null ? this.monthReport.previous.totalCents : 0;
+    }
+    if (this.tier === 1) {
+      return this.yearReport !== null && this.yearReport.yearAgo !== undefined
+        ? this.yearReport.yearAgo.totalCents : 0;
+    }
+    return 0;
+  }
+
+  private deltaRatio(): number | null {
+    if (this.tier === 0) {
+      return this.monthReport !== null ? this.monthReport.change.ratio : null;
+    }
+    if (this.tier === 1) {
+      return this.yearReport !== null && this.yearReport.yearAgo !== undefined
+        ? this.yearReport.yearAgo.changeRatio : null;
+    }
+    return null;
+  }
+
+  /** 环比胶囊取值器（builder 内禁止非空断言，拆成取值器） */
+  private deltaArrow(): string {
+    const r = this.deltaRatio();
+    return r === null || r <= 0 ? '↓' : '↑';
+  }
+
+  private deltaPctText(): string {
+    const r = this.deltaRatio();
+    return r === null ? '' : `${(r * 100).toFixed(1)}%`;
+  }
+
+  private deltaToneColor(): string {
+    const r = this.deltaRatio();
+    return r === null ? this.tok().ink2 : (r > 0 ? this.tok().danger : this.tok().ok);
+  }
+
+  private periodLabel(): string {
+    if (this.tier === 0) {
+      return formatMonthLabel(this.anchorMonth);
+    }
+    if (this.tier === 1) {
+      return `${this.anchorYear()} 年`;
+    }
+    return '全部记录';
+  }
+
+  private perDayCents(): number {
+    if (this.tier !== 0) {
+      return this.activeCount() > 0 ? Math.round(this.activeTotal() / Math.max(1, this.activeCount())) : 0;
+    }
+    const elapsed = Math.max(1, new Date().getDate());
+    return Math.round(this.activeTotal() / elapsed);
+  }
+
   private categories(): CategoryBucket[] {
-    if (this.tier === 1) {
-      return this.year !== null && this.year.categories !== undefined ? this.year.categories : [];
+    if (this.tier === 0) {
+      return this.monthReport !== null ? this.monthReport.categories : [];
     }
-    return this.report === null ? [] : this.report.categories;
+    if (this.tier === 1) {
+      return this.yearReport !== null && this.yearReport.categories !== undefined ? this.yearReport.categories : [];
+    }
+    return this.summary !== null && this.summary.categories !== undefined ? this.summary.categories : [];
   }
 
-  /** 支付方式排名数据源（R79）：年档取年报，月档取月报 */
-  private payments(): PaymentBucket[] {
-    if (this.tier === 1) {
-      return this.year !== null && this.year.paymentMethods !== undefined ? this.year.paymentMethods : [];
-    }
-    return this.report === null ? [] : this.report.paymentMethods;
-  }
-
-  /** 记录人排名数据源（R79） */
-  private members(): MemberBucket[] {
-    if (this.tier === 1) {
-      return this.year !== null && this.year.members !== undefined ? this.year.members : [];
-    }
-    return this.report === null ? [] : this.report.members;
-  }
-
-  private slices(): DonutSliceView[] {
-    // R77：图例只列前 6，其余合并成「其他」（颜色用中性色，避免和真实分类混淆）
-    const cats = this.categories();
-    const out: DonutSliceView[] = [];
-    let otherRatio = 0;
-    for (let i = 0; i < cats.length; i++) {
-      const c = cats[i];
-      if (i < 6) {
-        out.push({ label: c.name, ratio: c.ratio, color: chartColor(this.tok(), hashIndex(c.categoryId)) });
-      } else {
-        otherRatio += c.ratio;
+  /** 分类维度行：前 7 类 + 其他（web donutData，颜色走 chart 8 槽） */
+  private catRows(): DimRow[] {
+    const rows: CategoryBucket[] = [];
+    for (const c of this.categories()) {
+      if (c.cents > 0) {
+        rows.push(c);
       }
     }
-    if (otherRatio > 0) {
-      out.push({ label: '其他', ratio: otherRatio, color: this.tok().ink3 });
+    rows.sort((a: CategoryBucket, b: CategoryBucket) => b.cents - a.cents);
+    const out: DimRow[] = [];
+    for (const c of rows.slice(0, 7)) {
+      out.push({ name: c.name, cents: c.cents, color: chartColor(this.tok(), slotOf(c.color, c.categoryId)) });
+    }
+    let rest = 0;
+    for (const c of rows.slice(7)) {
+      rest += c.cents;
+    }
+    if (rest > 0) {
+      out.push({ name: '其他', cents: rest, color: this.tok().ink3 });
     }
     return out;
   }
 
-  private signature(): string {
-    let s = `${this.tier}-${this.anchorMonth}-${this.categories().length}-`;
-    for (const slice of this.slices()) {
-      s += `${slice.label}:${slice.ratio.toFixed(4)}:${slice.color};`;
+  /** 环图数据（catRows 的去名视图） */
+  private donutSlices(): DonutSliceView[] {
+    const out: DonutSliceView[] = [];
+    for (const r of this.catRows()) {
+      out.push({ value: r.cents, color: r.color });
+    }
+    return out;
+  }
+
+  /** 涨跌榜：本期 vs 上期（仅月档有上期明细） */
+  private movers(): MoverView[] {
+    const prev = this.prevMonthReport;
+    if (this.tier !== 0 || prev === null) {
+      return [];
+    }
+    const out: MoverView[] = [];
+    for (const c of this.categories()) {
+      let before = 0;
+      for (const pc of prev.categories) {
+        if (pc.categoryId === c.categoryId) {
+          before = pc.cents;
+          break;
+        }
+      }
+      const diff = c.cents - before;
+      if (Math.abs(diff) > 0) {
+        out.push({
+          name: c.name,
+          categoryId: c.categoryId,
+          color: categoryColorOf(c.name, c.color),
+          now: c.cents,
+          before: before,
+          diff: diff
+        });
+      }
+    }
+    out.sort((a: MoverView, b: MoverView) => Math.abs(b.diff) - Math.abs(a.diff));
+    return out.slice(0, 6);
+  }
+
+  /** 当前维度下的行 */
+  private dimRows(): DimRow[] {
+    if (this.dim === 'cat') {
+      return this.catRows();
+    }
+    if (this.dim === 'pay') {
+      const src: PaymentBucket[] = this.monthReport !== null ? this.monthReport.paymentMethods : [];
+      const colored: DimRow[] = [];
+      let i = 0;
+      for (const p of src) {
+        colored.push({ name: p.name, cents: p.cents, color: chartColor(this.tok(), i % 8) });
+        i++;
+      }
+      return this.filterSortRows(colored);
+    }
+    if (this.dim === 'owner') {
+      const src: MemberBucket[] = this.monthReport !== null ? this.monthReport.members : [];
+      const colored: DimRow[] = [];
+      let i = 0;
+      for (const m of src) {
+        colored.push({ name: m.name, cents: m.cents, color: chartColor(this.tok(), (i + 3) % 8) });
+        i++;
+      }
+      return this.filterSortRows(colored);
+    }
+    // 节奏：按星期几聚合（周日 → 周六）
+    const wd: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const byWeekday: number[] = [0, 0, 0, 0, 0, 0, 0];
+    const daily: DailyPoint[] = this.monthReport !== null ? this.monthReport.daily : [];
+    for (const d of daily) {
+      const day = new Date(`${d.date}T00:00:00`).getDay();
+      byWeekday[day] += d.cents;
+    }
+    const out: DimRow[] = [];
+    for (let i = 0; i < 7; i++) {
+      out.push({ name: wd[i], cents: byWeekday[i], color: this.tok().accent });
+    }
+    return out;
+  }
+
+  /** 支付/记录人维度公用的「先染色 → 过滤 0 → 按金额降序」 */
+  private filterSortRows(src: DimRow[]): DimRow[] {
+    const out: DimRow[] = [];
+    for (const r of src) {
+      if (r.cents > 0) {
+        out.push(r);
+      }
+    }
+    out.sort((a: DimRow, b: DimRow) => b.cents - a.cents);
+    return out;
+  }
+
+  private dimMax(): number {
+    let max = 1;
+    for (const r of this.dimRows()) {
+      if (r.cents > max) {
+        max = r.cents;
+      }
+    }
+    return max;
+  }
+
+  /** 还款节奏：近 6 个月（月报 rolling12Months 尾部） */
+  private repaySteps(): RollingMonth[] {
+    const src: RollingMonth[] = this.monthReport !== null ? this.monthReport.rolling12Months : [];
+    return src.slice(Math.max(0, src.length - 6));
+  }
+
+  private repayMax(): number {
+    let max = 1;
+    for (const r of this.repaySteps()) {
+      if ((r.totalCents ?? 0) > max) {
+        max = r.totalCents ?? 0;
+      }
+    }
+    return max;
+  }
+
+  /** 一句话结论（web conclusion） */
+  private conclusion(): string {
+    const total = this.activeTotal();
+    if (total === 0) {
+      return '这个期间还没有记录，记一笔之后这里会自动生成结论。';
+    }
+    const rows: CategoryBucket[] = [];
+    for (const c of this.categories()) {
+      rows.push(c);
+    }
+    rows.sort((a: CategoryBucket, b: CategoryBucket) => b.cents - a.cents);
+    const top = rows.length > 0 ? rows[0] : null;
+    const head = top !== null ? `头号开销是${top.name}，占 ${Math.round((top.cents / total) * 100)}%；` : '';
+    const r = this.deltaRatio();
+    const tail = r === null
+      ? '这是第一段可对比的期间。'
+      : `整体${r >= 0 ? '多花 ' : '少花 '}${formatYuan(Math.abs(total - this.prevTotal()))}（${Math.abs(r * 100).toFixed(1)}%）。`;
+    return head + tail;
+  }
+
+  /** 环图重绘指纹（金额/颜色/主题都进指纹） */
+  private donutSignature(): string {
+    let s = `${this.tier}-${this.anchorMonth}-${this.themeName}-${this.activeTotal()}-`;
+    for (const slice of this.donutSlices()) {
+      s += `${slice.value}:${slice.color};`;
     }
     return s;
   }
 
-  /** 洞察（R85）：纯规则引擎，月 3 / 年 3 / 汇总 2，句式 `{分类} {金额}（{为什么}）` */
-  private insights(): string[] {
-    const out: string[] = [];
-    // 汇总档（R85：2 条）——此时 report/year 均为空，用 summary 生成
+  private switchTier(v: number): void {
+    this.tier = v;
+    // Web switchTier('year')：锚点落到当年 1 月
+    if (v === 1) {
+      this.anchorMonth = `${this.anchorYear()}-01`;
+    }
+    this.load();
+  }
+
+  private shift(delta: number): void {
     if (this.tier === 2) {
-      const sum = this.summary;
-      if (sum === null) {
-        return out;
-      }
-      out.push(`累计 ${formatYuan(sum.totalCents)}（${sum.count} 笔 · ${sum.recordedDays} 天）`);
-      out.push(`月均 ${formatYuan(sum.monthlyAverageCents)}（按有记录月份平均）`);
-      return out.slice(0, 2);
+      return;
     }
-    const r = this.report;
-    if (r === null || this.tier === 1) {
-      // 年档洞察（R85：3 条）—— 数据全部来自年报，不受是否看过月档影响
-      const y = this.year;
-      if (y === null) {
-        return out;
-      }
-      if (y.largest !== null && y.largest !== undefined) {
-        out.push(`${y.largest.categoryName} ${formatYuan(y.largest.cents)}（本年最大一笔）`);
-      }
-      if (y.peakMonth !== null) {
-        out.push(`最高月 ${y.peakMonth.month}（${formatYuan(y.peakMonth.totalCents)}）`);
-      }
-      let lowMonth = '';
-      let lowCents = -1;
-      for (const m of y.months) {
-        if (m.totalCents > 0 && (lowCents < 0 || m.totalCents < lowCents)) {
-          lowMonth = m.month;
-          lowCents = m.totalCents;
+    if (this.tier === 0) {
+      this.anchorMonth = shiftMonth(this.anchorMonth, delta);
+    } else {
+      this.anchorMonth = `${Number(this.anchorYear()) + delta}-01`;
+    }
+    this.load();
+  }
+
+  /** 跳年度报告屏（web $router.push annual-summary?year=） */
+  private openAnnual(): void {
+    AppStorage.setOrCreate('annualYear', this.anchorYear());
+    AppStorage.setOrCreate('activeScreen', 'annual');
+  }
+
+  // ══════════════ ① 页头 report-head ══════════════
+
+  @Builder
+  headCard() {
+    Column() {
+      // toolbar 第一行：Seg 三档 + period-nav
+      Row({ space: 10 }) {
+        Row({ space: this.isCyber() ? 0 : 4 }) {
+          this.segBtn('本月', 0)
+          this.segBtn('本年', 1)
+          this.segBtn('全部', 2)
         }
+        .padding(4)
+        .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface2)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+        .border({ width: this.tok().borderW, color: this.tok().line })
+
+        Row({ space: 4 }) {
+          this.periodChevron('‹', -1)
+          Text(this.periodLabel())
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber()))
+            .textAlign(TextAlign.Center)
+            .constraintSize({ minWidth: 116 })
+          this.periodChevron('›', 1)
+        }
+        .alignItems(VerticalAlign.Center)
       }
-      if (lowMonth !== '') {
-        out.push(`最低月 ${lowMonth}（${formatYuan(lowCents)}）`);
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      // toolbar 第二行：年度报告入口（web margin-left:auto，移动端换行后靠右）
+      Row() {
+        this.annualBtn()
       }
-      if (out.length === 0) {
-        out.push(`本年合计 ${formatYuan(y.totalCents)}（${y.count} 笔）`);
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .margin({ top: 8 })
+
+      // report-facts：期间支出大数 + 环比/对比/日均/笔数
+      Column({ space: 6 }) {
+        Column({ space: 2 }) {
+          Text('期间支出')
+            .fontSize(10.5)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.tok().ink2)
+          Text(formatYuan(this.activeTotal()))
+            .fontSize(26)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber()))
+            .letterSpacing(-0.52)
+            .fontFeature('"tnum" on')
+            .fontColor(this.tok().ink)
+            .maxLines(1)
+        }
+        .alignItems(HorizontalAlign.Start)
+
+        Flex({
+          wrap: FlexWrap.Wrap,
+          alignItems: ItemAlign.Center,
+          space: { main: LengthMetrics.px(10), cross: LengthMetrics.px(8) }
+        }) {
+          if (this.deltaRatio() !== null) {
+            Row({ space: 3 }) {
+              Text(this.deltaArrow())
+                .fontSize(11)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.deltaToneColor())
+              Text(this.deltaPctText())
+                .fontSize(10.5)
+                .fontWeight(FontWeight.Bold)
+                .fontFamily(fontMonoOf())
+                .fontFeature('"tnum" on')
+                .fontColor(this.deltaToneColor())
+            }
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .border({ width: this.isCyber() ? 1 : 1.5, color: this.deltaToneColor() })
+          }
+          this.factItem('对比', formatYuan(this.prevTotal()))
+          this.factItem('日均', formatYuan(this.perDayCents()))
+          this.factItem('笔数', `${this.activeCount()}`)
+        }
+        .width('100%')
       }
-      return out.slice(0, 3);
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ top: 14 })
     }
-    if (r.largest !== null) {
-      out.push(`${r.largest.categoryName} ${formatYuan(r.largest.cents)}（本期最大一笔）`);
-    }
-    const movers = this.movers();
-    if (movers.length > 0) {
-      const m = movers[0];
-      const why = (m.changeRatio ?? 0) > 0 ? '涨得最多' : '降得最多';
-      out.push(`${m.name} ${formatYuan(m.cents)}（${why}）`);
-    }
-    let creditCents = 0;
-    for (const p of r.paymentMethods) {
-      if (p.type === 'credit') {
-        creditCents += p.cents;
-      }
-    }
-    out.push(`信用类 ${formatYuan(creditCents)}（还款集中在这类）`);
-    return out.slice(0, this.tier === 2 ? 2 : 3);
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
-  /** 涨跌（R37）：阈值 ±¥50 或 ±3%，取高 */
-  private movers(): CategoryBucket[] {
-    const list: CategoryBucket[] = [];
-    for (const c of this.categories()) {
-      const prev = c.previousCents ?? 0;
-      if (prev === 0) {
-        continue;
-      }
-      const delta = c.cents - prev;
-      const ratio = Math.abs(delta) / prev;
-      if (Math.abs(delta) >= 5000 || ratio >= 0.03) {
-        list.push(c);
-      }
+  /** rf-i：标签 + 加粗数值（b = mono 600 ink） */
+  @Builder
+  factItem(label: string, value: string) {
+    Row({ space: 4 }) {
+      Text(label)
+        .fontSize(10.5)
+        .fontColor(this.tok().ink2)
+      Text(value)
+        .fontSize(10.5)
+        .fontWeight(FontWeight.Medium)
+        .fontFamily(fontMonoOf())
+        .fontFeature('"tnum" on')
+        .fontColor(this.tok().ink)
     }
-    list.sort((a: CategoryBucket, b: CategoryBucket) => Math.abs(b.cents - (b.previousCents ?? 0)) - Math.abs(a.cents - (a.previousCents ?? 0)));
-    return list.slice(0, 3);
+    .alignItems(VerticalAlign.Center)
   }
 
-  /** 对照四格（R83）：月档 = 上月 / 去年同月 / 近12月均值 / 单笔最高 */
-  private compareFacts(): CompareFact[] {
-    const out: CompareFact[] = [];
-    const r = this.report;
-    if (r === null) {
-      return out;
-    }
-    out.push({ label: '上月', value: formatYuan(r.previous.totalCents) });
-    // R83：去年同月取服务端 yearAgo，不再硬编码 0
-    out.push({ label: '去年同月', value: formatYuan(r.yearAgo === undefined ? 0 : r.yearAgo.totalCents) });
-    let sum = 0;
-    let n = 0;
-    for (const m of r.rolling12Months) {
-      sum += m.totalCents ?? 0;
-      n += 1;
-    }
-    out.push({ label: '近 12 月均值', value: formatYuan(n > 0 ? Math.round(sum / n) : 0) });
-    out.push({ label: '单笔最高', value: formatYuan(r.largest === null ? 0 : r.largest.cents) });
-    return out;
+  /** seg-btn（app.css:357） */
+  @Builder
+  segBtn(label: string, value: number) {
+    Text(label)
+      .fontSize(this.isCyber() ? 10.5 : 12)
+      .fontWeight(FontWeight.Bold)
+      .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+      .letterSpacing(this.isCyber() ? 1.05 : 0)
+      .fontColor(this.tier === value
+        ? (this.isCyber() ? this.tok().accent : this.tok().accentInk)
+        : this.tok().ink2)
+      .textAlign(TextAlign.Center)
+      .padding({ left: 13, right: 13, top: 6, bottom: 6 })
+      .backgroundColor(this.tier === value
+        ? (this.isCyber() ? 'rgba(0,255,136,0.1)' : this.tok().accent)
+        : Color.Transparent)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .border({
+        width: 2,
+        color: this.tier === value && !this.isCyber() ? this.tok().line2 : Color.Transparent
+      })
+      .onClick(() => {
+        this.switchTier(value);
+      })
   }
 
-  /** 期内节奏（R82）：月档按天，逐点标值（这里用 31 根竖柱 + 峰值标数，避免折线在 ArkUI 里的实现成本） */
-  private dailyMax(): number {
-    let max = 0;
-    const r = this.report;
-    if (r === null) {
-      return 0;
+  /** period-nav 的 ‹ ›（icon-btn 38px；全部档禁用 → 半透明） */
+  @Builder
+  periodChevron(symbol: string, delta: number) {
+    Text(symbol)
+      .fontSize(20)
+      .fontColor(this.tok().ink2)
+      .width(38)
+      .height(38)
+      .textAlign(TextAlign.Center)
+      .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+      .opacity(this.tier === 2 ? 0.45 : 1)
+      .onClick(() => {
+        if (this.tier !== 2) {
+          this.shift(delta);
+        }
+      })
+  }
+
+  /** 年度报告按钮（web PBtn ghost sm + Sparkles） */
+  @Builder
+  annualBtn() {
+    Row({ space: 7 }) {
+      Text('✦')
+        .fontSize(12)
+        .fontColor(this.tok().ink2)
+      Text(`${this.anchorYear()} 年度报告`)
+        .fontSize(this.isCyber() ? 11 : 11.5)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+        .letterSpacing(this.isCyber() ? 1.54 : 0)
+        .fontColor(this.tok().ink2)
     }
-    for (const d of r.daily) {
-      if (d.cents > max) {
-        max = d.cents;
+    .alignItems(VerticalAlign.Center)
+    .height(30)
+    .padding({ left: 11, right: 11 })
+    .backgroundColor(Color.Transparent)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : Color.Transparent })
+    .onClick(() => {
+      this.openAnnual();
+    })
+  }
+
+  // ══════════════ ② 支出构成 report-compose ══════════════
+
+  @Builder
+  composeCard() {
+    Column() {
+      // card-h：card-t + chips（移动端 card-cap 隐藏、chips 全宽横滑）
+      Column({ space: 8 }) {
+        Text('支出构成')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(fontDisplayOf(this.isCyber()))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+        Scroll() {
+          Row({ space: 7 }) {
+            this.dimChip('分类', 'cat')
+            this.dimChip('支付', 'pay')
+            this.dimChip('记录人', 'owner')
+            this.dimChip('节奏', 'week')
+          }
+          .padding({ bottom: 2 })
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .width('100%')
+      }
+      .width('100%')
+      .margin({ bottom: 13 })
+
+      if (this.dimRows().length === 0) {
+        Text('这个期间还没有构成数据')
+          .fontSize(12)
+          .fontColor(this.tok().ink3)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 34, bottom: 34, left: 10, right: 10 })
+      } else {
+        Column({ space: 12 }) {
+          // compose-visual
+          if (this.dim === 'cat') {
+            DonutChart({
+              slices: this.donutSlices(),
+              tokens: this.tok(),
+              signature: this.donutSignature(),
+              ringSize: 136,
+              centerLabel: '合计',
+              centerValue: formatYuan(this.activeTotal()),
+              isCyber: this.isCyber()
+            })
+          } else if (this.dim === 'week') {
+            this.weekBars()
+          } else {
+            this.dimBars()
+          }
+
+          // compose-list：移动端全宽虚线图例行
+          Column() {
+            ForEach(this.dimRows(), (r: DimRow, idx: number) => {
+              Row({ space: 8 }) {
+                Row()
+                  .width(9)
+                  .height(9)
+                  .borderRadius(3)
+                  .backgroundColor(r.color)
+                Text(r.name)
+                  .fontSize(11.5)
+                  .fontColor(this.tok().ink)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(formatYuan(r.cents))
+                  .fontSize(11.5)
+                  .fontFamily(fontMonoOf())
+                  .fontFeature('"tnum" on')
+                  .fontColor(this.tok().ink)
+                  .width(64)
+                  .textAlign(TextAlign.End)
+                Text(`${this.activeTotal() > 0 ? Math.round((r.cents / this.activeTotal()) * 100) : 0}%`)
+                  .fontSize(10)
+                  .fontFamily(fontMonoOf())
+                  .fontFeature('"tnum" on')
+                  .fontColor(this.tok().ink3)
+                  .width(38)
+                  .textAlign(TextAlign.End)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Center)
+              .padding({ top: 6, bottom: 6 })
+              .border({
+                width: idx < this.dimRows().length - 1 ? { bottom: 1 } : { bottom: 0 },
+                color: this.tok().line,
+                style: BorderStyle.Dashed
+              })
+            }, (r: DimRow) => `${r.name}-${r.cents}`)
+          }
+          .width('100%')
+        }
+        .width('100%')
       }
     }
-    return max;
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** 四维 chip（app.css:383；is-on 琥珀底） */
+  @Builder
+  dimChip(label: string, value: string) {
+    Text(label)
+      .fontSize(this.isCyber() ? 10 : 11.5)
+      .fontWeight(FontWeight.Medium)
+      .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+      .letterSpacing(this.isCyber() ? 0.6 : 0)
+      .fontColor(this.dim === value
+        ? (this.isCyber() ? this.tok().accent : this.tok().onColor)
+        : this.tok().ink2)
+      .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+      .backgroundColor(this.dim === value
+        ? (this.isCyber() ? 'rgba(0,255,136,0.1)' : this.tok().amber)
+        : (this.isCyber() ? Color.Transparent : this.tok().surface))
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .border({
+        width: this.isCyber() ? 1 : 2,
+        color: this.dim === value
+          ? (this.isCyber() ? this.tok().accent : this.tok().line2)
+          : this.tok().line
+      })
+      .shadow(this.dim === value && !this.isCyber()
+        ? parseShadow(`2px 2px 0 ${this.tok().line2}`) as ShadowOptions
+        : this.dim === value && this.isCyber()
+          ? { radius: 12, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.3)' } as ShadowOptions
+          : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
+      .onClick(() => {
+        this.dim = value;
+      })
+  }
+
+  /** 节奏维度：7 根星期柱（views.css:291，移动端 h112 gap6） */
+  @Builder
+  weekBars() {
+    Row({ space: 6 }) {
+      ForEach(this.dimRows(), (r: DimRow) => {
+        Column({ space: 6 }) {
+          Text(r.cents > 0 ? formatCompactCents(r.cents) : '')
+            .fontSize(8.5)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.tok().ink3)
+          Column()
+            .width('100%')
+            .constraintSize({ maxWidth: 30 })
+            .height(Math.max(3, Math.round((r.cents / this.dimMax()) * 80)))
+            .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().accent)
+            .borderRadius({ topLeft: 6, topRight: 6, bottomLeft: 2, bottomRight: 2 })
+            .border({
+              width: this.isCyber() ? 0 : 1,
+              color: this.tok().line2
+            })
+            .shadow(this.isCyber()
+              ? { radius: 12, offsetX: 0, offsetY: -2, color: 'rgba(0,255,136,0.6)' } as ShadowOptions
+              : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
+          Text(r.name.substring(r.name.length - 1))
+            .fontSize(9)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.tok().ink3)
+        }
+        .layoutWeight(1)
+        .height(112)
+        .justifyContent(FlexAlign.End)
+        .alignItems(HorizontalAlign.Center)
+      }, (r: DimRow) => `${r.name}-${r.cents}`)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Bottom)
+  }
+
+  /** 支付/记录人维度：条形排名（62px 名 | 10px 轨道 | 76px 值） */
+  @Builder
+  dimBars() {
+    Column({ space: 8 }) {
+      ForEach(this.dimRows(), (r: DimRow) => {
+        Row({ space: 10 }) {
+          Text(r.name)
+            .fontSize(11.5)
+            .fontColor(this.tok().ink2)
+            .width(62)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Stack({ alignContent: Alignment.Start }) {
+            Row()
+              .width('100%')
+              .height(10)
+              .backgroundColor(this.tok().surface3)
+              .borderRadius(this.tok().rPill)
+            Row()
+              .width(`${Math.max(3, Math.round((r.cents / this.dimMax()) * 100))}%`)
+              .height(10)
+              .backgroundColor(r.color)
+              .borderRadius(this.tok().rPill)
+          }
+          .layoutWeight(1)
+          Text(formatYuan(r.cents))
+            .fontSize(11)
+            .fontFamily(fontMonoOf())
+            .fontFeature('"tnum" on')
+            .fontColor(this.tok().ink2)
+            .width(76)
+            .textAlign(TextAlign.End)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }, (r: DimRow) => `${r.name}-${r.cents}`)
+    }
+    .width('100%')
+  }
+
+  // ══════════════ ③ 涨跌榜 + 还款节奏 ══════════════
+
+  @Builder
+  moversCard() {
+    Column() {
+      this.cardHead('涨跌榜', '分类环比 · 按差额排序')
+      if (this.movers().length > 0) {
+        Column({ space: 10 }) {
+          ForEach(this.movers(), (m: MoverView) => {
+            Row({ space: 9 }) {
+              // cat-ic 30：12% 分类色底 + 45% 分类色描边
+              CatIconView({ catName: m.name, iconSize: 17, color: m.color })
+                .width(30)
+                .height(30)
+                .borderRadius(this.isCyber() ? 1 : 9)
+                .backgroundColor(mixHex(m.color, this.tok().surface, 0.12))
+                .border({ width: 1, color: mixHex(m.color, this.tok().surface, 0.45) })
+
+              Column({ space: 2 }) {
+                Text(m.name)
+                  .fontSize(12)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.tok().ink)
+                  .maxLines(1)
+                Text(`${formatYuan(m.now)} / 上期 ${formatYuan(m.before)}`)
+                  .fontSize(10)
+                  .fontFamily(fontMonoOf())
+                  .fontFeature('"tnum" on')
+                  .fontColor(this.tok().ink3)
+                  .maxLines(1)
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+
+              Column({ space: 1 }) {
+                Text(`${m.diff > 0 ? '+' : '-'}${formatYuan(Math.abs(m.diff))}`)
+                  .fontSize(10.5)
+                  .fontFamily(fontMonoOf())
+                  .fontFeature('"tnum" on')
+                  .fontColor(m.diff > 0 ? this.tok().danger : this.tok().ok)
+                Text(this.moverPct(m))
+                  .fontSize(10)
+                  .fontFamily(fontMonoOf())
+                  .fontFeature('"tnum" on')
+                  .opacity(0.75)
+                  .fontColor(m.diff > 0 ? this.tok().danger : this.tok().ok)
+              }
+              .alignItems(HorizontalAlign.End)
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding({ left: 10, right: 10, top: 9, bottom: 9 })
+            .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+            .border({ width: 1, color: this.tok().line })
+          }, (m: MoverView) => `${m.categoryId}-${m.diff}`)
+        }
+        .width('100%')
+      } else {
+        Text(this.tier === 0 ? '该期间没有可对比的分类' : '切到「月」档看涨跌')
+          .fontSize(12)
+          .fontColor(this.tok().ink3)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 34, bottom: 34, left: 10, right: 10 })
+      }
+      Text(this.conclusion())
+        .fontSize(11)
+        .lineHeight(19)
+        .fontColor(this.tok().ink2)
+        .width('100%')
+        .margin({ top: 12 })
+        .padding({ top: 10 })
+        .border({ width: { top: 1 }, color: this.tok().line, style: BorderStyle.Dashed })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** 涨跌百分比（上期为 0 → 新增） */
+  private moverPct(m: MoverView): string {
+    return m.before > 0 ? `${Math.round((m.diff / m.before) * 100)}%` : '新增';
+  }
+
+  @Builder
+  repayCard() {
+    Column() {
+      this.cardHead('还款节奏', '近 6 个月 · 按账期')
+      Row({ space: 8 }) {
+        ForEach(this.repaySteps(), (r: RollingMonth) => {
+          Column({ space: 5 }) {
+            Text((r.totalCents ?? 0) > 0 ? formatCompactCents(r.totalCents ?? 0) : '')
+              .fontSize(8.5)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+            Column()
+              .width('100%')
+              .height(Math.max(4, Math.round(((r.totalCents ?? 0) / this.repayMax()) * 64)))
+              .backgroundColor(this.tok().pink)
+              .borderRadius({ topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 })
+              .border({
+                width: this.isCyber() ? 0 : 1,
+                color: this.tok().line2
+              })
+              .shadow(this.isCyber()
+                ? { radius: 12, offsetX: 0, offsetY: -2, color: 'rgba(255,0,255,0.6)' } as ShadowOptions
+                : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
+            Text(`${Number(r.month.substring(5, 7))}月`)
+              .fontSize(9)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+          }
+          .layoutWeight(1)
+          .height(96)
+          .justifyContent(FlexAlign.End)
+          .alignItems(HorizontalAlign.Center)
+        }, (r: RollingMonth) => r.month)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Bottom)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** 卡头：card-t + card-cap（app.css:306/308/315） */
+  @Builder
+  cardHead(title: string, cap: string) {
+    Row({ space: 10 }) {
+      Text(title)
+        .fontSize(this.isCyber() ? 12.5 : 15)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(fontDisplayOf(this.isCyber()))
+        .letterSpacing(this.isCyber() ? 1.25 : 0)
+        .fontColor(this.tok().ink)
+      Blank()
+      Text(cap)
+        .fontSize(9.5)
+        .letterSpacing(1.52)
+        .fontFamily(fontMonoOf())
+        .fontColor(this.tok().ink3)
+    }
+    .width('100%')
+    .margin({ bottom: 13 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // ══════════════ ④ 年度报告大横幅 ══════════════
+
+  @Builder
+  annualBanner() {
+    Row({ space: 14 }) {
+      Column({ space: 2 }) {
+        Text(`${this.anchorYear()} 年度报告已生成`)
+          .fontSize(this.isCyber() ? 13 : 16)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontDisplayOf(false))
+          .letterSpacing(this.isCyber() ? 1.56 : 0)
+          .fontColor(this.isCyber() ? this.tok().accent : '#FFFFFF')
+          .maxLines(1)
+        Text('年度全貌 · 年度之最 · 单笔最贵 · 最集中月份 · 12 月走势')
+          .fontSize(11)
+          .fontColor(this.isCyber() ? this.tok().accent : '#FFFFFF')
+          .opacity(0.9)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('›')
+        .fontSize(18)
+        .fontColor(this.isCyber() ? this.tok().accent : '#FFFFFF')
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({
+      width: this.isCyber() ? 1 : 2,
+      color: this.isCyber() ? this.tok().accent : this.tok().line2
+    })
+    .linearGradient({
+      angle: 100,
+      colors: this.isCyber()
+        ? [['rgba(0,255,136,0.14)', 0], ['rgba(0,212,255,0.06)', 1]]
+        : [[this.tok().accent, 0], ['#A78BFA', 0.65], [this.tok().pink, 1]]
+    })
+    .shadow(this.isCyber()
+      ? { radius: 26, offsetX: 0, offsetY: -10, color: 'rgba(0,255,136,0.7)' } as ShadowOptions
+      : parseShadow(`5px 5px 0 ${this.tok().line2}`) as ShadowOptions)
+    .onClick(() => {
+      this.openAnnual();
+    })
   }
 
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.errorText !== '') {
-          Text(this.errorText).fontSize(10).fontColor(this.tok().danger).width('100%')
-        }
         this.headCard()
-        if (this.tier === 2) {
-          // 汇总档 5 块（R76）：记录跨度 / 期内节奏(按年) / 洞察 2 条
-          // 规范明文：汇总档不出现「年度对照」（没有对比期可比）
-          this.spanCard()
-          this.rhythmCard()
-          this.insightCard()
-        } else if (this.tier === 1) {
-          // 年档 7 块（R76）：分类构成 / 支付排名 / 记录人 / 期内节奏 / 年度对照 / 涨跌榜 / 洞察
-          // 数据全部来自 `/api/reports/yearly`（服务端已返回 categories/paymentMethods/members）
-          this.composeCard()
-          this.rankCard()
-          this.memberCard()
-          this.rhythmCard()
-          this.yearCompareCard()
-          this.moversCard()
-          this.insightCard()
-        } else {
-          this.composeCard()
-          this.rankCard()
-          this.memberCard()
-          this.rhythmCard()
-          if (this.tier === 0) {
-            this.compareCard()
-            this.repayCard()
-            this.moversCard()
-          }
-          this.insightCard()
-        }
+        this.composeCard()
+        this.moversCard()
+        this.repayCard()
+        this.annualBanner()
         if (this.loading) {
-          Text('加载中…').fontSize(10).fontColor(this.tok().ink3)
+          Text('加载中…')
+            .fontSize(10.5)
+            .fontColor(this.tok().ink2)
+            .width('100%')
+            .textAlign(TextAlign.Center)
         }
       }
       .width('100%')
-      .padding({ bottom: 12 })
+      .padding({ bottom: 8 })
     }
     .width('100%')
     .height('100%')
     .scrollBar(BarState.Off)
-  }
-
-  /** 档位 + 期间（**无页首大数字**，R86） */
-  @Builder
-  headCard() {
-    Row({ space: 8 }) {
-      this.tierChip({ label: '本月', value: 0 })
-      this.tierChip({ label: '本年', value: 1 })
-      this.tierChip({ label: '汇总', value: 2 })
-      Blank()
-      if (this.tier !== 2) {
-        Text('‹').fontSize(16).fontColor(this.tok().ink3).padding({ left: 6, right: 6 })
-          .fontFeature('"tnum" on')
-          .onClick(() => {
-            this.shift(-1);
-          })
-        Text(this.tier === 0 ? this.anchorMonth : this.anchorYear)
-          .fontSize(13).fontWeight(FontWeight.Bold).fontFamily(fontDisplayOf(this.isCyber()))
-          .fontColor(this.tok().ink)
-        Text('›').fontSize(16).fontColor(this.tok().ink3).padding({ left: 6, right: 6 })
-          .onClick(() => {
-            this.shift(1);
-          })
-      }
-    }
-    .width('100%')
-    .padding({ top: 4, bottom: 4 })
-  }
-
-  private shift(delta: number): void {
-    if (this.tier === 0) {
-      this.anchorMonth = shiftMonth(this.anchorMonth, delta);
-    } else {
-      this.anchorYear = String(Number(this.anchorYear) + delta);
-    }
-    this.reload();
-  }
-
-  @Builder
-  tierChip($$: TierChipModel) {
-    Text($$.label)
-      .fontSize(11.5)
-      .fontWeight(this.tier === $$.value ? FontWeight.Bold : FontWeight.Normal)
-      .fontColor(this.tier === $$.value ? this.tok().ink : this.tok().ink3)
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-      .backgroundColor(this.tier === $$.value ? this.tok().surface2 : Color.Transparent)
-      .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
-      .onClick(() => {
-        this.tier = $$.value;
-        this.reload();
-      })
-  }
-
-  /** 分类构成：环图（中心=分类数，R78）+ 图例 */
-  @Builder
-  composeCard() {
-    Column({ space: 10 }) {
-      Text('分类构成')
-        .fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      Row({ space: 12 }) {
-        DonutChart({
-          slices: this.slices(),
-          tokens: this.tok(),
-          signature: this.signature(),
-          centerLabel: `${this.categories().length} 类`
-        })
-        Column({ space: 6 }) {
-          ForEach(this.slices().slice(0, 6), (slice: DonutSliceView) => {
-            Row({ space: 6 }) {
-              Row().width(9).height(9).backgroundColor(slice.color).borderRadius(3)
-              Text(slice.label).fontSize(10.5).fontColor(this.tok().ink2)
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-              Text(`${(slice.ratio * 100).toFixed(0)}%`).fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-            }.width('100%')
-          }, (slice: DonutSliceView) => slice.label)
-        }.layoutWeight(1)
-      }.width('100%')
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
-  }
-
-  /** 按记录人排名（R79：中间必须有占比条；汇总档也有此块） */
-  @Builder
-  memberCard() {
-    Column({ space: 10 }) {
-      Text('按记录人').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      ForEach(this.memberBuckets(), (m: MemberBucket) => {
-        Row({ space: 8 }) {
-          Text(m.name).fontSize(11).fontColor(this.tok().ink2).width(84).maxLines(1)
-          Stack({ alignContent: Alignment.Start }) {
-            Row().width('100%').height(10).backgroundColor(this.tok().surface3).borderRadius(5)
-            Row().width(`${Math.round(m.ratio * 100)}%`).height(10)
-              .backgroundColor(chartColor(this.tok(), hashIndex(m.ownerId))).borderRadius(5)
-          }.layoutWeight(1)
-          Text(formatYuan(m.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
-            .fontFeature('"tnum" on')
-        }.width('100%')
-      }, (m: MemberBucket) => m.ownerId)
-    }
-    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: this.tok().line })
-    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
-  }
-
-  private memberBuckets(): MemberBucket[] {
-    return this.members();
-  }
-
-  /** 排名行（R79）：中间必须有占比条 */
-  @Builder
-  rankCard() {
-    Column({ space: 10 }) {
-      Text('按支付方式').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      ForEach(this.payBuckets(), (p: PaymentBucket) => {
-        Row({ space: 8 }) {
-          Text(p.name).fontSize(11).fontColor(this.tok().ink2).width(84).maxLines(1)
-          Stack({ alignContent: Alignment.Start }) {
-            Row().width('100%').height(10).backgroundColor(this.tok().surface3).borderRadius(5)
-            Row().width(`${Math.round(this.payRatio(p) * 100)}%`).height(10)
-              .backgroundColor(chartColor(this.tok(), hashIndex(p.paymentMethodId))).borderRadius(5)
-          }.layoutWeight(1)
-          Text(formatYuan(p.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
-        }.width('100%')
-      }, (p: PaymentBucket) => p.paymentMethodId)
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-  }
-
-  private payBuckets(): PaymentBucket[] {
-    return this.payments();
-  }
-
-  private payRatio(p: PaymentBucket): number {
-    const total = this.tier === 1
-      ? (this.year === null ? 0 : this.year.totalCents)
-      : (this.report === null ? 0 : this.report.totalCents);
-    return total > 0 ? p.cents / total : 0;
-  }
-
-  /** 期内节奏（R82）：月档按天 — 31 根竖柱，峰值标数 */
-  @Builder
-  rhythmCard() {
-    Column({ space: 8 }) {
-      Text('期内节奏').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      if (this.tier === 0 && this.report !== null) {
-        Row({ space: 2 }) {
-          ForEach(this.report.daily, (d: DailyPoint) => {
-            Column().width(4)
-              .height(this.dailyMax() > 0 ? Math.max(2, Math.round((d.cents / this.dailyMax()) * 56)) : 2)
-              .backgroundColor(d.cents > 0 ? this.tok().accent : this.tok().surface3)
-              .borderRadius(2)
-          }, (d: DailyPoint) => d.date)
-        }
-        .height(56)
-        .alignItems(VerticalAlign.Bottom)
-        Row() {
-          Text(`峰值 ${formatYuan(this.dailyMax())}`).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-        }.width('100%')
-      } else if (this.year !== null) {
-        // 年档：按月 12 根柱
-        Row({ space: 3 }) {
-          ForEach(this.year.months, (m: MonthPointView) => {
-            Column().width(8)
-              .height(this.yearMax() > 0 ? Math.max(2, Math.round((m.totalCents / this.yearMax()) * 56)) : 2)
-              .backgroundColor(m.totalCents > 0 ? this.tok().accent : this.tok().surface3)
-              .borderRadius(2)
-          }, (m: MonthPointView) => m.month)
-        }
-        .height(56)
-        .alignItems(VerticalAlign.Bottom)
-        Row() {
-          Text(`最高月 ${this.year.peakMonth === null ? '—' : formatYuan(this.year.peakMonth.totalCents)}`)
-              .fontFeature('"tnum" on')
-            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-              .fontFeature('"tnum" on')
-        }.width('100%')
-      } else if (this.summary !== null) {
-        // 汇总档：按年柱（R82）
-        Row({ space: 6 }) {
-          ForEach(this.summary.years, (y: YearPoint) => {
-            Column().width(14)
-              .height(this.summaryMax() > 0 ? Math.max(2, Math.round((y.totalCents / this.summaryMax()) * 56)) : 2)
-              .backgroundColor(y.totalCents > 0 ? this.tok().accent : this.tok().surface3)
-              .borderRadius(2)
-          }, (y: YearPoint) => y.year)
-        }
-        .height(56)
-        .alignItems(VerticalAlign.Bottom)
-        Row() {
-          Text(`共 ${this.summary.years.length} 年`)
-            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-        }.width('100%')
-      } else {
-        Text('合计按年').fontSize(10).fontColor(this.tok().ink3)
-      }
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-  }
-
-  /** 对照四格（R83） */
-  @Builder
-  compareCard() {
-    Column({ space: 8 }) {
-      Text('对照').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      Grid() {
-        ForEach(this.compareFacts(), (f: CompareFact) => {
-          GridItem() {
-            Column({ space: 2 }) {
-              Text(f.label).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-              Text(f.value).fontSize(12).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
-            }.alignItems(HorizontalAlign.Start).width('100%')
-          }
-        }, (f: CompareFact) => f.label)
-      }
-      .columnsTemplate('repeat(2, 1fr)').columnsGap(10).rowsGap(10).width('100%')
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-  }
-
-  private summaryMax(): number {
-    let max = 0;
-    if (this.summary !== null) {
-      for (const y of this.summary.years) {
-        if (y.totalCents > max) {
-          max = y.totalCents;
-        }
-      }
-    }
-    return max;
-  }
-
-  private yearMax(): number {
-    let max = 0;
-    if (this.year !== null) {
-      for (const m of this.year.months) {
-        if (m.totalCents > max) {
-          max = m.totalCents;
-        }
-      }
-    }
-    return max;
-  }
-
-  /** 年档对照四格（R83）：去年 / 近 3 年均值 / 最高月 / 单笔最高 */
-  private yearCompareFacts(): CompareFact[] {
-    const y = this.year;
-    if (y === null) {
-      return [];
-    }
-    let sum = 0;
-    for (const m of y.months) {
-      sum += m.totalCents;
-    }
-    // R83：四格是「与谁比」——去年 / 近 3 年均值 / 最高月 / 单笔最高
-    return [
-      { label: '去年', value: y.yearAgo === undefined || y.yearAgo === null ? '—' : formatYuan(y.yearAgo.totalCents) },
-      { label: '近 3 年均值', value: y.average3YearsCents === undefined ? '—' : formatYuan(y.average3YearsCents) },
-      { label: '最高月', value: y.peakMonth === null ? '—' : formatYuan(y.peakMonth.totalCents) },
-      { label: '单笔最高', value: y.largest === undefined || y.largest === null ? '—' : formatYuan(y.largest.cents) }
-    ];
-  }
-
-  @Builder
-  yearCompareCard() {
-    Column({ space: 8 }) {
-      Text('年度对照').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      Grid() {
-        ForEach(this.yearCompareFacts(), (f: CompareFact) => {
-          GridItem() {
-            Column({ space: 2 }) {
-              Text(f.label).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-              Text(f.value).fontSize(12).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
-            }.alignItems(HorizontalAlign.Start).width('100%')
-          }
-        }, (f: CompareFact) => f.label)
-      }
-      .columnsTemplate('repeat(2, 1fr)').columnsGap(10).rowsGap(10).width('100%')
-    }
-    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: this.tok().line })
-  }
-
-  /** 还款节奏（R84）：仅月档，本月已刷 + 下月要还 */
-  @Builder
-  repayCard() {
-    Column({ space: 8 }) {
-      Text('还款节奏').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      Row() {
-        this.repayFact({ label: '本月已刷', value: formatYuan(this.creditCents()) })
-        this.repayFact({ label: '下月要还', value: formatYuan(this.nextMonthDueCents()) })
-      }.width('100%')
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-  }
-
-  @Builder
-  repayFact($$: CompareFact) {
-    Column({ space: 2 }) {
-      Text($$.label).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
-      Text($$.value).fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
-    }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-  }
-
-  /** 下月要还：还款日落在下个月的信用类金额（R84 与「本月已刷」是两个数） */
-  private nextMonthDueCents(): number {
-    const r = this.report;
-    if (r === null) {
-      return 0;
-    }
-    const next = shiftMonth(this.anchorMonth, 1);
-    let sum = 0;
-    for (const p of r.paymentMethods) {
-      if (p.type !== 'credit') {
-        continue;
-      }
-      const due = p.repaymentDate ?? '';
-      if (due.startsWith(next)) {
-        sum += p.cents;
-      }
-    }
-    return sum;
-  }
-
-  private creditCents(): number {
-    let sum = 0;
-    for (const p of this.payBuckets()) {
-      if (p.type === 'credit') {
-        sum += p.cents;
-      }
-    }
-    return sum;
-  }
-
-  /** 涨跌榜（R37） */
-  @Builder
-  moversCard() {
-    Column({ space: 8 }) {
-      Text('涨跌榜').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      if (this.movers().length === 0) {
-        Text('本期没有超过阈值的变化').fontSize(10).fontColor(this.tok().ink3).width('100%')
-      }
-      ForEach(this.movers(), (c: CategoryBucket) => {
-        Row({ space: 8 }) {
-          Text(c.name).fontSize(11).fontColor(this.tok().ink2).width(72).maxLines(1)
-          Text(formatYuan(c.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink).layoutWeight(1)
-            .fontFeature('"tnum" on')
-          Text(this.deltaText(c)).fontSize(10).fontFamily(fontMonoOf())
-            .fontFeature('"tnum" on')
-            .fontColor((c.cents - (c.previousCents ?? 0)) >= 0 ? this.tok().danger : this.tok().ok)
-        }.width('100%')
-      }, (c: CategoryBucket) => c.categoryId)
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-  }
-
-  private deltaText(c: CategoryBucket): string {
-    const delta = c.cents - (c.previousCents ?? 0);
-    return `${delta >= 0 ? '+' : '-'}${formatYuan(Math.abs(delta))}`;
-  }
-
-  /** 本期洞察（R85） */
-  @Builder
-  insightCard() {
-    Column({ space: 6 }) {
-      Text('本期洞察').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      ForEach(this.insights(), (line: string) => {
-        Text(line).fontSize(10.5).fontColor(this.tok().ink2).width('100%')
-      }, (line: string) => line)
-    }
-    .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
-  }
-
-  /** 汇总档：年度对比（按年金额条） */
-
-
-
-  /** 汇总档：记录跨度 */
-  @Builder
-  spanCard() {
-    Row({ space: 10 }) {
-      this.repayFact({ label: '记录天数', value: `${this.summary === null ? 0 : this.summary.recordedDays} 天` })
-      this.repayFact({ label: '总笔数', value: `${this.summary === null ? 0 : this.summary.count} 笔` })
-      this.repayFact({ label: '月均', value: formatYuan(this.summary === null ? 0 : this.summary.monthlyAverageCents) })
-    }
-    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: this.tok().line })
+    .edgeEffect(EdgeEffect.Spring)
   }
 }
 
-export interface CompareFact {
-  label: string;
-  value: string;
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
+/** 紧凑金额（web formatCompact）：万元以下舍角分，万元以上用「万」 */
+function formatCompactCents(cents: number): string {
+  const abs = Math.abs(cents);
+  const sign = cents < 0 ? '-' : '';
+  if (abs < 1000000) {
+    const yuan = Math.round(abs / 100);
+    return `${sign}¥${String(yuan).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  }
+  const wan = abs / 1000000;
+  return `${sign}¥${wan >= 100 ? wan.toFixed(0) : wan.toFixed(1)}万`;
 }
 
 function currentMonthKey(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
-}
-
-interface MonthPointView {
-  month: string;
-  totalCents: number;
-  count: number;
+  const m = now.getMonth() + 1;
+  return `${now.getFullYear()}-${m < 10 ? '0' + m : String(m)}`;
 }
