@@ -415,6 +415,39 @@ export struct DashboardScreen {
     return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
+  /** 本月要还（R128）：信息层固定卡 —— 信用类合计 + 笔数 */
+  @Builder
+  creditCard() {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text('本月要还').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+        Text(formatYuan(this.creditDueCents))
+          .fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Text(`信用类 ${this.creditCount()} 笔`)
+        .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+    }
+    .width('100%').padding(14).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+  }
+
+  /** 信用类笔数（R128） */
+  private creditCount(): number {
+    if (this.monthReport === null) {
+      return 0;
+    }
+    let n = 0;
+    for (const p of this.monthReport.paymentMethods) {
+      if (p.type === 'credit') {
+        n += p.count;
+      }
+    }
+    return n;
+  }
+
   /** 进度对比卡（R73）：已过 N 天 + 日均 + 进度条（对近 3 个月日均） */
   @Builder
   progressCard() {
@@ -485,6 +518,7 @@ export struct DashboardScreen {
         }
         this.hero()
         if (this.tier === 0) {
+          this.creditCard()
           this.progressCard()
           this.heat()
           if (this.summary === null) {

@@ -374,10 +374,22 @@ export struct LedgerScreen {
   }
 
   /** 分类色（离线时字典可能为空 → 走哈希兜底，同一分类颜色仍稳定） */
+  /** R136：二级分类的颜色跟一级走 —— 优先用父级颜色，其次自身，最后按 id 哈希 */
   private categoryColorOf(row: ExpenseItem): string {
     const cat = this.categoryNames.get(row.categoryId);
-    const colorField = cat !== undefined ? cat.color : row.parentCategoryColor ?? row.categoryColor;
-    return chartColor(this.tok(), slotOf(colorField ?? '', row.categoryId));
+    let colorField = '';
+    if (cat !== undefined) {
+      if (cat.parentId !== '' && cat.parentId !== null) {
+        const parent = this.categoryNames.get(cat.parentId);
+        colorField = parent !== undefined && parent.color !== '' ? parent.color : cat.color;
+      } else {
+        colorField = cat.color;
+      }
+    }
+    if (colorField === '') {
+      colorField = row.parentCategoryColor ?? row.categoryColor ?? '';
+    }
+    return chartColor(this.tok(), slotOf(colorField, row.categoryId));
   }
 
   private categoryNameOf(row: ExpenseItem): string {
@@ -523,7 +535,7 @@ export struct LedgerScreen {
                 .fontColor(this.tok().ink)
                 .layoutWeight(1)
                 .maxLines(1)
-              Text(t.willAutoPost ? '自动' : '需手动')
+              Text(t.willAutoPost ? '自动入账' : '需手动')
                 .fontSize(9.5)
                 .fontColor(t.willAutoPost ? this.tok().ink3 : this.tok().danger)
               Text(formatYuan(t.amountCents))
