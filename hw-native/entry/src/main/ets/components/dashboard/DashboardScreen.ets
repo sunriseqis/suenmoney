@@ -10,8 +10,9 @@
  */
 import { Api, MonthlyReport, MonthPoint, PlanTodoItem, RollingMonth, SummaryReport, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
-import { ThemeManager } from '../../common/theme/ThemeManager';
-import { ThemeTokens } from '../../common/theme/AppTheme';
+import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
+import { displayFont, bodyFont } from '../../common/theme/Fonts';
+import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
 
@@ -28,7 +29,8 @@ export interface TodoView {
 
 @Component
 export struct DashboardScreen {
-  @State tokens: ThemeTokens = ThemeManager.get().tokens;
+  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
+  @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   /** 0=按月 1=按年 2=全部 */
   @State tier: number = 0;
   @State anchorMonth: string = currentMonthKey();
@@ -180,20 +182,20 @@ export struct DashboardScreen {
             .fontSize(14)
             .height(26)
             .width(30)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink2)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink2)
             .onClick(() => {
               this.shiftMonth(-1);
             })
           Text(this.anchorMonth)
             .fontSize(11)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
           Button('›')
             .fontSize(14)
             .height(26)
             .width(30)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink2)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink2)
             .onClick(() => {
               this.shiftMonth(1);
             })
@@ -208,11 +210,11 @@ export struct DashboardScreen {
             Text(`${this.todos.length} 笔待办`)
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
-              .fontColor(this.todos[0].tone === 'late' ? this.tokens.danger : this.tokens.ink)
+              .fontColor(this.todos[0].tone === 'late' ? this.tok().danger : this.tok().ink)
             Blank()
             Text(this.todoOpen ? '收起' : '展开')
               .fontSize(10)
-              .fontColor(this.tokens.ink3)
+              .fontColor(this.tok().ink3)
           }
           .width('100%')
           .padding(10)
@@ -227,16 +229,16 @@ export struct DashboardScreen {
                 Divider()
                   .vertical(true)
                   .strokeWidth(3)
-                  .color(todo.tone === 'late' ? this.tokens.danger : (todo.tone === 'soon' ? this.tokens.amber : this.tokens.line))
+                  .color(todo.tone === 'late' ? this.tok().danger : (todo.tone === 'soon' ? this.tok().amber : this.tok().line))
                   .height(28)
                 Column({ space: 2 }) {
                   Text(`${todo.periodSeq}期 · ${todo.planName}`)
                     .fontSize(11)
-                    .fontColor(this.tokens.ink)
+                    .fontColor(this.tok().ink)
                     .maxLines(1)
                   Text(`${todo.label} · ${formatYuan(todo.amountCents)}`)
                     .fontSize(9)
-                    .fontColor(this.tokens.ink3)
+                    .fontColor(this.tok().ink3)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
@@ -244,8 +246,8 @@ export struct DashboardScreen {
                 Button(todo.willAutoPost ? '确认' : '入账')
                   .fontSize(11)
                   .height(26)
-                  .backgroundColor(this.tokens.surface2)
-                  .fontColor(this.tokens.ink)
+                  .backgroundColor(this.tok().surface2)
+                  .fontColor(this.tok().ink)
                   .onClick(() => {
                     this.actTodo(todo, 'confirm');
                   })
@@ -253,8 +255,8 @@ export struct DashboardScreen {
                 Button('更多')
                   .fontSize(10)
                   .height(26)
-                  .backgroundColor(this.tokens.surface)
-                  .fontColor(this.tokens.ink3)
+                  .backgroundColor(this.tok().surface)
+                  .fontColor(this.tok().ink3)
                   .bindMenu([
                     {
                       value: '忽略本期',
@@ -270,23 +272,24 @@ export struct DashboardScreen {
           }
         }
         .width('100%')
-        .backgroundColor(this.tokens.surface2)
-        .borderRadius(this.tokens.rMd)
+        .backgroundColor(this.tok().surface2)
+        .borderRadius(this.tok().rMd)
       }
 
       // 大金额 + 环比
       Row({ space: 6 }) {
         Text('¥')
           .fontSize(16)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
         Text(formatYuan(this.totalCents).replace('¥', ''))
           .fontSize(32)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.tokens.ink)
+          .fontFamily(displayFont(!this.isCyber()))
+          .fontColor(this.tok().ink)
         if (this.deltaRatio() !== null) {
           Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
             .fontSize(11)
-            .fontColor(this.deltaRatio()! > 0 ? this.tokens.danger : this.tokens.mint)
+            .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().mint)
         }
       }
       .width('100%')
@@ -306,9 +309,9 @@ export struct DashboardScreen {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   @Builder
@@ -316,8 +319,8 @@ export struct DashboardScreen {
     Button($$.label)
       .fontSize(11)
       .height(26)
-      .backgroundColor(this.tier === $$.value ? this.tokens.accent : this.tokens.surface2)
-      .fontColor(this.tier === $$.value ? this.tokens.accentInk : this.tokens.ink3)
+      .backgroundColor(this.tier === $$.value ? this.tok().accent : this.tok().surface2)
+      .fontColor(this.tier === $$.value ? this.tok().accentInk : this.tok().ink3)
       .onClick(() => {
         this.tier = $$.value;
         this.loading = true;
@@ -339,11 +342,11 @@ export struct DashboardScreen {
     Column({ space: 2 }) {
       Text($$.label)
         .fontSize(9)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
       Text($$.value)
         .fontSize(12)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
+        .fontColor(this.tok().ink)
     }
     .alignItems(HorizontalAlign.Start)
     .layoutWeight(1)
@@ -358,7 +361,7 @@ export struct DashboardScreen {
           Row()
             .layoutWeight(Math.max(1, Math.round(cat.ratio * 100)))
             .height(8)
-            .backgroundColor(chartColor(this.tokens, hashIndex(cat.categoryId)))
+            .backgroundColor(chartColor(this.tok(), hashIndex(cat.categoryId)))
         }, (cat: CategoryBucketView) => cat.categoryId)
       }
       .width('100%')
@@ -370,18 +373,18 @@ export struct DashboardScreen {
           Row()
             .width(8)
             .height(8)
-            .backgroundColor(chartColor(this.tokens, hashIndex(cat.categoryId)))
+            .backgroundColor(chartColor(this.tok(), hashIndex(cat.categoryId)))
             .borderRadius(2)
           Text(cat.name)
             .fontSize(10)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
             .layoutWeight(1)
           Text(`${(cat.ratio * 100).toFixed(0)}%`)
             .fontSize(10)
-            .fontColor(this.tokens.ink3)
+            .fontColor(this.tok().ink3)
           Text(formatYuan(cat.cents))
             .fontSize(10)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
         }
         .width('100%')
       }, (cat: CategoryBucketView) => cat.categoryId)
@@ -395,7 +398,7 @@ export struct DashboardScreen {
     Column({ space: 6 }) {
       Text('近 12 个月')
         .fontSize(10)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
         .width('100%')
       Row({ space: 4 }) {
         ForEach(this.heatPoints(), (point: MonthPoint) => {
@@ -403,12 +406,12 @@ export struct DashboardScreen {
             Column()
               .width('100%')
               .height(26)
-              .backgroundColor(this.tokens.accent)
+              .backgroundColor(this.tok().accent)
               .opacity(heatOpacity(point.totalCents, this.maxHeat()))
               .borderRadius(4)
             Text(point.month.substring(5, 7))
               .fontSize(8)
-              .fontColor(this.tokens.ink3)
+              .fontColor(this.tok().ink3)
           }
           .layoutWeight(1)
         }, (point: MonthPoint) => point.month)
@@ -417,9 +420,9 @@ export struct DashboardScreen {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   private heatPoints(): MonthPoint[] {
@@ -450,7 +453,7 @@ export struct DashboardScreen {
     Column({ space: 6 }) {
       Text('累计')
         .fontSize(10)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
         .width('100%')
       Row() {
         this.metric({ label: '累计支出', value: formatYuan(this.summary === null ? 0 : this.summary.totalCents) })
@@ -461,9 +464,19 @@ export struct DashboardScreen {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
+  }
+
+  /** 当前是深色（cyber）吗 —— 决定用 Orbitron 还是 Outfit */
+  private isCyber(): boolean {
+    return ThemeManager.get().name === 'cyber';
+  }
+
+  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
   build() {
@@ -472,7 +485,7 @@ export struct DashboardScreen {
         if (this.errorText !== '') {
           Text(this.errorText)
             .fontSize(10)
-            .fontColor(this.offline ? this.tokens.ink3 : this.tokens.danger)
+            .fontColor(this.offline ? this.tok().ink3 : this.tok().danger)
             .width('100%')
         }
         this.hero()
@@ -481,7 +494,7 @@ export struct DashboardScreen {
           if (this.summary === null) {
             Text('累计数据未加载')
               .fontSize(10)
-              .fontColor(this.tokens.ink3)
+              .fontColor(this.tok().ink3)
           } else {
             this.cumulative()
           }
@@ -489,7 +502,7 @@ export struct DashboardScreen {
         if (this.loading) {
           Text('加载中…')
             .fontSize(10)
-            .fontColor(this.tokens.ink3)
+            .fontColor(this.tok().ink3)
         }
       }
       .width('100%')
@@ -497,7 +510,7 @@ export struct DashboardScreen {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.tokens.bg)
+    .backgroundColor(this.tok().bg)
     .onAppear(() => {
       // 累计数据单独取一次（与月档无关）
       Api.summaryReport().then((body) => {

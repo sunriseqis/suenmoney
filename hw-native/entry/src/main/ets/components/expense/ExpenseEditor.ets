@@ -15,12 +15,12 @@
 import { Api, CategoryNode, ExpenseCreateRequest, ExpenseItem, ExpensePatchRequest, ExpensePreview, PaymentMethodItem } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
-import { ThemeManager } from '../../common/theme/ThemeManager';
+import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
 import { ulid } from '../../common/contract/Contract';
-import { ThemeTokens } from '../../common/theme/AppTheme';
+import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 
 /** @Builder 单参数对象（多参数不刷新，见 fieldRow 注释） */
 export interface FieldRowModel {
@@ -46,7 +46,8 @@ export struct ExpenseEditor {
     }
   };
 
-  @State tokens: ThemeTokens = ThemeManager.get().tokens;
+  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
+  @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   @State amountText: string = '';
   @State categoryId: string = '';
   @State paymentId: string = '';
@@ -338,7 +339,7 @@ export struct ExpenseEditor {
       },
       secondaryButton: {
         value: '删除',
-        fontColor: this.tokens.danger,
+        fontColor: this.tok().danger,
         action: () => {
           this.saving = true;
           Api.deleteExpense(editing.id)
@@ -362,11 +363,11 @@ export struct ExpenseEditor {
       Column({ space: 2 }) {
         Text($$.label)
           .fontSize(9)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
         Text($$.value)
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
-          .fontColor(this.tokens.ink)
+          .fontColor(this.tok().ink)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -374,12 +375,12 @@ export struct ExpenseEditor {
       .layoutWeight(1)
       Text('›')
         .fontSize(16)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
     }
     .width('100%')
     .padding(10)
-    .backgroundColor(this.tokens.surface2)
-    .borderRadius(this.tokens.rMd)
+    .backgroundColor(this.tok().surface2)
+    .borderRadius(this.tok().rMd)
     .onClick(() => {
       $$.onTap();
     })
@@ -395,9 +396,9 @@ export struct ExpenseEditor {
             .fontSize(11)
             .height(40)
             .width('100%')
-            .backgroundColor(this.paymentId === p.id ? this.tokens.accent : this.tokens.surface)
-            .fontColor(this.paymentId === p.id ? this.tokens.accentInk : this.tokens.ink2)
-            .border({ width: 1, color: this.tokens.line })
+            .backgroundColor(this.paymentId === p.id ? this.tok().accent : this.tok().surface)
+            .fontColor(this.paymentId === p.id ? this.tok().accentInk : this.tok().ink2)
+            .border({ width: 1, color: this.tok().line })
             .onClick(() => {
               this.paymentId = p.id;
               this.refreshPreview();
@@ -414,9 +415,9 @@ export struct ExpenseEditor {
               .width('100%')
               .height('100%')
               .fontSize(key === 'OK' ? 13 : 18)
-              .backgroundColor(key === 'OK' ? this.tokens.accent : this.tokens.surface)
-              .fontColor(key === 'OK' ? this.tokens.accentInk : this.tokens.ink)
-              .border({ width: 1, color: this.tokens.line })
+              .backgroundColor(key === 'OK' ? this.tok().accent : this.tok().surface)
+              .fontColor(key === 'OK' ? this.tok().accentInk : this.tok().ink)
+              .border({ width: 1, color: this.tok().line })
               .onClick(() => {
                 if (key === 'OK') {
                   this.save();
@@ -437,18 +438,23 @@ export struct ExpenseEditor {
     .width('100%')
   }
 
+  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
   build() {
     Column({ space: 10 }) {
       Row({ space: 8 }) {
         Text(this.props.editing === null ? '记一笔' : '编辑')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.tokens.ink)
+          .fontColor(this.tok().ink)
         Blank()
         if (this.isRefund) {
           Text('退款冲销')
             .fontSize(10)
-            .fontColor(this.tokens.danger)
+            .fontColor(this.tok().danger)
         }
       }
       .width('100%')
@@ -457,11 +463,11 @@ export struct ExpenseEditor {
       Row({ space: 2 }) {
         Text(this.isRefund ? '-¥' : '¥')
           .fontSize(18)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
         Text(this.amountText === '' ? '0.00' : this.amountText)
           .fontSize(34)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.tokens.ink)
+          .fontColor(this.tok().ink)
       }
       .width('100%')
       .justifyContent(FlexAlign.End)
@@ -484,7 +490,7 @@ export struct ExpenseEditor {
 
       TextInput({ placeholder: '备注（选填）', text: this.note })
         .height(36)
-        .backgroundColor(this.tokens.surface2)
+        .backgroundColor(this.tok().surface2)
         .onChange((v: string) => {
           this.note = v;
         })
@@ -494,27 +500,27 @@ export struct ExpenseEditor {
         if (this.crossesMonth()) {
           Text('这笔会记在')
             .fontSize(10)
-            .fontColor(this.tokens.accent)
+            .fontColor(this.tok().accent)
           Text(this.preview!.repaymentDate.substring(0, 7))
             .fontSize(10)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.tokens.accent)
+            .fontColor(this.tok().accent)
         } else {
           Text(this.preview === null ? '账期未取到' : `还款日 ${this.preview!.repaymentDate}`)
             .fontSize(10)
-            .fontColor(this.tokens.ink3)
+            .fontColor(this.tok().ink3)
         }
         Blank()
         Text(formatYuan(this.isRefund ? -this.cents() : this.cents()))
           .fontSize(10)
-          .fontColor(this.tokens.ink2)
+          .fontColor(this.tok().ink2)
       }
       .width('100%')
 
       Row({ space: 6 }) {
         Text('退款（负数冲销）')
           .fontSize(11)
-          .fontColor(this.tokens.ink2)
+          .fontColor(this.tok().ink2)
         Blank()
         Toggle({ type: ToggleType.Switch, isOn: this.isRefund })
           .onChange((on: boolean) => {
@@ -526,7 +532,7 @@ export struct ExpenseEditor {
       if (this.errorText !== '') {
         Text(this.errorText)
           .fontSize(11)
-          .fontColor(this.tokens.danger)
+          .fontColor(this.tok().danger)
           .width('100%')
       }
 
@@ -540,8 +546,8 @@ export struct ExpenseEditor {
                   .fontSize(11)
                   .width('100%')
                   .padding(6)
-                  .fontColor(this.railRootId === root.id ? this.tokens.ink : this.tokens.ink3)
-                  .backgroundColor(this.railRootId === root.id ? this.tokens.surface2 : this.tokens.surface)
+                  .fontColor(this.railRootId === root.id ? this.tok().ink : this.tok().ink3)
+                  .backgroundColor(this.railRootId === root.id ? this.tok().surface2 : this.tok().surface)
                   .borderRadius(6)
                   .onClick(() => {
                     this.railRootId = root.id;
@@ -560,8 +566,8 @@ export struct ExpenseEditor {
                   .width('100%')
                   .textAlign(TextAlign.Center)
                   .padding(6)
-                  .fontColor(this.categoryId === kid.id ? this.tokens.accentInk : this.tokens.ink2)
-                  .backgroundColor(this.categoryId === kid.id ? this.tokens.accent : this.tokens.surface)
+                  .fontColor(this.categoryId === kid.id ? this.tok().accentInk : this.tok().ink2)
+                  .backgroundColor(this.categoryId === kid.id ? this.tok().accent : this.tok().surface)
                   .borderRadius(6)
                   .onClick(() => {
                     this.categoryId = kid.id;
@@ -587,17 +593,17 @@ export struct ExpenseEditor {
               Row() {
                 Text(p.name)
                   .fontSize(12)
-                  .fontColor(this.paymentId === p.id ? this.tokens.ink : this.tokens.ink2)
+                  .fontColor(this.paymentId === p.id ? this.tok().ink : this.tok().ink2)
                 Blank()
                 if (p.type === 'credit') {
                   Text(`${p.billingDay ?? 0} 日账单 · ${p.repaymentDay ?? 0} 日还`)
                     .fontSize(9)
-                    .fontColor(this.tokens.ink3)
+                    .fontColor(this.tok().ink3)
                 }
               }
               .width('100%')
               .padding(8)
-              .backgroundColor(this.paymentId === p.id ? this.tokens.surface2 : this.tokens.surface)
+              .backgroundColor(this.paymentId === p.id ? this.tok().surface2 : this.tok().surface)
               .borderRadius(6)
               .onClick(() => {
                 this.paymentId = p.id;
@@ -618,8 +624,8 @@ export struct ExpenseEditor {
           .fontSize(13)
           .height(42)
           .layoutWeight(1)
-          .backgroundColor(this.tokens.accent)
-          .fontColor(this.tokens.accentInk)
+          .backgroundColor(this.tok().accent)
+          .fontColor(this.tok().accentInk)
           .enabled(!this.saving)
           .onClick(() => {
             this.save();
@@ -628,8 +634,8 @@ export struct ExpenseEditor {
           Button('删除')
             .fontSize(13)
             .height(42)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.danger)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().danger)
             .onClick(() => {
               this.confirmDelete();
             })
@@ -637,8 +643,8 @@ export struct ExpenseEditor {
         Button('取消')
           .fontSize(13)
           .height(42)
-          .backgroundColor(this.tokens.surface2)
-          .fontColor(this.tokens.ink2)
+          .backgroundColor(this.tok().surface2)
+          .fontColor(this.tok().ink2)
           .onClick(() => {
             this.props.onCancel();
           })
@@ -647,7 +653,7 @@ export struct ExpenseEditor {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.bg)
+    .backgroundColor(this.tok().bg)
   }
 
   /** 当前一级下的二级（没有二级就用一级自己） */

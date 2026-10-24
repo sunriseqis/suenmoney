@@ -13,15 +13,17 @@
  */
 import { Api, CategoryBucket, DailyPoint, MonthlyReport, PaymentBucket, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
-import { ThemeManager } from '../../common/theme/ThemeManager';
-import { ThemeTokens } from '../../common/theme/AppTheme';
+import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
+import { displayFont, bodyFont } from '../../common/theme/Fonts';
+import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan } from '../../common/contract/Contract';
 import { DonutChart, DonutSliceView } from './DonutChart';
 
 @Component
 export struct ReportScreen {
-  @State tokens: ThemeTokens = ThemeManager.get().tokens;
+  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
+  @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   /** 0=月 1=年 */
   @State tier: number = 0;
   @State anchorMonth: string = currentMonthKey();
@@ -65,15 +67,15 @@ export struct ReportScreen {
     }
     if (this.dim === 0) {
       for (const c of report.categories) {
-        out.push({ label: c.name, ratio: c.ratio, color: chartColor(this.tokens, hashIndex(c.categoryId)) });
+        out.push({ label: c.name, ratio: c.ratio, color: chartColor(this.tok(), hashIndex(c.categoryId)) });
       }
     } else if (this.dim === 1) {
       for (const p of report.paymentMethods) {
-        out.push({ label: p.name, ratio: this.paymentRatio(p), color: chartColor(this.tokens, hashIndex(p.paymentMethodId)) });
+        out.push({ label: p.name, ratio: this.paymentRatio(p), color: chartColor(this.tok(), hashIndex(p.paymentMethodId)) });
       }
     } else if (this.dim === 2) {
       for (const m of report.members) {
-        out.push({ label: m.name, ratio: m.ratio, color: chartColor(this.tokens, hashIndex(m.ownerId)) });
+        out.push({ label: m.name, ratio: m.ratio, color: chartColor(this.tok(), hashIndex(m.ownerId)) });
       }
     } else {
       // 节奏：把 31 天按周聚合成 5 段，避免环图碎成 31 片
@@ -83,7 +85,7 @@ export struct ReportScreen {
         out.push({
           label: `第 ${i + 1} 周`,
           ratio: total > 0 ? weeks[i] / total : 0,
-          color: chartColor(this.tokens, i)
+          color: chartColor(this.tok(), i)
         });
       }
     }
@@ -148,21 +150,21 @@ export struct ReportScreen {
             .fontSize(14)
             .height(26)
             .width(30)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink2)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink2)
             .onClick(() => {
               this.anchorMonth = shiftMonthKey(this.anchorMonth, -1);
               this.reload();
             })
           Text(this.anchorMonth)
             .fontSize(11)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
           Button('›')
             .fontSize(14)
             .height(26)
             .width(30)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink2)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink2)
             .onClick(() => {
               this.anchorMonth = shiftMonthKey(this.anchorMonth, 1);
               this.reload();
@@ -172,21 +174,21 @@ export struct ReportScreen {
             .fontSize(14)
             .height(26)
             .width(30)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink2)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink2)
             .onClick(() => {
               this.anchorYear = String(Number(this.anchorYear) - 1);
               this.reload();
             })
           Text(this.anchorYear)
             .fontSize(11)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
           Button('›')
             .fontSize(14)
             .height(26)
             .width(30)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink2)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink2)
             .onClick(() => {
               this.anchorYear = String(Number(this.anchorYear) + 1);
               this.reload();
@@ -210,9 +212,9 @@ export struct ReportScreen {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   private dailyAverage(): number {
@@ -235,8 +237,8 @@ export struct ReportScreen {
     Button($$.label)
       .fontSize(11)
       .height(26)
-      .backgroundColor(this.tier === $$.value ? this.tokens.accent : this.tokens.surface2)
-      .fontColor(this.tier === $$.value ? this.tokens.accentInk : this.tokens.ink3)
+      .backgroundColor(this.tier === $$.value ? this.tok().accent : this.tok().surface2)
+      .fontColor(this.tier === $$.value ? this.tok().accentInk : this.tok().ink3)
       .onClick(() => {
         this.tier = $$.value;
         this.reload();
@@ -249,11 +251,12 @@ export struct ReportScreen {
     Column({ space: 2 }) {
       Text($$.label)
         .fontSize(9)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
       Text($$.value)
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
+        .fontFamily(displayFont(!this.isCyber()))
+        .fontColor(this.tok().ink)
     }
     .alignItems(HorizontalAlign.Start)
     .layoutWeight(1)
@@ -273,7 +276,7 @@ export struct ReportScreen {
       Row({ space: 12 }) {
         DonutChart({
           slices: this.slices(),
-          tokens: this.tokens,
+          tokens: this.tok(),
           signature: this.signature(),
           centerLabel: formatYuan(this.totalCents())
         })
@@ -287,13 +290,13 @@ export struct ReportScreen {
                 .borderRadius(2)
               Text(slice.label)
                 .fontSize(10)
-                .fontColor(this.tokens.ink2)
+                .fontColor(this.tok().ink2)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
               Text(`${(slice.ratio * 100).toFixed(0)}%`)
                 .fontSize(10)
-                .fontColor(this.tokens.ink3)
+                .fontColor(this.tok().ink3)
             }
             .width('100%')
           }, (slice: DonutSliceView) => slice.label)
@@ -304,9 +307,9 @@ export struct ReportScreen {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   @Builder
@@ -315,8 +318,8 @@ export struct ReportScreen {
       .fontSize(11)
       .height(26)
       .layoutWeight(1)
-      .backgroundColor(this.dim === $$.value ? this.tokens.surface3 : this.tokens.surface2)
-      .fontColor(this.dim === $$.value ? this.tokens.ink : this.tokens.ink3)
+      .backgroundColor(this.dim === $$.value ? this.tok().surface3 : this.tok().surface2)
+      .fontColor(this.dim === $$.value ? this.tok().ink : this.tok().ink3)
       .onClick(() => {
         this.dim = $$.value;
       })
@@ -329,31 +332,31 @@ export struct ReportScreen {
       Text('涨跌榜')
         .fontSize(11)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
+        .fontColor(this.tok().ink)
         .width('100%')
       ForEach(this.movers(), (cat: CategoryBucket) => {
         Row({ space: 8 }) {
           Text(cat.name)
             .fontSize(11)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
             .width(64)
             .maxLines(1)
           Text(formatYuan(cat.cents))
             .fontSize(11)
-            .fontColor(this.tokens.ink)
+            .fontColor(this.tok().ink)
             .layoutWeight(1)
           Text(this.changeText(cat))
             .fontSize(10)
-            .fontColor((cat.changeRatio ?? 0) > 0 ? this.tokens.danger : this.tokens.mint)
+            .fontColor((cat.changeRatio ?? 0) > 0 ? this.tok().danger : this.tok().mint)
         }
         .width('100%')
       }, (cat: CategoryBucket) => cat.categoryId)
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   private changeText(cat: CategoryBucket): string {
@@ -373,13 +376,13 @@ export struct ReportScreen {
       Text('还款节奏')
         .fontSize(11)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
+        .fontColor(this.tok().ink)
         .width('100%')
       ForEach(this.creditPayments(), (p: PaymentBucket) => {
         Row({ space: 8 }) {
           Text(p.name)
             .fontSize(11)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
             .width(90)
             .maxLines(1)
           // 中间放占比条：名称与金额摆两端会让眼睛横跨整行才能对上
@@ -387,27 +390,27 @@ export struct ReportScreen {
             Row()
               .width('100%')
               .height(6)
-              .backgroundColor(this.tokens.surface3)
+              .backgroundColor(this.tok().surface3)
               .borderRadius(3)
             Row()
               .width(`${Math.round(this.paymentRatio(p) * 100)}%`)
               .height(6)
-              .backgroundColor(chartColor(this.tokens, hashIndex(p.paymentMethodId)))
+              .backgroundColor(chartColor(this.tok(), hashIndex(p.paymentMethodId)))
               .borderRadius(3)
           }
           .layoutWeight(1)
           Text(formatYuan(p.cents))
             .fontSize(11)
-            .fontColor(this.tokens.ink)
+            .fontColor(this.tok().ink)
         }
         .width('100%')
       }, (p: PaymentBucket) => p.paymentMethodId)
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   private creditPayments(): PaymentBucket[] {
@@ -431,30 +434,30 @@ export struct ReportScreen {
       Text('年度走势')
         .fontSize(11)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.tokens.ink)
+        .fontColor(this.tok().ink)
         .width('100%')
       ForEach(this.yearReport?.months ?? [], (point: MonthPointView) => {
         Row({ space: 8 }) {
           Text(`${Number(point.month.substring(5, 7))} 月`)
             .fontSize(9)
-            .fontColor(this.tokens.ink3)
+            .fontColor(this.tok().ink3)
             .width(36)
           Stack({ alignContent: Alignment.Start }) {
             Row()
               .width('100%')
               .height(8)
-              .backgroundColor(this.tokens.surface3)
+              .backgroundColor(this.tok().surface3)
               .borderRadius(4)
             Row()
               .width(`${this.yearBarWidth(point.totalCents)}%`)
               .height(8)
-              .backgroundColor(this.tokens.accent)
+              .backgroundColor(this.tok().accent)
               .borderRadius(4)
           }
           .layoutWeight(1)
           Text(formatYuan(point.totalCents))
             .fontSize(9)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
         }
         .width('100%')
       }, (point: MonthPointView) => point.month)
@@ -463,22 +466,22 @@ export struct ReportScreen {
         Row({ space: 6 }) {
           Text('最高月')
             .fontSize(10)
-            .fontColor(this.tokens.ink3)
+            .fontColor(this.tok().ink3)
           Text(this.yearReport!.peakMonth!.month)
             .fontSize(10)
-            .fontColor(this.tokens.ink)
+            .fontColor(this.tok().ink)
           Text(formatYuan(this.yearReport!.peakMonth!.totalCents))
             .fontSize(10)
-            .fontColor(this.tokens.ink2)
+            .fontColor(this.tok().ink2)
         }
         .width('100%')
       }
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rCard)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rCard)
+    .border({ width: 1, color: this.tok().line })
   }
 
   private yearBarWidth(cents: number): number {
@@ -489,13 +492,23 @@ export struct ReportScreen {
     return Math.max(1, Math.round((cents / year.totalCents) * 100));
   }
 
+  /** 当前是深色（cyber）吗 —— 决定用 Orbitron 还是 Outfit */
+  private isCyber(): boolean {
+    return ThemeManager.get().name === 'cyber';
+  }
+
+  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
   build() {
     Scroll() {
       Column({ space: 10 }) {
         if (this.errorText !== '') {
           Text(this.errorText)
             .fontSize(10)
-            .fontColor(this.tokens.danger)
+            .fontColor(this.tok().danger)
             .width('100%')
         }
         this.head()
@@ -509,7 +522,7 @@ export struct ReportScreen {
         if (this.loading) {
           Text('加载中…')
             .fontSize(10)
-            .fontColor(this.tokens.ink3)
+            .fontColor(this.tok().ink3)
         }
       }
       .width('100%')
@@ -517,7 +530,7 @@ export struct ReportScreen {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.tokens.bg)
+    .backgroundColor(this.tok().bg)
   }
 }
 

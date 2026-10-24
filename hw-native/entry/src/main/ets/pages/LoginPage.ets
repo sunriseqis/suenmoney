@@ -13,14 +13,15 @@ import { AuthStore } from '../common/auth/AuthStore';
 import { ApiError } from '../common/net/ApiError';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ProbeResult, ServerRouter } from '../common/net/ServerRouter';
-import { ThemeManager } from '../common/theme/ThemeManager';
-import { ThemeTokens } from '../common/theme/AppTheme';
+import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
+import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { displayFont, bodyFont } from '../common/theme/Fonts';
 
 @Entry
 @Component
 struct LoginPage {
-  @State tokens: ThemeTokens = ThemeManager.get().tokens;
+  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
+  @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   @State username: string = '';
   @State password: string = '';
   @State servers: string[] = ServerConfig.get().allServers;
@@ -70,25 +71,30 @@ struct LoginPage {
     this.probeText = lines.join('\n');
   }
 
+  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
   build() {
     Column({ space: 14 }) {
       Text('SuenMoney')
         .fontSize(26)
         .fontWeight(FontWeight.Bold)
         .fontFamily(displayFont(ThemeManager.get().name === 'candy'))
-        .fontColor(this.tokens.ink)
+        .fontColor(this.tok().ink)
 
       Text('登录')
         .fontSize(12)
         .fontFamily(bodyFont(ThemeManager.get().name === 'candy'))
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
 
       TextInput({ placeholder: '登录名' })
         .onChange((v: string) => {
           this.username = v;
         })
         .height(44)
-        .backgroundColor(this.tokens.surface2)
+        .backgroundColor(this.tok().surface2)
 
       TextInput({ placeholder: '口令' })
         .type(InputType.Password)
@@ -96,30 +102,30 @@ struct LoginPage {
           this.password = v;
         })
         .height(44)
-        .backgroundColor(this.tokens.surface2)
+        .backgroundColor(this.tok().surface2)
 
       if (this.errorText !== '') {
         Text(this.errorText)
           .fontSize(12)
-          .fontColor(this.tokens.danger)
+          .fontColor(this.tok().danger)
           .width('100%')
       }
 
       Button(this.busy ? '登录中…' : '登录')
         .width('100%')
         .height(44)
-        .backgroundColor(this.tokens.accent)
-        .fontColor(this.tokens.accentInk)
+        .backgroundColor(this.tok().accent)
+        .fontColor(this.tok().accentInk)
         .enabled(!this.busy)
         .onClick(() => {
           this.doLogin();
         })
 
-      Divider().color(this.tokens.line)
+      Divider().color(this.tok().line)
 
       Text('服务器地址')
         .fontSize(11)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
         .width('100%')
 
       List({ space: 6 }) {
@@ -128,13 +134,13 @@ struct LoginPage {
             Row({ space: 8 }) {
               Text(url)
                 .fontSize(12)
-                .fontColor(this.tokens.ink2)
+                .fontColor(this.tok().ink2)
                 .layoutWeight(1)
               Button('删除')
                 .fontSize(11)
                 .height(28)
-                .backgroundColor(this.tokens.surface2)
-                .fontColor(this.tokens.ink3)
+                .backgroundColor(this.tok().surface2)
+                .fontColor(this.tok().ink3)
                 .onClick(() => {
                   const next: string[] = [];
                   for (const s of this.servers) {
@@ -157,15 +163,15 @@ struct LoginPage {
         TextInput({ placeholder: '新增地址，如 http://192.168.1.10:5310' })
           .height(40)
           .layoutWeight(1)
-          .backgroundColor(this.tokens.surface2)
+          .backgroundColor(this.tok().surface2)
           .onChange((v: string) => {
             this.newServer = v;
           })
         Button('添加')
           .fontSize(12)
           .height(40)
-          .backgroundColor(this.tokens.surface2)
-          .fontColor(this.tokens.ink)
+          .backgroundColor(this.tok().surface2)
+          .fontColor(this.tok().ink)
           .onClick(() => {
             if (this.newServer !== '' && this.servers.indexOf(this.newServer) < 0) {
               const next: string[] = this.servers.slice();
@@ -180,8 +186,8 @@ struct LoginPage {
       Button('测试全部地址')
         .fontSize(12)
         .height(36)
-        .backgroundColor(this.tokens.surface2)
-        .fontColor(this.tokens.ink2)
+        .backgroundColor(this.tok().surface2)
+        .fontColor(this.tok().ink2)
         .onClick(() => {
           this.probeAll();
         })
@@ -189,7 +195,7 @@ struct LoginPage {
       if (this.probeText !== '') {
         Text(this.probeText)
           .fontSize(10)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
           .width('100%')
       }
     }
@@ -197,6 +203,6 @@ struct LoginPage {
     .height('100%')
     .padding(20)
     .justifyContent(FlexAlign.Start)
-    .backgroundColor(this.tokens.bg)
+    .backgroundColor(this.tok().bg)
   }
 }
