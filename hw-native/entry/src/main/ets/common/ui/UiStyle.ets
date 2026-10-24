@@ -151,3 +151,13 @@ export function cardRadiusOf(isCyber: boolean): number {
 
 /** 移动端卡片内距（统一 14，覆盖生成物里的 densityPad=18） */
 export const CARD_PAD = 14;
+
+/**
+ * cyber 卡片的切角（等价原型 `clip-path: polygon(0 14px, 14px 0, 100% 0, …)`）。
+ *
+ * 用法：`Column(){...}.clipShape(new Path({ commands: cyberClipCommands(width, height, CUT_CARD) }))`
+ * —— ArkUI 没有 `clip-path`，只能用 Path 裁剪；宽高需要调用方给（布局后才有值）。
+ */
+export function cyberClipCommands(w: number, h: number, n: number): string {
+  return `M0 ${n} L${n} 0 L${w} 0 L${w} ${h - n} L${w - n} ${h} L0 ${h} Z`;
+}

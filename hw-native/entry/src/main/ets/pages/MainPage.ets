@@ -21,12 +21,16 @@ import { ensureFonts } from '../common/theme/FontRegistry';
 
 /** 屏标识（顺序无关，仅作路由键） */
 export type ScreenKey = 'ledger' | 'dashboard' | 'report' | 'settings';
+/** 当前屏：放 AppStorage，流水页的入口直接写它（回调传参在 ArkUI 里不稳） */
+export const SCREEN_STORAGE_KEY = 'activeScreen';
 
 @Entry
 @Component
 struct MainPage {
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
-  @State screen: ScreenKey = 'ledger';
+  @StorageLink(SCREEN_STORAGE_KEY) screen: string = 'ledger';
+  /** R08：底部留白来自安全区（手势条），不来自"底栏高度" */
+  @State avoidBottom: number = 0;
 
   private tok(): ThemeTokens {
     return this.themeName === 'candy' ? CANDY : CYBER;
@@ -39,6 +43,17 @@ struct MainPage {
   aboutToAppear(): void {
     ensureFonts(this.getUIContext());
     this.applySystemBars();
+    this.readSafeArea();
+  }
+
+  /** 读一次底部避让区（手势条高度），用作内容区底部留白 */
+  private readSafeArea(): void {
+    window.getLastWindow(getContext(this)).then((win: window.Window) => {
+      const area = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      this.avoidBottom = px2vp(area.bottomRect.height);
+    }).catch(() => {
+      this.avoidBottom = 0;
+    });
   }
 
   /** 状态栏跟随主题（不设的话浅色主题顶部仍是深色，像被切了一刀） */
@@ -92,7 +107,7 @@ struct MainPage {
         .height(40)
         .textAlign(TextAlign.Center)
         .onClick(() => {
-          this.screen = 'ledger';
+          AppStorage.setOrCreate(SCREEN_STORAGE_KEY, 'ledger');
         })
     }
     .width('100%')
@@ -129,11 +144,7 @@ struct MainPage {
       }
       Column() {
         if (this.screen === 'ledger') {
-          LedgerScreen({
-            onNavigate: (target: string) => {
-              this.screen = target as ScreenKey;
-            }
-          })
+          LedgerScreen()
         } else if (this.screen === 'dashboard') {
           DashboardScreen()
         } else if (this.screen === 'report') {
@@ -145,7 +156,7 @@ struct MainPage {
       }
       .layoutWeight(1)
       .width('100%')
-      .padding({ left: 12, right: 12, top: 6, bottom: 0 })
+      .padding({ left: 12, right: 12, top: 6, bottom: this.avoidBottom })
     }
     .width('100%')
     .height('100%')
