@@ -14,13 +14,32 @@ import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { radiusOf } from '../../common/ui/UiStyle';
+import { fontDisplayOf, fontMonoOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
-import { formatYuan } from '../../common/contract/Contract';
+import { daysUntil, formatMonthLabel, formatYuan } from '../../common/contract/Contract';
 import { LengthMetrics } from '@kit.ArkUI';
 import { ExpenseEditor } from '../expense/ExpenseEditor';
+
+export interface HeroTodo {
+  id: string;
+  planName: string;
+  periodSeq: number;
+  amountCents: number;
+  willAutoPost: boolean;
+  tone: string;
+}
+
+export interface HeroFactModel {
+  label: string;
+  value: string;
+}
+
+export interface NavBtnModel {
+  label: string;
+  target: string;
+}
 
 const PAGE_SIZE = 100;
 
@@ -32,6 +51,10 @@ export interface LedgerDayGroup {
 
 @Component
 export struct LedgerScreen {
+  /** 外壳传入的跳转回调（移动端导航只在这里和顶栏返回） */
+  onNavigate: (target: string) => void = () => {
+  };
+
   /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   /** 0=按月 1=按年 2=全部 */
@@ -45,6 +68,11 @@ export struct LedgerScreen {
   @State hasMore: boolean = false;
   @State loading: boolean = false;
   @State offline: boolean = false;
+  // ── 移动 hero 数据（规范 §4.1）──
+  @State prevTotalCents: number = -1;
+  @State creditDueCents: number = 0;
+  @State heroTodos: HeroTodo[] = [];
+  @State todoOpen: boolean = false;
   @State errorText: string = '';
   @State yearPoints: MonthPoint[] = [];
   @State yearTotalCents: number = 0;
@@ -167,6 +195,43 @@ export struct LedgerScreen {
     const report = await Api.monthlyReport(this.anchorMonth);
     this.monthTotalCents = report.report.totalCents;
     this.monthCount = report.report.count;
+    this.prevTotalCents = report.report.previous.totalCents;
+    let credit = 0;
+    for (const p of report.report.paymentMethods) {
+      if (p.type === 'credit') {
+        credit += p.cents;
+      }
+    }
+    this.creditDueCents = credit;
+    await this.loadHeroTodos();
+  }
+
+  /** hero 的待办条目（有则显示、无则整条不渲染） */
+  private async loadHeroTodos(): Promise<void> {
+    try {
+      const body = await Api.planTodos(todayKey());
+      const list: HeroTodo[] = [];
+      for (const t of body.todos) {
+        const days = daysUntil(t.repaymentDate, todayKey());
+        let tone = 'calm';
+        if (days < 0) {
+          tone = 'late';
+        } else if (days <= 1) {
+          tone = 'soon';
+        }
+        list.push({
+          id: t.id,
+          planName: t.planName,
+          periodSeq: t.periodSeq,
+          amountCents: t.amountCents,
+          willAutoPost: t.willAutoPost,
+          tone: tone
+        });
+      }
+      this.heroTodos = list;
+    } catch (e) {
+      this.heroTodos = [];
+    }
   }
 
   private async loadYear(): Promise<void> {
@@ -260,6 +325,162 @@ export struct LedgerScreen {
     return name !== undefined ? name : '—';
   }
 
+  /**
+   * 移动 hero（规范 §4.1，照 Web `.mobile-hero`）：
+   * eyebrow → 38vp 大金额 → 环比胶囊 → 三事实（虚线分隔）→ 三入口 → 待办条 → 展开待办。
+   */
+  @Builder
+  mobileHero() {
+    Column({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text(`${formatMonthLabel(this.anchorMonth)} · 本月支出`)
+          .fontSize(9.5)
+          .letterSpacing(1.3)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+        Row({ space: 2 }) {
+          Text('¥')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink2)
+          Text(formatYuan(this.monthTotalCents).replace('¥', ''))
+            .fontSize(38)
+            .fontWeight(FontWeight.Bolder)
+            .fontFamily(fontDisplayOf(this.isCyber()))
+            .letterSpacing(-1.3)
+            .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+        }
+        .alignItems(VerticalAlign.Bottom)
+
+        if (this.deltaRatio() !== null) {
+          Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
+            .fontSize(10.5)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok)
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .border({ width: this.isCyber() ? 1 : 1.5, color: this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok })
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+
+      // 三事实：上下 1px 虚线
+      Row() {
+        this.heroFact({ label: '日均', value: formatYuan(this.perDayCents()) })
+        this.heroFact({ label: '笔数', value: `${this.monthCount} 笔` })
+        this.heroFact({ label: '本月要还', value: formatYuan(this.creditDueCents) })
+      }
+      .width('100%')
+      .padding({ top: 9, bottom: 9 })
+      .border({ width: { top: 1, bottom: 1 }, color: this.tok().line, style: BorderStyle.Dashed })
+
+      // 三入口（移动端唯一导航之一）
+      Row({ space: 6 }) {
+        this.navBtn({ label: '概况', target: 'dashboard' })
+        this.navBtn({ label: '报表', target: 'report' })
+        this.navBtn({ label: '设置', target: 'settings' })
+      }
+      .width('100%')
+
+      // 待办提醒条
+      if (this.heroTodos.length > 0) {
+        Column() {
+          Row({ space: 8 }) {
+            Row()
+              .width(6)
+              .height(6)
+              .borderRadius(3)
+              .backgroundColor(this.heroTodos[0].tone === 'late'
+                ? this.tok().danger
+                : (this.heroTodos[0].tone === 'soon' ? this.tok().warn : this.tok().ink3))
+            Text(`${this.heroTodos.length} 笔待办`)
+              .fontSize(11.5)
+              .fontColor(this.tok().ink2)
+              .layoutWeight(1)
+            Text(this.todoOpen ? '⌃' : '⌄')
+              .fontSize(12)
+              .fontColor(this.tok().ink3)
+          }
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+          .onClick(() => {
+            this.todoOpen = !this.todoOpen;
+          })
+
+          if (this.todoOpen) {
+            ForEach(this.heroTodos, (t: HeroTodo) => {
+              Row({ space: 8 }) {
+                Row()
+                  .width(4)
+                  .height(20)
+                  .borderRadius(2)
+                  .backgroundColor(t.tone === 'late' ? this.tok().danger : (t.tone === 'soon' ? this.tok().warn : this.tok().ok))
+                Text(`${t.periodSeq}期 · ${t.planName}`)
+                  .fontSize(11.5)
+                  .fontColor(this.tok().ink)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(t.willAutoPost ? '自动' : '需手动')
+                  .fontSize(9.5)
+                  .fontColor(t.willAutoPost ? this.tok().ink3 : this.tok().danger)
+                Text(formatYuan(t.amountCents))
+                  .fontSize(10)
+                  .fontFamily(fontMonoOf())
+                  .fontColor(this.tok().ink2)
+              }
+              .width('100%')
+              .padding({ top: 5, bottom: 5 })
+              .border({ width: { bottom: 1 }, color: this.tok().line })
+            }, (t: HeroTodo) => t.id)
+          }
+        }
+        .width('100%')
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+        .border({ width: 1, color: this.tok().line })
+        .backgroundColor(this.tok().surface2)
+      }
+    }
+    .width('100%')
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 20))
+    .border({ width: this.isCyber() ? 1 : 2, color: this.isCyber() ? this.tok().accent : this.tok().line2 })
+    .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : `4px 4px 0 ${this.tok().line2}`) as ShadowOptions)
+  }
+
+  @Builder
+  heroFact($$: HeroFactModel) {
+    Column({ space: 2 }) {
+      Text($$.label)
+        .fontSize(9)
+        .fontFamily(fontMonoOf())
+        .fontColor(this.tok().ink3)
+      Text($$.value)
+        .fontSize(11)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.tok().ink)
+        .maxLines(1)
+    }
+    .alignItems(HorizontalAlign.Start)
+    .layoutWeight(1)
+  }
+
+  private deltaRatio(): number | null {
+    if (this.prevTotalCents <= 0) {
+      return null;
+    }
+    return (this.monthTotalCents - this.prevTotalCents) / this.prevTotalCents;
+  }
+
+  /** 日均：当月总额 / 已过天数（与 Web perDayCents 同义） */
+  private perDayCents(): number {
+    const day = new Date().getDate();
+    return day > 0 ? Math.round(this.monthTotalCents / day) : 0;
+  }
+
   @Builder
   tierTabs() {
     Row({ space: 6 }) {
@@ -268,6 +489,22 @@ export struct LedgerScreen {
       this.tierButton('全部', 2)
     }
     .width('100%')
+  }
+
+  /** hero 内的小入口：min-height 30 / padding 0 4 / 11.5px / 1px 边 / 胶囊 / surface-2（规范 §4.1） */
+  @Builder
+  navBtn($$: NavBtnModel) {
+    Button($$.label)
+      .fontSize(11.5)
+      .height(30)
+      .layoutWeight(1)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .border({ width: this.isCyber() ? 1 : 1, color: this.isCyber() ? this.tok().accent : this.tok().line })
+      .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface2)
+      .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink2)
+      .onClick(() => {
+        this.onNavigate($$.target);
+      })
   }
 
   @Builder
@@ -665,6 +902,7 @@ export struct LedgerScreen {
 
   build() {
     Column({ space: 10 }) {
+      this.mobileHero()
       this.tierTabs()
 
       if (this.tier === 0) {
@@ -730,4 +968,12 @@ function currentMonthKey(): string {
   const now = new Date();
   const m = now.getMonth() + 1;
   return `${now.getFullYear()}-${m < 10 ? '0' + m : String(m)}`;
+}
+
+/** 今天（YYYY-MM-DD，本地时区） */
+function todayKey(): string {
+  const d = new Date();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${d.getFullYear()}-${m < 10 ? '0' + m : String(m)}-${day < 10 ? '0' + day : String(day)}`;
 }

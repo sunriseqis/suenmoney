@@ -92,6 +92,11 @@ export function shiftMonth(month: string, delta: number): string {
   return `${ny}-${pad2(nm + 1)}`;
 }
 
+/** 'YYYY-MM' → '2026 年 10 月'（与 Web formatMonthLabel 同义） */
+export function formatMonthLabel(month: string): string {
+  return `${month.substring(0, 4)} 年 ${Number(month.substring(5, 7))} 月`;
+}
+
 /** 距目标日期还有几天（负数是已过去）。用 UTC 归一到整天，避免时区/夏令时误差 */
 export function daysUntil(target: string, from: string): number {
   const a = Date.UTC(
