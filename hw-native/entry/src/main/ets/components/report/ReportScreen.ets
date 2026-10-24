@@ -20,7 +20,7 @@ import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, shiftMonth } from '../../common/contract/Contract';
-import { cardShadow, fontDisplayOf, fontMonoOf, radiusOf } from '../../common/ui/UiStyle';
+import { cardRadiusOf, cardShadow, fontDisplayOf, fontMonoOf, radiusOf } from '../../common/ui/UiStyle';
 import { DonutChart, DonutSliceView } from './DonutChart';
 
 export interface TierChipModel {
@@ -284,7 +284,7 @@ export struct ReportScreen {
       }.width('100%')
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
@@ -307,7 +307,7 @@ export struct ReportScreen {
       }, (p: PaymentBucket) => p.paymentMethodId)
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
@@ -344,7 +344,7 @@ export struct ReportScreen {
       }
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
@@ -366,7 +366,7 @@ export struct ReportScreen {
       .columnsTemplate('repeat(2, 1fr)').columnsGap(10).rowsGap(10).width('100%')
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
@@ -381,7 +381,7 @@ export struct ReportScreen {
       }.width('100%')
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
@@ -421,7 +421,7 @@ export struct ReportScreen {
       }, (c: CategoryBucket) => c.categoryId)
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
@@ -440,14 +440,13 @@ export struct ReportScreen {
       }, (line: string) => line)
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
   }
 
   @Builder
   summaryNote() {
-    Text('汇总档：跨年合计与年度对比')
-      .fontSize(10).fontColor(this.tok().ink3).width('100%')
+    Text('')
   }
 }
 

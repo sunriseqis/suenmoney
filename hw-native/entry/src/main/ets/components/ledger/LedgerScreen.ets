@@ -15,7 +15,7 @@ import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { cardRadiusOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
@@ -475,15 +475,18 @@ export struct LedgerScreen {
                 .onClick(() => {
                   this.actTodo(t, false);
                 })
-              Text('更多')
-                .fontSize(10)
-                .fontColor(this.tok().ink3)
-                .bindMenu([{
-                  value: '忽略本期',
-                  action: () => {
-                    this.actTodo(t, true);
-                  }
-                }])
+              // F36：自动入账期次**不提供「忽略」**（那等于偷偷关掉自动入账）
+              if (!t.willAutoPost) {
+                Text('更多')
+                  .fontSize(10)
+                  .fontColor(this.tok().ink3)
+                  .bindMenu([{
+                    value: '忽略本期',
+                    action: () => {
+                      this.actTodo(t, true);
+                    }
+                  }])
+              }
             }
             .width('100%')
             .padding({ top: 5, bottom: 5 })
@@ -496,7 +499,7 @@ export struct LedgerScreen {
     .width('100%')
     .padding(14)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.isCyber() ? this.tok().accent : this.tok().line2 })
   }
 
@@ -643,32 +646,6 @@ export struct LedgerScreen {
     this.loadTier().then(() => {
       this.loading = false;
     });
-  }
-
-  @Builder
-  tierTabs() {
-    Row({ space: 6 }) {
-      this.tierButton('按月', 0)
-      this.tierButton('按年', 1)
-      this.tierButton('全部', 2)
-    }
-    .width('100%')
-  }
-
-  /** hero 内的小入口：min-height 30 / padding 0 4 / 11.5px / 1px 边 / 胶囊 / surface-2（规范 §4.1） */
-  @Builder
-  navBtn($$: NavBtnModel) {
-    Button($$.label)
-      .fontSize(11.5)
-      .height(30)
-      .layoutWeight(1)
-      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-      .border({ width: this.isCyber() ? 1 : 1, color: this.isCyber() ? this.tok().accent : this.tok().line })
-      .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface2)
-      .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink2)
-      .onClick(() => {
-        this.onNavigate($$.target);
-      })
   }
 
   @Builder
@@ -899,6 +876,7 @@ export struct LedgerScreen {
       Text(formatYuan(row.amountCents))
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
+        .fontFamily(fontMonoOf())
         .fontColor(this.tok().ink)
     }
     .width('100%')
@@ -947,9 +925,10 @@ export struct LedgerScreen {
               Text(`${Number(point.month.substring(5, 7))} 月`)
                 .fontSize(11)
                 .fontColor(this.tok().ink2)
-              Text(formatYuan(point.totalCents))
+              Text(point.totalCents > 0 ? formatYuan(point.totalCents) : '—')
                 .fontSize(12)
                 .fontWeight(FontWeight.Medium)
+                .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink)
               Text(`${point.count} 笔`)
                 .fontSize(9)

@@ -138,3 +138,16 @@ export function cutPathCommands(w: number, h: number, n: number): string {
 export function outlineStrongOf(isCyber: boolean): string {
   return isCyber ? '#6f6f92' : '#1E293B';
 }
+
+/**
+ * 卡片圆角（docs R132：卡 24 / 抽屉 24 / 输入 14 / 胶囊 999）。
+ *
+ * 注意 AppTheme 生成物里 `rCard` 是 protototype 的 20，**不能直接用**：
+ * docs 的 v3 令牌指定 24，且 §2 声明移动端卡片内距统一 14。
+ */
+export function cardRadiusOf(isCyber: boolean): number {
+  return isCyber ? 0 : 24;
+}
+
+/** 移动端卡片内距（统一 14，覆盖生成物里的 densityPad=18） */
+export const CARD_PAD = 14;
