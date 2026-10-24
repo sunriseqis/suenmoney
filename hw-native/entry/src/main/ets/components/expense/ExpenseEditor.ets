@@ -14,7 +14,16 @@
  */
 
 /** @Builder 单参数对象（多参数不刷新，见 fieldRow 注释） */
-import { Api, CategoryNode, ExpenseCreateRequest, ExpenseItem, ExpensePatchRequest, ExpensePreview, PaymentMethodItem } from '../../common/net/Api';
+import {
+  Api,
+  CategoryNode,
+  ExpenseCreateRequest,
+  ExpenseItem,
+  ExpensePatchRequest,
+  ExpensePreview,
+  PaymentMethodItem,
+  PlanCreateRequest
+} from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -57,6 +66,9 @@ export struct ExpenseEditor {
   @State spendDate: string = todayKey();
   @State note: string = '';
   @State isRefund: boolean = false;
+  /** 分期（R113：仅信用卡且非退款可用） */
+  @State installment: boolean = false;
+  @State periods: number = 3;
   @State saving: boolean = false;
   @State errorText: string = '';
   /** 本月已支出（R107：背景信息，不 await，拿不到显示占位） */
@@ -160,6 +172,16 @@ export struct ExpenseEditor {
     } catch (e) {
       this.preview = null;
     }
+  }
+
+  /** 当前支付方式是不是信用卡（决定分期可用性） */
+  private isCredit(): boolean {
+    for (const p of this.payments) {
+      if (p.id === this.paymentId) {
+        return p.type === 'credit';
+      }
+    }
+    return false;
   }
 
   private cents(): number {
@@ -291,6 +313,25 @@ export struct ExpenseEditor {
           note: this.note
         };
         await Api.updateExpense(editing.id, patch);
+      } else if (this.installment) {
+        // 分期走计划接口（不是支出接口）：总额 + 期数，服务端生成各期待办
+        const total = cents;
+        const per = Math.floor(total / this.periods);
+        const planReq: PlanCreateRequest = {
+          name: `${this.categoryName()} 分期`,
+          categoryId: this.categoryId,
+          paymentMethodId: this.paymentId,
+          source: 'installment',
+          amountCents: per,
+          totalAmountCents: total,
+          periods: this.periods,
+          firstDueDate: this.spendDate,
+          remindDaysBefore: 3,
+          autoPost: false,
+          note: this.note
+        };
+        await Api.createPlan(planReq);
+        savedId = '';
       } else {
         const req: ExpenseCreateRequest = {
           amountCents: this.isRefund ? -cents : cents,
@@ -590,12 +631,43 @@ export struct ExpenseEditor {
       }
       .width('100%')
 
+      // R113：分期仅信用卡且非退款可用；退款仅非分期可用（互斥）
+      if (this.isCredit() && !this.isRefund) {
+        Row({ space: 6 }) {
+          Text('分期付款').fontSize(11).fontColor(this.tok().ink2).layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.installment })
+            .onChange((on: boolean) => {
+              this.installment = on;
+            })
+        }
+        .width('100%')
+        if (this.installment) {
+          Row({ space: 6 }) {
+            ForEach(PERIOD_OPTIONS, (n: number) => {
+              Text(`${n} 期`).fontSize(10)
+                .fontColor(this.periods === n ? this.tok().accentInk : this.tok().ink2)
+                .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                .backgroundColor(this.periods === n ? this.tok().accent : this.tok().surface2)
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+                .onClick(() => {
+                  this.periods = n;
+                })
+            }, (n: number) => `p-${n}`)
+            Blank()
+          }
+          .width('100%')
+          Text(`每期约 ${formatYuan(Math.floor(this.cents() / this.periods))}（末期补差）`)
+            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width('100%')
+        }
+      }
+
       Row({ space: 6 }) {
         Text('退款（负数冲销）')
           .fontSize(11)
           .fontColor(this.tok().ink2)
         Blank()
         Toggle({ type: ToggleType.Switch, isOn: this.isRefund })
+          .enabled(!this.installment)
           .onChange((on: boolean) => {
             this.isRefund = on;
           })
@@ -804,3 +876,5 @@ function todayKey(): string {
   const day = d.getDate();
   return `${d.getFullYear()}-${m < 10 ? '0' + m : String(m)}-${day < 10 ? '0' + day : String(day)}`;
 }
+
+const PERIOD_OPTIONS: number[] = [3, 6, 12, 24];

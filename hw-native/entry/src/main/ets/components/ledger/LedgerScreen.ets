@@ -93,6 +93,8 @@ export struct LedgerScreen {
   @State undoLabel: string = '';
   /** 下拉手势累计位移（R24） */
   @State pullMax: number = 0;
+  /** 轻提示（B.19） */
+  @State toastText: string = '';
   /** cyber 切角需要卡片实际尺寸（W44） */
   @State cardW: number = 0;
   @State cardH: number = 0;
@@ -111,6 +113,9 @@ export struct LedgerScreen {
   @State filterOwner: string = '';
   /** 0=按日期 1=按金额 */
   @State sortMode: number = 0;
+  /** 金额区间筛选（R63）：元，空表示不限 */
+  @State minAmount: string = '';
+  @State maxAmount: string = '';
   @State filterOpen: boolean = false;
   @State rootCategories: CachedCategory[] = [];
   @State paymentOptions: CachedCategory[] = [];
@@ -309,6 +314,13 @@ export struct LedgerScreen {
         continue;
       }
       if (this.filterOwner !== '' && row.ownerId !== this.filterOwner) {
+        continue;
+      }
+      const yuan = Math.abs(row.amountCents) / 100;
+      if (this.minAmount !== '' && yuan < Number(this.minAmount)) {
+        continue;
+      }
+      if (this.maxAmount !== '' && yuan > Number(this.maxAmount)) {
         continue;
       }
       out.push(row);
@@ -564,6 +576,14 @@ export struct LedgerScreen {
       : undefined)
   }
 
+  /** 轻提示：2 秒后自动消失 */
+  private showToast(text: string): void {
+    this.toastText = text;
+    setTimeout(() => {
+      this.toastText = '';
+    }, 2000);
+  }
+
   /** 8 秒内撤销上一个动作（R65）：确认→revert，跳过→restore，ack 不提供撤销 */
   private async undoLastTodo(): Promise<void> {
     const t = this.undoTodo;
@@ -816,6 +836,33 @@ export struct LedgerScreen {
           this.filterGroup('分类', this.rootCategories, this.filterCategory, 'category')
           this.filterGroup('支付', this.paymentOptions, this.filterPayment, 'payment')
           this.filterGroup('记录人', this.ownerOptions, this.filterOwner, 'owner')
+          Row({ space: 6 }) {
+            Text('金额').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width(44)
+            TextInput({ placeholder: '最低', text: this.minAmount })
+              .height(30).layoutWeight(1).type(InputType.NUMBER_DECIMAL)
+              .backgroundColor(this.tok().surface)
+              .border({ width: 1, color: this.tok().line })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 8))
+              .onChange((v: string) => {
+                this.minAmount = v;
+              })
+            TextInput({ placeholder: '最高', text: this.maxAmount })
+              .height(30).layoutWeight(1).type(InputType.NUMBER_DECIMAL)
+              .backgroundColor(this.tok().surface)
+              .border({ width: 1, color: this.tok().line })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 8))
+              .onChange((v: string) => {
+                this.maxAmount = v;
+              })
+            Text('应用').fontSize(10).fontColor(this.tok().ink2)
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .border({ width: 1, color: this.tok().line })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+              .onClick(() => {
+                this.reload();
+              })
+          }
+          .width('100%')
           Button('清除全部筛选')
             .fontSize(11)
             .height(28)
@@ -916,6 +963,9 @@ export struct LedgerScreen {
 
   private activeFilterCount(): number {
     let n = 0;
+    if (this.minAmount !== '' || this.maxAmount !== '') {
+      n++;
+    }
     if (this.filterCategory !== '') {
       n++;
     }
@@ -973,6 +1023,8 @@ export struct LedgerScreen {
                     this.filterPayment = '';
                     this.filterOwner = '';
                     this.keyword = '';
+                    this.minAmount = '';
+                    this.maxAmount = '';
                     this.reload();
                   })
               }
@@ -1211,6 +1263,7 @@ export struct LedgerScreen {
       props: {
         editing: this.editingRow,
         onSaved: (savedId: string) => {
+          this.showToast(savedId === '' ? '已保存' : '已记账');
           this.sheetOpen = false;
           this.editingRow = null;
           // R114：保存后新记录滚到列表顶并高亮 1.5 秒
@@ -1296,6 +1349,16 @@ export struct LedgerScreen {
         // 年档/全部档不滚动，顶卡直接在上方
         this.topCard()
       }
+      // B.19 轻提示：底部居中、2 秒消失
+      if (this.toastText !== '') {
+        Text(this.toastText)
+          .fontSize(11)
+          .fontColor(this.tok().bg)
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .backgroundColor(this.tok().ink)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+      }
+
       if (this.tier === 0) {
         this.monthListView()
       } else if (this.tier === 1) {
