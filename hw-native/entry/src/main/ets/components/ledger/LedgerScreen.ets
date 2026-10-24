@@ -91,6 +91,8 @@ export struct LedgerScreen {
   @State selectedCell: string = '';
   /** 待同步条目数（R144：离线提示只由它驱动） */
   @State pendingSync: number = 0;
+  /** 同步到 AppStorage，供 build-stamp 订阅（§3） */
+  @StorageLink('pendingSync') sharedPending: number = 0;
   /** R65：动作后 8 秒内可撤销（记录被操作的待办与动作类型） */
   @State undoTodo: HeroTodo | null = null;
   @State undoKind: string = '';
@@ -134,6 +136,7 @@ export struct LedgerScreen {
     this.reload();
     Outbox.pendingCount().then((n: number) => {
       this.pendingSync = n;
+      this.sharedPending = n;
     }).catch(() => {
     });
     this.maybeShowPullHint();
@@ -371,19 +374,7 @@ export struct LedgerScreen {
   }
 
   /** 按消费日分组（组内小计），同一天的多笔归到一起 */
-  private grouped(): LedgerDayGroup[] {
-    const out: LedgerDayGroup[] = [];
-    for (const row of this.sortedRows()) {
-      const last = out.length > 0 ? out[out.length - 1] : null;
-      if (last !== null && last.date === row.spendDate) {
-        last.cents += row.amountCents;
-        last.rows.push(row);
-      } else {
-        out.push({ date: row.spendDate, cents: row.amountCents, rows: [row] });
-      }
-    }
-    return out;
-  }
+
 
   /** 分类色（离线时字典可能为空 → 走哈希兜底，同一分类颜色仍稳定） */
   /** R136：二级分类的颜色跟一级走 —— 优先用父级颜色，其次自身，最后按 id 哈希 */
@@ -467,6 +458,7 @@ export struct LedgerScreen {
               .fontWeight(FontWeight.Bold)
               .fontColor(this.tok().ink2)
             Text(formatYuan(this.monthTotalCents).replace('¥', ''))
+                .fontFeature('"tnum" on')
               .fontSize(38)
               .fontWeight(FontWeight.Bolder)
               .fontFamily(fontDisplayOf(this.isCyber()))
@@ -515,6 +507,7 @@ export struct LedgerScreen {
             })
             ForEach(this.heroTodos.slice(0, 2), (t: HeroTodo) => {
               Text(`${t.periodSeq}期 · ${formatYuan(t.amountCents)}`)
+                  .fontFeature('"tnum" on')
                 .fontSize(10)
                 .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
@@ -553,6 +546,7 @@ export struct LedgerScreen {
                 .backgroundColor(t.tone === 'late' ? this.tok().danger : (t.tone === 'soon' ? this.tok().warn : this.tok().ok))
               // R117 字段顺序：**金额 → 期次·名称 → 多急 → 状态 → 按钮**
               Text(formatYuan(t.amountCents))
+                  .fontFeature('"tnum" on')
                 .fontSize(11)
                 .fontWeight(FontWeight.Bold)
                 .fontFamily(fontMonoOf())
@@ -846,24 +840,7 @@ export struct LedgerScreen {
   }
 
   @Builder
-  tierButton(label: string, value: number) {
-    Button(label)
-      .fontSize(12)
-      .height(30)
-      .layoutWeight(1)
-      .backgroundColor(this.tier === value ? this.tok().accent : this.tok().surface2)
-      .fontColor(this.tier === value ? this.tok().accentInk : this.tok().ink2)
-      .onClick(() => {
-        this.tier = value;
-        this.loading = true;
-        this.loadTier().then(() => {
-          this.loading = false;
-        }).catch((e: ApiError) => {
-          this.loading = false;
-          this.errorText = e.message;
-        });
-      })
-  }
+
 
   /** 检索区：搜索 + 筛选（折叠）+ 排序 */
   @Builder
@@ -1078,6 +1055,7 @@ export struct LedgerScreen {
     Column() {
       if (this.activeFilterCount() > 0) {
         Text(`筛选结果 ${this.rows.length} 笔 · 合计 ${formatYuan(this.filteredTotal())}`)
+            .fontFeature('"tnum" on')
           .fontSize(10.5)
           .fontColor(this.tok().ink3)
           .width('100%')
@@ -1188,6 +1166,7 @@ export struct LedgerScreen {
       .layoutWeight(1)
 
       Text(formatYuan(row.amountCents))
+          .fontFeature('"tnum" on')
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
         .fontFamily(fontMonoOf())
@@ -1259,6 +1238,7 @@ export struct LedgerScreen {
           .fontColor(this.tok().ink3)
         Blank()
         Text(formatYuan(this.yearTotalCents))
+            .fontFeature('"tnum" on')
           .fontSize(11)
           .fontColor(this.tok().ink2)
       }
@@ -1273,6 +1253,7 @@ export struct LedgerScreen {
                 .fontSize(11)
                 .fontColor(this.tok().ink2)
               Text(point.totalCents > 0 ? formatYuan(point.totalCents) : '—')
+                  .fontFeature('"tnum" on')
                 .fontSize(12)
                 .fontWeight(FontWeight.Medium)
                 .fontFamily(fontMonoOf())
@@ -1327,6 +1308,7 @@ export struct LedgerScreen {
           .fontColor(this.tok().ink3)
         Blank()
         Text(formatYuan(this.allTotalCents))
+            .fontFeature('"tnum" on')
           .fontSize(11)
           .fontColor(this.tok().ink2)
       }
@@ -1341,6 +1323,7 @@ export struct LedgerScreen {
                 .fontSize(11)
                 .fontColor(this.tok().ink2)
               Text(formatYuan(point.totalCents))
+                  .fontFeature('"tnum" on')
                 .fontSize(12)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.tok().ink)

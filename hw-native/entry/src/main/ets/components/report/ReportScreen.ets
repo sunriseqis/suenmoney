@@ -461,6 +461,7 @@ export struct ReportScreen {
         .alignItems(VerticalAlign.Bottom)
         Row() {
           Text(`最高月 ${this.year.peakMonth === null ? '—' : formatYuan(this.year.peakMonth.totalCents)}`)
+              .fontFeature('"tnum" on')
             .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
         }.width('100%')
       } else if (this.summary !== null) {
@@ -638,6 +639,7 @@ export struct ReportScreen {
         Row({ space: 8 }) {
           Text(c.name).fontSize(11).fontColor(this.tok().ink2).width(72).maxLines(1)
           Text(formatYuan(c.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink).layoutWeight(1)
+            .fontFeature('"tnum" on')
           Text(this.deltaText(c)).fontSize(10).fontFamily(fontMonoOf())
             .fontColor((c.cents - (c.previousCents ?? 0)) >= 0 ? this.tok().danger : this.tok().ok)
         }.width('100%')
@@ -669,16 +671,7 @@ export struct ReportScreen {
 
   /** 汇总档：年度对比（按年金额条） */
 
-  private yearBar(cents: number): number {
-    let max = 1;
-    const list = this.summary === null ? [] : this.summary.years;
-    for (const y of list) {
-      if (y.totalCents > max) {
-        max = y.totalCents;
-      }
-    }
-    return Math.max(2, Math.round((cents / max) * 100));
-  }
+
 
   /** 汇总档：记录跨度 */
   @Builder

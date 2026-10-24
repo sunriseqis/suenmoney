@@ -48,7 +48,6 @@ export struct DashboardScreen {
   @State summary: SummaryReport | null = null;
 
   @State todos: TodoView[] = [];
-  @State todoOpen: boolean = false;
   @State loading: boolean = false;
   @State errorText: string = '';
   @State offline: boolean = false;
@@ -103,21 +102,7 @@ export struct DashboardScreen {
     }
   }
 
-  private async actTodo(todo: TodoView, action: string): Promise<void> {
-    try {
-      if (action === 'skip') {
-        await Api.skipTodo(todo.id);
-      } else if (todo.willAutoPost) {
-        await Api.ackTodo(todo.id);
-      } else {
-        await Api.confirmTodo(todo.id);
-      }
-      await this.reload();
-    } catch (e) {
-      const err = e as ApiError;
-      this.errorText = err.message;
-    }
-  }
+
 
   private prevMonthPoint(points: RollingMonth[], month: string): MonthPoint | null {
     for (const p of points) {
@@ -198,6 +183,7 @@ export struct DashboardScreen {
           .fontSize(16)
           .fontColor(this.tok().ink3)
         Text(formatYuan(this.totalCents).replace('¥', ''))
+            .fontFeature('"tnum" on')
           .fontSize(32)
           .fontWeight(FontWeight.Bold)
           .fontFamily(displayFont(!this.isCyber()))
@@ -300,6 +286,7 @@ export struct DashboardScreen {
                 .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
               Text(point.totalCents > 0 ? formatYuan(point.totalCents) : '—')
+                  .fontFeature('"tnum" on')
                 .fontSize(10)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.tok().ink)
@@ -374,15 +361,7 @@ export struct DashboardScreen {
     return sum / list.length;
   }
 
-  private maxHeat(): number {
-    let max = 0;
-    for (const p of this.heatPoints()) {
-      if (p.totalCents > max) {
-        max = p.totalCents;
-      }
-    }
-    return max;
-  }
+
 
   /** 累计与跨度 */
   @Builder
