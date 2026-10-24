@@ -1165,6 +1165,39 @@ export struct LedgerScreen {
     return `${this.paymentNameOf(row)} · ${day}日 · ${spendMd}刷 · ${dueMd}还 · ${daysBetween(row.spendDate, row.repaymentDate)}天`;
   }
 
+  /** 年档选中月份后，下方卡的摘要（R58 两段式的"下方那张卡"） */
+  @Builder
+  selectedCellSummary() {
+    if (this.selectedCell !== '') {
+      Row({ space: 8 }) {
+        Text(this.selectedCell)
+          .fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink2)
+        Text(`¥${(this.rowSum() / 100).toFixed(2)}`)
+          .fontSize(12).fontWeight(FontWeight.Bold).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
+        Blank()
+        Text('进入 →')
+          .fontSize(11).fontColor(this.tok().accent)
+          .onClick(() => {
+            this.tier = 0;
+          })
+      }
+      .width('100%')
+      .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+      .backgroundColor(this.tok().surface2)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+      .border({ width: 1, color: this.tok().line })
+    }
+  }
+
+  /** 当前已加载结果合计（下方卡用） */
+  private rowSum(): number {
+    let sum = 0;
+    for (const row of this.rows) {
+      sum += row.amountCents;
+    }
+    return sum;
+  }
+
   @Builder
   monthGridView() {
     Column() {
@@ -1385,6 +1418,9 @@ export struct LedgerScreen {
           .width('100%')
       }
 
+      if (this.tier === 1 || this.tier === 2) {
+        this.selectedCellSummary()
+      }
       if ((this.tier === 1 || this.tier === 2) && !this.hasOverdue()) {
         // 年档/全部档不滚动：非逾期时顶卡在上方；
         // 逾期时顶卡已由上面的 `if (this.hasOverdue())` 渲染过，避免重复

@@ -408,6 +408,22 @@ export struct ReportScreen {
           Text(`最高月 ${this.year.peakMonth === null ? '—' : formatYuan(this.year.peakMonth.totalCents)}`)
             .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
         }.width('100%')
+      } else if (this.summary !== null) {
+        // 汇总档：按年柱（R82）
+        Row({ space: 6 }) {
+          ForEach(this.summary.years, (y: YearPoint) => {
+            Column().width(14)
+              .height(this.summaryMax() > 0 ? Math.max(2, Math.round((y.totalCents / this.summaryMax()) * 56)) : 2)
+              .backgroundColor(y.totalCents > 0 ? this.tok().accent : this.tok().surface3)
+              .borderRadius(2)
+          }, (y: YearPoint) => y.year)
+        }
+        .height(56)
+        .alignItems(VerticalAlign.Bottom)
+        Row() {
+          Text(`共 ${this.summary.years.length} 年`)
+            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+        }.width('100%')
       } else {
         Text('合计按年').fontSize(10).fontColor(this.tok().ink3)
       }
@@ -437,6 +453,18 @@ export struct ReportScreen {
     .width('100%').padding(14).backgroundColor(this.tok().surface)
     .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
+  }
+
+  private summaryMax(): number {
+    let max = 0;
+    if (this.summary !== null) {
+      for (const y of this.summary.years) {
+        if (y.totalCents > max) {
+          max = y.totalCents;
+        }
+      }
+    }
+    return max;
   }
 
   private yearMax(): number {
