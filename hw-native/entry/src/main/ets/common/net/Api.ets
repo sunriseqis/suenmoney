@@ -279,6 +279,9 @@ export interface PlanItem {
   id: string;
   name: string;
   categoryId: string;
+  /** 分类名与图标名（服务端随计划下发；缺省时按 id 查本地字典）*/
+  categoryName?: string;
+  categoryIcon?: string;
   paymentMethodId: string;
   amountCents: number;
   firstDueDate: string;
@@ -293,6 +296,9 @@ export interface PlanList {
 }
 
 export interface PlanTodoItem {
+  /** 该期入账后对应支出的所属月份（YYYY-MM）；未入账时为空 —— R126 跨月撤销警告用 */
+  expenseMonth?: string;
+  expenseId?: string | null;
   id: string;
   planId: string;
   planName: string;

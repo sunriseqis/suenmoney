@@ -20,6 +20,7 @@ import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
 
+import { categoryGlyph } from '../../common/ui/CategoryIcon';
 import {
   Api,
   CategoryCreateRequest,
@@ -68,6 +69,11 @@ export struct SettingsScreen {
   /** 弹层：'' | category | payment | plan */
   @State sheetMode: string = '';
   @State sheetOpen: boolean = false;
+  /** R126 跨月撤销警告（状态驱动，不用 showAlertDialog 的返回值） */
+  @State revertDialogOpen: boolean = false;
+  @State revertWarn: string = '';
+  @State revertPendingId: string = '';
+  private pendingResolve: ((v: boolean) => void) | null = null;
   @State editingCategoryId: string = '';
   @State editingPaymentId: string = '';
   @State editingPlanId: string = '';
@@ -727,9 +733,31 @@ export struct SettingsScreen {
     }
   }
 
+  /** 跨月撤销的警告确认（R126）：说清"会改动哪个月的报表"，不阻止操作 */
+  private async confirmRevert(month: string, cents: number): Promise<boolean> {
+    // 用 AlertDialog 的回调把结果写回状态（showAlertDialog 返回 void）
+    this.revertWarn = `这笔 ${formatYuan(cents)} 记在 ${month}，撤销后 ${month} 的报表会跟着变。`;
+    this.revertPendingId = month;
+    return await new Promise<boolean>((resolve: (v: boolean) => void) => {
+      this.pendingResolve = resolve;
+      this.revertDialogOpen = true;
+    });
+  }
+
   /** 撤销入账 / 恢复跳过（R125/R127） */
   private async restoreOrRevert(todo: PlanTodoItem): Promise<void> {
     try {
+      // R126：撤销跨月入账要给警告（不是拒绝）—— 支出落在别的月份，撤销后那边报表会变
+      if (todo.status !== 'skipped') {
+        const crossMonth = todo.expenseMonth !== undefined && todo.expenseMonth !== ''
+          && todo.expenseMonth !== todayKey().substring(0, 7);
+        if (crossMonth) {
+          const ok = await this.confirmRevert(todo.expenseMonth ?? '', todo.amountCents);
+          if (!ok) {
+            return;
+          }
+        }
+      }
       if (todo.status === 'skipped') {
         await Api.restoreTodo(todo.id);
       } else {

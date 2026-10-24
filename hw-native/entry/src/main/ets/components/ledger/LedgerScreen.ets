@@ -37,6 +37,9 @@ export interface HeroTodo {
   amountCents: number;
   willAutoPost: boolean;
   tone: string;
+  /** 距还款日天数（负=逾期）；缺省时「多急」退化为日期 */
+  daysUntil?: number;
+  dueDate?: string;
 }
 
 export interface HeroFactModel {
@@ -273,9 +276,17 @@ export struct LedgerScreen {
           periodSeq: t.periodSeq,
           amountCents: t.amountCents,
           willAutoPost: t.willAutoPost,
-          tone: tone
+          tone: tone,
+          daysUntil: days,
+          dueDate: t.repaymentDate
         });
       }
+      // R116：按紧急度排序 —— 逾期最前，其余按剩余天数升序
+      list.sort((a: HeroTodo, b: HeroTodo) => {
+        const da = a.daysUntil === undefined ? 0 : a.daysUntil;
+        const db = b.daysUntil === undefined ? 0 : b.daysUntil;
+        return da - db;
+      });
       this.heroTodos = list;
     } catch (e) {
       this.heroTodos = [];
@@ -540,18 +551,25 @@ export struct LedgerScreen {
                 .height(20)
                 .borderRadius(2)
                 .backgroundColor(t.tone === 'late' ? this.tok().danger : (t.tone === 'soon' ? this.tok().warn : this.tok().ok))
-              Text(`${t.periodSeq}期 · ${t.planName}`)
-                .fontSize(11.5)
+              // R117 字段顺序：**金额 → 期次·名称 → 多急 → 状态 → 按钮**
+              Text(formatYuan(t.amountCents))
+                .fontSize(11)
+                .fontWeight(FontWeight.Bold)
+                .fontFamily(fontMonoOf())
+                .fontFeature('"tnum" on')
                 .fontColor(this.tok().ink)
+              Text(`${t.periodSeq}期 · ${t.planName}`)
+                .fontSize(11)
+                .fontColor(this.tok().ink2)
                 .layoutWeight(1)
                 .maxLines(1)
+              // 多急：逾期 X 天 / 今天 / 还有 Y 天
+              Text(this.urgencyOf(t))
+                .fontSize(9.5)
+                .fontColor(t.tone === 'late' ? this.tok().danger : (t.tone === 'soon' ? this.tok().warn : this.tok().ink3))
               Text(t.willAutoPost ? '自动入账' : '需手动')
                 .fontSize(9.5)
                 .fontColor(t.willAutoPost ? this.tok().ink3 : this.tok().danger)
-              Text(formatYuan(t.amountCents))
-                .fontSize(10)
-                .fontFamily(fontMonoOf())
-                .fontColor(this.tok().ink2)
               Text(t.willAutoPost ? '确认' : '入账')
                 .fontSize(10)
                 .fontColor(this.tok().ink)
@@ -632,6 +650,21 @@ export struct LedgerScreen {
     setTimeout(() => {
       this.toastText = '';
     }, 2000);
+  }
+
+  /** 「多急」文案（R117）：逾期 X 天 / 今天 / 还有 Y 天 */
+  private urgencyOf(t: HeroTodo): string {
+    if (t.daysUntil === undefined || t.daysUntil === null) {
+      return t.dueDate ?? '';
+    }
+    const d = t.daysUntil;
+    if (d < 0) {
+      return `逾期 ${-d} 天`;
+    }
+    if (d === 0) {
+      return '今天';
+    }
+    return `还有 ${d} 天`;
   }
 
   /** 8 秒内撤销上一个动作（R65）：确认→revert，跳过→restore，ack 不提供撤销 */
