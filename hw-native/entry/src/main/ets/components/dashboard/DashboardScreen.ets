@@ -12,7 +12,7 @@ import { Api, MonthlyReport, MonthPoint, PlanTodoItem, RollingMonth, SummaryRepo
 import { ApiError } from '../../common/net/ApiError';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
-import { cardShadow, radiusOf } from '../../common/ui/UiStyle';
+import { CARD_PAD, cardRadiusOf, cardShadow, radiusOf } from '../../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
@@ -235,9 +235,9 @@ export struct DashboardScreen {
       // 构成堆叠条**不做**：分类构成是报表页的活（F09/D14）；视图里不出现任何分类名（R67）
     }
     .width('100%')
-    .padding(this.tok().densityPad)
+    .padding(CARD_PAD)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.tok().borderW, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
@@ -281,46 +281,6 @@ export struct DashboardScreen {
   }
 
   /** 构成：一条堆叠条 + 前四条图例（不做环图 —— 环图是报表页的活） */
-  @Builder
-  composition(report: MonthlyReport) {
-    Column({ space: 6 }) {
-      Row() {
-        ForEach(report.categories.slice(0, 5), (cat: CategoryBucketView, index: number) => {
-          Row()
-            .layoutWeight(Math.max(1, Math.round(cat.ratio * 100)))
-            .height(8)
-            .backgroundColor(chartColor(this.tok(), hashIndex(cat.categoryId)))
-        }, (cat: CategoryBucketView) => cat.categoryId)
-      }
-      .width('100%')
-      .borderRadius(4)
-      .clip(true)
-
-      ForEach(report.categories.slice(0, 4), (cat: CategoryBucketView) => {
-        Row({ space: 6 }) {
-          Row()
-            .width(8)
-            .height(8)
-            .backgroundColor(chartColor(this.tok(), hashIndex(cat.categoryId)))
-            .borderRadius(2)
-          Text(cat.name)
-            .fontSize(10)
-            .fontColor(this.tok().ink2)
-            .layoutWeight(1)
-          Text(`${(cat.ratio * 100).toFixed(0)}%`)
-            .fontSize(10)
-            .fontColor(this.tok().ink3)
-          Text(formatYuan(cat.cents))
-            .fontSize(10)
-            .fontColor(this.tok().ink2)
-        }
-        .width('100%')
-      }, (cat: CategoryBucketView) => cat.categoryId)
-    }
-    .width('100%')
-  }
-
-  /** 12 个月热力：金额越高块越亮（不做彩虹色，避免与分类色混淆） */
   @Builder
   heat() {
     Column({ space: 6 }) {

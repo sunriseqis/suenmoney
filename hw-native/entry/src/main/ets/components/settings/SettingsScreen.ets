@@ -8,7 +8,7 @@
  */
 
 import { LengthMetrics, router } from '@kit.ArkUI';
-import { cardShadow, fontMonoOf, outlineStrongOf, radiusOf } from '../../common/ui/UiStyle';
+import { CARD_PAD, cardRadiusOf, cardShadow, fontMonoOf, outlineStrongOf, radiusOf } from '../../common/ui/UiStyle';
 import { ApiError } from '../../common/net/ApiError';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
@@ -366,8 +366,10 @@ export struct SettingsScreen {
                   .fontSize(11)
                   .fontColor(this.railRootId === root.id ? this.tok().ink : this.tok().ink3)
                   .layoutWeight(1)
-                Text(String(root.children.length))
+                // R89：一级显示**累计笔数**（子类之和），不是子类个数
+                Text(String(root.expenseCount ?? 0))
                   .fontSize(9)
+                  .fontFamily(fontMonoOf())
                   .fontColor(this.tok().ink3)
               }
               .width('100%')
@@ -472,9 +474,9 @@ export struct SettingsScreen {
       }, (p: PaymentMethodItem) => p.id)
     }
     .width('100%')
-    .padding(this.tok().densityPad)
+    .padding(CARD_PAD)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
@@ -601,20 +603,22 @@ export struct SettingsScreen {
                 this.actTodo(todo, 'confirm');
               })
 
-            // 危险动作收进「更多」：跳过不可逆，平铺等于把误触代价做得和正常操作一样低
-            Button('更多')
-              .fontSize(10)
-              .height(28)
-              .backgroundColor(this.tok().surface)
-              .fontColor(this.tok().ink3)
-              .bindMenu([
-                {
-                  value: '忽略本期',
-                  action: () => {
-                    this.actTodo(todo, 'skip');
+            // F36：自动入账期次不提供「忽略」；只有需手动入账的期次才能跳过
+            if (!todo.willAutoPost) {
+              Button('更多')
+                .fontSize(10)
+                .height(28)
+                .backgroundColor(this.tok().surface)
+                .fontColor(this.tok().ink3)
+                .bindMenu([
+                  {
+                    value: '忽略本期',
+                    action: () => {
+                      this.actTodo(todo, 'skip');
+                    }
                   }
-                }
-              ])
+                ])
+            }
           }
           .width('100%')
           .padding({ top: 4, bottom: 4 })
@@ -622,9 +626,9 @@ export struct SettingsScreen {
       }
     }
     .width('100%')
-    .padding(this.tok().densityPad)
+    .padding(CARD_PAD)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
@@ -709,9 +713,9 @@ export struct SettingsScreen {
         })
     }
     .width('100%')
-    .padding(this.tok().densityPad)
+    .padding(CARD_PAD)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.tok().borderW, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
@@ -787,9 +791,9 @@ export struct SettingsScreen {
       }, (user: UserSummary) => user.id)
     }
     .width('100%')
-    .padding(this.tok().densityPad)
+    .padding(CARD_PAD)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
@@ -1063,10 +1067,6 @@ export struct SettingsScreen {
       }
 
       if (this.editingPaymentId !== '') {
-        Text('合并到（把本支付方式的记录并到另一个，然后停用本项）')
-          .fontSize(9)
-          .fontColor(this.tok().ink3)
-          .width('100%')
         Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
           ForEach(this.mergeTargets(), (p: PaymentMethodItem) => {
             Button(p.name)
