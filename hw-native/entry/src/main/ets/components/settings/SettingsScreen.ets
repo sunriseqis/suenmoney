@@ -7,6 +7,7 @@
  * 危险动作一律收进「更多」菜单（decisions：跳过不可逆，不能与该做的动作同权重）。
  */
 import { LengthMetrics, router } from '@kit.ArkUI';
+import { cardShadow, radiusOf } from '../../common/ui/UiStyle';
 
 import {
   Api,
@@ -455,10 +456,11 @@ export struct SettingsScreen {
       }, (p: PaymentMethodItem) => p.id)
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   private railChildren(): CategoryNode[] {
@@ -604,10 +606,11 @@ export struct SettingsScreen {
       }
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   private async endPlanById(id: string): Promise<void> {
@@ -797,10 +800,11 @@ export struct SettingsScreen {
         })
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   // ── 家庭 ────────────────────────────────────────────────────────────────
@@ -853,15 +857,21 @@ export struct SettingsScreen {
       }, (user: UserSummary) => user.id)
     }
     .width('100%')
-    .padding(14)
+    .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rCard)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
+    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
   private tok(): ThemeTokens {
     return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
+  /** 是否深色（cyber）—— 决定圆角/阴影/切角/字体族 */
+  private isCyber(): boolean {
+    return this.themeName === 'cyber';
   }
 
   build() {
@@ -953,7 +963,10 @@ export struct SettingsScreen {
         Button('取消')
           .fontSize(13)
           .height(40)
-          .backgroundColor(this.tok().surface2)
+          .backgroundColor(this.tok().surface)
+          .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .fontColor(this.tok().ink)
           .fontColor(this.tok().ink2)
           .onClick(() => {
             this.sheetMode = '';
@@ -984,7 +997,10 @@ export struct SettingsScreen {
     Column({ space: 8 }) {
       TextInput({ placeholder: '名称', text: this.formName })
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formName = v;
         })
@@ -992,7 +1008,10 @@ export struct SettingsScreen {
       // 图标：先用 1 个字符代替（图标库接入放到 H8 打磨）
       TextInput({ placeholder: '图标（单个字符）', text: this.formIcon })
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formIcon = v;
         })
@@ -1047,7 +1066,10 @@ export struct SettingsScreen {
     Column({ space: 8 }) {
       TextInput({ placeholder: '名称', text: this.formName })
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formName = v;
         })
@@ -1158,20 +1180,29 @@ export struct SettingsScreen {
     Column({ space: 8 }) {
       TextInput({ placeholder: '显示名（如 爱人）', text: this.formName })
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formName = v;
         })
       TextInput({ placeholder: '登录名', text: this.formUsername })
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formUsername = v;
         })
       TextInput({ placeholder: '初始口令（至少 6 位）', text: this.formPassword })
         .type(InputType.Password)
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formPassword = v;
         })
@@ -1205,7 +1236,10 @@ export struct SettingsScreen {
     Column({ space: 8 }) {
       TextInput({ placeholder: '计划名称（如 房贷）', text: this.formName })
         .height(38)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.formName = v;
         })

@@ -14,6 +14,7 @@ import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
+import { radiusOf } from '../../common/ui/UiStyle';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
@@ -514,10 +515,10 @@ export struct LedgerScreen {
         .fontColor(row.amountCents < 0 ? this.tok().mint : this.tok().ink)
     }
     .width('100%')
-    .padding(10)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
     .backgroundColor(this.tok().surface)
-    .borderRadius(this.tok().rMd)
-    .border({ width: 1, color: this.tok().line })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
     .onClick(() => {
       this.editingRow = row;
       this.sheetOpen = true;

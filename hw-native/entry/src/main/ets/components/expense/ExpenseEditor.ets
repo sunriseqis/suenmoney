@@ -16,6 +16,7 @@ import { Api, CategoryNode, ExpenseCreateRequest, ExpenseItem, ExpensePatchReque
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
+import { radiusOf } from '../../common/ui/UiStyle';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
@@ -443,6 +444,11 @@ export struct ExpenseEditor {
     return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
+  /** 是否深色（cyber）—— 决定圆角/阴影/切角/字体族 */
+  private isCyber(): boolean {
+    return this.themeName === 'cyber';
+  }
+
   build() {
     Column({ space: 10 }) {
       Row({ space: 8 }) {
@@ -490,7 +496,10 @@ export struct ExpenseEditor {
 
       TextInput({ placeholder: '备注（选填）', text: this.note })
         .height(36)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.tok().surface)
+        .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+        .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.note = v;
         })
