@@ -1037,6 +1037,24 @@ export struct SettingsScreen {
           .width('100%')
       }
 
+      // R92：只有"二级"能给归属一级（同深度移动）；一级分类不提供跨深度移动入口
+      if (this.formParent !== '' && this.editingCategoryId !== '') {
+        Text('归属一级').fontSize(9).fontColor(this.tok().ink3).width('100%')
+        Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
+          ForEach(this.categories, (root: CategoryNode) => {
+            Button(root.name)
+              .fontSize(10)
+              .height(26)
+              .backgroundColor(this.formParent === root.id ? this.tok().accent : this.tok().surface2)
+              .fontColor(this.formParent === root.id ? this.tok().accentInk : this.tok().ink2)
+              .onClick(() => {
+                this.formParent = root.id;
+              })
+          }, (root: CategoryNode) => `parent-${root.id}`)
+        }
+        .width('100%')
+      }
+
       if (this.editingCategoryId !== '') {
         Button('停用分类')
           .fontSize(11)

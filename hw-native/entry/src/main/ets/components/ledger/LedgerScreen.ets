@@ -16,7 +16,7 @@ import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { Outbox } from '../../common/sync/Outbox';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { cardRadiusOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { cardRadiusOf, cyberClipCommands, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
@@ -58,9 +58,8 @@ export interface LedgerDayGroup {
 
 @Component
 export struct LedgerScreen {
-  /** 外壳传入的跳转回调（移动端导航只在这里和顶栏返回） */
-  onNavigate: (target: string) => void = () => {
-  };
+  /** 当前屏（AppStorage）：三入口直接写它，外壳订阅 */
+  @StorageLink('activeScreen') activeScreen: string = 'ledger';
 
   /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
@@ -88,6 +87,13 @@ export struct LedgerScreen {
   @State selectedCell: string = '';
   /** 待同步条目数（R144：离线提示只由它驱动） */
   @State pendingSync: number = 0;
+  /** R65：动作后 8 秒内可撤销（记录被操作的待办与动作类型） */
+  @State undoTodo: HeroTodo | null = null;
+  @State undoKind: string = '';
+  @State undoLabel: string = '';
+  /** cyber 切角需要卡片实际尺寸（W44） */
+  @State cardW: number = 0;
+  @State cardH: number = 0;
   @State errorText: string = '';
   @State yearPoints: MonthPoint[] = [];
   @State yearTotalCents: number = 0;
@@ -467,7 +473,8 @@ export struct LedgerScreen {
       // 展开明细：把列表顶下去（不是浮层）
       if (this.todoOpen && this.heroTodos.length > 0) {
         Column() {
-          ForEach(this.heroTodos, (t: HeroTodo) => {
+          List({ space: 0 }) {
+            ForEach(this.heroTodos, (t: HeroTodo) => {
             Row({ space: 8 }) {
               Row()
                 .width(4)
@@ -511,8 +518,32 @@ export struct LedgerScreen {
             .padding({ top: 5, bottom: 5 })
             .border({ width: { bottom: 1 }, color: this.tok().line })
           }, (t: HeroTodo) => t.id)
+          }
+          .width('100%')
+          .divider({ strokeWidth: 0 })
         }
         .width('100%')
+      }
+
+      // R65 后半：动作后可撤销（8 秒）；自动入账（ack）不提供撤销
+      if (this.undoTodo !== null) {
+        Row({ space: 8 }) {
+          Text(this.undoLabel)
+            .fontSize(10)
+            .fontColor(this.tok().ink2)
+            .layoutWeight(1)
+          Text('撤销')
+            .fontSize(10)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().accent)
+            .onClick(() => {
+              this.undoLastTodo();
+            })
+        }
+        .width('100%')
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .backgroundColor(this.tok().surface2)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
       }
     }
     .width('100%')
@@ -520,6 +551,36 @@ export struct LedgerScreen {
     .backgroundColor(this.tok().surface)
     .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.isCyber() ? this.tok().accent : this.tok().line2 })
+    .onAreaChange((_o: Area, n: Area) => {
+      this.cardW = Number(n.width);
+      this.cardH = Number(n.height);
+    })
+    // W44：cyber 用 Path 切角（等价 clip-path，四档里的「卡片 14」）
+    .clipShape(this.isCyber() && this.cardW > 0
+      ? new Path({ commands: cyberClipCommands(this.cardW, this.cardH, 14) })
+      : undefined)
+  }
+
+  /** 8 秒内撤销上一个动作（R65）：确认→revert，跳过→restore，ack 不提供撤销 */
+  private async undoLastTodo(): Promise<void> {
+    const t = this.undoTodo;
+    if (t === null) {
+      return;
+    }
+    try {
+      if (this.undoKind === 'skip') {
+        await Api.restoreTodo(t.id);
+      } else {
+        await Api.revertTodo(t.id);
+      }
+      this.undoTodo = null;
+      this.undoKind = '';
+      this.undoLabel = '';
+      await this.loadHeroTodos();
+      await this.loadMonth(true);
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
   }
 
   /** 待办动作：确认/入账（落库）与忽略（不可逆，收在更多里） */
@@ -531,6 +592,17 @@ export struct LedgerScreen {
         await Api.ackTodo(t.id);
       } else {
         await Api.confirmTodo(t.id);
+      }
+      // R65：确认/入账/忽略都可在 8 秒内撤销；自动入账（ack）只是确认、不写支出，不提供撤销
+      if (!(t.willAutoPost && !skip)) {
+        this.undoTodo = t;
+        this.undoKind = skip ? 'skip' : 'confirm';
+        this.undoLabel = skip ? '已忽略本期' : (t.willAutoPost ? '已确认' : '已入账');
+        setTimeout(() => {
+          this.undoTodo = null;
+          this.undoKind = '';
+          this.undoLabel = '';
+        }, 8000);
       }
       await this.loadHeroTodos();
       await this.loadMonth(true);
@@ -616,19 +688,19 @@ export struct LedgerScreen {
           .fontSize(12)
           .fontColor(this.tok().ink3)
           .onClick(() => {
-            this.onNavigate('dashboard');
+            AppStorage.setOrCreate('activeScreen', 'dashboard');
           })
         Text('报表')
           .fontSize(12)
           .fontColor(this.tok().ink3)
           .onClick(() => {
-            this.onNavigate('report');
+            AppStorage.setOrCreate('activeScreen', 'report');
           })
         Text('设置')
           .fontSize(12)
           .fontColor(this.tok().ink3)
           .onClick(() => {
-            this.onNavigate('settings');
+            AppStorage.setOrCreate('activeScreen', 'settings');
           })
       }
       .width('100%')
