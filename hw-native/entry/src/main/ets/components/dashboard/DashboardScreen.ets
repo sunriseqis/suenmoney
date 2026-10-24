@@ -12,7 +12,7 @@ import { Api, MonthlyReport, MonthPoint, PlanTodoItem, RollingMonth, SummaryRepo
 import { ApiError } from '../../common/net/ApiError';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
-import { CARD_PAD, cardRadiusOf, cardShadow, radiusOf } from '../../common/ui/UiStyle';
+import { CARD_PAD, cardRadiusOf, cardShadow, fontMonoOf, mixHex, radiusOf } from '../../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
@@ -292,17 +292,27 @@ export struct DashboardScreen {
         ForEach(this.heatPoints(), (point: MonthPoint) => {
           GridItem() {
             Column({ space: 2 }) {
+              Text(point.month.substring(5, 7))
+                .fontSize(9)
+                .fontFamily(fontMonoOf())
+                .fontColor(this.tok().ink3)
+              Text(point.totalCents > 0 ? formatYuan(point.totalCents) : '—')
+                .fontSize(10)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.tok().ink)
+                .maxLines(1)
               Column()
                 .width('100%')
-                .height(26)
-                .backgroundColor(this.tok().accent)
-                .opacity(heatOpacity(point.totalCents, this.maxHeat()))
-                .borderRadius(4)
-              Text(point.month.substring(5, 7))
-                .fontSize(8)
-                .fontColor(this.tok().ink3)
+                .height(4)
+                .backgroundColor(point.totalCents > 0
+                  ? mixHex(this.tok().accent, this.tok().surface, this.heat4(point.totalCents, this.heatMean()))
+                  : this.tok().surface3)
+                .borderRadius(999)
             }
             .width('100%')
+            .padding(6)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), 8))
+            .border({ width: 1, color: this.tok().line })
           }
         }, (point: MonthPoint) => point.month)
       }
@@ -329,6 +339,36 @@ export struct DashboardScreen {
       out.push({ month: p.month, totalCents: p.totalCents ?? 0, count: p.count });
     }
     return out;
+  }
+
+  /** R70 四档（只用强调色明度，阈值相对均值） */
+  private heat4(cents: number, mean: number): number {
+    if (cents <= 0 || mean <= 0) {
+      return 0;
+    }
+    const r = cents / mean;
+    if (r >= 1.5) {
+      return 0.42;
+    }
+    if (r >= 1.15) {
+      return 0.24;
+    }
+    if (r >= 0.85) {
+      return 0.12;
+    }
+    return 0.05;
+  }
+
+  private heatMean(): number {
+    const list = this.heatPoints();
+    if (list.length === 0) {
+      return 0;
+    }
+    let sum = 0;
+    for (const p of list) {
+      sum += p.totalCents;
+    }
+    return sum / list.length;
   }
 
   private maxHeat(): number {
