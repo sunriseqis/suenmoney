@@ -139,14 +139,33 @@ export struct ReportScreen {
       return out.slice(0, 2);
     }
     const r = this.report;
-    if (r === null) {
-      if (this.year !== null) {
-        out.push(`本年合计 ${formatYuan(this.year.totalCents)}（${this.year.count} 笔）`);
-        if (this.year.peakMonth !== null) {
-          out.push(`最高月 ${this.year.peakMonth.month}（${formatYuan(this.year.peakMonth.totalCents)}）`);
+    if (r === null || this.tier === 1) {
+      // 年档洞察（R85：3 条）—— 数据全部来自年报，不受是否看过月档影响
+      const y = this.year;
+      if (y === null) {
+        return out;
+      }
+      if (y.largest !== null && y.largest !== undefined) {
+        out.push(`${y.largest.categoryName} ${formatYuan(y.largest.cents)}（本年最大一笔）`);
+      }
+      if (y.peakMonth !== null) {
+        out.push(`最高月 ${y.peakMonth.month}（${formatYuan(y.peakMonth.totalCents)}）`);
+      }
+      let lowMonth = '';
+      let lowCents = -1;
+      for (const m of y.months) {
+        if (m.totalCents > 0 && (lowCents < 0 || m.totalCents < lowCents)) {
+          lowMonth = m.month;
+          lowCents = m.totalCents;
         }
       }
-      return out.slice(0, this.tier === 2 ? 2 : 3);
+      if (lowMonth !== '') {
+        out.push(`最低月 ${lowMonth}（${formatYuan(lowCents)}）`);
+      }
+      if (out.length === 0) {
+        out.push(`本年合计 ${formatYuan(y.totalCents)}（${y.count} 笔）`);
+      }
+      return out.slice(0, 3);
     }
     if (r.largest !== null) {
       out.push(`${r.largest.categoryName} ${formatYuan(r.largest.cents)}（本期最大一笔）`);

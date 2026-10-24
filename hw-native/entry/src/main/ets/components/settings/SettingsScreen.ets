@@ -487,7 +487,7 @@ export struct SettingsScreen {
                 .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
             } else {
-              Text(`本月 ${p.expenseCount} 笔`)
+              Text(`本月 ${p.monthExpenseCount !== undefined ? p.monthExpenseCount : 0} 笔`)
                 .fontSize(9)
                 .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
