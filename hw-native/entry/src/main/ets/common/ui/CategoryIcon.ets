@@ -11,6 +11,39 @@
  * 将来接入图标资产时，只需替换 `glyphFor()` 的实现，调用点不用动。
  */
 
+/** 分类色 16 色槽（与 web `--chart-1..16` 一一对应，v3 账本色，深底对比度 ≥3.69:1） */
+export const CATEGORY_COLORS: string[] = [
+  '#00ff88', '#ff00ff', '#00d4ff', '#FBBF24',
+  '#5FD6A8', '#66C4CC', '#E07060', '#93A5F0',
+  '#C8D656', '#5AD4C4', '#E37FB2', '#A8C056',
+  '#E0A878', '#9D8FF5', '#74A8D6', '#8C8C8C'
+];
+
+/** 把任意色号解析成 1-16；脏数据/未设时返回 null（按名字推导，不要让脏数据毁整行） */
+export function parseCategoryColorIndex(raw: string | undefined): number | null {
+  const v = (raw ?? '').trim();
+  if (v === '') {
+    return null;
+  }
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 16 ? n : null;
+}
+
+/** 按名字哈希推导一个 1-16 的色号（未设色时的兜底） */
+export function deriveColorIndex(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (h * 31 + name.charCodeAt(i)) % 1000003;
+  }
+  return (h % 16) + 1;
+}
+
+/** 分类色：显式设置 > 按名字推导 */
+export function categoryColorOf(name: string, explicit: string | undefined): string {
+  const idx = parseCategoryColorIndex(explicit);
+  return idx === null ? CATEGORY_COLORS[deriveColorIndex(name) - 1] : CATEGORY_COLORS[idx - 1];
+}
+
 /** kebab 名 → 单字标记（覆盖 Web icons.ts 里最常用的那一批） */
 const ICON_GLYPH: Record<string, string> = {
   'utensils': '食',

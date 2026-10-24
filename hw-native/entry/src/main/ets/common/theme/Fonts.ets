@@ -24,7 +24,11 @@ export const FONT_FILES: Record<string, string> = {
   'Outfit': 'fonts/Outfit.ttf',
   'Orbitron': 'fonts/Orbitron-700.ttf',
   'PlayJakarta': 'fonts/PlusJakartaSans.ttf',
-  'JetBrains': 'fonts/JetBrainsMono.ttf'
+  'JetBrains': 'fonts/JetBrainsMono.ttf',
+  // 别名：UiStyle 里的 fontMonoOf()/fontBodyOf() 用的是 CSS 原名（带空格），
+  // 两边必须能对上，否则会静默回落系统字体（曾经就是这样，mono 一直没生效）
+  'JetBrains Mono': 'fonts/JetBrainsMono.ttf',
+  'Plus Jakarta Sans': 'fonts/PlusJakartaSans.ttf'
 };
 
 export class Fonts {

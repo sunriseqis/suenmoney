@@ -17,7 +17,7 @@ import { Outbox } from '../../common/sync/Outbox';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardRadiusOf, cyberClipCommands, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
-import { categoryGlyph } from '../../common/ui/CategoryIcon';
+import { CATEGORY_COLORS, categoryGlyph, parseCategoryColorIndex, deriveColorIndex } from '../../common/ui/CategoryIcon';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
@@ -401,7 +401,12 @@ export struct LedgerScreen {
     if (colorField === '') {
       colorField = row.parentCategoryColor ?? row.categoryColor ?? '';
     }
-    return chartColor(this.tok(), slotOf(colorField, row.categoryId));
+    // 用 web 同款的 16 色调色板（--chart-1..16）；脏数据/未设时按名字推导
+    const idx = parseCategoryColorIndex(colorField);
+    if (idx !== null) {
+      return CATEGORY_COLORS[idx - 1];
+    }
+    return CATEGORY_COLORS[deriveColorIndex(this.categoryNameOf(row)) - 1];
   }
 
   /** 行内分类图标名（R134 解析链的输入） */
@@ -440,6 +445,22 @@ export struct LedgerScreen {
    * - 提醒**默认收起**，点一下向下展开（把列表顶下去，不是浮层），展开态不记忆（R22）。
    * - **只有逾期时整张顶卡吸顶**；吸顶是位置、颜色标记是"要不要动手"，两者互不解释（R23）。
    */
+  /**
+   * 顶卡大金额字号：常态 38（web `.mh-amt`），位数多时按档收缩。
+   * 两列态下大金额只有 ~640px 可用，Orbitron 数字是 0.83em 的宽字面（比 Outfit 宽一半），
+   * 38 号放不下 9 位以上 —— 折成两行会把整张卡撑高（就是之前视觉崩掉的原因之一）。
+   */
+  private heroAmountSize(): number {
+    const s = formatYuan(this.monthTotalCents).replace('¥', '');
+    if (s.length <= 8) {
+      return 38;
+    }
+    if (s.length <= 10) {
+      return 30;
+    }
+    return 24;
+  }
+
   /** 是否逾期（决定顶卡是否吸顶，R23：吸顶与颜色标记都由"有无逾期"推出但互不解释） */
   private hasOverdue(): boolean {
     for (const t of this.heroTodos) {
@@ -467,12 +488,12 @@ export struct LedgerScreen {
               .fontWeight(FontWeight.Bold)
               .fontColor(this.tok().ink2)
             Text(formatYuan(this.monthTotalCents).replace('¥', ''))
-                .fontFeature('"tnum" on')
-              .fontSize(38)
-                .fontFeature('"tnum" on')
+              .fontFeature('"tnum" on')
+              .fontSize(this.heroAmountSize())
               .fontWeight(FontWeight.Bolder)
               .fontFamily(fontDisplayOf(this.isCyber()))
-              .letterSpacing(-1.3)
+              .letterSpacing(this.isCyber() ? 0.38 : -1.3)
+              .maxLines(1)
               .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
           }
           .alignItems(VerticalAlign.Bottom)
@@ -528,9 +549,8 @@ export struct LedgerScreen {
                 .width('100%')
             }, (t: HeroTodo) => `mini-${t.id}`)
           }
-          .width(112)
+          .width(96)
           .alignItems(HorizontalAlign.Start)
-          .padding({ left: 10 })
           .border({ width: { left: 1 }, color: this.tok().line })
         }
       }
@@ -647,8 +667,11 @@ export struct LedgerScreen {
       this.cardH = Number(n.height);
     })
     // W44：cyber 用 Path 切角（等价 clip-path，四档里的「卡片 14」）
+    // W44：cyber 切角（等价 clip-path，四档里的「卡片 14」）
+    // ⚠ Path 的坐标是 **px**，而 onAreaChange 给的宽高是 **vp** —— 必须 vp2px 换算，
+    //   否则裁剪框只有卡片的 1/3，整张顶卡会被裁成「左上角一块」（就是之前的那个 bug）。
     .clipShape(this.isCyber() && this.cardW > 0
-      ? new Path({ commands: cyberClipCommands(this.cardW, this.cardH, 14) })
+      ? new Path({ commands: cyberClipCommands(vp2px(this.cardW), vp2px(this.cardH), vp2px(14)) })
       : undefined)
   }
 
