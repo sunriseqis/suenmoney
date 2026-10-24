@@ -872,6 +872,7 @@ export struct SettingsScreen {
 
   build() {
     Column({ space: 10 }) {
+      // 四个分段页签（R 系列：设置页用 tab 分组）
       Row({ space: 6 }) {
         this.sectionButton({ label: '账目', value: 0 })
         this.sectionButton({ label: '计划与还款', value: 1 })
@@ -880,6 +881,9 @@ export struct SettingsScreen {
       }
       .width('100%')
 
+      // 固定动作条（不滚动，保证可点）
+      this.actionBar()
+
       if (this.errorText !== '') {
         Text(this.errorText)
           .fontSize(10)
@@ -887,55 +891,44 @@ export struct SettingsScreen {
           .width('100%')
       }
 
-      Scroll() {
-        Column({ space: 10 }) {
-          if (this.section === 0) {
-            this.accountsSection()
-          } else if (this.section === 1) {
-            this.plansSection()
-          } else if (this.section === 2) {
-            this.appearanceSection()
-          } else {
-            this.familySection()
+      // 表单态：内容区整体切换成表单（不做浮层，避免层叠与命中问题）
+      if (this.sheetOpen) {
+        Scroll() {
+          Column({ space: 10 }) {
+            this.sheetContent()
           }
-          if (this.loading) {
-            Text('加载中…')
-              .fontSize(10)
-              .fontColor(this.tok().ink3)
-          }
+          .width('100%')
         }
-        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+      } else {
+        Scroll() {
+          Column({ space: 10 }) {
+            if (this.section === 0) {
+              this.accountsSection()
+            } else if (this.section === 1) {
+              this.plansSection()
+            } else if (this.section === 2) {
+              this.appearanceSection()
+            } else {
+              this.familySection()
+            }
+            if (this.loading) {
+              Text('加载中…')
+                .fontSize(10)
+                .fontColor(this.tok().ink3)
+            }
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
       }
-      .layoutWeight(1)
     }
     .width('100%')
     .height('100%')
     .padding(12)
     .backgroundColor(this.tok().bg)
-    // 表单面板：内联覆盖层（bindSheet 在此环境不触发，故不用它）
-    if (this.sheetOpen) {
-      Stack({ alignContent: Alignment.Bottom }) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor('#000000')
-          .opacity(0.45)
-          .onClick(() => {
-            this.sheetOpen = false;
-            this.sheetMode = '';
-          })
-        Column() {
-          this.sheetContent()
-        }
-        .width('100%')
-        .height('93%')
-        .backgroundColor(this.tok().bg)
-        .borderRadius({ topLeft: 24, topRight: 24 })
-      }
-      .width('100%')
-      .height('100%')
-      .position({ x: 0, y: 0 })
-    }
   }
 
   @Builder
@@ -1422,6 +1415,45 @@ export struct SettingsScreen {
       }
     }
     return null;
+  }
+
+  /** 当前分段的动作条（固定在页签下方，不随内容滚动） */
+  @Builder
+  actionBar() {
+    Row({ space: 8 }) {
+      if (this.section === 0) {
+        Button('新增类别').fontSize(11).height(32)
+          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .onClick(() => {
+            this.openCategorySheet(null, '');
+          })
+        Button('新增分类').fontSize(11).height(32)
+          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .onClick(() => {
+            this.openCategorySheet(null, this.railRootId);
+          })
+      } else if (this.section === 1) {
+        Button('新建计划').fontSize(11).height(32)
+          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .onClick(() => {
+            this.openPlanSheet();
+          })
+      } else if (this.section === 3) {
+        Button('添加成员').fontSize(11).height(32)
+          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .onClick(() => {
+            this.openMemberSheet();
+          })
+      } else {
+        Text('').width(0)
+      }
+      Blank()
+    }
+    .width('100%')
   }
 
   @Builder
