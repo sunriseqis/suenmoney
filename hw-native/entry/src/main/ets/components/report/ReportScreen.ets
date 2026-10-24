@@ -193,6 +193,12 @@ export struct ReportScreen {
           this.rhythmCard()
           this.insightCard()
           this.spanCard()
+        } else if (this.tier === 1) {
+          // 年档：服务端 yearly 只给「12 个月 + 合计 + 最高月」，
+          // 没有年维度的分类/支付/记录人拆分 —— 不拿月报数据冒充年数据
+          this.rhythmCard()
+          this.yearCompareCard()
+          this.insightCard()
         } else {
           this.composeCard()
           this.rankCard()
@@ -375,8 +381,24 @@ export struct ReportScreen {
         Row() {
           Text(`峰值 ${formatYuan(this.dailyMax())}`).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
         }.width('100%')
+      } else if (this.year !== null) {
+        // 年档：按月 12 根柱
+        Row({ space: 3 }) {
+          ForEach(this.year.months, (m: MonthPointView) => {
+            Column().width(8)
+              .height(this.yearMax() > 0 ? Math.max(2, Math.round((m.totalCents / this.yearMax()) * 56)) : 2)
+              .backgroundColor(m.totalCents > 0 ? this.tok().accent : this.tok().surface3)
+              .borderRadius(2)
+          }, (m: MonthPointView) => m.month)
+        }
+        .height(56)
+        .alignItems(VerticalAlign.Bottom)
+        Row() {
+          Text(`最高月 ${this.year.peakMonth === null ? '—' : formatYuan(this.year.peakMonth.totalCents)}`)
+            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+        }.width('100%')
       } else {
-        Text('按月').fontSize(10).fontColor(this.tok().ink3)
+        Text('合计按年').fontSize(10).fontColor(this.tok().ink3)
       }
     }
     .width('100%').padding(14).backgroundColor(this.tok().surface)
@@ -404,6 +426,57 @@ export struct ReportScreen {
     .width('100%').padding(14).backgroundColor(this.tok().surface)
     .borderRadius(cardRadiusOf(this.isCyber()))
     .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
+  }
+
+  private yearMax(): number {
+    let max = 0;
+    if (this.year !== null) {
+      for (const m of this.year.months) {
+        if (m.totalCents > max) {
+          max = m.totalCents;
+        }
+      }
+    }
+    return max;
+  }
+
+  /** 年档对照四格（R83）：去年 / 近 3 年均值 / 最高月 / 单笔最高 */
+  private yearCompareFacts(): CompareFact[] {
+    const y = this.year;
+    if (y === null) {
+      return [];
+    }
+    let sum = 0;
+    for (const m of y.months) {
+      sum += m.totalCents;
+    }
+    return [
+      { label: '全年合计', value: formatYuan(y.totalCents) },
+      { label: '月均', value: formatYuan(Math.round(sum / Math.max(1, y.months.length))) },
+      { label: '最高月', value: y.peakMonth === null ? '—' : formatYuan(y.peakMonth.totalCents) },
+      { label: '笔数', value: `${y.count} 笔` }
+    ];
+  }
+
+  @Builder
+  yearCompareCard() {
+    Column({ space: 8 }) {
+      Text('年度对照').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
+      Grid() {
+        ForEach(this.yearCompareFacts(), (f: CompareFact) => {
+          GridItem() {
+            Column({ space: 2 }) {
+              Text(f.label).fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+              Text(f.value).fontSize(12).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+            }.alignItems(HorizontalAlign.Start).width('100%')
+          }
+        }, (f: CompareFact) => f.label)
+      }
+      .columnsTemplate('repeat(2, 1fr)').columnsGap(10).rowsGap(10).width('100%')
+    }
+    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
   }
 
   /** 还款节奏（R84）：仅月档，本月已刷 + 下月要还 */
@@ -501,25 +574,6 @@ export struct ReportScreen {
   }
 
   /** 汇总档：年度对比（按年金额条） */
-  @Builder
-  yearCompareCard() {
-    Column({ space: 8 }) {
-      Text('年度对比').fontSize(11.5).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
-      ForEach(this.summary === null ? [] : this.summary.years, (y: YearPoint) => {
-        Row({ space: 8 }) {
-          Text(y.year).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink2).width(56)
-          Stack({ alignContent: Alignment.Start }) {
-            Row().width('100%').height(10).backgroundColor(this.tok().surface3).borderRadius(5)
-            Row().width(`${this.yearBar(y.totalCents)}%`).height(10).backgroundColor(this.tok().accent).borderRadius(5)
-          }.layoutWeight(1)
-          Text(formatYuan(y.totalCents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
-        }.width('100%')
-      }, (y: YearPoint) => y.year)
-    }
-    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
-    .borderRadius(cardRadiusOf(this.isCyber()))
-    .border({ width: this.tok().borderW, color: this.tok().line })
-  }
 
   private yearBar(cents: number): number {
     let max = 1;
@@ -558,4 +612,10 @@ function pad2(n: number): string {
 function currentMonthKey(): string {
   const now = new Date();
   return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+}
+
+interface MonthPointView {
+  month: string;
+  totalCents: number;
+  count: number;
 }
