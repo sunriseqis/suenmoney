@@ -457,6 +457,7 @@ export struct ExpenseEditor {
           .fontColor(this.tok().ink3)
         Text($$.value)
           .fontSize(13)
+            .fontFeature('"tnum" on')
           .fontWeight(FontWeight.Medium)
           .fontColor(this.tok().ink)
           .maxLines(1)
@@ -686,6 +687,7 @@ export struct ExpenseEditor {
         Text(formatYuan(this.isRefund ? -this.cents() : this.cents()))
             .fontFeature('"tnum" on')
           .fontSize(10)
+            .fontFeature('"tnum" on')
           .fontColor(this.tok().ink2)
       }
       .width('100%')
@@ -718,6 +720,7 @@ export struct ExpenseEditor {
           Text(`每期约 ${formatYuan(Math.floor(this.cents() / this.periods))}`)
               .fontFeature('"tnum" on')
             .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width('100%')
+              .fontFeature('"tnum" on')
         }
       }
 
@@ -828,6 +831,7 @@ export struct ExpenseEditor {
         Text(this.monthSpentCents === null ? '—' : formatYuan(this.monthSpentCents))
             .fontFeature('"tnum" on')
           .fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink2)
+            .fontFeature('"tnum" on')
       }
       .width('100%')
 
@@ -837,6 +841,7 @@ export struct ExpenseEditor {
           Text(formatYuan(this.isRefund ? -this.cents() : this.cents()))
               .fontFeature('"tnum" on')
             .fontSize(14).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).layoutWeight(1)
+              .fontFeature('"tnum" on')
           Button('收起键盘').fontSize(11).height(32)
             .backgroundColor(this.tok().surface2).fontColor(this.tok().ink3)
             .onClick(() => {

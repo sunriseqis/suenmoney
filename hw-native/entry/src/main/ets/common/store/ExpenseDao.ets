@@ -87,28 +87,7 @@ export class ExpenseDao {
   }
 
   /** 某月按分类聚合（离线构成条用） */
-  static async monthByCategory(month: string): Promise<LocalCategoryTotal[]> {
-    const store = Db.get();
-    const rs = await store.querySql(
-      `SELECT category_id, category_name, SUM(amount_cents) AS total, COUNT(*) AS cnt
-         FROM (SELECT e.category_id AS category_id, COALESCE(c.name, '') AS category_name, e.amount_cents AS amount_cents
-                 FROM expenses e LEFT JOIN categories c ON c.id = e.category_id
-                WHERE substr(e.repayment_date, 1, 7) = ?)
-        GROUP BY category_id ORDER BY total DESC`,
-      [month]
-    );
-    const out: LocalCategoryTotal[] = [];
-    while (rs.goToNextRow()) {
-      out.push({
-        categoryId: rs.getString(rs.getColumnIndex('category_id')),
-        categoryName: rs.getString(rs.getColumnIndex('category_name')),
-        cents: rs.getLong(rs.getColumnIndex('total')),
-        count: rs.getLong(rs.getColumnIndex('cnt'))
-      });
-    }
-    rs.close();
-    return out;
-  }
+
 
   private static rowToItem(rs: relationalStore.ResultSet): ExpenseItem {
     const item: ExpenseItem = {

@@ -297,6 +297,7 @@ export struct ReportScreen {
       Blank()
       if (this.tier !== 2) {
         Text('‹').fontSize(16).fontColor(this.tok().ink3).padding({ left: 6, right: 6 })
+          .fontFeature('"tnum" on')
           .onClick(() => {
             this.shift(-1);
           })
@@ -382,6 +383,7 @@ export struct ReportScreen {
               .backgroundColor(chartColor(this.tok(), hashIndex(m.ownerId))).borderRadius(5)
           }.layoutWeight(1)
           Text(formatYuan(m.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
+            .fontFeature('"tnum" on')
         }.width('100%')
       }, (m: MemberBucket) => m.ownerId)
     }
@@ -463,6 +465,7 @@ export struct ReportScreen {
           Text(`最高月 ${this.year.peakMonth === null ? '—' : formatYuan(this.year.peakMonth.totalCents)}`)
               .fontFeature('"tnum" on')
             .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+              .fontFeature('"tnum" on')
         }.width('100%')
       } else if (this.summary !== null) {
         // 汇总档：按年柱（R82）
@@ -642,6 +645,7 @@ export struct ReportScreen {
           Text(formatYuan(c.cents)).fontSize(11).fontFamily(fontMonoOf()).fontColor(this.tok().ink).layoutWeight(1)
             .fontFeature('"tnum" on')
           Text(this.deltaText(c)).fontSize(10).fontFamily(fontMonoOf())
+            .fontFeature('"tnum" on')
             .fontColor((c.cents - (c.previousCents ?? 0)) >= 0 ? this.tok().danger : this.tok().ok)
         }.width('100%')
       }, (c: CategoryBucket) => c.categoryId)
