@@ -14,13 +14,18 @@ import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { fontDisplayOf, fontMonoOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
-import { daysUntil, formatMonthLabel, formatYuan } from '../../common/contract/Contract';
+import { daysUntil, formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
 import { LengthMetrics } from '@kit.ArkUI';
 import { ExpenseEditor } from '../expense/ExpenseEditor';
+
+export interface TierChipModel {
+  label: string;
+  value: number;
+}
 
 export interface HeroTodo {
   id: string;
@@ -329,44 +334,90 @@ export struct LedgerScreen {
    * 移动 hero（规范 §4.1，照 Web `.mobile-hero`）：
    * eyebrow → 38vp 大金额 → 环比胶囊 → 三事实（虚线分隔）→ 三入口 → 待办条 → 展开待办。
    */
+  /**
+   * 顶卡（docs R20–R23）：
+   * - **两态由数据决定**：有未处理 → 两列（本月支出 + 处理提醒）；无 → 本月支出独占整列。
+   *   同一个组件带布尔，不写两个分支（R21）。
+   * - 提醒**默认收起**，点一下向下展开（把列表顶下去，不是浮层），展开态不记忆（R22）。
+   * - **只有逾期时整张顶卡吸顶**；吸顶是位置、颜色标记是"要不要动手"，两者互不解释（R23）。
+   */
   @Builder
-  mobileHero() {
+  topCard() {
     Column({ space: 12 }) {
-      Column({ space: 3 }) {
-        Text(`${formatMonthLabel(this.anchorMonth)} · 本月支出`)
-          .fontSize(9.5)
-          .letterSpacing(1.3)
-          .fontFamily(fontMonoOf())
-          .fontColor(this.tok().ink3)
-        Row({ space: 2 }) {
-          Text('¥')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.tok().ink2)
-          Text(formatYuan(this.monthTotalCents).replace('¥', ''))
-            .fontSize(38)
-            .fontWeight(FontWeight.Bolder)
-            .fontFamily(fontDisplayOf(this.isCyber()))
-            .letterSpacing(-1.3)
-            .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
-        }
-        .alignItems(VerticalAlign.Bottom)
-
-        if (this.deltaRatio() !== null) {
-          Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
-            .fontSize(10.5)
-            .fontWeight(FontWeight.Bold)
+      Row({ space: 12 }) {
+        // 左/整列：本月支出
+        Column({ space: 3 }) {
+          Text(`${formatMonthLabel(this.anchorMonth)} · 本月支出`)
+            .fontSize(9.5)
+            .letterSpacing(1.3)
             .fontFamily(fontMonoOf())
-            .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok)
-            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-            .border({ width: this.isCyber() ? 1 : 1.5, color: this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok })
+            .fontColor(this.tok().ink3)
+          Row({ space: 2 }) {
+            Text('¥')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.tok().ink2)
+            Text(formatYuan(this.monthTotalCents).replace('¥', ''))
+              .fontSize(38)
+              .fontWeight(FontWeight.Bolder)
+              .fontFamily(fontDisplayOf(this.isCyber()))
+              .letterSpacing(-1.3)
+              .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
+          }
+          .alignItems(VerticalAlign.Bottom)
+          if (this.deltaRatio() !== null) {
+            Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
+              .fontSize(10.5)
+              .fontWeight(FontWeight.Bold)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok)
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        // 右半格：处理提醒（0 条时整格消失，不留占位）
+        if (this.heroTodos.length > 0) {
+          Column({ space: 4 }) {
+            Row({ space: 6 }) {
+              Row()
+                .width(6)
+                .height(6)
+                .borderRadius(3)
+                .backgroundColor(this.heroTodos[0].tone === 'late'
+                  ? this.tok().danger
+                  : (this.heroTodos[0].tone === 'soon' ? this.tok().warn : this.tok().ink3))
+              Text(`${this.heroTodos.length} 笔待办`)
+                .fontSize(11)
+                .fontColor(this.tok().ink2)
+                .layoutWeight(1)
+              Text(this.todoOpen ? '⌃' : '⌄')
+                .fontSize(11)
+                .fontColor(this.tok().ink3)
+            }
+            .width('100%')
+            .onClick(() => {
+              this.todoOpen = !this.todoOpen;
+            })
+            ForEach(this.heroTodos.slice(0, 2), (t: HeroTodo) => {
+              Text(`${t.periodSeq}期 · ${formatYuan(t.amountCents)}`)
+                .fontSize(10)
+                .fontFamily(fontMonoOf())
+                .fontColor(this.tok().ink3)
+                .maxLines(1)
+                .width('100%')
+            }, (t: HeroTodo) => `mini-${t.id}`)
+          }
+          .width(112)
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: 10 })
+          .border({ width: { left: 1 }, color: this.tok().line })
         }
       }
-      .alignItems(HorizontalAlign.Start)
       .width('100%')
+      .alignItems(VerticalAlign.Top)
 
-      // 三事实：上下 1px 虚线
+      // 三事实（R53 同源：日均 / 笔数 / 本月要还）
       Row() {
         this.heroFact({ label: '日均', value: formatYuan(this.perDayCents()) })
         this.heroFact({ label: '笔数', value: `${this.monthCount} 笔` })
@@ -376,79 +427,76 @@ export struct LedgerScreen {
       .padding({ top: 9, bottom: 9 })
       .border({ width: { top: 1, bottom: 1 }, color: this.tok().line, style: BorderStyle.Dashed })
 
-      // 三入口（移动端唯一导航之一）
-      Row({ space: 6 }) {
-        this.navBtn({ label: '概况', target: 'dashboard' })
-        this.navBtn({ label: '报表', target: 'report' })
-        this.navBtn({ label: '设置', target: 'settings' })
-      }
-      .width('100%')
-
-      // 待办提醒条
-      if (this.heroTodos.length > 0) {
+      // 展开明细：把列表顶下去（不是浮层）
+      if (this.todoOpen && this.heroTodos.length > 0) {
         Column() {
-          Row({ space: 8 }) {
-            Row()
-              .width(6)
-              .height(6)
-              .borderRadius(3)
-              .backgroundColor(this.heroTodos[0].tone === 'late'
-                ? this.tok().danger
-                : (this.heroTodos[0].tone === 'soon' ? this.tok().warn : this.tok().ink3))
-            Text(`${this.heroTodos.length} 笔待办`)
-              .fontSize(11.5)
-              .fontColor(this.tok().ink2)
-              .layoutWeight(1)
-            Text(this.todoOpen ? '⌃' : '⌄')
-              .fontSize(12)
-              .fontColor(this.tok().ink3)
-          }
-          .width('100%')
-          .padding({ left: 10, right: 10, top: 7, bottom: 7 })
-          .onClick(() => {
-            this.todoOpen = !this.todoOpen;
-          })
-
-          if (this.todoOpen) {
-            ForEach(this.heroTodos, (t: HeroTodo) => {
-              Row({ space: 8 }) {
-                Row()
-                  .width(4)
-                  .height(20)
-                  .borderRadius(2)
-                  .backgroundColor(t.tone === 'late' ? this.tok().danger : (t.tone === 'soon' ? this.tok().warn : this.tok().ok))
-                Text(`${t.periodSeq}期 · ${t.planName}`)
-                  .fontSize(11.5)
-                  .fontColor(this.tok().ink)
-                  .layoutWeight(1)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(t.willAutoPost ? '自动' : '需手动')
-                  .fontSize(9.5)
-                  .fontColor(t.willAutoPost ? this.tok().ink3 : this.tok().danger)
-                Text(formatYuan(t.amountCents))
-                  .fontSize(10)
-                  .fontFamily(fontMonoOf())
-                  .fontColor(this.tok().ink2)
-              }
-              .width('100%')
-              .padding({ top: 5, bottom: 5 })
-              .border({ width: { bottom: 1 }, color: this.tok().line })
-            }, (t: HeroTodo) => t.id)
-          }
+          ForEach(this.heroTodos, (t: HeroTodo) => {
+            Row({ space: 8 }) {
+              Row()
+                .width(4)
+                .height(20)
+                .borderRadius(2)
+                .backgroundColor(t.tone === 'late' ? this.tok().danger : (t.tone === 'soon' ? this.tok().warn : this.tok().ok))
+              Text(`${t.periodSeq}期 · ${t.planName}`)
+                .fontSize(11.5)
+                .fontColor(this.tok().ink)
+                .layoutWeight(1)
+                .maxLines(1)
+              Text(t.willAutoPost ? '自动' : '需手动')
+                .fontSize(9.5)
+                .fontColor(t.willAutoPost ? this.tok().ink3 : this.tok().danger)
+              Text(formatYuan(t.amountCents))
+                .fontSize(10)
+                .fontFamily(fontMonoOf())
+                .fontColor(this.tok().ink2)
+              Text(t.willAutoPost ? '确认' : '入账')
+                .fontSize(10)
+                .fontColor(this.tok().ink)
+                .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                .border({ width: 1, color: this.tok().line })
+                .onClick(() => {
+                  this.actTodo(t, false);
+                })
+              Text('更多')
+                .fontSize(10)
+                .fontColor(this.tok().ink3)
+                .bindMenu([{
+                  value: '忽略本期',
+                  action: () => {
+                    this.actTodo(t, true);
+                  }
+                }])
+            }
+            .width('100%')
+            .padding({ top: 5, bottom: 5 })
+            .border({ width: { bottom: 1 }, color: this.tok().line })
+          }, (t: HeroTodo) => t.id)
         }
         .width('100%')
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
-        .border({ width: 1, color: this.tok().line })
-        .backgroundColor(this.tok().surface2)
       }
     }
     .width('100%')
     .padding(14)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 20))
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
     .border({ width: this.isCyber() ? 1 : 2, color: this.isCyber() ? this.tok().accent : this.tok().line2 })
-    .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : `4px 4px 0 ${this.tok().line2}`) as ShadowOptions)
+  }
+
+  /** 待办动作：确认/入账（落库）与忽略（不可逆，收在更多里） */
+  private async actTodo(t: HeroTodo, skip: boolean): Promise<void> {
+    try {
+      if (skip) {
+        await Api.skipTodo(t.id);
+      } else if (t.willAutoPost) {
+        await Api.ackTodo(t.id);
+      } else {
+        await Api.confirmTodo(t.id);
+      }
+      await this.loadHeroTodos();
+      await this.loadMonth(true);
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
   }
 
   @Builder
@@ -479,6 +527,104 @@ export struct LedgerScreen {
   private perDayCents(): number {
     const day = new Date().getDate();
     return day > 0 ? Math.round(this.monthTotalCents / day) : 0;
+  }
+
+  /**
+   * 控制行（R13/R14/R16）：
+   * 第 1 行 = 档位段 + 期间（靠左） ｜ 三入口（靠右、**不定宽次要链接、无选中态**）
+   * 第 2 行 = 搜索（**独占并撑满**）+ 筛选
+   */
+  @Builder
+  controlRow() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        // 档位：月 / 年 / 全部（R50 三档三形态）
+        Row({ space: 4 }) {
+          this.tierChip({ label: '月', value: 0 })
+          this.tierChip({ label: '年', value: 1 })
+          this.tierChip({ label: '全部', value: 2 })
+        }
+        // 期间
+        if (this.tier !== 2) {
+          Text('‹')
+            .fontSize(16)
+            .fontColor(this.tok().ink3)
+            .padding({ left: 6, right: 6 })
+            .onClick(() => {
+              this.shiftPeriod(-1);
+            })
+          Text(this.tier === 0 ? this.anchorMonth : this.anchorYear)
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber()))
+            .fontColor(this.tok().ink)
+          Text('›')
+            .fontSize(16)
+            .fontColor(this.tok().ink3)
+            .padding({ left: 6, right: 6 })
+            .onClick(() => {
+              this.shiftPeriod(1);
+            })
+        } else {
+          Text('全部记录')
+            .fontSize(12)
+            .fontColor(this.tok().ink2)
+        }
+        Blank()
+        // 三入口：次要链接、不定宽、无选中态（R14）
+        Text('概况')
+          .fontSize(12)
+          .fontColor(this.tok().ink3)
+          .onClick(() => {
+            this.onNavigate('dashboard');
+          })
+        Text('报表')
+          .fontSize(12)
+          .fontColor(this.tok().ink3)
+          .onClick(() => {
+            this.onNavigate('report');
+          })
+        Text('设置')
+          .fontSize(12)
+          .fontColor(this.tok().ink3)
+          .onClick(() => {
+            this.onNavigate('settings');
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  /** 档位小段（等宽仅用于"档位"，不是三入口） */
+  @Builder
+  tierChip($$: TierChipModel) {
+    Text($$.label)
+      .fontSize(11.5)
+      .fontWeight(this.tier === $$.value ? FontWeight.Bold : FontWeight.Normal)
+      .fontColor(this.tier === $$.value ? this.tok().ink : this.tok().ink3)
+      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+      .backgroundColor(this.tier === $$.value ? this.tok().surface2 : Color.Transparent)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+      .onClick(() => {
+        this.tier = $$.value;
+        this.loading = true;
+        this.loadTier().then(() => {
+          this.loading = false;
+        });
+      })
+  }
+
+  private shiftPeriod(delta: number): void {
+    if (this.tier === 0) {
+      this.anchorMonth = shiftMonth(this.anchorMonth, delta);
+    } else {
+      this.anchorYear = String(Number(this.anchorYear) + delta);
+    }
+    this.loading = true;
+    this.loadTier().then(() => {
+      this.loading = false;
+    });
   }
 
   @Builder
@@ -650,48 +796,43 @@ export struct LedgerScreen {
     return n;
   }
 
+  /**
+   * 月档列表（docs R51/R52/R55）：无组头、合计只在有筛选时显示、触底加载更多/查看上月。
+   */
   @Builder
   monthListView() {
     Column() {
-      Row() {
-        Text(this.anchorMonth)
-          .fontSize(11)
-          .fontFamily(displayFont(!this.isCyber()))
+      if (this.activeFilterCount() > 0) {
+        Text(`筛选结果 ${this.monthCount} 笔 · 合计 ${formatYuan(this.monthTotalCents)}`)
+          .fontSize(10.5)
           .fontColor(this.tok().ink3)
-        Blank()
-        Text(`${this.monthCount} 笔 · ${formatYuan(this.monthTotalCents)}`)
-          .fontSize(11)
-          .fontColor(this.tok().ink2)
+          .width('100%')
+          .padding({ bottom: 6 })
       }
-      .width('100%')
-      .padding({ left: 4, right: 4, bottom: 6 })
 
-      List({ space: 6, scroller: this.scroller }) {
-        ForEach(this.grouped(), (group: LedgerDayGroup) => {
-          ListItemGroup({ header: this.dayHeader(group) }) {
-            ForEach(group.rows, (row: ExpenseItem) => {
-              ListItem() {
-                this.expenseRow(row)
-              }
-            }, (row: ExpenseItem) => row.id)
-          }
-        }, (group: LedgerDayGroup) => group.date)
-
-        if (this.hasMore) {
+      List({ space: 8, scroller: this.scroller }) {
+        ForEach(this.sortedRows(), (row: ExpenseItem) => {
           ListItem() {
-            Button('加载更多')
-              .width('100%')
-              .height(36)
-              .fontSize(12)
-              .backgroundColor(this.tok().surface2)
-              .fontColor(this.tok().ink2)
-              .onClick(() => {
-                this.loadMonth(false).then(() => {
-                }).catch((e: ApiError) => {
-                  this.errorText = e.message;
-                });
-              })
+            this.expenseRow(row)
           }
+        }, (row: ExpenseItem) => row.id)
+
+        ListItem() {
+          Button(this.hasMore ? '加载更多' : '查看上月')
+            .width('100%')
+            .height(36)
+            .fontSize(12)
+            .backgroundColor(this.tok().surface)
+            .fontColor(this.tok().ink3)
+            .border({ width: this.tok().borderW, color: this.tok().line })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .onClick(() => {
+              if (this.hasMore) {
+                this.loadMonth(false);
+              } else {
+                this.shiftPeriod(-1);
+              }
+            })
         }
       }
       .layoutWeight(1)
@@ -701,47 +842,38 @@ export struct LedgerScreen {
     .layoutWeight(1)
   }
 
-  @Builder
-  dayHeader(group: LedgerDayGroup) {
-    Row() {
-      Text(group.date)
-        .fontSize(10)
-        .fontColor(this.tok().ink3)
-      Blank()
-      Text(formatYuan(group.cents))
-        .fontSize(10)
-        .fontColor(this.tok().ink3)
-    }
-    .width('100%')
-    .padding({ left: 4, right: 4, top: 6, bottom: 2 })
-  }
-
-  /** 行卡：色块首字 + 分类名 + 备注/支付/记录人 + 金额（对齐移动 Web 的行卡） */
+  /**
+   * 行卡（docs R53/R54/R138）：分类徽位 44px + 分类名/备注 + 支付方式 · 日 · 账期 + 金额。
+   * 日期只写「日」；不挂"还款日"药丸（紧急度属于概况"本月要还"）。
+   */
   @Builder
   expenseRow(row: ExpenseItem) {
     Row({ space: 10 }) {
       Text(this.categoryNameOf(row).substring(0, 1))
-        .width(34)
-        .height(34)
+        .width(44)
+        .height(44)
         .textAlign(TextAlign.Center)
-        .fontSize(14)
+        .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.categoryColorOf(row))
-        .backgroundColor(this.tok().surface2)
-        .borderRadius(10)
+        .backgroundColor(mixHex(this.categoryColorOf(row), this.tok().surface, 0.12))
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), 12))
+        .border({ width: 1, color: mixHex(this.categoryColorOf(row), this.tok().surface, 0.45) })
 
-      Column({ space: 2 }) {
-        Text(this.categoryNameOf(row))
-          .fontSize(13)
+      Column({ space: 3 }) {
+        Text(row.note !== '' ? `${this.categoryNameOf(row)} · ${row.note}` : this.categoryNameOf(row))
+          .fontSize(12.5)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.tok().ink)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${row.note !== '' ? row.note + ' · ' : ''}${this.paymentNameOf(row)}`)
+          .width('100%')
+        Text(this.subline(row))
           .fontSize(10)
           .fontColor(this.tok().ink3)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -749,17 +881,28 @@ export struct LedgerScreen {
       Text(formatYuan(row.amountCents))
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
-        .fontColor(row.amountCents < 0 ? this.tok().mint : this.tok().ink)
+        .fontColor(this.tok().ink)
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .padding(10)
     .backgroundColor(this.tok().surface)
     .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : this.tok().line2 })
+    .border({ width: this.isCyber() ? 1 : 2, color: this.tok().line })
     .onClick(() => {
       this.editingRow = row;
       this.sheetOpen = true;
     })
+  }
+
+  /** 副行：支付方式 · 日 · 账期（R53：`9月12日刷 · 28日还 · 16天`；现金无账期） */
+  private subline(row: ExpenseItem): string {
+    const day = Number(row.spendDate.substring(8, 10));
+    if (row.paymentMethodType !== 'credit') {
+      return `${this.paymentNameOf(row)} · ${day}日`;
+    }
+    const spendMd = `${Number(row.spendDate.substring(5, 7))}月${day}日`;
+    const dueMd = `${Number(row.repaymentDate.substring(5, 7))}月${Number(row.repaymentDate.substring(8, 10))}日`;
+    return `${this.paymentNameOf(row)} · ${day}日 · ${spendMd}刷 · ${dueMd}还 · ${daysBetween(row.spendDate, row.repaymentDate)}天`;
   }
 
   @Builder
@@ -902,8 +1045,8 @@ export struct LedgerScreen {
 
   build() {
     Column({ space: 10 }) {
-      this.mobileHero()
-      this.tierTabs()
+      this.topCard()
+      this.controlRow()
 
       if (this.tier === 0) {
         this.searchBar()
@@ -976,4 +1119,11 @@ function todayKey(): string {
   const m = d.getMonth() + 1;
   const day = d.getDate();
   return `${d.getFullYear()}-${m < 10 ? '0' + m : String(m)}-${day < 10 ? '0' + day : String(day)}`;
+}
+
+/** 两个 YYYY-MM-DD 的天数差（账期） */
+function daysBetween(x: string, y: string): number {
+  const ta = Date.UTC(Number(x.substring(0, 4)), Number(x.substring(5, 7)) - 1, Number(x.substring(8, 10)));
+  const tb = Date.UTC(Number(y.substring(0, 4)), Number(y.substring(5, 7)) - 1, Number(y.substring(8, 10)));
+  return Math.round((tb - ta) / 86400000);
 }
