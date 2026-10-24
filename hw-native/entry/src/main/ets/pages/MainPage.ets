@@ -1,48 +1,47 @@
 /**
- * 主框架：四个入口 —— 流水 / 概况 / 报表 / 设置。
+ * 移动外壳（规范 §3）。
  *
- * 对齐移动 Web：**四个入口不变**（窄屏侧边栏折成横向条，原生用底部 Tab）。
- * 每个入口一个独立的屏组件，框架本身不持有业务状态 ——
- * 否则切 Tab 会把上一屏的加载态带进来。
+ * **没有底部导航**：Web 移动端把 `.sidebar .nav` 整条关掉（views.css:1115），
+ * 导航只有两处 —— 流水页 hero 里的三个小入口（概况/报表/设置）+ 其余屏的顶栏返回按钮。
+ * 之前我自造的 4-Tab 底栏是错的，必须去掉。
+ *
+ * 结构：sticky 品牌条 → 顶栏（流水页整条不渲染）→ 内容区 → build-stamp → Toast / 记账抽屉
  */
+import { window } from '@kit.ArkUI';
+
 import { LedgerScreen } from '../components/ledger/LedgerScreen';
 import { DashboardScreen } from '../components/dashboard/DashboardScreen';
 import { ReportScreen } from '../components/report/ReportScreen';
 import { SettingsScreen } from '../components/settings/SettingsScreen';
-import { window } from '@kit.ArkUI';
+import { BrandMark } from '../components/BrandMark';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
-import { bodyFont } from '../common/theme/Fonts';
+import { fontBodyOf, fontDisplayOf, parseShadow, radiusOf } from '../common/ui/UiStyle';
 import { ensureFonts } from '../common/theme/FontRegistry';
 
-/** 底栏按钮参数（单参数对象：多参数 @Builder 不刷新） */
-export interface TabItemView {
-  label: string;
-  selected: boolean;
-}
+/** 屏标识（顺序无关，仅作路由键） */
+export type ScreenKey = 'ledger' | 'dashboard' | 'report' | 'settings';
 
 @Entry
 @Component
 struct MainPage {
-  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
-  @State currentTab: number = 0;
-  /** 当前主题名（用来给底栏/标题选字体族） */
-  @State themeIsCandy: boolean = ThemeManager.get().name === 'candy';
+  @State screen: ScreenKey = 'ledger';
+
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
+  private isCyber(): boolean {
+    return this.themeName === 'cyber';
+  }
 
   aboutToAppear(): void {
     ensureFonts(this.getUIContext());
     this.applySystemBars();
-    // 主题在别的页面切换后回到这里要跟着变（同一个单例，读一次即可）
-    this.themeIsCandy = this.themeName === 'candy';
   }
 
-  /**
-   * 状态栏跟主题走。
-   *
-   * 不设的话：浅色主题下状态栏仍是深色底，顶部像被切了一刀；
-   * 内容色（时间/电量）也要反色，否则浅底白字看不见。
-   */
+  /** 状态栏跟随主题（不设的话浅色主题顶部仍是深色，像被切了一刀） */
   private applySystemBars(): void {
     window.getLastWindow(getContext(this)).then((win: window.Window) => {
       win.setWindowSystemBarProperties({
@@ -55,55 +54,84 @@ struct MainPage {
     });
   }
 
-  /** 底栏按钮：文字/选中色都取主题令牌，不用系统默认蓝 */
+  /** 品牌条：46×46 图标 + 15px 品牌名；副标题在移动端隐藏（app.css:736） */
   @Builder
-  tabBarItem($$: TabItemView) {
-    Column({ space: 2 }) {
-      Text($$.label)
-        .fontSize(11)
-        .fontWeight($$.selected ? FontWeight.Bold : FontWeight.Normal)
-        .fontFamily(bodyFont(this.themeIsCandy))
-        .fontColor($$.selected ? this.tok().ink : this.tok().ink3)
+  brandBar() {
+    Row({ space: 10 }) {
+      BrandMark()
+      Text('SuenMoney')
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(fontDisplayOf(this.isCyber()))
+        .fontColor(this.tok().ink)
     }
     .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
+    .padding({ left: 14, right: 14, top: 8, bottom: 6 })
+    .backgroundColor(this.tok().bg)
+    .border({ width: { bottom: 1 }, color: this.tok().line })
   }
 
-  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
-  private tok(): ThemeTokens {
-    return this.themeName === 'candy' ? CANDY : CYBER;
+  /** 顶栏：只有返回按钮；标题与右侧动作在移动端被隐藏（base.css:106-110） */
+  @Builder
+  topbar() {
+    Row() {
+      Text('‹')
+        .fontSize(20)
+        .fontColor(this.tok().ink)
+        .width(38)
+        .height(38)
+        .textAlign(TextAlign.Center)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+        .border({ width: this.tok().borderW, color: this.tok().line })
+        .backgroundColor(this.tok().surface)
+        .onClick(() => {
+          this.screen = 'ledger';
+        })
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .backgroundColor(this.tok().surface)
+    .border({ width: { bottom: 1 }, color: this.tok().line })
+  }
+
+  /** 底部构建戳：含离线/待同步内联提示（C.1） */
+  @Builder
+  stamp() {
+    Text(`SuenMoney · 单账本家庭记账`)
+      .fontSize(9)
+      .fontFamily(fontBodyOf(this.isCyber()))
+      .fontColor(this.tok().ink3)
+      .width('100%')
+      .textAlign(TextAlign.Center)
+      .padding({ top: 8, bottom: 10 })
   }
 
   build() {
-    Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
-      TabContent() {
-        LedgerScreen()
+    Column() {
+      this.brandBar()
+      if (this.screen !== 'ledger') {
+        this.topbar()
       }
-      .tabBar(this.tabBarItem({ label: '流水', selected: this.currentTab === 0 }))
-
-      TabContent() {
-        DashboardScreen()
+      Column() {
+        if (this.screen === 'ledger') {
+          LedgerScreen({
+            onNavigate: (target: string) => {
+              this.screen = target as ScreenKey;
+            }
+          })
+        } else if (this.screen === 'dashboard') {
+          DashboardScreen()
+        } else if (this.screen === 'report') {
+          ReportScreen()
+        } else {
+          SettingsScreen()
+        }
+        this.stamp()
       }
-      .tabBar(this.tabBarItem({ label: '概况', selected: this.currentTab === 1 }))
-
-      TabContent() {
-        ReportScreen()
-      }
-      .tabBar(this.tabBarItem({ label: '报表', selected: this.currentTab === 2 }))
-
-      TabContent() {
-        SettingsScreen()
-      }
-      .tabBar(this.tabBarItem({ label: '设置', selected: this.currentTab === 3 }))
+      .layoutWeight(1)
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 6, bottom: 0 })
     }
-    .onChange((index: number) => {
-      this.currentTab = index;
-    })
-    .barMode(BarMode.Fixed)
-    .barBackgroundColor(this.tok().surface)
-    .barHeight(56)
-    .divider({ strokeWidth: 1, color: this.tok().line })
     .width('100%')
     .height('100%')
     .backgroundColor(this.tok().bg)
