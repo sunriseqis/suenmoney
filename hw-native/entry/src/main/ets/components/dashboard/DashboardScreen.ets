@@ -422,6 +422,7 @@ export struct DashboardScreen {
       Column({ space: 2 }) {
         Text('本月要还').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
         Text(formatYuan(this.creditDueCents))
+          .fontFeature('"tnum" on')
           .fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
       }
       .alignItems(HorizontalAlign.Start)
