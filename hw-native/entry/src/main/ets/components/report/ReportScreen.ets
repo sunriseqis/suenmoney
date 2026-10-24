@@ -99,9 +99,20 @@ export struct ReportScreen {
   }
 
   private slices(): DonutSliceView[] {
+    // R77：图例只列前 6，其余合并成「其他」（颜色用中性色，避免和真实分类混淆）
+    const cats = this.categories();
     const out: DonutSliceView[] = [];
-    for (const c of this.categories()) {
-      out.push({ label: c.name, ratio: c.ratio, color: chartColor(this.tok(), hashIndex(c.categoryId)) });
+    let otherRatio = 0;
+    for (let i = 0; i < cats.length; i++) {
+      const c = cats[i];
+      if (i < 6) {
+        out.push({ label: c.name, ratio: c.ratio, color: chartColor(this.tok(), hashIndex(c.categoryId)) });
+      } else {
+        otherRatio += c.ratio;
+      }
+    }
+    if (otherRatio > 0) {
+      out.push({ label: '其他', ratio: otherRatio, color: this.tok().ink3 });
     }
     return out;
   }
