@@ -1,0 +1,1 @@
+6ba959117a60e978ebc314694ad5afadae85f3ebe8aac87da6bc37b0bbd8988a  docs/reports/hw/dist/SuenMoney-hw-v0.1.0-e9eca73-unsigned.hap
