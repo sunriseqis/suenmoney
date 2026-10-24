@@ -478,8 +478,7 @@ export struct LedgerScreen {
       // 展开明细：把列表顶下去（不是浮层）
       if (this.todoOpen && this.heroTodos.length > 0) {
         Column() {
-          List({ space: 0 }) {
-            ForEach(this.heroTodos, (t: HeroTodo) => {
+          ForEach(this.heroTodos, (t: HeroTodo) => {
             Row({ space: 8 }) {
               Row()
                 .width(4)
@@ -523,9 +522,6 @@ export struct LedgerScreen {
             .padding({ top: 5, bottom: 5 })
             .border({ width: { bottom: 1 }, color: this.tok().line })
           }, (t: HeroTodo) => t.id)
-          }
-          .width('100%')
-          .divider({ strokeWidth: 0 })
         }
         .width('100%')
       }
