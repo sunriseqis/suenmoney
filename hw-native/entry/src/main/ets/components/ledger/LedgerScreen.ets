@@ -17,6 +17,7 @@ import { Outbox } from '../../common/sync/Outbox';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardRadiusOf, cyberClipCommands, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { categoryGlyph } from '../../common/ui/CategoryIcon';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
@@ -390,6 +391,15 @@ export struct LedgerScreen {
       colorField = row.parentCategoryColor ?? row.categoryColor ?? '';
     }
     return chartColor(this.tok(), slotOf(colorField, row.categoryId));
+  }
+
+  /** 行内分类图标名（R134 解析链的输入） */
+  private categoryIconOf(row: ExpenseItem): string {
+    if (row.categoryIcon !== undefined && row.categoryIcon !== '') {
+      return row.categoryIcon;
+    }
+    const cat = this.categoryNames.get(row.categoryId);
+    return cat !== undefined ? cat.icon : '';
   }
 
   private categoryNameOf(row: ExpenseItem): string {
@@ -1115,7 +1125,7 @@ export struct LedgerScreen {
   @Builder
   expenseRow(row: ExpenseItem) {
     Row({ space: 10 }) {
-      Text(this.categoryNameOf(row).substring(0, 1))
+      Text(categoryGlyph(this.categoryIconOf(row), this.categoryNameOf(row)))
         .width(44)
         .height(44)
         .textAlign(TextAlign.Center)
