@@ -76,7 +76,26 @@ export struct ReportScreen {
 
   // ── 数据派生 ────────────────────────────────────────────────────────────
   private categories(): CategoryBucket[] {
+    if (this.tier === 1) {
+      return this.year !== null && this.year.categories !== undefined ? this.year.categories : [];
+    }
     return this.report === null ? [] : this.report.categories;
+  }
+
+  /** 支付方式排名数据源（R79）：年档取年报，月档取月报 */
+  private payments(): PaymentBucket[] {
+    if (this.tier === 1) {
+      return this.year !== null && this.year.paymentMethods !== undefined ? this.year.paymentMethods : [];
+    }
+    return this.report === null ? [] : this.report.paymentMethods;
+  }
+
+  /** 记录人排名数据源（R79） */
+  private members(): MemberBucket[] {
+    if (this.tier === 1) {
+      return this.year !== null && this.year.members !== undefined ? this.year.members : [];
+    }
+    return this.report === null ? [] : this.report.members;
   }
 
   private slices(): DonutSliceView[] {
@@ -205,10 +224,14 @@ export struct ReportScreen {
           this.insightCard()
           this.spanCard()
         } else if (this.tier === 1) {
-          // 年档：服务端 yearly 只给「12 个月 + 合计 + 最高月」，
-          // 没有年维度的分类/支付/记录人拆分 —— 不拿月报数据冒充年数据
+          // 年档 7 块（R76）：分类构成 / 支付排名 / 记录人 / 期内节奏 / 年度对照 / 涨跌榜 / 洞察
+          // 数据全部来自 `/api/reports/yearly`（服务端已返回 categories/paymentMethods/members）
+          this.composeCard()
+          this.rankCard()
+          this.memberCard()
           this.rhythmCard()
           this.yearCompareCard()
+          this.moversCard()
           this.insightCard()
         } else {
           this.composeCard()
@@ -339,7 +362,7 @@ export struct ReportScreen {
   }
 
   private memberBuckets(): MemberBucket[] {
-    return this.report === null ? [] : this.report.members;
+    return this.members();
   }
 
   /** 排名行（R79）：中间必须有占比条 */
@@ -365,11 +388,13 @@ export struct ReportScreen {
   }
 
   private payBuckets(): PaymentBucket[] {
-    return this.report === null ? [] : this.report.paymentMethods;
+    return this.payments();
   }
 
   private payRatio(p: PaymentBucket): number {
-    const total = this.report === null ? 0 : this.report.totalCents;
+    const total = this.tier === 1
+      ? (this.year === null ? 0 : this.year.totalCents)
+      : (this.report === null ? 0 : this.report.totalCents);
     return total > 0 ? p.cents / total : 0;
   }
 
