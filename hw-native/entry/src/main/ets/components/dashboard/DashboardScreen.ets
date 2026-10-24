@@ -8,7 +8,6 @@
  *
  * 刻意不做：桌面形态的左右分栏、说明式文字（判据：这句话改变你要做什么吗）。
  */
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Api, MonthlyReport, MonthPoint, PlanTodoItem, RollingMonth, SummaryReport, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { ThemeManager } from '../../common/theme/ThemeManager';
@@ -74,8 +73,6 @@ export struct DashboardScreen {
   private async loadTier(): Promise<void> {
     if (this.tier === 0) {
       const body = await Api.monthlyReport(this.anchorMonth);
-      hilog.info(0x0009, 'DashDbg', 'month=%{public}s total=%{public}s count=%{public}s cats=%{public}s',
-        body.report.month, String(body.report.totalCents), String(body.report.count), String(body.report.categories.length));
       this.monthReport = body.report;
       this.totalCents = body.report.totalCents;
       this.count = body.report.count;
@@ -174,9 +171,9 @@ export struct DashboardScreen {
   hero() {
     Column({ space: 8 }) {
       Row({ space: 6 }) {
-        this.tierButton('月', 0)
-        this.tierButton('年', 1)
-        this.tierButton('全部', 2)
+        this.tierButton({ label: '月', value: 0 })
+        this.tierButton({ label: '年', value: 1 })
+        this.tierButton({ label: '全部', value: 2 })
         Blank()
         if (this.tier === 0) {
           Button('‹')
@@ -296,9 +293,9 @@ export struct DashboardScreen {
 
       // 三项指标
       Row() {
-        this.metric('日均', formatYuan(this.perDayCents))
-        this.metric('笔数', `${this.count} 笔`)
-        this.metric('本月要还', formatYuan(this.creditDueCents))
+        this.metric({ label: '日均', value: formatYuan(this.perDayCents) })
+        this.metric({ label: '笔数', value: `${this.count} 笔` })
+        this.metric({ label: '本月要还', value: formatYuan(this.creditDueCents) })
       }
       .width('100%')
 
@@ -315,14 +312,14 @@ export struct DashboardScreen {
   }
 
   @Builder
-  tierButton(label: string, value: number) {
-    Button(label)
+  tierButton($$: TierCell) {
+    Button($$.label)
       .fontSize(11)
       .height(26)
-      .backgroundColor(this.tier === value ? this.tokens.accent : this.tokens.surface2)
-      .fontColor(this.tier === value ? this.tokens.accentInk : this.tokens.ink3)
+      .backgroundColor(this.tier === $$.value ? this.tokens.accent : this.tokens.surface2)
+      .fontColor(this.tier === $$.value ? this.tokens.accentInk : this.tokens.ink3)
       .onClick(() => {
-        this.tier = value;
+        this.tier = $$.value;
         this.loading = true;
         this.reload().then(() => {
           this.loading = false;
@@ -330,13 +327,20 @@ export struct DashboardScreen {
       })
   }
 
+  /**
+   * 指标格。
+   *
+   * **必须用单参数对象（$$）+ @Builder 引用传递**：ArkUI 的多参数 @Builder
+   * 只在首帧求值一次，后续状态变化不会重绘 —— 这就是「合计对、笔数却是 0」
+   * 的原因（数字是内联 Text 会刷新，笔数/日均走这个 Builder 就冻结了）。
+   */
   @Builder
-  metric(label: string, value: string) {
+  metric($$: MetricCell) {
     Column({ space: 2 }) {
-      Text(label)
+      Text($$.label)
         .fontSize(9)
         .fontColor(this.tokens.ink3)
-      Text(value)
+      Text($$.value)
         .fontSize(12)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.tokens.ink)
@@ -449,9 +453,9 @@ export struct DashboardScreen {
         .fontColor(this.tokens.ink3)
         .width('100%')
       Row() {
-        this.metric('累计支出', formatYuan(this.summary === null ? 0 : this.summary.totalCents))
-        this.metric('记录天数', `${this.summary === null ? 0 : this.summary.recordedDays} 天`)
-        this.metric('月均', formatYuan(this.summary === null ? 0 : this.summary.monthlyAverageCents))
+        this.metric({ label: '累计支出', value: formatYuan(this.summary === null ? 0 : this.summary.totalCents) })
+        this.metric({ label: '记录天数', value: `${this.summary === null ? 0 : this.summary.recordedDays} 天` })
+        this.metric({ label: '月均', value: formatYuan(this.summary === null ? 0 : this.summary.monthlyAverageCents) })
       }
       .width('100%')
     }
@@ -502,6 +506,17 @@ export struct DashboardScreen {
       });
     })
   }
+}
+
+/** @Builder 单参数对象（见 metric 的注释） */
+export interface TierCell {
+  label: string;
+  value: number;
+}
+
+export interface MetricCell {
+  label: string;
+  value: string;
 }
 
 /** 报表里的分类桶（服务端返回，字段与 MonthlyReport.categories 一致） */
