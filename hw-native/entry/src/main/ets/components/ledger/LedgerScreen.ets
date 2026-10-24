@@ -409,11 +409,16 @@ export struct LedgerScreen {
           }
           .alignItems(VerticalAlign.Bottom)
           if (this.deltaRatio() !== null) {
-            Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
+            // 环比胶囊：显式 +/-、pill、1.5vp 描边、accent 12% 底；**不靠染色表达涨跌**
+            Text(`${this.deltaRatio()! >= 0 ? '+' : '−'}${Math.abs(this.deltaRatio()! * 100).toFixed(1)}%`)
               .fontSize(10.5)
               .fontWeight(FontWeight.Bold)
               .fontFamily(fontMonoOf())
-              .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok)
+              .fontColor(this.tok().ink2)
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+              .backgroundColor(mixHex(this.tok().accent, this.tok().surface, 0.12))
+              .border({ width: 1.5, color: this.tok().accent })
           }
         }
         .alignItems(HorizontalAlign.Start)
@@ -940,6 +945,12 @@ export struct LedgerScreen {
       }
 
       List({ space: 8, scroller: this.scroller }) {
+        // R23：非逾期 → 顶卡作为列表首项随内容滚走；逾期时它固定在列表外
+        if (!this.hasOverdue()) {
+          ListItem() {
+            this.topCard()
+          }
+        }
         ForEach(this.sortedRows(), (row: ExpenseItem) => {
           ListItem() {
             this.expenseRow(row)
@@ -1240,7 +1251,10 @@ export struct LedgerScreen {
           .width('100%')
           .textAlign(TextAlign.Center)
       }
-      this.topCard()
+      // R23：**只有逾期时**顶卡吸顶（固定在滚动区之外）；非逾期时它随内容滚走
+      if (this.hasOverdue()) {
+        this.topCard()
+      }
       this.controlRow()
 
       if (this.tier === 0) {
@@ -1280,6 +1294,10 @@ export struct LedgerScreen {
           .width('100%')
       }
 
+      if (this.tier === 1 || this.tier === 2) {
+        // 年档/全部档不滚动，顶卡直接在上方
+        this.topCard()
+      }
       if (this.tier === 0) {
         this.monthListView()
       } else if (this.tier === 1) {
