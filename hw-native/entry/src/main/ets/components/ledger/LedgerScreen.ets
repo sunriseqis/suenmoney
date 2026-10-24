@@ -17,7 +17,8 @@ import { Outbox } from '../../common/sync/Outbox';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardRadiusOf, cyberClipCommands, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
-import { CATEGORY_COLORS, categoryGlyph, parseCategoryColorIndex, deriveColorIndex } from '../../common/ui/CategoryIcon';
+import { CATEGORY_COLORS, categoryGlyph, categoryIconPath, parseCategoryColorIndex, deriveColorIndex } from '../../common/ui/CategoryIcon';
+import { IconView } from '../../common/ui/IconView';
 import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
@@ -1175,16 +1176,19 @@ export struct LedgerScreen {
   @Builder
   expenseRow(row: ExpenseItem) {
     Row({ space: 10 }) {
-      Text(categoryGlyph(this.categoryIconOf(row), this.categoryNameOf(row)))
-        .width(44)
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .fontSize(16)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.categoryColorOf(row))
-        .backgroundColor(mixHex(this.categoryColorOf(row), this.tok().surface, 0.12))
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), 12))
-        .border({ width: 1, color: mixHex(this.categoryColorOf(row), this.tok().surface, 0.45) })
+      // 徽位 44px（R138）：12% 分类色底 + 45% 分类色描边 + 图标本体 20px
+      Stack() {
+        IconView({
+          path: categoryIconPath(this.categoryIconOf(row), this.categoryNameOf(row)),
+          iconSize: 20,
+          color: this.categoryColorOf(row)
+        })
+      }
+      .width(44)
+      .height(44)
+      .backgroundColor(mixHex(this.categoryColorOf(row), this.tok().surface, 0.12))
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 12))
+      .border({ width: 1, color: mixHex(this.categoryColorOf(row), this.tok().surface, 0.45) })
 
       Column({ space: 3 }) {
         Text(row.note !== '' ? `${this.categoryNameOf(row)} · ${row.note}` : this.categoryNameOf(row))

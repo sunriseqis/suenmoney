@@ -28,6 +28,8 @@ import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { FOCUS_RING, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { IconView } from '../../common/ui/IconView';
+import { PayVisual, resolvePayVisual } from '../../common/ui/PaymentIcon';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
@@ -234,6 +236,11 @@ export struct ExpenseEditor {
       }
     }
     return null;
+  }
+
+  /** 支付方式的品牌图标（与 Web PPayIcon 同源：品牌填充 / 其余 Lucide 描边） */
+  private payIconOf(p: PaymentMethodItem): PayVisual {
+    return resolvePayVisual(p.name, p.icon ?? '');
   }
 
   /** 支付方式快捷键名精炼到 2–3 字（R112） */
@@ -525,18 +532,29 @@ export struct ExpenseEditor {
       // 左：支付快捷列（与键盘之间用 1vp 竖线物理分割）
       Column({ space: 6 }) {
         ForEach(this.payments.slice(0, 4), (p: PaymentMethodItem) => {
-          Button(this.shortName(p.name))
-            .fontSize(9.5)
-            .layoutWeight(1)
-            .width('100%')
-            .backgroundColor(this.paymentId === p.id ? this.tok().accent : this.tok().surface)
-            .fontColor(this.paymentId === p.id ? this.tok().accentInk : this.tok().ink2)
-            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-            .border({ width: 1, color: this.tok().line })
-            .onClick(() => {
-              this.paymentId = p.id;
-              this.refreshPreview();
+          Row({ space: 4 }) {
+            IconView({
+              path: this.payIconOf(p).path,
+              iconSize: 13,
+              color: this.paymentId === p.id ? this.tok().accentInk : this.payIconOf(p).color,
+              filled: this.payIconOf(p).brand
             })
+            Text(this.shortName(p.name))
+              .fontSize(9.5)
+              .fontColor(this.paymentId === p.id ? this.tok().accentInk : this.tok().ink2)
+              .maxLines(1)
+          }
+          .justifyContent(FlexAlign.Center)
+          .layoutWeight(1)
+          .width('100%')
+          .padding({ top: 7, bottom: 7 })
+          .backgroundColor(this.paymentId === p.id ? this.tok().accent : this.tok().surface)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .border({ width: 1, color: this.tok().line })
+          .onClick(() => {
+            this.paymentId = p.id;
+            this.refreshPreview();
+          })
         }, (p: PaymentMethodItem) => p.id)
         if (this.payments.length > 4) {
           Button('更多')

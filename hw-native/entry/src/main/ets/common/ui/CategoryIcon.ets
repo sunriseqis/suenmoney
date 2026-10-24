@@ -6,10 +6,15 @@
  *
  *   优先级：**显式存储的 icon > 按分类名反查 > 通用兜底**
  *
- * 差别：Web 用 Lucide 组件，鸿蒙端目前**没有随包图标资产**，也没有内建图标字体，
- * 因此这里解析成一个**单字标记**（不是 Emoji —— F 系列明令禁止）。
- * 将来接入图标资产时，只需替换 `glyphFor()` 的实现，调用点不用动。
+ * 解析结果给两种渲染：
+ * - `categoryIconPath()` → SVG path d，交给 `IconView` 用 `Path` 组件画（与 Web 同一份 Lucide 几何）
+ * - `categoryGlyph()`    → 单字标记，仅作 `IconView` 不可用时的兜底 / 无障碍文本
  */
+
+import { ICON_PATHS } from './IconPaths';
+
+/** 兜底图标：解析不到时用它（永不为空，保证徽位不出现空洞） */
+const FALLBACK_ICON: string = 'circle-ellipsis';
 
 /** 分类色 16 色槽（与 web `--chart-1..16` 一一对应，v3 账本色，深底对比度 ≥3.69:1） */
 export const CATEGORY_COLORS: string[] = [
@@ -128,7 +133,7 @@ const NAME_TO_ICON: Record<string, string> = {
  */
 export function resolveIconKey(icon: string, name: string): string {
   const explicit = (icon ?? '').trim();
-  if (explicit !== '' && ICON_GLYPH[explicit] !== undefined) {
+  if (explicit !== '' && ICON_PATHS[explicit] !== undefined) {
     return explicit;
   }
   const byName = NAME_TO_ICON[(name ?? '').trim()];
@@ -136,6 +141,20 @@ export function resolveIconKey(icon: string, name: string): string {
     return byName;
   }
   return explicit;
+}
+
+/**
+ * 名字/显式 icon → Lucide path d（R134 解析链）。
+ * 显式 icon 优先（且必须在图标表里），否则按分类名反查，最后落到通用兜底。
+ */
+export function categoryIconPath(icon: string, name: string): string {
+  const key = resolveIconKey(icon, name);
+  const hit = ICON_PATHS[key];
+  if (hit !== undefined) {
+    return hit;
+  }
+  const fb = ICON_PATHS[FALLBACK_ICON];
+  return fb === undefined ? '' : fb;
 }
 
 /** 名字 → 单字标记；解析不到时回落到分类名首字（永不为空） */
