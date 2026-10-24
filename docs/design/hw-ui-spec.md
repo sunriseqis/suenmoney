@@ -32,39 +32,31 @@
 
 ---
 
-## §1 令牌（全部来自 `theme.css`，`scripts/gen-hw-theme.mjs` 生成）
+## §1 令牌（**以生成表为准，本规范不重复抄值**）
 
-### 1.1 结构/密度（`:root`，两主题共用）
-| 变量 | 值 | ArkTS 字段 |
+> **唯一真值**：`docs/design/generated/hw-token-table.md`（由 `scripts/gen-hw-token-table.mjs`
+> 从 `web/styles/proto/theme.css` 机器生成，51 个令牌，含 `--chart-1..8` 全部色值）。
+> ArkTS 侧同源生成物：`common/theme/AppTheme.ets`（字段名 = 变量名去 `--` 转驼峰）。
+> **禁止在本规范里手抄色值** —— v1 就是因为手抄抄错了 5 组，被覆盖核验判 FAIL。
+
+### 1.1 必须知道的 5 条派生规则
+
+| # | 规则 | 实现 |
 |---|---|---|
-| `--density-pad` | 18px | `densityPad` |
-| `--density-row` | 12px | `densityRow` |
+| 1 | 分类色存**色号**（1–16），显示取 `chart[(n-1) % 8]`；没设过色号按 `categoryId` 哈希取稳定值 | `Palette.slotOf()` / `chartColor()` |
+| 2 | 分类图标底色 `color-mix(色 12%, 透明)`、描边 `color-mix(色 45%, 透明)` | ArkUI 无 `color-mix()` → `UiStyle.mixHex(色, surface, .12/.45)` |
+| 3 | cyber 切角**四档**：卡片 14 / 按钮 7 / orb 6 / logo·主题缩略 8 | `UiStyle.CUT_CARD/CUT_BTN/CUT_ORB/CUT_LOGO` + `cutPathCommands()` |
+| 4 | 移动端卡片阴影是 **`3px 3px 0 #E9EEF6`**（`.card--pop` 也被覆盖），不是桌面 6px | `cardShadow(tokens, isCyber, mobile=true)` |
+| 5 | cyber 下 `.ic` 描边 1.6，candy 2.4 | `strokeWidthOf(isCyber)` |
 
-### 1.2 颜色（每主题一套；下列 candy → cyber）
-`bg` `#FFFDF5`→`#0a0a0f` · `bg-2` `#FFF8E7`→`#0d0d16` · `bg-3` `#F6F3FF`→`#10101c` ·
-`surface` `#FFFFFF`→`#12121a` · `surface-2` `#F8F7FF`→`#1c1c2e` · `surface-3` `#EFEDFF`→`#242438` ·
-`line` `#E2E8F0`→`#2a2a3a` · `line-2` `#1E293B`→`#2a2a3a` · `line-3` `#CBD5E1`→`#3b3b52` ·
-`ink` `#1E293B`→`#d7ffe9` · `ink-2` `#475569`→`#8fd9b8` · `ink-3` `#94A3B8`→`#4e8f78` ·
-`accent` `#8B5CF6`→`#00ff88` · `accent-ink` `#FFFFFF`→`#04170d` ·
-`danger` `#F43F5E`→`#ff3366` · `warn` `#F59E0B`→`#ffb020` · `ok` `#10B981`→`#00ff88` ·
-`chart-1..8`（分类色，按色号索引）
+### 1.2 尺寸映射（替换 v1 的「px 照抄」）
 
-### 1.3 字体
-`--font-display`：candy `Outfit` / cyber `Orbitron`
-`--font-body`：candy `Plus Jakarta Sans` / cyber `JetBrains Mono`
-`--font-mono`：`JetBrains Mono`（两主题都用，做 eyebrow/数字/小字）
-> 注册必须 `$rawfile(...)`（见 `common/theme/FontRegistry.ets`）；中文回落系统 HarmonyOS Sans。
-
-### 1.4 阴影/切角
-| 用途 | candy | cyber |
+| Web | ArkUI | 说明 |
 |---|---|---|
-| 卡（桌面） | `6px 6px 0 #E9EEF6` | `none`（仅 `0 0 0 1px rgba(0,212,255,.04)`） |
-| 卡（**移动端**） | **`3px 3px 0 #E9EEF6`**（`app.css:759` 覆盖，含 pop 卡） | `none` |
-| 按钮 | `3px 3px 0 #1E293B` | `none`（改 1px 描边 + 悬停发光） |
-| 圆角 | `--r-card:20` `--r-md:14` `--r-sm:10` `--r-pill:999` | 全部 `0`，改用 `clip-path` 切角 |
-| 切角 | — | `polygon(0 7px,7px 0,100% 0,100% calc(100%-7px),calc(100%-7px) 100%,0 100%)`（按钮/卡片） |
-
----
+| `Npx` | `N` vp | 密度无关单位，1:1 |
+| `dvh` / `vh` | `屏高 × pct / 100` vp | 通过 `display.getDefaultDisplaySync().height / densityPixels` 取屏高 vp 后换算 |
+| `env(safe-area-inset-bottom)` | `px2vp(窗口避让区 bottom)` | 抽屉底部必须让开手势条（见 §3.1） |
+| `clamp(a, 6.1dvh, b)` | `Math.max(a, Math.min(b, 屏高vp * 0.061))` | 键盘键高/字号/圆角全部走这个换算 |
 
 ## §2 原子组件（ArkUI 侧一一对应，禁止自行发挥）
 
