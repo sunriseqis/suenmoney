@@ -187,7 +187,7 @@ export struct DashboardScreen {
           .fontSize(32)
           .fontWeight(FontWeight.Bold)
           .fontFamily(displayFont(!this.isCyber()))
-          .fontColor(this.tok().ink)
+          .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
         if (this.deltaRatio() !== null) {
           Text(`${this.deltaRatio()! >= 0 ? '+' : '−'}${Math.abs(this.deltaRatio()! * 100).toFixed(1)}%`)
             .fontSize(10.5)
@@ -485,6 +485,64 @@ export struct DashboardScreen {
     const days = s.recordedDays;
     const perDay = days > 0 ? (s.count / days).toFixed(1) : '0';
     return `已记 ${days} 天 · ${s.count} 笔 · 平均 ${perDay} 笔/天 · 首笔 ${s.firstDate ?? '—'}`;
+  }
+
+  private monthCompareText(): string {
+    return `${this.deltaRatio() !== null ? (this.deltaRatio()! >= 0 ? '+' : '−') + Math.abs(this.deltaRatio()! * 100).toFixed(1) + '%' : '—'}`;
+  }
+
+  private yearCompareText(): string {
+    return `${formatYuan(this.totalCents)}`;
+  }
+
+  private firstDayText(): string {
+    return this.firstDay !== '' ? `首笔 ${this.firstDay}` : '—';
+  }
+
+  private spanDays: number = 0;
+  private spanCount: number = 0;
+  private firstDay: string = '';
+
+  private avgPerDay(): string {
+    return this.spanDays > 0 ? (this.spanCount / this.spanDays).toFixed(1) : '0.0';
+  }
+
+  /** R72：年度对比（本月 vs 上月 / 本年 vs 去年） */
+  @Builder
+  yearCompareCard() {
+    Column({ space: 6 }) {
+      Text('年度对比').fontSize(11).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
+      Row({ space: 8 }) {
+        Text('本月 vs 上月').fontSize(10).fontColor(this.tok().ink3).layoutWeight(1)
+        Text(this.monthCompareText()).fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
+      }
+      .width('100%')
+      Row({ space: 8 }) {
+        Text('本年 vs 去年').fontSize(10).fontColor(this.tok().ink3).layoutWeight(1)
+        Text(this.yearCompareText()).fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink)
+      }
+      .width('100%')
+    }
+    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** R72：记录跨度（首笔日期 + 已记 N 天 + 平均 A 笔/天） */
+  @Builder
+  spanCard() {
+    Column({ space: 6 }) {
+      Text('记录跨度').fontSize(11).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).width('100%')
+      Text(`${this.firstDayText()}`).fontSize(10).fontColor(this.tok().ink3).width('100%')
+      Text(`已记 ${this.spanDays} 天 · ${this.spanCount} 笔 · 平均 ${this.avgPerDay()} 笔/天`)
+        .fontSize(10).fontFamily(fontMonoOf()).fontFeature('"tnum" on')
+        .fontColor(this.tok().ink2).width('100%')
+    }
+    .width('100%').padding(CARD_PAD).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
   build() {

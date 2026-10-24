@@ -15,7 +15,7 @@ import { ApiError } from '../common/net/ApiError';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ProbeResult, ServerRouter } from '../common/net/ServerRouter';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
-import { radiusOf, outlineStrongOf } from '../common/ui/UiStyle';
+import { FOCUS_RING, radiusOf, outlineStrongOf } from '../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { displayFont, bodyFont } from '../common/theme/Fonts';
 import { ensureFonts } from '../common/theme/FontRegistry';
@@ -35,6 +35,8 @@ struct LoginPage {
   @State probeText: string = '';
   @State errorText: string = '';
   @State busy: boolean = false;
+  @State usernameFocus: boolean = false;
+  @State passwordFocus: boolean = false;
 
   aboutToAppear(): void {
     // R98：把已保存的地址填进三个固定槽
@@ -150,6 +152,13 @@ struct LoginPage {
         .fontColor(this.tok().ink3)
 
       TextInput({ placeholder: '登录名' })
+        .border({ width: this.usernameFocus ? 2 : 1, color: this.usernameFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
+        .onFocus(() => {
+          this.usernameFocus = true;
+        })
+        .onBlur(() => {
+          this.usernameFocus = false;
+        })
         .onChange((v: string) => {
           this.username = v;
         })
@@ -160,6 +169,13 @@ struct LoginPage {
         .fontColor(this.tok().ink)
 
       TextInput({ placeholder: '口令' })
+        .border({ width: this.passwordFocus ? 2 : 1, color: this.passwordFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
+        .onFocus(() => {
+          this.passwordFocus = true;
+        })
+        .onBlur(() => {
+          this.passwordFocus = false;
+        })
         .type(InputType.Password)
         .onChange((v: string) => {
           this.password = v;

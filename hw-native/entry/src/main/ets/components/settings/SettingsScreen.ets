@@ -128,7 +128,7 @@ export struct SettingsScreen {
     const report = await SyncEngine.syncNow();
     this.syncMessage = report.error !== ''
       ? report.error
-      : `推送 ${report.pushed} · 拉取 ${report.pulled} · 游标 ${report.cursor}`;
+      : `推送 ${report.pushed} · 拉取 ${report.pulled}`;
     await this.refreshQueue();
   }
 
@@ -852,7 +852,7 @@ export struct SettingsScreen {
 
       // R142/R145：同步状态与死信必须可见（并入「外观」，不新开数据区 → 符合 D15）
       Row({ space: 8 }) {
-        Text(`待发送 ${this.pendingCount} 条`)
+        Text(this.pendingCount > 0 ? '有未上传记录' : '已全部同步')
           .fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).layoutWeight(1)
         if (this.pendingCount > 0) {
           Button('立即同步').fontSize(10).height(28)
@@ -1010,6 +1010,82 @@ export struct SettingsScreen {
           .fontSize(10)
           .fontColor(this.tok().danger)
           .width('100%')
+      }
+
+      // B-NEW2：跨月撤销警告（同样状态驱动，避免 Promise 永久挂起）
+      if (this.revertDialogOpen) {
+        Column({ space: 10 }) {
+          Text('撤销跨月入账').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+          Text(this.revertWarn).fontSize(11).fontColor(this.tok().ink2)
+          Row({ space: 8 }) {
+            Button('再想想')
+              .fontSize(11).height(32).layoutWeight(1)
+              .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
+              .onClick(() => {
+                this.revertDialogOpen = false;
+                const r = this.pendingResolve;
+                this.pendingResolve = null;
+                if (r !== null) {
+                  r(false);
+                }
+              })
+            Button('仍然撤销')
+              .fontSize(11).height(32).layoutWeight(1)
+              .backgroundColor(this.tok().danger).fontColor(this.tok().bg)
+              .onClick(() => {
+                this.revertDialogOpen = false;
+                const r = this.pendingResolve;
+                this.pendingResolve = null;
+                if (r !== null) {
+                  r(true);
+                }
+              })
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor(this.tok().surface)
+        .borderRadius(cardRadiusOf(this.isCyber()))
+        .border({ width: 2, color: this.tok().danger })
+      }
+
+      // B-NEW1：合并二次确认（状态驱动，Promise 解析）
+      if (this.mergeConfirmOpen) {
+        Column({ space: 10 }) {
+          Text('合并支付方式').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+          Text(this.mergeConfirmText).fontSize(11).fontColor(this.tok().ink2)
+          Row({ space: 8 }) {
+            Button('取消')
+              .fontSize(11).height(32).layoutWeight(1)
+              .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
+              .onClick(() => {
+                this.mergeConfirmOpen = false;
+                const r = this.mergeConfirmResolve;
+                this.mergeConfirmResolve = null;
+                if (r !== null) {
+                  r(false);
+                }
+              })
+            Button('继续合并')
+              .fontSize(11).height(32).layoutWeight(1)
+              .backgroundColor(this.tok().warn).fontColor(this.tok().bg)
+              .onClick(() => {
+                this.mergeConfirmOpen = false;
+                const r = this.mergeConfirmResolve;
+                this.mergeConfirmResolve = null;
+                if (r !== null) {
+                  r(true);
+                }
+              })
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor(this.tok().surface)
+        .borderRadius(cardRadiusOf(this.isCyber()))
+        .border({ width: 2, color: this.tok().warn })
       }
 
       // 表单态：内容区整体切换成表单（不做浮层，避免层叠与命中问题）

@@ -248,11 +248,11 @@ export struct ReportScreen {
         }
         this.headCard()
         if (this.tier === 2) {
-          // 汇总档 5 块（R76）：年度对比 / 记录跨度 / 期内节奏(按年) / 洞察 2 条 / 累计
-          this.yearCompareCard()
+          // 汇总档 5 块（R76）：记录跨度 / 期内节奏(按年) / 洞察 2 条
+          // 规范明文：汇总档不出现「年度对照」（没有对比期可比）
+          this.spanCard()
           this.rhythmCard()
           this.insightCard()
-          this.spanCard()
         } else if (this.tier === 1) {
           // 年档 7 块（R76）：分类构成 / 支付排名 / 记录人 / 期内节奏 / 年度对照 / 涨跌榜 / 洞察
           // 数据全部来自 `/api/reports/yearly`（服务端已返回 categories/paymentMethods/members）
@@ -545,11 +545,12 @@ export struct ReportScreen {
     for (const m of y.months) {
       sum += m.totalCents;
     }
+    // R83：四格是「与谁比」——去年 / 近 3 年均值 / 最高月 / 单笔最高
     return [
-      { label: '全年合计', value: formatYuan(y.totalCents) },
-      { label: '月均', value: formatYuan(Math.round(sum / Math.max(1, y.months.length))) },
+      { label: '去年', value: y.yearAgo === undefined || y.yearAgo === null ? '—' : formatYuan(y.yearAgo.totalCents) },
+      { label: '近 3 年均值', value: y.average3YearsCents === undefined ? '—' : formatYuan(y.average3YearsCents) },
       { label: '最高月', value: y.peakMonth === null ? '—' : formatYuan(y.peakMonth.totalCents) },
-      { label: '笔数', value: `${y.count} 笔` }
+      { label: '单笔最高', value: y.largest === undefined || y.largest === null ? '—' : formatYuan(y.largest.cents) }
     ];
   }
 
