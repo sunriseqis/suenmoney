@@ -67,6 +67,7 @@ export struct SettingsScreen {
   @State loading: boolean = false;
   /** 弹层：'' | category | payment | plan */
   @State sheetMode: string = '';
+  @State sheetOpen: boolean = false;
   @State editingCategoryId: string = '';
   @State editingPaymentId: string = '';
   @State editingPlanId: string = '';
@@ -165,6 +166,7 @@ export struct SettingsScreen {
     this.formColor = cat === null ? 0 : Number(cat.color) || 0;
     this.formParent = cat === null ? parentId : (cat.parentId ?? '');
     this.sheetMode = 'category';
+    this.sheetOpen = true;
   }
 
   private openPaymentSheet(pay: PaymentMethodItem | null): void {
@@ -176,6 +178,7 @@ export struct SettingsScreen {
     this.formRepaymentDay = pay === null ? 0 : (pay.repaymentDay ?? 0);
     this.formMergeInto = '';
     this.sheetMode = 'payment';
+    this.sheetOpen = true;
   }
 
   private openPlanSheet(): void {
@@ -189,6 +192,7 @@ export struct SettingsScreen {
     this.formFirstDue = todayKey();
     this.formAutoPost = false;
     this.sheetMode = 'plan';
+    this.sheetOpen = true;
   }
 
   private openMemberSheet(): void {
@@ -198,6 +202,7 @@ export struct SettingsScreen {
     this.formPassword = '';
     this.formRole = 'member';
     this.sheetMode = 'member';
+    this.sheetOpen = true;
   }
 
   private async saveMember(): Promise<void> {
@@ -907,6 +912,30 @@ export struct SettingsScreen {
     .height('100%')
     .padding(12)
     .backgroundColor(this.tok().bg)
+    // 表单面板：内联覆盖层（bindSheet 在此环境不触发，故不用它）
+    if (this.sheetOpen) {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#000000')
+          .opacity(0.45)
+          .onClick(() => {
+            this.sheetOpen = false;
+            this.sheetMode = '';
+          })
+        Column() {
+          this.sheetContent()
+        }
+        .width('100%')
+        .height('93%')
+        .backgroundColor(this.tok().bg)
+        .borderRadius({ topLeft: 24, topRight: 24 })
+      }
+      .width('100%')
+      .height('100%')
+      .position({ x: 0, y: 0 })
+    }
   }
 
   @Builder
@@ -960,6 +989,7 @@ export struct SettingsScreen {
           .fontColor(this.tok().ink)
           .fontColor(this.tok().ink2)
           .onClick(() => {
+            this.sheetOpen = false;
             this.sheetMode = '';
           })
       }

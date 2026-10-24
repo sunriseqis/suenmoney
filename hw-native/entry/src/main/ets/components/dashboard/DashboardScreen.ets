@@ -230,9 +230,15 @@ export struct DashboardScreen {
           .fontFamily(displayFont(!this.isCyber()))
           .fontColor(this.tok().ink)
         if (this.deltaRatio() !== null) {
-          Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
-            .fontSize(11)
-            .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().mint)
+          Text(`${this.deltaRatio()! >= 0 ? '+' : '−'}${Math.abs(this.deltaRatio()! * 100).toFixed(1)}%`)
+            .fontSize(10.5)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontMonoOf())
+            .fontColor(this.tok().ink2)
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+            .backgroundColor(mixHex(this.tok().accent, this.tok().surface, 0.12))
+            .border({ width: 1.5, color: this.tok().accent })
         }
       }
       .width('100%')
