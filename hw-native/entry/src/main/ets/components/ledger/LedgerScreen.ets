@@ -232,7 +232,9 @@ export struct LedgerScreen {
       this.filterPayment,
       this.filterOwner
     );
-    this.rows = reset ? page.items : this.rows.concat(page.items);
+    const incoming = reset ? page.items : this.rows.concat(page.items);
+    // 金额区间在服务端没有对应参数 → 客户端过滤（在线/离线一致）
+    this.rows = this.applyAmountFilter(incoming);
     this.cursor = page.nextCursor ?? '';
     this.hasMore = page.hasMore;
     // 顺手缓存，供断网时用
@@ -289,6 +291,23 @@ export struct LedgerScreen {
     const body = await Api.summaryReport();
     this.allYears = body.report.years;
     this.allTotalCents = body.report.totalCents;
+  }
+
+  /** 只按金额区间过滤（服务端无 min/max 参数，在线也要在本地做一次） */
+  private applyAmountFilter(source: ExpenseItem[]): ExpenseItem[] {
+    if (this.minAmount === '' && this.maxAmount === '') {
+      return source;
+    }
+    const min = this.minAmount === '' ? -Infinity : Number(this.minAmount);
+    const max = this.maxAmount === '' ? Infinity : Number(this.maxAmount);
+    const out: ExpenseItem[] = [];
+    for (const row of source) {
+      const yuan = Math.abs(row.amountCents) / 100;
+      if (yuan >= min && yuan <= max) {
+        out.push(row);
+      }
+    }
+    return out;
   }
 
   /** 本地筛选（离线路径用；线上由服务端过滤） */
@@ -961,6 +980,15 @@ export struct LedgerScreen {
     return sum / this.allYears.length;
   }
 
+  /** 当前结果集合计（筛选后不能用月报全量） */
+  private filteredTotal(): number {
+    let sum = 0;
+    for (const row of this.rows) {
+      sum += row.amountCents;
+    }
+    return sum;
+  }
+
   private activeFilterCount(): number {
     let n = 0;
     if (this.minAmount !== '' || this.maxAmount !== '') {
@@ -985,7 +1013,7 @@ export struct LedgerScreen {
   monthListView() {
     Column() {
       if (this.activeFilterCount() > 0) {
-        Text(`筛选结果 ${this.monthCount} 笔 · 合计 ${formatYuan(this.monthTotalCents)}`)
+        Text(`筛选结果 ${this.rows.length} 笔 · 合计 ${formatYuan(this.filteredTotal())}`)
           .fontSize(10.5)
           .fontColor(this.tok().ink3)
           .width('100%')
@@ -1345,8 +1373,9 @@ export struct LedgerScreen {
           .width('100%')
       }
 
-      if (this.tier === 1 || this.tier === 2) {
-        // 年档/全部档不滚动，顶卡直接在上方
+      if ((this.tier === 1 || this.tier === 2) && !this.hasOverdue()) {
+        // 年档/全部档不滚动：非逾期时顶卡在上方；
+        // 逾期时顶卡已由上面的 `if (this.hasOverdue())` 渲染过，避免重复
         this.topCard()
       }
       // B.19 轻提示：底部居中、2 秒消失

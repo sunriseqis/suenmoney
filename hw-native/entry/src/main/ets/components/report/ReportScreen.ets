@@ -98,6 +98,16 @@ export struct ReportScreen {
   /** 洞察（R85）：纯规则引擎，月 3 / 年 3 / 汇总 2，句式 `{分类} {金额}（{为什么}）` */
   private insights(): string[] {
     const out: string[] = [];
+    // 汇总档（R85：2 条）——此时 report/year 均为空，用 summary 生成
+    if (this.tier === 2) {
+      const sum = this.summary;
+      if (sum === null) {
+        return out;
+      }
+      out.push(`累计 ${formatYuan(sum.totalCents)}（${sum.count} 笔 · ${sum.recordedDays} 天）`);
+      out.push(`月均 ${formatYuan(sum.monthlyAverageCents)}（按有记录月份平均）`);
+      return out.slice(0, 2);
+    }
     const r = this.report;
     if (r === null) {
       if (this.year !== null) {
@@ -153,7 +163,8 @@ export struct ReportScreen {
       return out;
     }
     out.push({ label: '上月', value: formatYuan(r.previous.totalCents) });
-    out.push({ label: '去年同月', value: formatYuan(0) });
+    // R83：去年同月取服务端 yearAgo，不再硬编码 0
+    out.push({ label: '去年同月', value: formatYuan(r.yearAgo === undefined ? 0 : r.yearAgo.totalCents) });
     let sum = 0;
     let n = 0;
     for (const m of r.rolling12Months) {

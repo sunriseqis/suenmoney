@@ -1405,6 +1405,27 @@ export struct SettingsScreen {
     return out;
   }
 
+  /** 行内停用（R87 软删：有引用只能停用） */
+  private async deactivateCategoryById(id: string): Promise<void> {
+    try {
+      const cat = this.findCategoryById(id);
+      if (cat === null) {
+        return;
+      }
+      const req: CategoryPatchRequest = {
+        name: cat.name,
+        icon: cat.icon,
+        color: cat.parentId === null ? cat.color : '',
+        parentId: cat.parentId,
+        isEnabled: false
+      };
+      await Api.patchCategory(cat.id, req);
+      await this.reload();
+    } catch (e) {
+      this.errorText = (e as ApiError).message;
+    }
+  }
+
   private async deactivateCategory(): Promise<void> {
     try {
       const cat = this.findCategoryById(this.editingCategoryId);
