@@ -79,6 +79,8 @@ export struct LedgerScreen {
   @State creditDueCents: number = 0;
   @State heroTodos: HeroTodo[] = [];
   @State todoOpen: boolean = false;
+  @State pullHintShown: boolean = false;
+  @State showHint: boolean = false;
   @State errorText: string = '';
   @State yearPoints: MonthPoint[] = [];
   @State yearTotalCents: number = 0;
@@ -106,6 +108,19 @@ export struct LedgerScreen {
 
   aboutToAppear(): void {
     this.reload();
+    this.maybeShowPullHint();
+  }
+
+  /** R115：首次进流水页提示一次「下拉可记账」，之后永不再现 */
+  private maybeShowPullHint(): void {
+    if (this.pullHintShown) {
+      return;
+    }
+    this.pullHintShown = true;
+    this.showHint = true;
+    setTimeout(() => {
+      this.showHint = false;
+    }, 2600);
   }
 
   /** 首次进入：先缓存字典（离线时要靠它显示分类名），再拉当月 */
@@ -1046,6 +1061,13 @@ export struct LedgerScreen {
 
   build() {
     Column({ space: 10 }) {
+      if (this.showHint) {
+        Text('下拉可记账')
+          .fontSize(10)
+          .fontColor(this.tok().ink3)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+      }
       this.topCard()
       this.controlRow()
 

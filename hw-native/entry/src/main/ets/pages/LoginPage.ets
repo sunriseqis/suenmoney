@@ -137,7 +137,7 @@ struct LoginPage {
 
       Divider().color(this.tok().line)
 
-      Text('服务器地址')
+      Text('服务端')
         .fontSize(11)
         .fontColor(this.tok().ink3)
         .width('100%')
@@ -200,7 +200,7 @@ struct LoginPage {
           })
       }
 
-      Button('测试全部地址')
+      Button('测试')
         .fontSize(12)
         .height(36)
         .backgroundColor(this.tok().surface)
