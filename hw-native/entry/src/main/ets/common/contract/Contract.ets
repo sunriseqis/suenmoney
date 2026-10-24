@@ -117,6 +117,18 @@ export function daysUntil(target: string, from: string): number {
 export type Urgency = 'overdue' | 'due' | 'later';
 
 /** 迟于还款日 = overdue；0–1 天 = due；更远 = later */
+/** R49：精简口径 —— 「逾期 N 天」而非「已逾期 N 天」 */
+export function urgencyLabel(date: string, today: string): string {
+  const d = daysUntil(date, today);
+  if (d < 0) {
+    return `逾期 ${-d} 天`;
+  }
+  if (d === 0) {
+    return '今天到期';
+  }
+  return `还有 ${d} 天`;
+}
+
 export function urgencyOf(date: string, today: string): Urgency {
   const days = daysUntil(date, today);
   if (days < 0) {
@@ -128,16 +140,7 @@ export function urgencyOf(date: string, today: string): Urgency {
   return 'later';
 }
 
-export function urgencyLabel(date: string, today: string): string {
-  const days = daysUntil(date, today);
-  if (days === 0) {
-    return '今天到期';
-  }
-  if (days < 0) {
-    return `已逾期 ${-days} 天`;
-  }
-  return `还有 ${days} 天`;
-}
+
 
 // ── 环图 ────────────────────────────────────────────────────────────────────
 

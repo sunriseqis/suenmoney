@@ -18,7 +18,7 @@ import { SyncEngine } from '../../common/sync/SyncEngine';
 import { THEME_STORAGE_KEY, ThemeManager, ThemeName } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
-import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
+import { formatYuan, daysUntil } from '../../common/contract/Contract';
 
 import { categoryGlyph } from '../../common/ui/CategoryIcon';
 import {
@@ -628,6 +628,7 @@ export struct SettingsScreen {
           Text(`${plan.progress.paidCount}/${plan.progress.paidCount + plan.progress.pendingCount} 期 · 每期 ${formatYuan(plan.amountCents)}${plan.progress.nextDueDate !== null ? ' · 下次 ' + plan.progress.nextDueDate : ''}`)
               .fontFeature('"tnum" on')
             .fontSize(10)
+              .fontFeature('"tnum" on')
             .fontColor(this.tok().ink3)
             .width('100%')
 
@@ -663,6 +664,7 @@ export struct SettingsScreen {
               Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
                   .fontFeature('"tnum" on')
                 .fontSize(9)
+                  .fontFeature('"tnum" on')
                 .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
             }
@@ -703,6 +705,7 @@ export struct SettingsScreen {
               Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
                   .fontFeature('"tnum" on')
                 .fontSize(9)
+                  .fontFeature('"tnum" on')
                 .fontColor(this.tok().ink3)
             }
             .alignItems(HorizontalAlign.Start)
@@ -913,8 +916,10 @@ export struct SettingsScreen {
         .backgroundColor(this.themeMode === $$.value ? this.tok().accent : this.tok().surface3)
         .border({ width: 1, color: outlineStrongOf(this.isCyber()) })
       Text($$.label).fontSize(12).fontColor(this.tok().ink2).layoutWeight(1)
+        .fontFeature('"tnum" on')
       if (this.themeMode === $$.value) {
         Text('已选').fontSize(9.5).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+          .fontFeature('"tnum" on')
       }
     }
     .width('100%')

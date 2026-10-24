@@ -15,7 +15,7 @@ import { displayFont, bodyFont } from '../../common/theme/Fonts';
 import { CARD_PAD, cardRadiusOf, cardShadow, fontMonoOf, mixHex, radiusOf } from '../../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
-import { formatYuan, daysUntil, urgencyLabel } from '../../common/contract/Contract';
+import { formatYuan, daysUntil } from '../../common/contract/Contract';
 
 export interface TodoView {
   id: string;
@@ -185,12 +185,15 @@ export struct DashboardScreen {
         Text(formatYuan(this.totalCents).replace('¥', ''))
             .fontFeature('"tnum" on')
           .fontSize(32)
+            .fontFeature('"tnum" on')
           .fontWeight(FontWeight.Bold)
           .fontFamily(displayFont(!this.isCyber()))
           .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
         if (this.deltaRatio() !== null) {
           Text(`${this.deltaRatio()! >= 0 ? '+' : '−'}${Math.abs(this.deltaRatio()! * 100).toFixed(1)}%`)
             .fontSize(10.5)
+              .fontFeature('"tnum" on')
+              .fontFeature('"tnum" on')
             .fontWeight(FontWeight.Bold)
             .fontFamily(fontMonoOf())
             .fontColor(this.tok().ink2)
@@ -262,6 +265,7 @@ export struct DashboardScreen {
         .fontColor(this.tok().ink3)
       Text($$.value)
         .fontSize(12)
+          .fontFeature('"tnum" on')
         .fontWeight(FontWeight.Medium)
         .fontColor(this.tok().ink)
     }
@@ -288,6 +292,7 @@ export struct DashboardScreen {
               Text(point.totalCents > 0 ? formatYuan(point.totalCents) : '—')
                   .fontFeature('"tnum" on')
                 .fontSize(10)
+                  .fontFeature('"tnum" on')
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.tok().ink)
                 .maxLines(1)
@@ -403,6 +408,7 @@ export struct DashboardScreen {
         Text(formatYuan(this.creditDueCents))
           .fontFeature('"tnum" on')
           .fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+            .fontFeature('"tnum" on')
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)

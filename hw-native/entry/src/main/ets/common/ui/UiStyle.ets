@@ -61,9 +61,7 @@ export function strokeWidthOf(isCyber: boolean): number {
 }
 
 /** 按钮阴影：candy 硬阴影 / cyber 无（原型 .btn 在 cyber 下 box-shadow: none） */
-export function btnShadow(tokens: ThemeTokens, isCyber: boolean): ParsedShadow {
-  return parseShadow(isCyber ? '0px 0px 0px rgba(0,0,0,0)' : tokens.shadowBtn);
-}
+
 
 /** cyber 的切角（原型 clip-path: polygon(0 7px, 7px 0, 100% 0, 100% calc(100%-7px), calc(100%-7px) 100%, 0 100%)） */
 export const CYBER_CUT = 7;
@@ -123,9 +121,7 @@ export const CUT_ORB = 6;
 export const CUT_LOGO = 8;
 
 /** 生成 cyber 切角路径命令（ArkUI Path 用），等价 clip-path: polygon(0 n, n 0, 100% 0, 100% calc(100%-n), calc(100%-n) 100%, 0 100%) */
-export function cutPathCommands(w: number, h: number, n: number): string {
-  return `M0 ${n} L${n} 0 L${w} 0 L${w} ${h - n} L${w - n} ${h} L0 ${h} Z`;
-}
+
 
 /**
  * 可交互控件边界色（R34：≥3:1）。
