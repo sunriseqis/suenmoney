@@ -409,11 +409,21 @@ export struct SettingsScreen {
                 .layoutWeight(1)
               Text(`${kid.expenseCount} 笔`)
                 .fontSize(9)
+                .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
               if (!kid.isEnabled) {
-                Text('已停用')
+                Text('已停用').fontSize(9).fontColor(this.tok().ink3)
+              } else {
+                // 行内停用（R87 软删：有引用只能停用）
+                Text('停用')
                   .fontSize(9)
                   .fontColor(this.tok().ink3)
+                  .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+                  .border({ width: 1, color: this.tok().line })
+                  .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+                  .onClick(() => {
+                    this.deactivateCategoryById(kid.id);
+                  })
               }
             }
             .width('100%')
@@ -421,6 +431,9 @@ export struct SettingsScreen {
             .onClick(() => {
               this.openCategorySheet(kid, this.railRootId);
             })
+            .gesture(LongPressGesture().onAction(() => {
+              this.deactivateCategoryById(kid.id);
+            }))
           }, (kid: CategoryNode) => kid.id)
         }
         .alignItems(HorizontalAlign.Start)
@@ -463,17 +476,32 @@ export struct SettingsScreen {
               .fontColor(this.tok().ink)
             // 现金不显示账期说明（没有账单日），信用卡才显示
             if (p.type === 'credit') {
-              Text(`${p.billingDay ?? 0} 日账单 · ${p.repaymentDay ?? 0} 日还款`)
+              Text(`${p.billingDay ?? 0} 日账单 · ${p.repaymentDay ?? 0} 日还款 · 本月 ${p.expenseCount} 笔`)
                 .fontSize(9)
+                .fontFamily(fontMonoOf())
+                .fontColor(this.tok().ink3)
+            } else {
+              Text(`本月 ${p.expenseCount} 笔`)
+                .fontSize(9)
+                .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
             }
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
           if (!p.isEnabled) {
-            Text('已停用')
+            Text('已停用').fontSize(9).fontColor(this.tok().ink3)
+          } else {
+            // 行内合并入口（合并后本项停用；历史记录归属到目标）
+            Text('合并')
               .fontSize(9)
               .fontColor(this.tok().ink3)
+              .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+              .border({ width: 1, color: this.tok().line })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+              .onClick(() => {
+                this.openPaymentSheet(p);
+              })
           }
         }
         .width('100%')
