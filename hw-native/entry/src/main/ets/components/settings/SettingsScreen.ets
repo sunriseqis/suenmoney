@@ -20,7 +20,9 @@ import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, hashIndex } from '../../common/theme/Palette';
 import { formatYuan, daysUntil } from '../../common/contract/Contract';
 
-import { categoryGlyph } from '../../common/ui/CategoryIcon';
+import { categoryIconPath } from '../../common/ui/CategoryIcon';
+import { IconView } from '../../common/ui/IconView';
+import { PayVisual, resolvePayVisual } from '../../common/ui/PaymentIcon';
 import {
   Api,
   CategoryCreateRequest,
@@ -488,14 +490,19 @@ export struct SettingsScreen {
 
       ForEach(this.payments, (p: PaymentMethodItem) => {
         Row({ space: 8 }) {
-          Text(p.name.substring(0, 1))
-            .width(28)
-            .height(28)
-            .textAlign(TextAlign.Center)
-            .fontSize(12)
-            .fontColor(this.tok().ink)
-            .backgroundColor(this.tok().surface2)
-            .borderRadius(8)
+          // 品牌图标（支付宝/微信/云闪付…填充色；信用卡/现金/银行/钱包走 Lucide 描边）
+          Stack() {
+            IconView({
+              path: this.payVisualOf(p).path,
+              iconSize: 16,
+              color: this.payVisualOf(p).color,
+              filled: this.payVisualOf(p).brand
+            })
+          }
+          .width(28)
+          .height(28)
+          .backgroundColor(this.tok().surface2)
+          .borderRadius(8)
           Column({ space: 2 }) {
             Text(p.name)
               .fontSize(12)
@@ -579,14 +586,17 @@ export struct SettingsScreen {
         Column({ space: 4 }) {
           Row({ space: 6 }) {
             // R121：计划卡身份物 —— 分类图标（走 R134 解析链）
-            Text(categoryGlyph(plan.categoryIcon ?? '', plan.categoryName ?? plan.name))
-              .fontSize(9)
-              .fontColor(this.tok().ink2)
-              .width(18)
-              .height(18)
-              .textAlign(TextAlign.Center)
-              .backgroundColor(this.tok().surface2)
-              .borderRadius(radiusOf(this.tok(), this.isCyber(), 6))
+            Stack() {
+              IconView({
+                path: categoryIconPath(plan.categoryIcon ?? '', plan.categoryName ?? plan.name),
+                iconSize: 11,
+                color: this.tok().ink2
+              })
+            }
+            .width(18)
+            .height(18)
+            .backgroundColor(this.tok().surface2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), 6))
             Text(plan.name)
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
@@ -994,6 +1004,11 @@ export struct SettingsScreen {
   /** 是否深色（cyber）—— 决定圆角/阴影/切角/字体族 */
   private isCyber(): boolean {
     return this.themeName === 'cyber';
+  }
+
+  /** 支付方式图标（与 Web PPayIcon 同源：品牌填充 / 其余 Lucide 描边） */
+  private payVisualOf(p: PaymentMethodItem): PayVisual {
+    return resolvePayVisual(p.name, p.icon ?? '');
   }
 
   build() {
