@@ -184,6 +184,11 @@ export struct ExpenseEditor {
     return false;
   }
 
+  /** 输入框默认描边（R35 焦点环的未聚焦态） */
+  private lineColor(): string {
+    return this.isCyber() ? this.tok().line : outlineStrongOf(false);
+  }
+
   private cents(): number {
     return parseYuanToCents(this.amountText);
   }
@@ -465,6 +470,43 @@ export struct ExpenseEditor {
    * 键盘（R101/R103）：**5 列** = 左支付列（独立，物理分割线）+ 右 4×4 数字键；
    * 宽高比 ~1.35:1；数字键浮起（surface + 阴影）；完成键占右侧两行。
    */
+  /** R103：常用分类胶囊条（按本月笔数前 6），点一下直接换分类 */
+  @Builder
+  quickBar() {
+    Row({ space: 6 }) {
+      ForEach(this.quickCats(), (c: CategoryNode) => {
+        Text(c.name)
+          .fontSize(10)
+          .fontColor(this.categoryId === c.id ? this.tok().accentInk : this.tok().ink2)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .backgroundColor(this.categoryId === c.id ? this.tok().accent : this.tok().surface2)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+          .border({ width: 1, color: this.categoryId === c.id ? this.tok().accent : this.tok().line })
+          .onClick(() => {
+            this.categoryId = c.id;
+            this.categoryOpen = false;
+            this.refreshPreview();
+          })
+      }, (c: CategoryNode) => `quick-${c.id}`)
+      Blank()
+    }
+    .width('100%')
+  }
+
+  /** 常用分类：二级里本月笔数最多的前 6 个（不足则补最近使用的） */
+  private quickCats(): CategoryNode[] {
+    const out: CategoryNode[] = [];
+    for (const root of this.categories) {
+      for (const kid of root.children) {
+        if (kid.isEnabled && kid.expenseCount > 0) {
+          out.push(kid);
+        }
+      }
+    }
+    out.sort((a: CategoryNode, b: CategoryNode) => b.expenseCount - a.expenseCount);
+    return out.slice(0, 6);
+  }
+
   @Builder
   keypad() {
     Row() {
@@ -602,6 +644,7 @@ export struct ExpenseEditor {
         .onChange((v: string) => {
           this.note = v;
         })
+        .border({ width: this.noteFocus ? 2 : this.tok().borderW, color: this.noteFocus ? this.tok().accent : this.lineColor() })
         .onFocus(() => {
           this.noteFocus = true;
         })
@@ -792,6 +835,7 @@ export struct ExpenseEditor {
         .backgroundColor(this.tok().surface2)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
       } else {
+        this.quickBar()
         this.keypad()
       }
 
