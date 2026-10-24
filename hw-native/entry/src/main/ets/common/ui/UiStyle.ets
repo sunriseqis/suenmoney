@@ -161,3 +161,6 @@ export const CARD_PAD = 14;
 export function cyberClipCommands(w: number, h: number, n: number): string {
   return `M0 ${n} L${n} 0 L${w} 0 L${w} ${h - n} L${w - n} ${h} L0 ${h} Z`;
 }
+
+/** R35 焦点环：聚焦时的高亮描边颜色（Candy/Cyber 同色） */
+export const FOCUS_RING: string = '#5DB8FF';

@@ -27,7 +27,7 @@ import {
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { FOCUS_RING, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
@@ -50,6 +50,17 @@ export interface ExpenseEditorProps {
 
 @Component
 export struct ExpenseEditor {
+  /** R108：2026-11-28 → 2026 年 11 月 */
+  private monthLabel(date: string): string {
+    const y = date.substring(0, 4);
+    const m = date.substring(5, 7);
+    return `${y} 年 ${Number(m)} 月`;
+  }
+
+  /** R108：2026-11-28 → 11月28日 */
+  private dateShort(date: string): string {
+    return `${Number(date.substring(5, 7))}月${Number(date.substring(8, 10))}日`;
+  }
   props: ExpenseEditorProps = {
     editing: null,
     onSaved: () => {
@@ -384,7 +395,7 @@ export struct ExpenseEditor {
     } as OfflineExpensePayload);
     await Outbox.enqueue('create_expense', id, payload);
     SyncEngine.schedulePush();
-    this.errorText = '网络不可用：已存入待发送队列，联网后自动记入';
+    this.errorText = '网络不可用：已存本机，联网后自动记入';
   }
 
   /** 日期选择（系统 DatePickerDialog，不自己画日历） */
@@ -644,7 +655,7 @@ export struct ExpenseEditor {
         .onChange((v: string) => {
           this.note = v;
         })
-        .border({ width: this.noteFocus ? 2 : this.tok().borderW, color: this.noteFocus ? this.tok().accent : this.lineColor() })
+        .border({ width: this.noteFocus ? 2 : this.tok().borderW, color: this.noteFocus ? FOCUS_RING : this.lineColor() })
         .onFocus(() => {
           this.noteFocus = true;
         })
@@ -655,12 +666,16 @@ export struct ExpenseEditor {
       // 账期预览：跨月必须醒目
       Row({ space: 4 }) {
         if (this.crossesMonth()) {
+          // R108：明说年月与还款日，不只是裸 YYYY-MM
           Text('这笔会记在')
             .fontSize(10)
             .fontColor(this.tok().accent)
-          Text(this.preview!.repaymentDate.substring(0, 7))
+          Text(this.monthLabel(this.preview!.repaymentDate))
             .fontSize(10)
             .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().accent)
+          Text(`（还款日 ${this.dateShort(this.preview!.repaymentDate)}）`)
+            .fontSize(10)
             .fontColor(this.tok().accent)
         } else {
           Text(this.preview === null ? '账期未取到' : `还款日 ${this.preview!.repaymentDate}`)

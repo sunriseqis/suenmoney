@@ -112,8 +112,5 @@ export function categoryGlyph(icon: string, name: string): string {
   if (glyph !== undefined) {
     return glyph;
   }
-  if (glyph !== undefined) {
-    return glyph;
-  }
   return name.length > 0 ? name.substring(0, 1) : '·';
 }

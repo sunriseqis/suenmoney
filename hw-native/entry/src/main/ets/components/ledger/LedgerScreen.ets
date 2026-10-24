@@ -132,6 +132,15 @@ export struct LedgerScreen {
   @State editingRow: ExpenseItem | null = null;
   private scroller: Scroller = new Scroller();
 
+  /** 抽屉保存后立即刷新待同步条数（m31） */
+  refreshPending(): void {
+    Outbox.pendingCount().then((n: number) => {
+      this.pendingSync = n;
+      this.sharedPending = n;
+    }).catch(() => {
+    });
+  }
+
   aboutToAppear(): void {
     this.reload();
     Outbox.pendingCount().then((n: number) => {
@@ -595,7 +604,7 @@ export struct LedgerScreen {
 
       // R144：离线/待同步提示**并入计划提醒卡区域**，且只由待同步条数驱动
       if (this.pendingSync > 0) {
-        Text(`待同步 ${this.pendingSync} 条 · 已存本机、联网自动同步`)
+        Text('待同步中 · 已存本机、联网自动同步')
           .fontSize(9)
           .fontFamily(fontMonoOf())
           .fontColor(this.tok().ink3)
