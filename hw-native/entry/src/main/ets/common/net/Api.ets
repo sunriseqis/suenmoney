@@ -150,6 +150,14 @@ export interface MonthPointRef {
 }
 
 /** 去年同月（R83 对照四格用） */
+/** 同比（年报用；月报用 YearAgoRef） */
+export interface YearAgoCompare {
+  label: string;
+  totalCents: number;
+  changeCents: number;
+  changeRatio: number | null;
+}
+
 export interface YearAgoRef {
   label: string;
   totalCents: number;
@@ -224,6 +232,13 @@ export interface YearlyReport {
   count: number;
   months: MonthPoint[];
   peakMonth: MonthPoint | null;
+  /** 服务端年维度聚合（与月报同口径；R76 年档块集合用） */
+  categories?: CategoryBucket[];
+  paymentMethods?: PaymentBucket[];
+  members?: MemberBucket[];
+  yearAgo?: YearAgoCompare;
+  largest?: LargestExpense | null;
+  average3YearsCents?: number;
 }
 
 export interface YearlyReportBody {

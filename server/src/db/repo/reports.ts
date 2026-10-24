@@ -135,6 +135,8 @@ export interface YearlyReport {
   largest: LargestExpense | null;
   categories: CategoryBucket[];
   members: MemberBucket[];
+  /** 按支付方式（年维度，与月报同口径） */
+  paymentMethods: PaymentBucket[];
   /** 近 3 年年均消费（分） */
   average3YearsCents: number;
   /** 本年支出最高月份 */
@@ -750,6 +752,7 @@ export function yearlyReport(db: DatabaseSync, year: string, ownerId?: string): 
     largest: largestExpense(db, scope),
     categories: categoryBuckets(db, scope, current.totalCents, categoryCentsByRoot(db, previousScope)),
     members: memberBuckets(db, scope),
+    paymentMethods: paymentBuckets(db, scope),
     average3YearsCents,
     peakMonth,
   };
