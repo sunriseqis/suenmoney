@@ -60,6 +60,8 @@ export struct ExpenseEditor {
   @State errorText: string = '';
   /** 本月已支出（R107：背景信息，不 await，拿不到显示占位） */
   @State monthSpentCents: number | null = null;
+  /** 备注聚焦时折叠数字键盘（R111） */
+  @State noteFocus: boolean = false;
   @State preview: ExpensePreview | null = null;
   @State categories: CategoryNode[] = [];
   @State payments: PaymentMethodItem[] = [];
@@ -557,6 +559,12 @@ export struct ExpenseEditor {
         .onChange((v: string) => {
           this.note = v;
         })
+        .onFocus(() => {
+          this.noteFocus = true;
+        })
+        .onBlur(() => {
+          this.noteFocus = false;
+        })
 
       // 账期预览：跨月必须醒目
       Row({ space: 4 }) {
@@ -688,7 +696,30 @@ export struct ExpenseEditor {
       }
       .width('100%')
 
-      this.keypad()
+      if (this.noteFocus) {
+        // R111：备注输入时折叠数字键盘，给出上方辅助保存条
+        Row({ space: 8 }) {
+          Text(formatYuan(this.isRefund ? -this.cents() : this.cents()))
+            .fontSize(14).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).layoutWeight(1)
+          Button('收起键盘').fontSize(11).height(32)
+            .backgroundColor(this.tok().surface2).fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.noteFocus = false;
+            })
+          Button('保存').fontSize(12).height(32)
+            .backgroundColor(this.tok().accent).fontColor(this.tok().accentInk)
+            .enabled(this.canSave())
+            .onClick(() => {
+              this.save();
+            })
+        }
+        .width('100%')
+        .padding(8)
+        .backgroundColor(this.tok().surface2)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+      } else {
+        this.keypad()
+      }
 
       Row({ space: 8 }) {
         Button(this.saving ? '保存中…' : '保存')
