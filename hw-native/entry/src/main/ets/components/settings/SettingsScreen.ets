@@ -8,7 +8,7 @@
  */
 
 import { LengthMetrics, router } from '@kit.ArkUI';
-import { cardShadow, radiusOf, outlineStrongOf } from '../../common/ui/UiStyle';
+import { cardShadow, fontMonoOf, outlineStrongOf, radiusOf } from '../../common/ui/UiStyle';
 import { ApiError } from '../../common/net/ApiError';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
@@ -34,11 +34,26 @@ import {
   UserCreateRequest,
   UserSummary
 } from '../../common/net/Api';
+export interface ThemeOptionModel {
+  label: string;
+  value: string;
+}
+
+export interface SectionTabModel {
+  label: string;
+  value: number;
+}
+
+
+
+
 
 @Component
 export struct SettingsScreen {
   /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
+  /** 三档：dark / light / system（R130） */
+  @State themeMode: string = ThemeManager.get().themeMode;
   /** 0=账目 1=计划 2=数据 3=家庭 */
   @State section: number = 0;
   @State categories: CategoryNode[] = [];
@@ -131,9 +146,9 @@ export struct SettingsScreen {
     }
   }
 
-  private async switchTheme(name: ThemeName): Promise<void> {
+  private async switchTheme(name: string): Promise<void> {
     // set() 会把主题名广播到 AppStorage，所有订阅的屏一起重绘
-    await ThemeManager.get().set(name);
+    await ThemeManager.get().setMode(name === 'light' ? 'light' : (name === 'system' ? 'system' : 'dark'));
   }
 
   // ── 弹层：打开与保存 ────────────────────────────────────────────────────
@@ -649,144 +664,37 @@ export struct SettingsScreen {
   }
 
   // ── 数据 ────────────────────────────────────────────────────────────────
+  /** 外观（R130/R140）：主题三档 + 品牌徽章 + 版本；**不挂任何导入导出**（D15/R99） */
   @Builder
-  dataSection() {
-    Column({ space: 12 }) {
+  appearanceSection() {
+    Column({ space: 14 }) {
       Text('主题')
         .fontSize(11)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.tok().ink)
         .width('100%')
 
+      Column({ space: 8 }) {
+        this.themeOption({ label: '深色 · Cyberpunk', value: 'dark' })
+        this.themeOption({ label: '浅色 · Playful', value: 'light' })
+        this.themeOption({ label: '跟随系统', value: 'system' })
+      }
+      .width('100%')
+
+      Divider().color(this.tok().line)
+
+      // 品牌徽章（R140）：Logo + Slogan + 版本
       Row({ space: 10 }) {
-        Button('水果硬糖')
-          .fontSize(12)
-          .height(36)
-          .layoutWeight(1)
-          .backgroundColor(this.themeName === 'candy' ? this.tok().accent : this.tok().surface2)
-          .fontColor(this.themeName === 'candy' ? this.tok().accentInk : this.tok().ink2)
-          .onClick(() => {
-            this.switchTheme('candy');
-          })
-        Button('赛博朋克')
-          .fontSize(12)
-          .height(36)
-          .layoutWeight(1)
-          .backgroundColor(this.themeName === 'cyber' ? this.tok().accent : this.tok().surface2)
-          .fontColor(this.themeName === 'cyber' ? this.tok().accentInk : this.tok().ink2)
-          .onClick(() => {
-            this.switchTheme('cyber');
-          })
+        Image($r('app.media.layered_image')).width(46).height(46).borderRadius(12)
+        Column({ space: 2 }) {
+          Text('SuenMoney').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+          Text('单账本家庭记账').fontSize(9.5).fontColor(this.tok().ink3)
+          Text('v1.0.0 · HarmonyOS').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
       }
       .width('100%')
-
-      Divider().color(this.tok().line)
-
-      Text('同步')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tok().ink)
-        .width('100%')
-
-      Row({ space: 8 }) {
-        Text(`待发送 ${this.pendingCount} 条`)
-          .fontSize(10)
-          .fontColor(this.tok().ink2)
-          .layoutWeight(1)
-        Button('立即同步')
-          .fontSize(11)
-          .height(30)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.syncNow();
-          })
-      }
-      .width('100%')
-
-      if (this.syncMessage !== '') {
-        Text(this.syncMessage)
-          .fontSize(9)
-          .fontColor(this.tok().ink3)
-          .width('100%')
-      }
-
-      // 死信：重试用尽的条目，必须让用户看见并能重投
-      if (this.deadLetters.length > 0) {
-        Text(`发送失败 ${this.deadLetters.length} 条`)
-          .fontSize(10)
-          .fontColor(this.tok().danger)
-          .width('100%')
-        ForEach(this.deadLetters, (entry: OutboxEntry) => {
-          Text(`${entry.action} · ${entry.lastError !== '' ? entry.lastError : '未知原因'}`)
-            .fontSize(9)
-            .fontColor(this.tok().ink3)
-            .width('100%')
-        }, (entry: OutboxEntry) => entry.id)
-        Button('全部重试')
-          .fontSize(11)
-          .height(30)
-          .width('100%')
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            Outbox.retryDeadLetters().then(() => {
-              this.refreshQueue();
-              this.syncNow();
-            });
-          })
-      }
-
-      Divider().color(this.tok().line)
-
-      Text('底座自检')
-        .fontSize(11)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.tok().ink)
-        .width('100%')
-
-      Row({ space: 10 }) {
-        Button('跑测试向量')
-          .fontSize(11)
-          .height(32)
-          .layoutWeight(1)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.vectorReport = VectorRunner.runAll();
-          })
-        Button('看表结构')
-          .fontSize(11)
-          .height(32)
-          .layoutWeight(1)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            Db.schemaReport()
-              .then((text: string) => {
-                this.schemaReport = text;
-              })
-              .catch((e: Error) => {
-                this.schemaReport = `读表结构失败：${e.message}`;
-              });
-          })
-      }
-      .width('100%')
-
-      if (this.vectorReport !== '') {
-        Text(this.vectorReport)
-          .fontSize(9)
-          .fontColor(this.tok().ink2)
-          .width('100%')
-      }
-      if (this.schemaReport !== '') {
-        Text(this.schemaReport)
-          .fontSize(9)
-          .fontColor(this.tok().ink3)
-          .width('100%')
-      }
-
-      Divider().color(this.tok().line)
 
       Button('退出登录')
         .fontSize(12)
@@ -803,9 +711,30 @@ export struct SettingsScreen {
     .width('100%')
     .padding(this.tok().densityPad)
     .backgroundColor(this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rCard))
-    .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 24))
+    .border({ width: this.tok().borderW, color: this.tok().line })
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /** 主题三档选项（选中态用左侧色块 + 文案，不用实色填充） */
+  @Builder
+  themeOption($$: ThemeOptionModel) {
+    Row({ space: 10 }) {
+      Row()
+        .width(16).height(16)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
+        .backgroundColor(this.themeMode === $$.value ? this.tok().accent : this.tok().surface3)
+        .border({ width: 1, color: outlineStrongOf(this.isCyber()) })
+      Text($$.label).fontSize(12).fontColor(this.tok().ink2).layoutWeight(1)
+      if (this.themeMode === $$.value) {
+        Text('已选').fontSize(9.5).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
+      }
+    }
+    .width('100%')
+    .padding({ top: 6, bottom: 6 })
+    .onClick(() => {
+      this.switchTheme($$.value);
+    })
   }
 
   // ── 家庭 ────────────────────────────────────────────────────────────────
@@ -878,10 +807,10 @@ export struct SettingsScreen {
   build() {
     Column({ space: 10 }) {
       Row({ space: 6 }) {
-        this.sectionButton('账目', 0)
-        this.sectionButton('计划', 1)
-        this.sectionButton('数据', 2)
-        this.sectionButton('家庭', 3)
+        this.sectionButton({ label: '账目', value: 0 })
+        this.sectionButton({ label: '计划与还款', value: 1 })
+        this.sectionButton({ label: '外观', value: 2 })
+        this.sectionButton({ label: '家庭', value: 3 })
       }
       .width('100%')
 
@@ -899,7 +828,7 @@ export struct SettingsScreen {
           } else if (this.section === 1) {
             this.plansSection()
           } else if (this.section === 2) {
-            this.dataSection()
+            this.appearanceSection()
           } else {
             this.familySection()
           }
@@ -1391,15 +1320,15 @@ export struct SettingsScreen {
   }
 
   @Builder
-  sectionButton(label: string, value: number) {
-    Button(label)
+  sectionButton($$: SectionTabModel) {
+    Button($$.label)
       .fontSize(11)
       .height(30)
       .layoutWeight(1)
-      .backgroundColor(this.section === value ? this.tok().accent : this.tok().surface2)
-      .fontColor(this.section === value ? this.tok().accentInk : this.tok().ink3)
+      .backgroundColor(this.section === $$.value ? this.tok().accent : this.tok().surface2)
+      .fontColor(this.section === $$.value ? this.tok().accentInk : this.tok().ink3)
       .onClick(() => {
-        this.section = value;
+        this.section = $$.value;
       })
   }
 }

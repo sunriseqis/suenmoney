@@ -39,7 +39,9 @@ export struct DonutChart {
     const cx = w / 2;
     const cy = h / 2;
     const radius = Math.min(w, h) / 2 - 10;
-    const lineWidth = Math.max(10, radius * 0.34);
+    // 环宽固定 16（原型 stroke-width:16；12 是半径内缩量，不是环宽）
+    const lineWidth = 16;
+    const gap = 0.025; // 段间空隙 ~2.5°
 
     this.ctx.clearRect(0, 0, w, h);
 
@@ -57,11 +59,12 @@ export struct DonutChart {
         continue;
       }
       const sweep = Math.min(1, ratio) * Math.PI * 2;
+      const drawSweep = this.slices.length > 1 ? Math.max(0.01, sweep - gap) : sweep;
       this.ctx.beginPath();
       this.ctx.strokeStyle = slice.color;
       this.ctx.lineWidth = lineWidth;
       this.ctx.lineCap = 'butt';
-      this.ctx.arc(cx, cy, radius - lineWidth / 2, start, start + sweep);
+      this.ctx.arc(cx, cy, radius - lineWidth / 2, start, start + drawSweep);
       this.ctx.stroke();
       start += sweep;
       if (start >= Math.PI * 1.5) {
