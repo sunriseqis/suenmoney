@@ -13,8 +13,9 @@ import { Api, ExpenseItem, MonthPoint, PaymentMethodItem, UserSummary, YearPoint
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
-import { ThemeManager } from '../../common/theme/ThemeManager';
-import { ThemeTokens } from '../../common/theme/AppTheme';
+import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
+import { displayFont, bodyFont } from '../../common/theme/Fonts';
+import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
 import { formatYuan } from '../../common/contract/Contract';
 import { LengthMetrics } from '@kit.ArkUI';
@@ -30,7 +31,8 @@ export interface LedgerDayGroup {
 
 @Component
 export struct LedgerScreen {
-  @State tokens: ThemeTokens = ThemeManager.get().tokens;
+  /** 订阅全局主题名：切换后本屏立即重绘（不能存 tokens 快照，见 ThemeManager 注释） */
+  @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   /** 0=按月 1=按年 2=全部 */
   @State tier: number = 0;
   @State anchorMonth: string = currentMonthKey();
@@ -238,7 +240,7 @@ export struct LedgerScreen {
   private categoryColorOf(row: ExpenseItem): string {
     const cat = this.categoryNames.get(row.categoryId);
     const colorField = cat !== undefined ? cat.color : row.parentCategoryColor ?? row.categoryColor;
-    return chartColor(this.tokens, slotOf(colorField ?? '', row.categoryId));
+    return chartColor(this.tok(), slotOf(colorField ?? '', row.categoryId));
   }
 
   private categoryNameOf(row: ExpenseItem): string {
@@ -273,8 +275,8 @@ export struct LedgerScreen {
       .fontSize(12)
       .height(30)
       .layoutWeight(1)
-      .backgroundColor(this.tier === value ? this.tokens.accent : this.tokens.surface2)
-      .fontColor(this.tier === value ? this.tokens.accentInk : this.tokens.ink2)
+      .backgroundColor(this.tier === value ? this.tok().accent : this.tok().surface2)
+      .fontColor(this.tier === value ? this.tok().accentInk : this.tok().ink2)
       .onClick(() => {
         this.tier = value;
         this.loading = true;
@@ -295,7 +297,7 @@ export struct LedgerScreen {
         TextInput({ placeholder: '搜索备注或分类', text: this.keyword })
           .height(36)
           .layoutWeight(1)
-          .backgroundColor(this.tokens.surface2)
+          .backgroundColor(this.tok().surface2)
           .onChange((v: string) => {
             this.keyword = v;
           })
@@ -306,8 +308,8 @@ export struct LedgerScreen {
         Button(this.filterOpen ? '收起' : '筛选')
           .fontSize(12)
           .height(36)
-          .backgroundColor(this.activeFilterCount() > 0 ? this.tokens.accent : this.tokens.surface2)
-          .fontColor(this.activeFilterCount() > 0 ? this.tokens.accentInk : this.tokens.ink2)
+          .backgroundColor(this.activeFilterCount() > 0 ? this.tok().accent : this.tok().surface2)
+          .fontColor(this.activeFilterCount() > 0 ? this.tok().accentInk : this.tok().ink2)
           .onClick(() => {
             this.filterOpen = !this.filterOpen;
           })
@@ -319,8 +321,8 @@ export struct LedgerScreen {
           .fontSize(11)
           .height(28)
           .layoutWeight(1)
-          .backgroundColor(this.sortMode === 0 ? this.tokens.surface3 : this.tokens.surface2)
-          .fontColor(this.sortMode === 0 ? this.tokens.ink : this.tokens.ink3)
+          .backgroundColor(this.sortMode === 0 ? this.tok().surface3 : this.tok().surface2)
+          .fontColor(this.sortMode === 0 ? this.tok().ink : this.tok().ink3)
           .onClick(() => {
             this.sortMode = 0;
           })
@@ -328,8 +330,8 @@ export struct LedgerScreen {
           .fontSize(11)
           .height(28)
           .layoutWeight(1)
-          .backgroundColor(this.sortMode === 1 ? this.tokens.surface3 : this.tokens.surface2)
-          .fontColor(this.sortMode === 1 ? this.tokens.ink : this.tokens.ink3)
+          .backgroundColor(this.sortMode === 1 ? this.tok().surface3 : this.tok().surface2)
+          .fontColor(this.sortMode === 1 ? this.tok().ink : this.tok().ink3)
           .onClick(() => {
             this.sortMode = 1;
           })
@@ -344,8 +346,8 @@ export struct LedgerScreen {
           Button('清除全部筛选')
             .fontSize(11)
             .height(28)
-            .backgroundColor(this.tokens.surface2)
-            .fontColor(this.tokens.ink3)
+            .backgroundColor(this.tok().surface2)
+            .fontColor(this.tok().ink3)
             .onClick(() => {
               this.filterCategory = '';
               this.filterPayment = '';
@@ -356,8 +358,8 @@ export struct LedgerScreen {
         }
         .width('100%')
         .padding(8)
-        .backgroundColor(this.tokens.surface2)
-        .borderRadius(this.tokens.rMd)
+        .backgroundColor(this.tok().surface2)
+        .borderRadius(this.tok().rMd)
       }
     }
     .width('100%')
@@ -368,16 +370,16 @@ export struct LedgerScreen {
     Column({ space: 4 }) {
       Text(label)
         .fontSize(9)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
         .width('100%')
       Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.px(6), cross: LengthMetrics.px(6) } }) {
         ForEach(options, (opt: CachedCategory) => {
           Button(opt.name)
             .fontSize(11)
             .height(26)
-            .backgroundColor(selected === opt.id ? this.tokens.accent : this.tokens.surface)
-            .fontColor(selected === opt.id ? this.tokens.accentInk : this.tokens.ink2)
-            .border({ width: 1, color: this.tokens.line })
+            .backgroundColor(selected === opt.id ? this.tok().accent : this.tok().surface)
+            .fontColor(selected === opt.id ? this.tok().accentInk : this.tok().ink2)
+            .border({ width: 1, color: this.tok().line })
             .onClick(() => {
               const next: string = selected === opt.id ? '' : opt.id;
               if (kind === 'category') {
@@ -416,11 +418,12 @@ export struct LedgerScreen {
       Row() {
         Text(this.anchorMonth)
           .fontSize(11)
-          .fontColor(this.tokens.ink3)
+          .fontFamily(displayFont(!this.isCyber()))
+          .fontColor(this.tok().ink3)
         Blank()
         Text(`${this.monthCount} 笔 · ${formatYuan(this.monthTotalCents)}`)
           .fontSize(11)
-          .fontColor(this.tokens.ink2)
+          .fontColor(this.tok().ink2)
       }
       .width('100%')
       .padding({ left: 4, right: 4, bottom: 6 })
@@ -442,8 +445,8 @@ export struct LedgerScreen {
               .width('100%')
               .height(36)
               .fontSize(12)
-              .backgroundColor(this.tokens.surface2)
-              .fontColor(this.tokens.ink2)
+              .backgroundColor(this.tok().surface2)
+              .fontColor(this.tok().ink2)
               .onClick(() => {
                 this.loadMonth(false).then(() => {
                 }).catch((e: ApiError) => {
@@ -465,11 +468,11 @@ export struct LedgerScreen {
     Row() {
       Text(group.date)
         .fontSize(10)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
       Blank()
       Text(formatYuan(group.cents))
         .fontSize(10)
-        .fontColor(this.tokens.ink3)
+        .fontColor(this.tok().ink3)
     }
     .width('100%')
     .padding({ left: 4, right: 4, top: 6, bottom: 2 })
@@ -486,19 +489,19 @@ export struct LedgerScreen {
         .fontSize(14)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.categoryColorOf(row))
-        .backgroundColor(this.tokens.surface2)
+        .backgroundColor(this.tok().surface2)
         .borderRadius(10)
 
       Column({ space: 2 }) {
         Text(this.categoryNameOf(row))
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
-          .fontColor(this.tokens.ink)
+          .fontColor(this.tok().ink)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`${row.note !== '' ? row.note + ' · ' : ''}${this.paymentNameOf(row)}`)
           .fontSize(10)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -508,13 +511,13 @@ export struct LedgerScreen {
       Text(formatYuan(row.amountCents))
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
-        .fontColor(row.amountCents < 0 ? this.tokens.mint : this.tokens.ink)
+        .fontColor(row.amountCents < 0 ? this.tok().mint : this.tok().ink)
     }
     .width('100%')
     .padding(10)
-    .backgroundColor(this.tokens.surface)
-    .borderRadius(this.tokens.rMd)
-    .border({ width: 1, color: this.tokens.line })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(this.tok().rMd)
+    .border({ width: 1, color: this.tok().line })
     .onClick(() => {
       this.editingRow = row;
       this.sheetOpen = true;
@@ -527,11 +530,11 @@ export struct LedgerScreen {
       Row() {
         Text(`${this.anchorYear} 年`)
           .fontSize(11)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
         Blank()
         Text(formatYuan(this.yearTotalCents))
           .fontSize(11)
-          .fontColor(this.tokens.ink2)
+          .fontColor(this.tok().ink2)
       }
       .width('100%')
       .padding({ left: 4, right: 4, bottom: 6 })
@@ -542,20 +545,20 @@ export struct LedgerScreen {
             Column({ space: 2 }) {
               Text(`${Number(point.month.substring(5, 7))} 月`)
                 .fontSize(11)
-                .fontColor(this.tokens.ink2)
+                .fontColor(this.tok().ink2)
               Text(formatYuan(point.totalCents))
                 .fontSize(12)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(this.tokens.ink)
+                .fontColor(this.tok().ink)
               Text(`${point.count} 笔`)
                 .fontSize(9)
-                .fontColor(this.tokens.ink3)
+                .fontColor(this.tok().ink3)
             }
             .width('100%')
             .padding(8)
-            .backgroundColor(this.tokens.surface)
-            .borderRadius(this.tokens.rMd)
-            .border({ width: 1, color: this.tokens.line })
+            .backgroundColor(this.tok().surface)
+            .borderRadius(this.tok().rMd)
+            .border({ width: 1, color: this.tok().line })
             .onClick(() => {
               this.anchorMonth = point.month;
               this.tier = 0;
@@ -582,11 +585,11 @@ export struct LedgerScreen {
       Row() {
         Text('全部记录')
           .fontSize(11)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
         Blank()
         Text(formatYuan(this.allTotalCents))
           .fontSize(11)
-          .fontColor(this.tokens.ink2)
+          .fontColor(this.tok().ink2)
       }
       .width('100%')
       .padding({ left: 4, right: 4, bottom: 6 })
@@ -597,20 +600,20 @@ export struct LedgerScreen {
             Column({ space: 2 }) {
               Text(point.year)
                 .fontSize(11)
-                .fontColor(this.tokens.ink2)
+                .fontColor(this.tok().ink2)
               Text(formatYuan(point.totalCents))
                 .fontSize(12)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(this.tokens.ink)
+                .fontColor(this.tok().ink)
               Text(`${point.count} 笔`)
                 .fontSize(9)
-                .fontColor(this.tokens.ink3)
+                .fontColor(this.tok().ink3)
             }
             .width('100%')
             .padding(8)
-            .backgroundColor(this.tokens.surface)
-            .borderRadius(this.tokens.rMd)
-            .border({ width: 1, color: this.tokens.line })
+            .backgroundColor(this.tok().surface)
+            .borderRadius(this.tok().rMd)
+            .border({ width: 1, color: this.tok().line })
             .onClick(() => {
               this.anchorYear = point.year;
               this.tier = 1;
@@ -649,6 +652,16 @@ export struct LedgerScreen {
     })
   }
 
+  /** 当前是深色（cyber）吗 —— 决定用 Orbitron 还是 Outfit */
+  private isCyber(): boolean {
+    return ThemeManager.get().name === 'cyber';
+  }
+
+  /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
+  private tok(): ThemeTokens {
+    return this.themeName === 'candy' ? CANDY : CYBER;
+  }
+
   build() {
     Column({ space: 10 }) {
       this.tierTabs()
@@ -660,19 +673,19 @@ export struct LedgerScreen {
       if (this.offline) {
         Text('离线：显示本地缓存')
           .fontSize(10)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
           .width('100%')
       }
       if (this.errorText !== '') {
         Text(this.errorText)
           .fontSize(11)
-          .fontColor(this.tokens.danger)
+          .fontColor(this.tok().danger)
           .width('100%')
       }
       if (this.loading) {
         Text('加载中…')
           .fontSize(11)
-          .fontColor(this.tokens.ink3)
+          .fontColor(this.tok().ink3)
           .width('100%')
       }
 
@@ -687,12 +700,12 @@ export struct LedgerScreen {
     .width('100%')
     .height('100%')
     .padding(12)
-    .backgroundColor(this.tokens.bg)
+    .backgroundColor(this.tok().bg)
     .bindSheet($$this.sheetOpen, this.expenseSheet(), {
       height: SheetSize.LARGE,
       dragBar: true,
       showClose: true,
-      backgroundColor: this.tokens.bg
+      backgroundColor: this.tok().bg
     })
     // 下拉记一笔：与移动 Web 同一机制（顶部下拉），不留兜底按钮
     .parallelGesture(

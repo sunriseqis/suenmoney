@@ -17,6 +17,14 @@ export type ThemeName = 'candy' | 'cyber';
 
 const STORE_NAME = 'suenmoney';
 const KEY_THEME = 'suenmoney:theme';
+/**
+ * 主题名的全局键。
+ *
+ * 各屏用 `@StorageLink(ThemeManager.KEY)` 订阅它 —— 主题是**全局状态**，
+ * 而早先每个屏各自 `@State tokens = ThemeManager.get().tokens` 存的是快照，
+ * 在设置里切换只改了那一屏自己，别的屏仍然是旧色（实测截图能看出没变）。
+ */
+export const THEME_STORAGE_KEY = 'themeName';
 
 export class ThemeManager {
   private static instance: ThemeManager | null = null;
@@ -36,8 +44,10 @@ export class ThemeManager {
       this.store = await preferences.getPreferences(context, STORE_NAME);
       const saved = this.store.getSync(KEY_THEME, 'cyber') as string;
       this.current = saved === 'candy' ? 'candy' : 'cyber';
+      AppStorage.setOrCreate(THEME_STORAGE_KEY, this.current);
     } catch (e) {
       this.current = 'cyber';
+      AppStorage.setOrCreate(THEME_STORAGE_KEY, this.current);
     }
   }
 
@@ -53,6 +63,8 @@ export class ThemeManager {
   /** 切换并持久化 */
   async set(name: ThemeName): Promise<void> {
     this.current = name;
+    // 先广播：所有订阅了 themeName 的屏立即重绘
+    AppStorage.setOrCreate(THEME_STORAGE_KEY, name);
     if (this.store === null) {
       return;
     }
