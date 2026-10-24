@@ -62,7 +62,6 @@ export struct DashboardScreen {
     this.errorText = '';
     try {
       await this.loadTier();
-      await this.loadTodos();
       this.offline = false;
     } catch (e) {
       const err = e as ApiError;
@@ -104,32 +103,6 @@ export struct DashboardScreen {
     }
   }
 
-  private async loadTodos(): Promise<void> {
-    const body = await Api.planTodos(todayKey());
-    const list: TodoView[] = [];
-    for (const t of body.todos) {
-      const days = daysUntil(t.repaymentDate, todayKey());
-      let tone = 'calm';
-      if (days < 0) {
-        tone = 'late';
-      } else if (days <= 1) {
-        tone = 'soon';
-      }
-      list.push({
-        id: t.id,
-        planName: t.planName,
-        periodSeq: t.periodSeq,
-        amountCents: t.amountCents,
-        repaymentDate: t.repaymentDate,
-        willAutoPost: t.willAutoPost,
-        tone: tone,
-        label: urgencyLabel(t.repaymentDate, todayKey())
-      });
-    }
-    this.todos = list;
-  }
-
-  /** 待办动作：确认/入账 + 忽略（忽略不可逆，收在「更多」后面） */
   private async actTodo(todo: TodoView, action: string): Promise<void> {
     try {
       if (action === 'skip') {

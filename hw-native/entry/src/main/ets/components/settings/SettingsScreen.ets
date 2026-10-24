@@ -762,6 +762,39 @@ export struct SettingsScreen {
       }
       .width('100%')
 
+      // R142/R145：同步状态与死信必须可见（并入「外观」，不新开数据区 → 符合 D15）
+      Row({ space: 8 }) {
+        Text(`待发送 ${this.pendingCount} 条`)
+          .fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).layoutWeight(1)
+        if (this.pendingCount > 0) {
+          Button('立即同步').fontSize(10).height(28)
+            .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+            .onClick(() => {
+              this.syncNow();
+            })
+        }
+      }
+      .width('100%')
+
+      if (this.deadLetters.length > 0) {
+        Text(`发送失败 ${this.deadLetters.length} 条`)
+          .fontSize(10).fontColor(this.tok().danger).width('100%')
+        ForEach(this.deadLetters, (e: OutboxEntry) => {
+          Text(`${e.action} · ${e.lastError !== '' ? e.lastError : '未知原因'}`)
+            .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width('100%')
+        }, (e: OutboxEntry) => e.id)
+        Button('全部重试').fontSize(10).height(28).width('100%')
+          .backgroundColor(this.tok().surface2).fontColor(this.tok().ink2)
+          .onClick(() => {
+            Outbox.retryDeadLetters().then(() => {
+              this.refreshQueue();
+              this.syncNow();
+            });
+          })
+      }
+
+
       Button('退出登录')
         .fontSize(12)
         .height(36)
