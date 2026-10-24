@@ -13,6 +13,7 @@
 import { Api, ExpenseItem, MonthPoint, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
+import { Outbox } from '../../common/sync/Outbox';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardRadiusOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
@@ -85,6 +86,8 @@ export struct LedgerScreen {
   @State highlightId: string = '';
   /** R58 两段式下钻：第一次点只选中并切下方卡，再点同一格才进入该期间 */
   @State selectedCell: string = '';
+  /** 待同步条目数（R144：离线提示只由它驱动） */
+  @State pendingSync: number = 0;
   @State errorText: string = '';
   @State yearPoints: MonthPoint[] = [];
   @State yearTotalCents: number = 0;
@@ -112,6 +115,10 @@ export struct LedgerScreen {
 
   aboutToAppear(): void {
     this.reload();
+    Outbox.pendingCount().then((n: number) => {
+      this.pendingSync = n;
+    }).catch(() => {
+    });
     this.maybeShowPullHint();
   }
 
@@ -361,6 +368,16 @@ export struct LedgerScreen {
    * - 提醒**默认收起**，点一下向下展开（把列表顶下去，不是浮层），展开态不记忆（R22）。
    * - **只有逾期时整张顶卡吸顶**；吸顶是位置、颜色标记是"要不要动手"，两者互不解释（R23）。
    */
+  /** 是否逾期（决定顶卡是否吸顶，R23：吸顶与颜色标记都由"有无逾期"推出但互不解释） */
+  private hasOverdue(): boolean {
+    for (const t of this.heroTodos) {
+      if (t.tone === 'late') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   @Builder
   topCard() {
     Column({ space: 12 }) {
@@ -857,6 +874,33 @@ export struct LedgerScreen {
           }
         }, (row: ExpenseItem) => row.id)
 
+        if (this.rows.length === 0 && !this.loading) {
+          ListItem() {
+            Column({ space: 10 }) {
+              Text(this.activeFilterCount() > 0 ? '没有符合条件的流水' : '还没有任何记录')
+                .fontSize(11)
+                .fontColor(this.tok().ink3)
+              if (this.activeFilterCount() > 0) {
+                Button('清除筛选')
+                  .fontSize(11)
+                  .height(30)
+                  .backgroundColor(this.tok().surface2)
+                  .fontColor(this.tok().ink2)
+                  .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                  .onClick(() => {
+                    this.filterCategory = '';
+                    this.filterPayment = '';
+                    this.filterOwner = '';
+                    this.keyword = '';
+                    this.reload();
+                  })
+              }
+            }
+            .width('100%')
+            .padding({ top: 24, bottom: 24 })
+          }
+        }
+
         ListItem() {
           Button(this.hasMore ? '加载更多' : '查看上月')
             .width('100%')
@@ -1131,11 +1175,25 @@ export struct LedgerScreen {
         this.searchBar()
       }
 
-      if (this.offline) {
-        Text('离线：显示本地缓存')
-          .fontSize(10)
-          .fontColor(this.tok().ink3)
-          .width('100%')
+      if (this.offline || this.pendingSync > 0) {
+        // R144：离线/待同步文案**并入计划提醒卡区域**，只由待同步条目驱动
+        Row({ space: 6 }) {
+          Text(this.offline ? '已存本机、联网自动同步' : `待同步 ${this.pendingSync} 条`)
+            .fontSize(10)
+            .fontColor(this.tok().ink3)
+            .layoutWeight(1)
+          if (this.offline) {
+            Text('待同步 ' + this.pendingSync + ' 条')
+              .fontSize(9)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+          }
+        }
+        .width('100%')
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .backgroundColor(this.tok().surface2)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+        .border({ width: 1, color: this.tok().line })
       }
       if (this.errorText !== '') {
         Text(this.errorText)

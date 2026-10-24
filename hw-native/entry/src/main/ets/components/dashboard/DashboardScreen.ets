@@ -155,6 +155,19 @@ export struct DashboardScreen {
     return null;
   }
 
+  /**
+   * 预计月末（R69）：每月**前 3 天不显示**（数据太少），显示 `—` 并注明；
+   * 其余日期按"已过 N 天"线性外推。
+   */
+  private monthEndEstimate(): string {
+    const day = new Date().getDate();
+    if (day <= 3) {
+      return '—';
+    }
+    const lastDay = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    return formatYuan(Math.round((this.totalCents / day) * lastDay));
+  }
+
   private deltaRatio(): number | null {
     if (this.prevTotalCents <= 0) {
       return null;
@@ -225,10 +238,21 @@ export struct DashboardScreen {
       .width('100%')
 
       // 三项指标
+      // R68：三子指标随档位变（月：日均/笔数/本月要还；年：月均/笔数/最高月；汇总：月均/笔数/记录天数）
       Row() {
-        this.metric({ label: '日均', value: formatYuan(this.perDayCents) })
-        this.metric({ label: '笔数', value: `${this.count} 笔` })
-        this.metric({ label: '本月要还', value: formatYuan(this.creditDueCents) })
+        if (this.tier === 0) {
+          this.metric({ label: '日均', value: formatYuan(this.perDayCents) })
+          this.metric({ label: '笔数', value: `${this.count} 笔` })
+          this.metric({ label: '预计月末', value: this.monthEndEstimate() })
+        } else if (this.tier === 1) {
+          this.metric({ label: '月均', value: formatYuan(Math.round(this.totalCents / 12)) })
+          this.metric({ label: '笔数', value: `${this.count} 笔` })
+          this.metric({ label: '最高月', value: this.yearReport!.peakMonth === null ? '—' : formatYuan(this.yearReport!.peakMonth.totalCents) })
+        } else {
+          this.metric({ label: '月均', value: formatYuan(this.perDayCents) })
+          this.metric({ label: '笔数', value: `${this.count} 笔` })
+          this.metric({ label: '记录天数', value: `${this.summary === null ? 0 : this.summary.recordedDays} 天` })
+        }
       }
       .width('100%')
 
@@ -412,6 +436,54 @@ export struct DashboardScreen {
     return this.themeName === 'candy' ? CANDY : CYBER;
   }
 
+  /** 进度对比卡（R73）：已过 N 天 + 日均 + 进度条（对近 3 个月日均） */
+  @Builder
+  progressCard() {
+    Column({ space: 8 }) {
+      Row() {
+        this.metric({ label: '已过天数', value: `${new Date().getDate()} 天` })
+        this.metric({ label: '本月日均', value: formatYuan(this.perDayCents) })
+        this.metric({ label: '近 3 月日均', value: formatYuan(this.recent3Avg()) })
+      }
+      .width('100%')
+      Stack({ alignContent: Alignment.Start }) {
+        Row().width('100%').height(9).backgroundColor(this.tok().surface3).borderRadius(5)
+        Row().width(`${this.progressPercent()}%`).height(9).backgroundColor(this.tok().accent).borderRadius(5)
+      }
+      .width('100%')
+    }
+    .width('100%').padding(14).backgroundColor(this.tok().surface)
+    .borderRadius(cardRadiusOf(this.isCyber()))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+  }
+
+  /** 近 3 个月日均（取 rolling12Months 里最近 3 个非空月） */
+  private recent3Avg(): number {
+    if (this.monthReport === null) {
+      return 0;
+    }
+    const list = this.monthReport.rolling12Months;
+    let sum = 0;
+    let n = 0;
+    for (let i = list.length - 1; i >= 0 && n < 3; i--) {
+      const cents = list[i].totalCents ?? 0;
+      if (cents > 0) {
+        sum += cents;
+        n += 1;
+      }
+    }
+    return n > 0 ? Math.round(sum / n / 30) : 0;
+  }
+
+  /** 进度百分比：本月日均 / 近 3 月日均 */
+  private progressPercent(): number {
+    const base = this.recent3Avg();
+    if (base <= 0) {
+      return 0;
+    }
+    return Math.max(2, Math.min(100, Math.round((this.perDayCents / base) * 100)));
+  }
+
   /** 累计条一句话（R71）：不含金额，只说量 */
   private cumulativeLine(): string {
     const s = this.summary;
@@ -434,6 +506,7 @@ export struct DashboardScreen {
         }
         this.hero()
         if (this.tier === 0) {
+          this.progressCard()
           this.heat()
           if (this.summary === null) {
             Text('累计数据未加载')
