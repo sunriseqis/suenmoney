@@ -656,13 +656,13 @@ export struct ExpenseEditor {
             Blank()
           }
           .width('100%')
-          Text(`每期约 ${formatYuan(Math.floor(this.cents() / this.periods))}（末期补差）`)
+          Text(`每期约 ${formatYuan(Math.floor(this.cents() / this.periods))}`)
             .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width('100%')
         }
       }
 
       Row({ space: 6 }) {
-        Text('退款（负数冲销）')
+        Text('退款')
           .fontSize(11)
           .fontColor(this.tok().ink2)
         Blank()

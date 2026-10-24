@@ -27,11 +27,72 @@ struct LoginPage {
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   @State username: string = '';
   @State password: string = '';
-  @State servers: string[] = ServerConfig.get().allServers;
+  /** R98：三个固定槽（空表示未配置） */
+  @State slots: string[] = ['', '', ''];
+  /** 每槽连通状态：'' 未测 / 'ok' 通 / 'bad' 不通 */
+  @State probeStates: string[] = ['', '', ''];
   @State newServer: string = '';
   @State probeText: string = '';
   @State errorText: string = '';
   @State busy: boolean = false;
+
+  aboutToAppear(): void {
+    // R98：把已保存的地址填进三个固定槽
+    const all: string[] = ServerConfig.get().allServers;
+    const filled: string[] = ['', '', ''];
+    for (let i = 0; i < 3; i++) {
+      filled[i] = i < all.length ? all[i] : '';
+    }
+    this.slots = filled;
+  }
+
+  /** 由三个槽派生出的有效地址列表 */
+  private filledServers(): string[] {
+    const out: string[] = [];
+    for (const v of this.slots) {
+      if (v !== '') {
+        out.push(v);
+      }
+    }
+    return out;
+  }
+
+  /** 保存三个槽（去空） */
+  private saveSlots(): void {
+    const next: string[] = [];
+    for (const v of this.slots) {
+      if (v !== '') {
+        next.push(v);
+      }
+    }
+    if (next.length > 0) {
+      ServerConfig.get().setServers(next, next[0]);
+      this.probeText = '已保存';
+    }
+  }
+
+  /** 逐槽探活，点亮连通指示 */
+  private async testSlots(): Promise<void> {
+    const states: string[] = ['', '', ''];
+    let okCount = 0;
+    for (let i = 0; i < 3; i++) {
+      const url = this.slots[i];
+      if (url === '') {
+        continue;
+      }
+      try {
+        const r: ProbeResult = await ServerRouter.probe(url);
+        states[i] = r.ok ? 'ok' : 'bad';
+        if (r.ok) {
+          okCount += 1;
+        }
+      } catch (e) {
+        states[i] = 'bad';
+      }
+    }
+    this.probeStates = states;
+    this.probeText = okCount > 0 ? `${okCount} 个地址可用` : '所有地址都连不上';
+  }
 
   /** 登录：先选路（4s 快失败），再登录 */
   private async doLogin(): Promise<void> {
@@ -42,7 +103,7 @@ struct LoginPage {
     }
     this.busy = true;
     try {
-      const chosen: string = await ServerRouter.choose(this.servers);
+      const chosen: string = await ServerRouter.choose(this.filledServers());
       if (chosen === '') {
         this.errorText = '所有服务器地址都连不上';
         return;
@@ -64,15 +125,6 @@ struct LoginPage {
   }
 
   /** 逐个探活并显示每条的结果（与选路同一套逻辑，用户能看见哪条通） */
-  private async probeAll(): Promise<void> {
-    this.probeText = '探测中…';
-    const lines: string[] = [];
-    for (const url of this.servers) {
-      const r: ProbeResult = await ServerRouter.probe(url);
-      lines.push(`${url} ${r.ok ? '通 ' + r.latencyMs + 'ms' : r.reason}`);
-    }
-    this.probeText = lines.join('\n');
-  }
 
   /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
   private tok(): ThemeTokens {
@@ -137,80 +189,66 @@ struct LoginPage {
 
       Divider().color(this.tok().line)
 
-      Text('服务端')
-        .fontSize(11)
-        .fontColor(this.tok().ink3)
-        .width('100%')
+      // R98：**仅三个固定输入槽** + 连通指示（绿点）+ 三个按钮（测试 / 保存 / 同步）
+      // 技术细节文字（多地址顺序探活/4s 快失败等）不在界面上解释。
+      Text('服务端').fontSize(11).fontColor(this.tok().ink3).width('100%')
 
-      List({ space: 6 }) {
-        ForEach(this.servers, (url: string) => {
-          ListItem() {
-            Row({ space: 8 }) {
-              Text(url)
-                .fontSize(12)
-                .fontColor(this.tok().ink2)
-                .layoutWeight(1)
-              Button('删除')
-                .fontSize(11)
-                .height(28)
-                .backgroundColor(this.tok().surface2)
-                .fontColor(this.tok().ink3)
-                .onClick(() => {
-                  const next: string[] = [];
-                  for (const s of this.servers) {
-                    if (s !== url) {
-                      next.push(s);
-                    }
-                  }
-                  if (next.length > 0) {
-                    this.servers = next;
-                    ServerConfig.get().setServers(next, next[0]);
-                  }
-                })
-            }
-          }
-        }, (url: string) => url)
-      }
-      .height(90)
+      ForEach(SLOT_INDEX, (i: number) => {
+        Row({ space: 8 }) {
+          // 连通指示：通=绿、不通=红、未测=灰
+          Row()
+            .width(8)
+            .height(8)
+            .borderRadius(4)
+            .backgroundColor(this.probeStates[i] === 'ok'
+              ? this.tok().ok
+              : (this.probeStates[i] === 'bad' ? this.tok().danger : this.tok().ink3))
+          TextInput({ placeholder: `地址 ${i + 1}`, text: this.slots[i] })
+            .height(40)
+            .layoutWeight(1)
+            .backgroundColor(this.tok().surface2)
+            .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+            .onChange((v: string) => {
+              const next: string[] = this.slots.slice();
+              next[i] = v;
+              this.slots = next;
+            })
+        }
+        .width('100%')
+      }, (i: number) => `slot-${i}`)
 
       Row({ space: 8 }) {
-        TextInput({ placeholder: '新增地址，如 http://192.168.1.10:5310' })
-          .height(40)
-          .layoutWeight(1)
-          .backgroundColor(this.tok().surface2)
-          .onChange((v: string) => {
-            this.newServer = v;
-          })
-        Button('添加')
-          .fontSize(12)
-          .height(40)
+        Button('测试')
+          .fontSize(12).height(36).layoutWeight(1)
           .backgroundColor(this.tok().surface)
           .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-          .fontColor(this.tok().ink)
-          .fontColor(this.tok().ink)
+          .fontColor(this.tok().ink2)
           .onClick(() => {
-            if (this.newServer !== '' && this.servers.indexOf(this.newServer) < 0) {
-              const next: string[] = this.servers.slice();
-              next.push(this.newServer);
-              this.servers = next;
-              this.newServer = '';
-              ServerConfig.get().setServers(next, next[0]);
-            }
+            this.testSlots();
+          })
+        Button('保存')
+          .fontSize(12).height(36).layoutWeight(1)
+          .backgroundColor(this.tok().surface)
+          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .fontColor(this.tok().ink2)
+          .onClick(() => {
+            this.saveSlots();
+          })
+        Button('同步')
+          .fontSize(12).height(36).layoutWeight(1)
+          .backgroundColor(this.tok().surface)
+          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .fontColor(this.tok().ink2)
+          .onClick(() => {
+            this.saveSlots();
+            this.testSlots();
           })
       }
-
-      Button('测试')
-        .fontSize(12)
-        .height(36)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
-        .fontColor(this.tok().ink2)
-        .onClick(() => {
-          this.probeAll();
-        })
+      .width('100%')
 
       if (this.probeText !== '') {
         Text(this.probeText)
@@ -226,3 +264,5 @@ struct LoginPage {
     .backgroundColor(this.tok().bg)
   }
 }
+
+const SLOT_INDEX: number[] = [0, 1, 2];

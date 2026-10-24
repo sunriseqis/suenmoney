@@ -571,6 +571,15 @@ export struct LedgerScreen {
         .width('100%')
       }
 
+      // R144：离线/待同步提示**并入计划提醒卡区域**，且只由待同步条数驱动
+      if (this.pendingSync > 0) {
+        Text(`待同步 ${this.pendingSync} 条 · 已存本机、联网自动同步`)
+          .fontSize(9)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+          .width('100%')
+      }
+
       // R65 后半：动作后可撤销（8 秒）；自动入账（ack）不提供撤销
       if (this.undoTodo !== null) {
         Row({ space: 8 }) {
@@ -1385,26 +1394,6 @@ export struct LedgerScreen {
         this.searchBar()
       }
 
-      if (this.offline || this.pendingSync > 0) {
-        // R144：离线/待同步文案**并入计划提醒卡区域**，只由待同步条目驱动
-        Row({ space: 6 }) {
-          Text(this.offline ? '已存本机、联网自动同步' : `待同步 ${this.pendingSync} 条`)
-            .fontSize(10)
-            .fontColor(this.tok().ink3)
-            .layoutWeight(1)
-          if (this.offline) {
-            Text('待同步 ' + this.pendingSync + ' 条')
-              .fontSize(9)
-              .fontFamily(fontMonoOf())
-              .fontColor(this.tok().ink3)
-          }
-        }
-        .width('100%')
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .backgroundColor(this.tok().surface2)
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
-        .border({ width: 1, color: this.tok().line })
-      }
       if (this.errorText !== '') {
         Text(this.errorText)
           .fontSize(11)
