@@ -149,6 +149,12 @@ export interface MonthPointRef {
   totalCents: number;
 }
 
+/** 去年同月（R83 对照四格用） */
+export interface YearAgoRef {
+  label: string;
+  totalCents: number;
+}
+
 export interface LargestExpense {
   expenseId: string;
   categoryName: string;
@@ -192,6 +198,8 @@ export interface MonthlyReport {
   count: number;
   previous: MonthPointRef;
   change: MonthChange;
+  /** 去年同月（服务端返回；缺省视为 0） */
+  yearAgo?: YearAgoRef;
   largest: LargestExpense | null;
   categories: CategoryBucket[];
   paymentMethods: PaymentBucket[];
