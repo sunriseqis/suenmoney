@@ -177,20 +177,23 @@ export struct DashboardScreen {
 
       // 提醒条**不在概况页**（R07/R116：行动层只在流水页顶卡），此处删除
 
-      // 大金额 + 环比（web `.hero-amt`：display 字体 / 36px / 基线对齐）
-      Row({ space: 4 }) {
+      // 大金额（web `.hero-amt`：display 字体、0.48em 的 ¥、基线对齐）
+      Row({ space: 2 }) {
         Text('¥')
-          .fontSize(16)
+          .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.tok().ink2)
         Text(formatYuan(this.totalCents).replace('¥', ''))
           .fontFeature('"tnum" on')
-          .fontSize(32)
-          .fontWeight(FontWeight.Bold)
-          .fontFamily('sans-serif')
+          .fontSize(this.heroAmountSize())
+          .fontWeight(FontWeight.Bolder)
+          .fontFamily(displayFont(!this.isCyber()))
+          .letterSpacing(this.isCyber() ? 0.38 : -1.3)
+          .maxLines(1)
           .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
       }
       .alignItems(VerticalAlign.Bottom)
+      .width('100%')
 
       // 三项指标
       // R68：三子指标随档位变（月：日均/笔数/本月要还；年：月均/笔数/最高月；汇总：月均/笔数/记录天数）
@@ -264,7 +267,7 @@ export struct DashboardScreen {
   @Builder
   heat() {
     Column({ space: 6 }) {
-      Text('近12个月S1')
+      Text('近 12 个月')
         .fontSize(10)
         .fontColor(this.tok().ink3)
         .width('100%')
@@ -374,6 +377,21 @@ export struct DashboardScreen {
     .backgroundColor(this.tok().surface)
     .borderRadius(this.tok().rCard)
     .border({ width: 1, color: this.tok().line })
+  }
+
+  /**
+   * 概况大金额字号：常态 38（web `.hero-amt` 上限），位数多时收缩。
+   * Orbitron 数字字面 0.83em，比 Outfit 宽一半，长金额不收缩会折行把卡撑高。
+   */
+  private heroAmountSize(): number {
+    const s = formatYuan(this.totalCents).replace('¥', '');
+    if (s.length <= 8) {
+      return 38;
+    }
+    if (s.length <= 10) {
+      return 30;
+    }
+    return 24;
   }
 
   /** 当前是深色（cyber）吗 —— 决定用 Orbitron 还是 Outfit */
