@@ -669,6 +669,7 @@ export struct ExpenseEditor {
         }
         Blank()
         Text(formatYuan(this.isRefund ? -this.cents() : this.cents()))
+            .fontFeature('"tnum" on')
           .fontSize(10)
           .fontColor(this.tok().ink2)
       }
@@ -700,6 +701,7 @@ export struct ExpenseEditor {
           }
           .width('100%')
           Text(`每期约 ${formatYuan(Math.floor(this.cents() / this.periods))}`)
+              .fontFeature('"tnum" on')
             .fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3).width('100%')
         }
       }
@@ -809,6 +811,7 @@ export struct ExpenseEditor {
       Row({ space: 6 }) {
         Text('本月已支出').fontSize(9).fontFamily(fontMonoOf()).fontColor(this.tok().ink3)
         Text(this.monthSpentCents === null ? '—' : formatYuan(this.monthSpentCents))
+            .fontFeature('"tnum" on')
           .fontSize(10).fontFamily(fontMonoOf()).fontColor(this.tok().ink2)
       }
       .width('100%')
@@ -817,6 +820,7 @@ export struct ExpenseEditor {
         // R111：备注输入时折叠数字键盘，给出上方辅助保存条
         Row({ space: 8 }) {
           Text(formatYuan(this.isRefund ? -this.cents() : this.cents()))
+              .fontFeature('"tnum" on')
             .fontSize(14).fontWeight(FontWeight.Bold).fontColor(this.tok().ink).layoutWeight(1)
           Button('收起键盘').fontSize(11).height(32)
             .backgroundColor(this.tok().surface2).fontColor(this.tok().ink3)

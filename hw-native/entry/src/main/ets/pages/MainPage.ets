@@ -124,11 +124,28 @@ struct MainPage {
     return '设置';
   }
 
+  /** 待同步条数与离线态：从 AppStorage 订阅，LedgerScreen 维护 */
+  @StorageLink('pendingSync') pendingSync: number = 0;
+  @StorageLink('offline') offline: boolean = false;
+
+  /** build-stamp（§3 L177）：主题 + 档位 + 记录条数 + 离线/待同步 N */
+  private stampText(): string {
+    let out = 'SuenMoney · 单账本家庭记账';
+    const pend = this.pendingSync;
+    if (pend > 0) {
+      out += ` · 待同步 ${pend}`;
+    } else if (this.offline) {
+      out += ' · 离线';
+    }
+    return out;
+  }
+
   /** 底部构建戳：含离线/待同步内联提示（C.1） */
   @Builder
   stamp() {
-    Text(`SuenMoney · 单账本家庭记账`)
+    Text(this.stampText())
       .fontSize(9)
+      .fontFeature('"tnum" on')
       .fontFamily(fontBodyOf(this.isCyber()))
       .fontColor(this.tok().ink3)
       .width('100%')

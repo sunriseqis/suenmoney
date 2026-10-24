@@ -69,6 +69,10 @@ export struct SettingsScreen {
   /** 弹层：'' | category | payment | plan */
   @State sheetMode: string = '';
   @State sheetOpen: boolean = false;
+  /** B03③ 合并二次确认 */
+  @State mergeConfirmOpen: boolean = false;
+  @State mergeConfirmText: string = '';
+  private mergeConfirmResolve: ((v: boolean) => void) | null = null;
   /** R126 跨月撤销警告（状态驱动，不用 showAlertDialog 的返回值） */
   @State revertDialogOpen: boolean = false;
   @State revertWarn: string = '';
@@ -99,10 +103,8 @@ export struct SettingsScreen {
   @State formRole: string = 'member';
   @State formError: string = '';
   @State pendingCount: number = 0;
-  @State deadLetters: OutboxEntry[] = [];
   @State syncMessage: string = '';
-  @State vectorReport: string = '';
-  @State schemaReport: string = '';
+  @State deadLetters: OutboxEntry[] = [];
   @State railRootId: string = '';
 
   aboutToAppear(): void {
@@ -173,6 +175,24 @@ export struct SettingsScreen {
     this.formParent = cat === null ? parentId : (cat.parentId ?? '');
     this.sheetMode = 'category';
     this.sheetOpen = true;
+  }
+
+  /** B03③：合并支付方式要二次确认，并提示「历史记录会归属到目标」 */
+  private async confirmMerge(p: PaymentMethodItem): Promise<void> {
+    const ok = await this.askMerge(p.name);
+    if (!ok) {
+      return;
+    }
+    await this.openPaymentSheet(p);
+  }
+
+  /** 合并确认弹窗（状态驱动 + Promise，与跨月撤销同一套路） */
+  private askMerge(name: string): Promise<boolean> {
+    this.mergeConfirmText = `合并「${name}」到另一个支付方式后，它的历史记录会全部归属到目标项。`;
+    this.mergeConfirmOpen = true;
+    return new Promise<boolean>((resolve: (v: boolean) => void) => {
+      this.mergeConfirmResolve = resolve;
+    });
   }
 
   private openPaymentSheet(pay: PaymentMethodItem | null): void {
@@ -506,7 +526,7 @@ export struct SettingsScreen {
               .border({ width: 1, color: this.tok().line })
               .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
               .onClick(() => {
-                this.openPaymentSheet(p);
+                this.confirmMerge(p);
               })
           }
         }
@@ -606,6 +626,7 @@ export struct SettingsScreen {
           .width('100%')
 
           Text(`${plan.progress.paidCount}/${plan.progress.paidCount + plan.progress.pendingCount} 期 · 每期 ${formatYuan(plan.amountCents)}${plan.progress.nextDueDate !== null ? ' · 下次 ' + plan.progress.nextDueDate : ''}`)
+              .fontFeature('"tnum" on')
             .fontSize(10)
             .fontColor(this.tok().ink3)
             .width('100%')
@@ -640,6 +661,7 @@ export struct SettingsScreen {
                 .fontSize(11)
                 .fontColor(this.tok().ink)
               Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
+                  .fontFeature('"tnum" on')
                 .fontSize(9)
                 .fontFamily(fontMonoOf())
                 .fontColor(this.tok().ink3)
@@ -679,6 +701,7 @@ export struct SettingsScreen {
                 .fontSize(11)
                 .fontColor(this.tok().ink)
               Text(`${todo.repaymentDate} · ${formatYuan(todo.amountCents)}`)
+                  .fontFeature('"tnum" on')
                 .fontSize(9)
                 .fontColor(this.tok().ink3)
             }
@@ -1042,6 +1065,8 @@ export struct SettingsScreen {
         this.categoryForm()
       } else if (this.sheetMode === 'payment') {
         this.paymentForm()
+      } else if (this.sheetMode === 'member') {
+        this.memberForm()
       } else {
         this.planForm()
       }
