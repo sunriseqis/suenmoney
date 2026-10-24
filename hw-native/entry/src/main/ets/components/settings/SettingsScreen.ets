@@ -558,13 +558,22 @@ export struct SettingsScreen {
       ForEach(this.plans, (plan: PlanItem) => {
         Column({ space: 4 }) {
           Row({ space: 6 }) {
+            // R121：计划卡身份物 —— 分类图标（走 R134 解析链）
+            Text(categoryGlyph(plan.categoryIcon ?? '', plan.categoryName ?? plan.name))
+              .fontSize(9)
+              .fontColor(this.tok().ink2)
+              .width(18)
+              .height(18)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(this.tok().surface2)
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), 6))
             Text(plan.name)
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
               .fontColor(this.tok().ink)
               .layoutWeight(1)
             if (plan.autoPost) {
-              Text('自动')
+              Text('自动入账')
                 .fontSize(9)
                 .fontColor(this.tok().ink3)
             }
