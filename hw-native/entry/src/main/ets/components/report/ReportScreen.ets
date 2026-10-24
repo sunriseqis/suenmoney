@@ -11,7 +11,6 @@
  * 一条硬规则（decisions）：**排名行中间必须有占比条** ——
  * 名称与金额摆两端、中间空一大块时，眼睛要横跨整行才能对上，数据排名不能这样。
  */
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Api, CategoryBucket, DailyPoint, MonthlyReport, PaymentBucket, YearlyReport } from '../../common/net/Api';
 import { ApiError } from '../../common/net/ApiError';
 import { ThemeManager } from '../../common/theme/ThemeManager';
@@ -44,8 +43,6 @@ export struct ReportScreen {
     try {
       if (this.tier === 0) {
         const body = await Api.monthlyReport(this.anchorMonth);
-        hilog.info(0x0009, 'RepDbg', 'month=%{public}s total=%{public}s count=%{public}s',
-          body.report.month, String(body.report.totalCents), String(body.report.count));
         this.monthReport = body.report;
       } else {
         const body = await Api.yearlyReport(this.anchorYear);
@@ -143,8 +140,8 @@ export struct ReportScreen {
   head() {
     Column({ space: 8 }) {
       Row({ space: 6 }) {
-        this.tierButton('月', 0)
-        this.tierButton('年', 1)
+        this.tierButton({ label: '月', value: 0 })
+        this.tierButton({ label: '年', value: 1 })
         Blank()
         if (this.tier === 0) {
           Button('‹')
@@ -199,9 +196,15 @@ export struct ReportScreen {
       .width('100%')
 
       Row() {
-        this.fact('总支出', formatYuan(this.tier === 0 ? this.totalCents() : (this.yearReport?.totalCents ?? 0)))
-        this.fact('笔数', `${this.tier === 0 ? (this.monthReport?.count ?? 0) : (this.yearReport?.count ?? 0)} 笔`)
-        this.fact('日均', formatYuan(this.dailyAverage()))
+        this.fact({
+          label: '总支出',
+          value: formatYuan(this.tier === 0 ? this.totalCents() : (this.yearReport?.totalCents ?? 0))
+        })
+        this.fact({
+          label: '笔数',
+          value: `${this.tier === 0 ? (this.monthReport?.count ?? 0) : (this.yearReport?.count ?? 0)} 笔`
+        })
+        this.fact({ label: '日均', value: formatYuan(this.dailyAverage()) })
       }
       .width('100%')
     }
@@ -228,25 +231,26 @@ export struct ReportScreen {
   }
 
   @Builder
-  tierButton(label: string, value: number) {
-    Button(label)
+  tierButton($$: TierCell) {
+    Button($$.label)
       .fontSize(11)
       .height(26)
-      .backgroundColor(this.tier === value ? this.tokens.accent : this.tokens.surface2)
-      .fontColor(this.tier === value ? this.tokens.accentInk : this.tokens.ink3)
+      .backgroundColor(this.tier === $$.value ? this.tokens.accent : this.tokens.surface2)
+      .fontColor(this.tier === $$.value ? this.tokens.accentInk : this.tokens.ink3)
       .onClick(() => {
-        this.tier = value;
+        this.tier = $$.value;
         this.reload();
       })
   }
 
+  /** 单参数对象 + $$ 引用传递：多参数 @Builder 首帧后不再重绘（同概况页那个 bug） */
   @Builder
-  fact(label: string, value: string) {
+  fact($$: FactCell) {
     Column({ space: 2 }) {
-      Text(label)
+      Text($$.label)
         .fontSize(9)
         .fontColor(this.tokens.ink3)
-      Text(value)
+      Text($$.value)
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.tokens.ink)
@@ -259,10 +263,10 @@ export struct ReportScreen {
   compose() {
     Column({ space: 10 }) {
       Row({ space: 6 }) {
-        this.dimButton('分类', 0)
-        this.dimButton('支付', 1)
-        this.dimButton('记录人', 2)
-        this.dimButton('节奏', 3)
+        this.dimButton({ label: '分类', value: 0 })
+        this.dimButton({ label: '支付', value: 1 })
+        this.dimButton({ label: '记录人', value: 2 })
+        this.dimButton({ label: '节奏', value: 3 })
       }
       .width('100%')
 
@@ -306,15 +310,15 @@ export struct ReportScreen {
   }
 
   @Builder
-  dimButton(label: string, value: number) {
-    Button(label)
+  dimButton($$: TierCell) {
+    Button($$.label)
       .fontSize(11)
       .height(26)
       .layoutWeight(1)
-      .backgroundColor(this.dim === value ? this.tokens.surface3 : this.tokens.surface2)
-      .fontColor(this.dim === value ? this.tokens.ink : this.tokens.ink3)
+      .backgroundColor(this.dim === $$.value ? this.tokens.surface3 : this.tokens.surface2)
+      .fontColor(this.dim === $$.value ? this.tokens.ink : this.tokens.ink3)
       .onClick(() => {
-        this.dim = value;
+        this.dim = $$.value;
       })
   }
 
@@ -515,6 +519,16 @@ export struct ReportScreen {
     .height('100%')
     .backgroundColor(this.tokens.bg)
   }
+}
+
+export interface FactCell {
+  label: string;
+  value: string;
+}
+
+export interface TierCell {
+  label: string;
+  value: number;
 }
 
 interface MonthPointView {

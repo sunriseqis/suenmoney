@@ -22,6 +22,13 @@ import { SyncEngine } from '../../common/sync/SyncEngine';
 import { ulid } from '../../common/contract/Contract';
 import { ThemeTokens } from '../../common/theme/AppTheme';
 
+/** @Builder 单参数对象（多参数不刷新，见 fieldRow 注释） */
+export interface FieldRowModel {
+  label: string;
+  value: string;
+  onTap: () => void;
+}
+
 export interface ExpenseEditorProps {
   /** 非 null 即编辑已有记录（标题变「编辑」，底部出现删除） */
   editing: ExpenseItem | null;
@@ -348,14 +355,15 @@ export struct ExpenseEditor {
     });
   }
 
+  /** 单参数对象 + $$：多参数 @Builder 不会随分类/支付方式的变化重绘 */
   @Builder
-  fieldRow(label: string, value: string, onTap: () => void) {
+  fieldRow($$: FieldRowModel) {
     Row({ space: 8 }) {
       Column({ space: 2 }) {
-        Text(label)
+        Text($$.label)
           .fontSize(9)
           .fontColor(this.tokens.ink3)
-        Text(value)
+        Text($$.value)
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.tokens.ink)
@@ -372,7 +380,9 @@ export struct ExpenseEditor {
     .padding(10)
     .backgroundColor(this.tokens.surface2)
     .borderRadius(this.tokens.rMd)
-    .onClick(onTap)
+    .onClick(() => {
+      $$.onTap();
+    })
   }
 
   @Builder
@@ -456,14 +466,20 @@ export struct ExpenseEditor {
       .width('100%')
       .justifyContent(FlexAlign.End)
 
-      this.fieldRow('分类', this.categoryName(), () => {
-        this.categoryOpen = !this.categoryOpen;
+      this.fieldRow({
+        label: '分类', value: this.categoryName(), onTap: () => {
+          this.categoryOpen = !this.categoryOpen;
+        }
       })
-      this.fieldRow('消费日期', this.spendDate, () => {
-        this.pickDate();
+      this.fieldRow({
+        label: '消费日期', value: this.spendDate, onTap: () => {
+          this.pickDate();
+        }
       })
-      this.fieldRow('支付方式', this.paymentName(), () => {
-        this.paymentOpen = !this.paymentOpen;
+      this.fieldRow({
+        label: '支付方式', value: this.paymentName(), onTap: () => {
+          this.paymentOpen = !this.paymentOpen;
+        }
       })
 
       TextInput({ placeholder: '备注（选填）', text: this.note })
