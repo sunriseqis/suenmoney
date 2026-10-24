@@ -177,33 +177,20 @@ export struct DashboardScreen {
 
       // 提醒条**不在概况页**（R07/R116：行动层只在流水页顶卡），此处删除
 
-      // 大金额 + 环比
-      Row({ space: 6 }) {
+      // 大金额 + 环比（web `.hero-amt`：display 字体 / 36px / 基线对齐）
+      Row({ space: 4 }) {
         Text('¥')
           .fontSize(16)
-          .fontColor(this.tok().ink3)
-        Text(formatYuan(this.totalCents).replace('¥', ''))
-            .fontFeature('"tnum" on')
-          .fontSize(32)
-            .fontFeature('"tnum" on')
           .fontWeight(FontWeight.Bold)
-          .fontFamily(displayFont(!this.isCyber()))
+          .fontColor(this.tok().ink2)
+        Text(formatYuan(this.totalCents).replace('¥', ''))
+          .fontFeature('"tnum" on')
+          .fontSize(32)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily('sans-serif')
           .fontColor(this.isCyber() ? this.tok().accent : this.tok().ink)
-        if (this.deltaRatio() !== null) {
-          Text(`${this.deltaRatio()! >= 0 ? '+' : '−'}${Math.abs(this.deltaRatio()! * 100).toFixed(1)}%`)
-            .fontSize(10.5)
-              .fontFeature('"tnum" on')
-              .fontFeature('"tnum" on')
-            .fontWeight(FontWeight.Bold)
-            .fontFamily(fontMonoOf())
-            .fontColor(this.tok().ink2)
-            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
-            .backgroundColor(mixHex(this.tok().accent, this.tok().surface, 0.12))
-            .border({ width: 1.5, color: this.tok().accent })
-        }
       }
-      .width('100%')
+      .alignItems(VerticalAlign.Bottom)
 
       // 三项指标
       // R68：三子指标随档位变（月：日均/笔数/本月要还；年：月均/笔数/最高月；汇总：月均/笔数/记录天数）
@@ -277,7 +264,7 @@ export struct DashboardScreen {
   @Builder
   heat() {
     Column({ space: 6 }) {
-      Text('近 12 个月')
+      Text('近12个月S1')
         .fontSize(10)
         .fontColor(this.tok().ink3)
         .width('100%')
