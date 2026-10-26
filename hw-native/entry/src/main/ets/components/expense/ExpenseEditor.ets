@@ -491,26 +491,66 @@ export struct ExpenseEditor {
    * 宽高比 ~1.35:1；数字键浮起（surface + 阴影）；完成键占右侧两行。
    */
   /** R103：常用分类胶囊条（按本月笔数前 6），点一下直接换分类 */
+  /** 快捷分类第 i 个（没有就返回 null，调用处用 if 判断） */
+  private quickAt(i: number): CategoryNode | null {
+    const list = this.quickCats();
+    return i < list.length ? list[i] : null;
+  }
+
+  /** 快捷分类单元格：宽高由外面的网格决定，样式跟键盘按键同一套 */
+  @Builder
+  quickCell(c: CategoryNode) {
+    Text(c.name)
+      .fontSize(11)
+      .fontWeight(FontWeight.Bold)
+      .fontFamily(fontDisplayOf(this.isCyber()))
+      .maxLines(1)
+      .textAlign(TextAlign.Center)
+      .width('100%')
+      .height('100%')
+      .fontColor(this.categoryId === c.id ? this.tok().accentInk : this.tok().ink2)
+      .backgroundColor(this.categoryId === c.id ? this.tok().accent : this.tok().surface)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
+      .border({ width: 1, color: this.categoryId === c.id ? this.tok().accent : this.tok().line })
+      .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
+      .onClick(() => {
+        this.categoryId = c.id;
+        this.categoryOpen = false;
+        this.refreshPreview();
+      })
+  }
+
   @Builder
   quickBar() {
-    Row({ space: 6 }) {
-      ForEach(this.quickCats(), (c: CategoryNode) => {
-        Text(c.name)
-          .fontSize(10)
-          .fontColor(this.categoryId === c.id ? this.tok().accentInk : this.tok().ink2)
-          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-          .backgroundColor(this.categoryId === c.id ? this.tok().accent : this.tok().surface2)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), 999))
-          .border({ width: 1, color: this.categoryId === c.id ? this.tok().accent : this.tok().line })
-          .onClick(() => {
-            this.categoryId = c.id;
-            this.categoryOpen = false;
-            this.refreshPreview();
-          })
-      }, (c: CategoryNode) => `quick-${c.id}`)
-      Blank()
+    // 列结构跟键盘完全一致：左 62vp（对齐支付列）+ 1vp 竖线 + 4 等分（对齐 7/8/9/←）
+    Row() {
+      Column() {
+        if (this.quickAt(0) !== null) {
+          this.quickCell(this.quickAt(0)!)
+        }
+      }
+      .width(62)
+      .height(40)
+
+      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(40)
+
+      Grid() {
+        ForEach([1, 2, 3, 4], (i: number) => {
+          GridItem() {
+            if (this.quickAt(i) !== null) {
+              this.quickCell(this.quickAt(i)!)
+            }
+          }
+        }, (i: number) => `quick-${i}`)
+      }
+      .columnsTemplate('repeat(4, 1fr)')
+      .columnsGap(5)
+      .layoutWeight(1)
+      .height(40)
+      .padding({ left: 6 })
     }
     .width('100%')
+    .height(40)
   }
 
   /** 常用分类：二级里本月笔数最多的前 6 个（不足则补最近使用的） */
@@ -524,7 +564,8 @@ export struct ExpenseEditor {
       }
     }
     out.sort((a: CategoryNode, b: CategoryNode) => b.expenseCount - a.expenseCount);
-    return out.slice(0, 6);
+    // 5 个正好铺满键盘的列宽：1 个对齐左侧支付列，4 个对齐 7/8/9/←
+    return out.slice(0, 5);
   }
 
   @Builder
