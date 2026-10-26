@@ -570,19 +570,19 @@ export struct ExpenseEditor {
         }
       }
       .width(62)
-      .height(204)
+      .height('100%')
       .padding({ right: 6 })
 
-      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(204)
+      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height('100%')
 
       // 右：4×4（完成键跨两行）
       Grid() {
         ForEach(KEYPAD_KEYS, (key: string) => {
           GridItem() {
-            Button(key === 'B' ? '←' : (key === 'C' ? '清空' : key))
+            Button(key === 'B' ? '←' : (key === 'C' ? '清空' : (key === 'OK' ? '保存' : key)))
               .width('100%')
               .height('100%')
-              .fontSize(key === 'OK' || key === 'C' ? 13 : 19)
+              .fontSize(key === 'OK' ? 14 : (key === 'C' ? 13 : 19))
               .fontWeight(FontWeight.Bold)
               .fontFamily(fontDisplayOf(this.isCyber()))
               .backgroundColor(key === 'OK'
@@ -609,10 +609,11 @@ export struct ExpenseEditor {
       .columnsGap(5)
       .rowsGap(5)
       .layoutWeight(1)
-      .height(204)
+      .height('100%')
       .padding({ left: 6 })
     }
     .width('100%')
+    .layoutWeight(1)
   }
 
   /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
@@ -640,6 +641,16 @@ export struct ExpenseEditor {
             .fontColor(this.tok().danger)
         }
         Blank()
+        // 编辑态才有的删除（原来在底部那一行，现在取消按钮去掉了，挪到标题右侧）
+        if (this.props.editing !== null) {
+          Text('删除')
+            .fontSize(11)
+            .fontColor(this.tok().danger)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .onClick(() => {
+              this.confirmDelete();
+            })
+        }
       }
       .width('100%')
 
@@ -888,31 +899,9 @@ export struct ExpenseEditor {
         this.keypad()
       }
 
-      // 「保存」已由键盘上的 OK 承担（点 OK = 保存），这里不再放第二个保存按钮，
-      // 只保留编辑态的删除
-      Row({ space: 8 }) {
-        if (this.props.editing !== null) {
-          Button('删除')
-            .fontSize(13)
-            .height(42)
-            .backgroundColor(this.tok().surface2)
-            .fontColor(this.tok().danger)
-            .onClick(() => {
-              this.confirmDelete();
-            })
-        }
-        Button('取消')
-          .fontSize(13)
-          .height(42)
-          .backgroundColor(this.tok().surface2)
-          .fontColor(this.tok().ink2)
-          .onClick(() => {
-            this.props.onCancel();
-          })
-      }
-      .width('100%')
     }
     .width('100%')
+    .height('100%')
     .padding(14)
     .backgroundColor(this.tok().bg)
   }
