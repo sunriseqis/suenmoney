@@ -45,6 +45,24 @@ struct MainPage {
     return this.themeName === 'cyber';
   }
 
+  /**
+   * 系统返回手势（用户裁决：不要顶部返回按钮）。
+   * - 流水页是主页 → 返回 false，交给系统退出到桌面
+   * - 年度报告是报表的子页 → 回到报表
+   * - 其余二级页（概况/报表/设置）→ 回到流水
+   */
+  onBackPress(): boolean {
+    if (this.screen === 'annual') {
+      AppStorage.setOrCreate(SCREEN_STORAGE_KEY, 'report');
+      return true;
+    }
+    if (this.screen !== 'ledger') {
+      AppStorage.setOrCreate(SCREEN_STORAGE_KEY, 'ledger');
+      return true;
+    }
+    return false;
+  }
+
   aboutToAppear(): void {
     ensureFonts(this.getUIContext());
     this.applySystemBars();
@@ -97,42 +115,6 @@ struct MainPage {
    * 顶栏（web .topbar，移动端 views.css:1118：padding 8 12、gap 8、标题 15px）。
    * 流水页也渲染（topbar--bare 只影响返回键的有无，样式无差别）。
    */
-  @Builder
-  topBar() {
-    Row({ space: 8 }) {
-      // 流水页不渲染顶栏（用户裁决）；其余屏只留返回键 + 标题，保证能回到流水。
-      if (this.screen !== 'ledger') {
-        Text('‹')
-          .fontSize(20)
-          .fontColor(this.tok().ink2)
-          .width(38)
-          .height(38)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-          .border({ width: this.tok().borderW, color: this.tok().line })
-          .onClick(() => {
-            AppStorage.setOrCreate(SCREEN_STORAGE_KEY, this.backTarget());
-          })
-      }
-
-      // topbar-title：15px；cyber 大写 + 0.12em 字距 + 绿光（app.css:191）
-      Text(this.topTitle())
-        .fontSize(15)
-        .fontWeight(FontWeight.Bold)
-        .fontFamily(fontDisplayOf(this.isCyber()))
-        .letterSpacing(this.isCyber() ? 1.8 : 0)
-        .fontColor(this.tok().ink)
-        .maxLines(1)
-
-      Blank()
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.tok().bg)
-    .border({ width: { bottom: 1 }, color: this.tok().line })
-  }
 
   /**
    * 「记一笔」跨屏管线：流水屏持有记账抽屉，别屏点击时先切屏、
@@ -147,27 +129,6 @@ struct MainPage {
     }, 200);
   }
 
-  /** 下拉提示（web .pull-hint，app.css:683/761）：30×14 胶囊箭头 + mono 9.5 说明 */
-  @Builder
-  pullHint() {
-    Row({ space: 6 }) {
-      Text('⌄')
-        .fontSize(10)
-        .fontColor(this.tok().ink3)
-        .width(30)
-        .height(14)
-        .textAlign(TextAlign.Center)
-        .border({ width: 1, color: this.tok().line })
-        .borderRadius(this.tok().rPill)
-      Text('下拉记一笔')
-        .fontSize(9.5)
-        .letterSpacing(1.52)
-        .fontFamily(fontMonoOf())
-        .fontColor(this.tok().ink3)
-    }
-    .width('100%')
-    .justifyContent(FlexAlign.Center)
-  }
 
   /** 待同步条数与离线态：从 AppStorage 订阅，LedgerScreen 维护 */
   @StorageLink('offline') offline: boolean = false;
@@ -177,15 +138,10 @@ struct MainPage {
 
   build() {
     Column() {
-      // 顶部品牌条与标题栏按用户裁决**整条不渲染**：
-      // logo / SuenMoney / 页面标题 / 主题切换 / 记一笔 全部去掉，
-      // 流水页直接从内容开始（主题切换在设置页，记一笔走下拉手势）。
-      this.topBar()
+      // 顶部不渲染任何栏（用户裁决）：logo/标题/主题切换/记一笔/返回键全部去掉。
+      // 二级页的返回改由**系统返回手势**承担，见 onBackPress()。
       // content：padding 6/12/64（views.css:1121）、gap 12（app.css:757）
       Column({ space: 12 }) {
-        if (this.screen === 'ledger') {
-          this.pullHint()
-        }
         Column() {
           if (this.screen === 'ledger') {
             LedgerScreen()

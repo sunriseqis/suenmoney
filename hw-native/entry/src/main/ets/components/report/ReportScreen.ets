@@ -404,16 +404,21 @@ export struct ReportScreen {
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
         .border({ width: this.tok().borderW, color: this.tok().line })
 
+        // 右半区吃剩余宽度（layoutWeight），标签占中间余量 —— 之前 minWidth 116vp
+        // 把整条日期顶出了卡片（用户报「日期都飞出去了」）
         Row({ space: 4 }) {
           this.periodChevron('‹', -1)
           Text(this.periodLabel())
-            .fontSize(14)
+            .fontSize(13)
             .fontWeight(FontWeight.Bold)
             .fontFamily(fontDisplayOf(this.isCyber()))
             .textAlign(TextAlign.Center)
-            .constraintSize({ minWidth: 116 })
+            .maxLines(1)
+            .layoutWeight(1)
           this.periodChevron('›', 1)
         }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.End)
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
@@ -515,7 +520,7 @@ export struct ReportScreen {
         ? (this.isCyber() ? this.tok().accent : this.tok().accentInk)
         : this.tok().ink2)
       .textAlign(TextAlign.Center)
-      .padding({ left: 13, right: 13, top: 6, bottom: 6 })
+      .padding({ left: 9, right: 9, top: 6, bottom: 6 })
       .backgroundColor(this.tier === value
         ? (this.isCyber() ? 'rgba(0,255,136,0.1)' : this.tok().accent)
         : Color.Transparent)
@@ -533,10 +538,10 @@ export struct ReportScreen {
   @Builder
   periodChevron(symbol: string, delta: number) {
     Text(symbol)
-      .fontSize(20)
+      .fontSize(16)
       .fontColor(this.tok().ink2)
-      .width(38)
-      .height(38)
+      .width(30)
+      .height(30)
       .textAlign(TextAlign.Center)
       .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
       .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))

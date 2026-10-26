@@ -452,9 +452,8 @@ export struct DashboardScreen {
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
         .border({ width: this.tok().borderW, color: this.tok().line })
 
-        Blank()
-
         if (this.tier !== 2) {
+          // 右半区吃剩余宽度（layoutWeight），标签自己占中间余量 —— 这样永远不会把 › 顶出卡片
           Row({ space: 4 }) {
             this.periodChevron('‹', -1)
             Text(this.periodLabel())
@@ -462,9 +461,12 @@ export struct DashboardScreen {
               .fontFamily(fontMonoOf())
               .fontColor(this.tok().ink2)
               .textAlign(TextAlign.Center)
-              .constraintSize({ minWidth: 92 })
+              .maxLines(1)
+              .layoutWeight(1)
             this.periodChevron('›', 1)
           }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.End)
           .alignItems(VerticalAlign.Center)
         } else {
           Text('全部记录')
@@ -676,10 +678,10 @@ export struct DashboardScreen {
   @Builder
   periodChevron(symbol: string, delta: number) {
     Text(symbol)
-      .fontSize(20)
+      .fontSize(16)
       .fontColor(this.tok().ink2)
-      .width(38)
-      .height(38)
+      .width(30)
+      .height(30)
       .textAlign(TextAlign.Center)
       .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
       .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
