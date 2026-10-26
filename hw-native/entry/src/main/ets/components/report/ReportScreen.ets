@@ -809,12 +809,16 @@ export struct ReportScreen {
           ForEach(this.movers(), (m: MoverView) => {
             Row({ space: 9 }) {
               // cat-ic 30：12% 分类色底 + 45% 分类色描边
-              CatIconView({ catName: m.name, iconSize: 17, color: m.color })
-                .width(30)
-                .height(30)
-                .borderRadius(this.isCyber() ? 1 : 9)
-                .backgroundColor(mixHex(m.color, this.tok().surface, 0.12))
-                .border({ width: 1, color: mixHex(m.color, this.tok().surface, 0.45) })
+              // 必须用 Stack 包住再给尺寸 —— 直接把 width/height 加在 SymbolGlyph 上，
+              // 字形会贴在左上角（这就是「报表图标和流水页没对齐、看着错乱」的原因）
+              Stack() {
+                CatIconView({ catName: m.name, iconSize: 17, color: m.color })
+              }
+              .width(30)
+              .height(30)
+              .borderRadius(this.isCyber() ? 1 : 9)
+              .backgroundColor(mixHex(m.color, this.tok().surface, 0.12))
+              .border({ width: 1, color: mixHex(m.color, this.tok().surface, 0.45) })
 
               Column({ space: 2 }) {
                 Text(m.name)

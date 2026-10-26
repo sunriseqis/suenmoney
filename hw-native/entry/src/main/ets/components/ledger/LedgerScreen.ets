@@ -24,6 +24,7 @@ import { CatIconView } from '../../common/ui/CatIconView';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { daysUntil, formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
 import { LengthMetrics } from '@kit.ArkUI';
+import { vibrator } from '@kit.SensorServiceKit';
 import { ExpenseEditor } from '../expense/ExpenseEditor';
 
 export interface HeroTodo {
@@ -105,6 +106,8 @@ export struct LedgerScreen {
   @State sheetOpen: boolean = false;
   /** 非 null 表示抽屉处于编辑态 */
   @State editingRow: ExpenseItem | null = null;
+  /** 下拉手势进度 0..1（驱动顶部「+」指示器的缩放/透明度） */
+  @State pullProgress: number = 0;
   /** 下拉手势累计位移 */
   @State pullMax: number = 0;
   private scroller: Scroller = new Scroller();
@@ -1279,6 +1282,37 @@ export struct LedgerScreen {
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
+  /**
+   * 下拉记一笔的指示器：跟手放大 + 淡入，松手达标时「弹」一下再开抽屉。
+   * 只在 pullProgress > 0 时存在，平时完全不占位。
+   */
+  @Builder
+  pullIndicator() {
+    if (this.pullProgress > 0.02) {
+      Stack() {
+        Text('+')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.tok().accentInk)
+        Text('记一笔')
+          .fontSize(9)
+          .fontColor(this.tok().accentInk)
+          .offset({ y: 22 })
+      }
+      .width(46)
+      .height(46)
+      .backgroundColor(this.tok().accent)
+      .borderRadius(23)
+      .border({ width: 1, color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2 })
+      .shadow(this.isCyber()
+        ? { radius: 18, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.45)' } as ShadowOptions
+        : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
+      // 0 → 1 跟手放大；1 以上（触发时的 1.25）继续轻微放大做「弹」的反馈
+      .scale({ x: 0.55 + 0.45 * Math.min(1, this.pullProgress), y: 0.55 + 0.45 * Math.min(1, this.pullProgress) })
+      .opacity(Math.min(1, this.pullProgress))
+    }
+  }
+
   /** 行卡（web .m-row）：34px 分类徽位 + 名称/退款 + 备注·支付·记录人 + 金额/还款日 */
   @Builder
   expenseRow(row: ExpenseItem) {
@@ -1585,6 +1619,16 @@ export struct LedgerScreen {
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
 
+      // 下拉记一笔的指示器：撑满高度的透明命中层 + 顶对齐（用 .overlay 会挡住整页点击）
+      Column() {
+        this.pullIndicator()
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Start)
+      .padding({ top: 12 })
+      .hitTestBehavior(HitTestMode.Transparent)
+
       // 轻提示（web .toast）：底部居中、2 秒消失
       if (this.toastText !== '') {
         Text(this.toastText)
@@ -1617,12 +1661,35 @@ export struct LedgerScreen {
           if (event.offsetY > this.pullMax) {
             this.pullMax = event.offsetY;
           }
+          // 60vp 触发阈值，进度封顶到 1（超出部分不再放大，反馈更稳）
+          const p = Math.min(1, this.pullMax / 60);
+          if (Math.abs(p - this.pullProgress) > 0.02) {
+            this.pullProgress = p;
+          }
         })
         .onActionEnd(() => {
           const atTop = this.scroller.currentOffset().yOffset <= 0;
-          if (atTop && this.pullMax > 60) {
-            this.editingRow = null;
-            this.sheetOpen = true;
+          const hit = atTop && this.pullMax > 60;
+          if (hit) {
+            // 先让指示器「弹」一下再开抽屉，给一个明确的成功反馈
+            animateTo({ duration: 140, curve: Curve.Friction }, () => {
+              this.pullProgress = 1.25;
+            });
+            // 轻微震动（下拉触发反馈）；失败静默（没有马达/没授权都不影响功能）
+            vibrator.startVibration({ type: 'time', duration: 18 }, { id: 0, usage: 'unknown' })
+              .catch(() => {
+              });
+            setTimeout(() => {
+              animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+                this.pullProgress = 0;
+              });
+              this.editingRow = null;
+              this.sheetOpen = true;
+            }, 120);
+          } else {
+            animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+              this.pullProgress = 0;
+            });
           }
           this.pullMax = 0;
         })
