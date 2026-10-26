@@ -1284,30 +1284,32 @@ export struct LedgerScreen {
   }
 
   /**
-   * 下拉记一笔的指示器：**应用 logo + 下方小字「记一笔」**，跟手展开。
-   * 不加圆形底色（之前那个圆把文字挡住了），只用 scale + opacity 做展开动画。
+   * 下拉记一笔的指示器：**应用 logo + 下方小字「记一笔」**，随下拉进度**逐段展开**。
+   * 用「高度随进度增长的裁切窗口」实现（不是先整块出现再放大）：
+   * 拉到多少就看到多少，logo 先露出来，小字随后跟上。
    */
   @Builder
   pullIndicator() {
-    if (this.pullProgress > 0.02) {
-      Column({ space: 4 }) {
-        BrandMark({ markSize: 34 })
-        Text('记一笔')
-          .fontSize(9.5)
-          .fontWeight(FontWeight.Bold)
-          .fontFamily(fontMonoOf())
-          .letterSpacing(1.2)
-          .fontColor(this.tok().ink2)
+    if (this.pullProgress > 0.01) {
+      Column() {
+        Column({ space: 4 }) {
+          BrandMark({ markSize: 34 })
+          Text('记一笔')
+            .fontSize(9.5)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontMonoOf())
+            .letterSpacing(1.2)
+            .fontColor(this.tok().ink2)
+        }
+        .width(96)
       }
-      .justifyContent(FlexAlign.Center)
+      .width('100%')
+      // 内容自然高度 ≈ 34 + 4 + 14 = 52vp；按进度线性揭示
+      .height(52 * Math.min(1, this.pullProgress))
+      .clip(true)
+      .justifyContent(FlexAlign.Start)
       .alignItems(HorizontalAlign.Center)
-      .width(96)
-      // 0 → 1 跟手放大；触发时的 1.25 继续轻微放大做「弹」的反馈
-      .scale({
-        x: 0.6 + 0.4 * Math.min(1, this.pullProgress),
-        y: 0.6 + 0.4 * Math.min(1, this.pullProgress)
-      })
-      .opacity(Math.min(1, this.pullProgress))
+      .opacity(0.35 + 0.65 * Math.min(1, this.pullProgress))
     }
   }
 
@@ -1671,21 +1673,21 @@ export struct LedgerScreen {
           const atTop = this.scroller.currentOffset().yOffset <= 0;
           const hit = atTop && this.pullMax > 60;
           if (hit) {
-            // 先让指示器「弹」一下再开抽屉，给一个明确的成功反馈
-            animateTo({ duration: 140, curve: Curve.Friction }, () => {
-              this.pullProgress = 1.25;
+            // 把展开补满（不放大），再开抽屉
+            animateTo({ duration: 120, curve: Curve.Friction }, () => {
+              this.pullProgress = 1;
             });
             // 轻微震动（下拉触发反馈）；失败静默（没有马达/没授权都不影响功能）
             vibrator.startVibration({ type: 'time', duration: 18 }, { id: 0, usage: 'unknown' })
               .catch(() => {
               });
             setTimeout(() => {
-              animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
-                this.pullProgress = 0;
-              });
               this.editingRow = null;
               this.sheetOpen = true;
-            }, 120);
+              animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+                this.pullProgress = 0;
+              });
+            }, 110);
           } else {
             animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
               this.pullProgress = 0;
