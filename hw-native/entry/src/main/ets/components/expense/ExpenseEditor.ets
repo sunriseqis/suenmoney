@@ -29,6 +29,8 @@ import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { FOCUS_RING, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { PayIconView } from '../../common/ui/PayIconView';
+import { CatIconView } from '../../common/ui/CatIconView';
+import { categoryColorOf } from '../../common/ui/CategoryIcon';
 import { LastPick, LastPickValue } from '../../common/store/LastPick';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
@@ -491,6 +493,19 @@ export struct ExpenseEditor {
    * 宽高比 ~1.35:1；数字键浮起（surface + 阴影）；完成键占右侧两行。
    */
   /** R103：常用分类胶囊条（按本月笔数前 6），点一下直接换分类 */
+  /** 分类图标色：二级跟随一级（同设置页 parentColor 的口径） */
+  private catColorOf(cat: CategoryNode): string {
+    for (const root of this.categories) {
+      if (root.id === cat.parentId) {
+        return categoryColorOf(root.name, root.color);
+      }
+      if (root.id === cat.id) {
+        return categoryColorOf(root.name, root.color);
+      }
+    }
+    return categoryColorOf(cat.name, cat.color);
+  }
+
   /** 快捷分类第 i 个（没有就返回 null，调用处用 if 判断） */
   private quickAt(i: number): CategoryNode | null {
     const list = this.quickCats();
@@ -500,24 +515,37 @@ export struct ExpenseEditor {
   /** 快捷分类单元格：宽高由外面的网格决定，样式跟键盘按键同一套 */
   @Builder
   quickCell(c: CategoryNode) {
-    Text(c.name)
-      .fontSize(11)
-      .fontWeight(FontWeight.Bold)
-      .fontFamily(fontDisplayOf(this.isCyber()))
-      .maxLines(1)
-      .textAlign(TextAlign.Center)
-      .width('100%')
-      .height('100%')
-      .fontColor(this.categoryId === c.id ? this.tok().accentInk : this.tok().ink2)
-      .backgroundColor(this.categoryId === c.id ? this.tok().accent : this.tok().surface)
-      .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
-      .border({ width: 1, color: this.categoryId === c.id ? this.tok().accent : this.tok().line })
-      .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
-      .onClick(() => {
-        this.categoryId = c.id;
-        this.categoryOpen = false;
-        this.refreshPreview();
+    Row({ space: 4 }) {
+      // 分类图标（和流水行/设置页同一套内置 Symbol；二级色跟随一级）
+      CatIconView({
+        catName: c.name,
+        iconSize: 13,
+        color: this.categoryId === c.id ? this.tok().accentInk : this.catColorOf(c)
       })
+      Text(c.name)
+        .fontSize(10.5)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(fontDisplayOf(this.isCyber()))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+        .textAlign(TextAlign.Center)
+        .fontColor(this.categoryId === c.id ? this.tok().accentInk : this.tok().ink2)
+    }
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .width('100%')
+    .height('100%')
+    .padding({ left: 4, right: 4 })
+    .backgroundColor(this.categoryId === c.id ? this.tok().accent : this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
+    .border({ width: 1, color: this.categoryId === c.id ? this.tok().accent : this.tok().line })
+    .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
+    .onClick(() => {
+      this.categoryId = c.id;
+      this.categoryOpen = false;
+      this.refreshPreview();
+    })
   }
 
   @Builder
