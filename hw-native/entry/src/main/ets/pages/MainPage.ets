@@ -11,7 +11,7 @@
  * 记账入口两个：topbar「记一笔」按钮 + 流水页下拉手势（LedgerScreen 内实现）。
  * 跨屏「记一笔」管线：先切回流水屏，再延迟写 createRequest，流水屏 @Watch 打开抽屉。
  */
-import { window } from '@kit.ArkUI';
+import { display, window } from '@kit.ArkUI';
 
 import { LedgerScreen } from '../components/ledger/LedgerScreen';
 import { DashboardScreen } from '../components/dashboard/DashboardScreen';
@@ -34,6 +34,8 @@ export const SCREEN_STORAGE_KEY = 'activeScreen';
 struct MainPage {
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   @StorageLink(SCREEN_STORAGE_KEY) screen: string = 'ledger';
+  /** 沉浸式后状态栏高度（vp），顶部自己补；底部不再为手势条留白 */
+  @StorageLink('statusBarVp') statusBarVp: number = 0;
 
   private tok(): ThemeTokens {
     return this.themeName === 'candy' ? CANDY : CYBER;
@@ -57,29 +59,17 @@ struct MainPage {
         navigationBarColor: this.tok().bg,
         navigationBarContentColor: this.tok().ink
       });
+      // 沉浸式：窗口铺满整屏，否则系统会在底部留一条手势避让区，
+      // 本应用没有底部 tab，那条留白纯属浪费（实测吃掉 ~110px，列表少显示一行）。
+      win.setWindowLayoutFullScreen(true);
+      // 沉浸式之后状态栏区域要靠自己补内边距，先量出来
+      const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      const density = display.getDefaultDisplaySync().densityPixels;
+      AppStorage.setOrCreate('statusBarVp', avoid.topRect.height / density);
     }).catch(() => {
     });
   }
 
-  /** 品牌条（web 移动端 .sidebar）：LOGO 32 + 品牌名 15；nav / 副标题 / side-foot 全部关掉 */
-  @Builder
-  brandBar() {
-    Row({ space: 10 }) {
-      BrandMark({ markSize: 32 })
-      Text('SuenMoney')
-        .fontSize(15)
-        .fontWeight(FontWeight.Bold)
-        .fontFamily(fontDisplayOf(this.isCyber()))
-        .fontColor(this.tok().ink)
-    }
-    .width('100%')
-    .padding({ left: 14, right: 14, top: 8, bottom: 6 })
-    .backgroundColor(this.tok().bg)
-    .border({ width: { bottom: 1 }, color: this.tok().line })
-    .onClick(() => {
-      AppStorage.setOrCreate(SCREEN_STORAGE_KEY, 'ledger');
-    })
-  }
 
   /** 顶栏标题（web PAGE_META；sub 在移动端隐藏 app.css:756） */
   private topTitle(): string {
@@ -110,7 +100,7 @@ struct MainPage {
   @Builder
   topBar() {
     Row({ space: 8 }) {
-      // 非流水页：‹ 返回流水（web goBack：移动端落地页无处可返回）
+      // 流水页不渲染顶栏（用户裁决）；其余屏只留返回键 + 标题，保证能回到流水。
       if (this.screen !== 'ledger') {
         Text('‹')
           .fontSize(20)
@@ -136,54 +126,6 @@ struct MainPage {
         .maxLines(1)
 
       Blank()
-
-      // topbar-actions（gap 9）：主题切换 + 记一笔
-      Row({ space: 9 }) {
-        // 主题切换（web toggleTheme：cyber→light，其余→dark）；图标 ☀/☾ 文本字形
-        Text(this.isCyber() ? '☀' : '☾')
-          .fontSize(16)
-          .fontColor(this.tok().ink2)
-          .width(38)
-          .height(38)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
-          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-          .border({ width: this.tok().borderW, color: this.tok().line })
-          .onClick(() => {
-            ThemeManager.get().setMode(this.isCyber() ? 'light' : 'dark');
-          })
-
-        // 记一笔（web PBtn variant="primary" icon=Plus）：
-        // candy = accent 底 + 3px3px 硬阴影；cyber = accent 底 + #04170d 字 + 绿光（app.css:263）
-        Row({ space: 7 }) {
-          Text('+')
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
-          Text('记一笔')
-            .fontSize(this.isCyber() ? 11 : 12.5)
-            .fontWeight(FontWeight.Bold)
-            .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
-            .letterSpacing(this.isCyber() ? 1.54 : 0)
-            .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
-        }
-        .alignItems(VerticalAlign.Center)
-        .height(38)
-        .padding({ left: 16, right: 16 })
-        .backgroundColor(this.tok().accent)
-        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-        .border({
-          width: this.tok().borderW,
-          color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
-        })
-        .shadow(this.isCyber()
-          ? { radius: 16, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.35)' } as ShadowOptions
-          : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
-        .onClick(() => {
-          this.openCreate();
-        })
-      }
-      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 8, bottom: 8 })
@@ -228,37 +170,16 @@ struct MainPage {
   }
 
   /** 待同步条数与离线态：从 AppStorage 订阅，LedgerScreen 维护 */
-  @StorageLink('pendingSync') pendingSync: number = 0;
   @StorageLink('offline') offline: boolean = false;
 
-  /** build-stamp（App.vue:247）：主题 + 档位 + 记录条数 + 离线/待同步 N */
-  private stampText(): string {
-    let out = 'SuenMoney · 单账本家庭记账';
-    const pend = this.pendingSync;
-    if (pend > 0) {
-      out += ` · 待同步 ${pend}`;
-    } else if (this.offline) {
-      out += ' · 离线';
-    }
-    return out;
-  }
 
   /** 底部构建戳：含离线/待同步内联提示（C.1） */
-  @Builder
-  stamp() {
-    Text(this.stampText())
-      .fontSize(9)
-      .fontFeature('"tnum" on')
-      .fontFamily(fontBodyOf(this.isCyber()))
-      .fontColor(this.tok().ink3)
-      .width('100%')
-      .textAlign(TextAlign.Center)
-      .padding({ top: 8, bottom: 10 })
-  }
 
   build() {
     Column() {
-      this.brandBar()
+      // 顶部品牌条与标题栏按用户裁决**整条不渲染**：
+      // logo / SuenMoney / 页面标题 / 主题切换 / 记一笔 全部去掉，
+      // 流水页直接从内容开始（主题切换在设置页，记一笔走下拉手势）。
       this.topBar()
       // content：padding 6/12/64（views.css:1121）、gap 12（app.css:757）
       Column({ space: 12 }) {
@@ -280,14 +201,19 @@ struct MainPage {
         }
         .layoutWeight(1)
         .width('100%')
-        this.stamp()
+        // 品牌页脚**不渲染**：Web 移动端 `@media (max-width:860px) .side-foot{display:none}`（app.css:741），
+        // 之前无条件渲染，等于在手机底部固定吃掉 ~105px，把列表挤成一行。
       }
       .layoutWeight(1)
       .width('100%')
-      .padding({ left: 12, right: 12, top: 6, bottom: 64 })
+      // 顶部补状态栏高度（沉浸式后要自己补；流水页没有顶栏挡着，必须落在这里）
+      // 底部留 12（Web 的 64 是浏览器滚动留白，原生端没有浏览器，照抄会把列表压掉一行）
+      .padding({ left: 12, right: 12, top: 6 + this.statusBarVp, bottom: 12 })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.tok().bg)
+    // 本应用没有底部 tab，底部只需要让背景铺到物理边缘，不再为手势条留白
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }
