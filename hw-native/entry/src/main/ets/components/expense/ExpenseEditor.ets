@@ -570,10 +570,10 @@ export struct ExpenseEditor {
         }
       }
       .width(62)
-      .height('100%')
+      .height(210)
       .padding({ right: 6 })
 
-      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height('100%')
+      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(210)
 
       // 右：4×4（完成键跨两行）
       Grid() {
@@ -609,11 +609,11 @@ export struct ExpenseEditor {
       .columnsGap(5)
       .rowsGap(5)
       .layoutWeight(1)
-      .height('100%')
+      .height(210)
       .padding({ left: 6 })
     }
     .width('100%')
-    .layoutWeight(1)
+    .height(210)
   }
 
   /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
@@ -901,7 +901,6 @@ export struct ExpenseEditor {
 
     }
     .width('100%')
-    .height('100%')
     .padding(14)
     .backgroundColor(this.tok().bg)
   }

@@ -1646,7 +1646,8 @@ export struct LedgerScreen {
     .width('100%')
     .height('100%')
     .bindSheet($$this.sheetOpen, this.expenseSheet(), {
-      height: SheetSize.LARGE,
+      // 贴合内容高度：既没有底部空白，也不会把键盘撑大
+      height: SheetSize.FIT_CONTENT,
       dragBar: true,
       // 不要系统关闭按钮：它压在内容右上角，和「退款冲销」标记一起盖住金额；
       // 关闭走抽屉内的「取消」、下拉收起、或点 OK 保存后自动关。
