@@ -274,6 +274,13 @@ export struct ExpenseEditor {
   }
 
   private press(key: string): void {
+    // OK 就是「保存」——之前它掉进数字分支，按了什么都不会发生，语义和按钮对不上
+    if (key === 'OK') {
+      if (this.canSave() && !this.saving) {
+        this.save();
+      }
+      return;
+    }
     if (key === 'C') {
       this.amountText = '';
       return;
@@ -578,8 +585,12 @@ export struct ExpenseEditor {
               .fontSize(key === 'OK' || key === 'C' ? 13 : 19)
               .fontWeight(FontWeight.Bold)
               .fontFamily(fontDisplayOf(this.isCyber()))
-              .backgroundColor(key === 'OK' ? this.tok().accent : this.tok().surface)
-              .fontColor(key === 'OK' ? this.tok().accentInk : this.tok().ink)
+              .backgroundColor(key === 'OK'
+                ? (this.canSave() ? this.tok().accent : this.tok().surface2)
+                : this.tok().surface)
+              .fontColor(key === 'OK'
+                ? (this.canSave() ? this.tok().accentInk : this.tok().ink3)
+                : this.tok().ink)
               .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
               .border({ width: 1, color: this.tok().line })
               .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
@@ -616,17 +627,19 @@ export struct ExpenseEditor {
 
   build() {
     Column({ space: 10 }) {
+      // 标题行：退款标记紧挨标题，**不再放右上角**
+      // （右上角是 sheet 的系统关闭按钮位置，两者叠在一起会把金额盖住）
       Row({ space: 8 }) {
         Text(this.props.editing === null ? '记一笔' : '编辑')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.tok().ink)
-        Blank()
         if (this.isRefund) {
           Text('退款冲销')
             .fontSize(10)
             .fontColor(this.tok().danger)
         }
+        Blank()
       }
       .width('100%')
 
@@ -875,17 +888,9 @@ export struct ExpenseEditor {
         this.keypad()
       }
 
+      // 「保存」已由键盘上的 OK 承担（点 OK = 保存），这里不再放第二个保存按钮，
+      // 只保留编辑态的删除
       Row({ space: 8 }) {
-        Button(this.saving ? '保存中…' : '保存')
-          .fontSize(13)
-          .height(42)
-          .layoutWeight(1)
-          .backgroundColor(this.tok().accent)
-          .fontColor(this.tok().accentInk)
-          .enabled(!this.saving && this.canSave())
-          .onClick(() => {
-            this.save();
-          })
         if (this.props.editing !== null) {
           Button('删除')
             .fontSize(13)
