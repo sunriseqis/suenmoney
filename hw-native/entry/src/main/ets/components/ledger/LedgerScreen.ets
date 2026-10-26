@@ -26,6 +26,7 @@ import { daysUntil, formatMonthLabel, formatYuan, shiftMonth } from '../../commo
 import { LengthMetrics } from '@kit.ArkUI';
 import { vibrator } from '@kit.SensorServiceKit';
 import { ExpenseEditor } from '../expense/ExpenseEditor';
+import { BrandMark } from '../BrandMark';
 
 export interface HeroTodo {
   id: string;
@@ -1283,32 +1284,29 @@ export struct LedgerScreen {
   }
 
   /**
-   * 下拉记一笔的指示器：跟手放大 + 淡入，松手达标时「弹」一下再开抽屉。
-   * 只在 pullProgress > 0 时存在，平时完全不占位。
+   * 下拉记一笔的指示器：**应用 logo + 下方小字「记一笔」**，跟手展开。
+   * 不加圆形底色（之前那个圆把文字挡住了），只用 scale + opacity 做展开动画。
    */
   @Builder
   pullIndicator() {
     if (this.pullProgress > 0.02) {
-      Stack() {
-        Text('+')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.tok().accentInk)
+      Column({ space: 4 }) {
+        BrandMark({ markSize: 34 })
         Text('记一笔')
-          .fontSize(9)
-          .fontColor(this.tok().accentInk)
-          .offset({ y: 22 })
+          .fontSize(9.5)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(fontMonoOf())
+          .letterSpacing(1.2)
+          .fontColor(this.tok().ink2)
       }
-      .width(46)
-      .height(46)
-      .backgroundColor(this.tok().accent)
-      .borderRadius(23)
-      .border({ width: 1, color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2 })
-      .shadow(this.isCyber()
-        ? { radius: 18, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.45)' } as ShadowOptions
-        : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
-      // 0 → 1 跟手放大；1 以上（触发时的 1.25）继续轻微放大做「弹」的反馈
-      .scale({ x: 0.55 + 0.45 * Math.min(1, this.pullProgress), y: 0.55 + 0.45 * Math.min(1, this.pullProgress) })
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .width(96)
+      // 0 → 1 跟手放大；触发时的 1.25 继续轻微放大做「弹」的反馈
+      .scale({
+        x: 0.6 + 0.4 * Math.min(1, this.pullProgress),
+        y: 0.6 + 0.4 * Math.min(1, this.pullProgress)
+      })
       .opacity(Math.min(1, this.pullProgress))
     }
   }
@@ -1648,7 +1646,9 @@ export struct LedgerScreen {
     .bindSheet($$this.sheetOpen, this.expenseSheet(), {
       height: SheetSize.LARGE,
       dragBar: true,
-      showClose: true,
+      // 不要系统关闭按钮：它压在内容右上角，和「退款冲销」标记一起盖住金额；
+      // 关闭走抽屉内的「取消」、下拉收起、或点 OK 保存后自动关。
+      showClose: false,
       backgroundColor: this.tok().bg
     })
     // 下拉记一笔：移动 Web 的唯一手势入口；阈值 60vp，列表须已在顶部
