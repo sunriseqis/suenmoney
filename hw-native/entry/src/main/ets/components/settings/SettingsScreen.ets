@@ -11,6 +11,7 @@
 import { cardShadow, fontBodyOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { LengthMetrics } from '@kit.ArkUI';
 import { ApiError } from '../../common/net/ApiError';
+import { router } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { formatYuan } from '../../common/contract/Contract';
@@ -18,6 +19,8 @@ import { formatYuan } from '../../common/contract/Contract';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { CATEGORY_COLORS, categoryColorOf } from '../../common/ui/CategoryIcon';
+import { ServerConfig } from '../../common/net/ServerConfig';
+import { ProbeResult, ServerRouter } from '../../common/net/ServerRouter';
 import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
   Api,
@@ -33,6 +36,16 @@ import {
 } from '../../common/net/Api';
 
 /** 图标选择项（存 lucide 名字，web 端可直接解析；hw 端用内置 Symbol 近似渲染） */
+/**
+ * 服务器地址单槽的渲染参数。
+ * ArkUI 的多参数 @Builder 不会随状态刷新，所以统一用「单对象 + $$」传递。
+ */
+interface SrvSlot {
+  index: number;
+  value: string;
+  state: string;
+}
+
 interface CatIconOption {
   name: string;
   label: string;
@@ -124,6 +137,11 @@ export struct SettingsScreen {
   @State formError: string = '';
   // ── 分类表单 ──
   @State railRootId: string = '';
+  // ── 多服务器（R98 的三槽，登录后要能改，否则换了地址就永远进不去）──
+  @State srvSlots: string[] = ['', '', ''];
+  @State srvProbe: string[] = ['', '', ''];
+  @State srvMsg: string = '';
+  @State srvActive: string = '';
   @State editingCategoryId: string = '';
   @State formName: string = '';
   @State formIcon: string = '';
@@ -157,6 +175,7 @@ export struct SettingsScreen {
   private pendingRevertId: string = '';
 
   aboutToAppear(): void {
+    this.loadServers();
     this.reload();
   }
 
@@ -672,6 +691,107 @@ export struct SettingsScreen {
   }
 
   // ══ UI ═════════════════════════════════════════════════════════════════
+  /** 从 ServerConfig 读出三个槽（已填的地址 + 当前生效地址） */
+  private loadServers(): void {
+    const all: string[] = ServerConfig.get().allServers;
+    const filled: string[] = ['', '', ''];
+    for (let i = 0; i < 3; i++) {
+      filled[i] = i < all.length ? all[i] : '';
+    }
+    this.srvSlots = filled;
+    this.srvActive = ServerConfig.get().baseUrl;
+    this.srvProbe = ['', '', ''];
+    this.srvMsg = '';
+  }
+
+  /** 三个槽派生出的有效地址 */
+  private srvFilled(): string[] {
+    const out: string[] = [];
+    for (const v of this.srvSlots) {
+      if (v.trim() !== '') {
+        out.push(v.trim());
+      }
+    }
+    return out;
+  }
+
+  /** 逐槽探活 */
+  private async testServers(): Promise<void> {
+    const states: string[] = ['', '', ''];
+    let okCount = 0;
+    for (let i = 0; i < 3; i++) {
+      const url = this.srvSlots[i].trim();
+      if (url === '') {
+        continue;
+      }
+      try {
+        const r: ProbeResult = await ServerRouter.probe(url);
+        states[i] = r.ok ? 'ok' : 'bad';
+        if (r.ok) {
+          okCount += 1;
+        }
+      } catch (e) {
+        states[i] = 'bad';
+      }
+    }
+    this.srvProbe = states;
+    this.srvMsg = okCount > 0 ? `${okCount} 个地址可用` : '所有地址都连不上';
+  }
+
+  /** 保存三个槽（去空，第一个作为生效地址） */
+  private async saveServers(): Promise<void> {
+    const next = this.srvFilled();
+    if (next.length === 0) {
+      this.srvMsg = '至少填一个地址';
+      return;
+    }
+    const prevActive = ServerConfig.get().baseUrl;
+    await ServerConfig.get().setServers(next, next[0]);
+    this.srvActive = next[0];
+    if (next[0] !== prevActive) {
+      // 换了生效服务器：旧 token 在新服务器上无效，留着只会全站 401。
+      // 本端没有「退出登录」入口，所以这里直接清 token 并回登录页重新登。
+      await ServerConfig.get().clearToken();
+      router.replaceUrl({ url: 'pages/LoginPage' });
+      return;
+    }
+    this.srvMsg = '已保存';
+  }
+
+  /** 服务器地址单槽（连通点 + 输入框） */
+  @Builder
+  serverSlot($$: SrvSlot) {
+    Row({ space: 8 }) {
+      // 连通指示：未测=空心，可用=accent，不可用=danger
+      Row()
+        .width(7)
+        .height(7)
+        .borderRadius(4)
+        .backgroundColor($$.state === 'ok'
+          ? this.tok().ok
+          : ($$.state === 'bad' ? this.tok().danger : this.tok().line))
+      TextInput({ text: $$.value, placeholder: 'http://主机:端口' })
+        .fontSize(11.5)
+        .fontFamily(fontMonoOf())
+        .layoutWeight(1)
+        .height(34)
+        .backgroundColor(this.tok().surface2)
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+        .border({ width: 1, color: this.tok().line })
+        .fontColor(this.tok().ink)
+        .onChange((v: string) => {
+          this.srvSlots[$$.index] = v;
+        })
+      if ($$.value.trim() !== '' && $$.value.trim() === this.srvActive) {
+        Text('生效')
+          .fontSize(9)
+          .fontColor(this.tok().accent)
+      }
+    }
+    .width('100%')
+    .margin({ bottom: 8 })
+  }
+
   /** 当前左栏选中一级分类的颜色（二级分类继承它） */
   private parentColor(): string {
     for (const root of this.categories) {
@@ -703,6 +823,7 @@ export struct SettingsScreen {
             this.dueCard()
           } else {
             this.themeCard()
+            this.serverCard()
             this.passwordCard()
             this.updateCard()
           }
@@ -1724,6 +1845,65 @@ export struct SettingsScreen {
         .fontColor(this.tok().ink3)
         .lineHeight(18)
         .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(14)
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+    .border({ width: this.tok().borderW, color: this.tok().line })
+    .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
+  }
+
+  /**
+   * 服务器（多地址）：登录页的 R98 三槽在这里也能改。
+   * 之前只有登录页能改地址，而登录页仅在未登录时加载、「退出登录」又没做，
+   * 等于登录后**永远换不了服务器**。
+   */
+  @Builder
+  serverCard() {
+    Column() {
+      Row({ space: 10 }) {
+        Text('服务器')
+          .fontSize(this.isCyber() ? 12.5 : 15)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+          .letterSpacing(this.isCyber() ? 1.25 : 0)
+          .fontColor(this.tok().ink)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .margin({ bottom: 13 })
+
+      this.serverSlot({ index: 0, value: this.srvSlots[0], state: this.srvProbe[0] })
+      this.serverSlot({ index: 1, value: this.srvSlots[1], state: this.srvProbe[1] })
+      this.serverSlot({ index: 2, value: this.srvSlots[2], state: this.srvProbe[2] })
+
+      Row({ space: 8 }) {
+        Text(this.srvMsg)
+          .fontSize(10)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+          .layoutWeight(1)
+        Button('测试')
+          .fontSize(11)
+          .height(30)
+          .backgroundColor(this.tok().surface2)
+          .fontColor(this.tok().ink2)
+          .onClick(() => {
+            this.testServers();
+          })
+        Button('保存')
+          .fontSize(11)
+          .height(30)
+          .backgroundColor(this.tok().accent)
+          .fontColor(this.tok().accentInk)
+          .onClick(() => {
+            this.saveServers();
+          })
+      }
+      .width('100%')
+      .margin({ top: 2 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
