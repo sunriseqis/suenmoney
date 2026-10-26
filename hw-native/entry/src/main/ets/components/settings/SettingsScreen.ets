@@ -138,8 +138,10 @@ export struct SettingsScreen {
   // ── 分类表单 ──
   @State railRootId: string = '';
   // ── 多服务器（R98 的三槽，登录后要能改，否则换了地址就永远进不去）──
-  @State srvSlots: string[] = ['', '', ''];
-  @State srvProbe: string[] = ['', '', ''];
+  /** 用户自己维护的候选服务器列表（不是几个空框） */
+  @State srvList: string[] = [];
+  /** 每项的连通状态：'' 未测 / 'ok' / 'bad' */
+  @State srvProbe: string[] = [];
   @State srvMsg: string = '';
   @State srvActive: string = '';
   @State editingCategoryId: string = '';
@@ -693,21 +695,19 @@ export struct SettingsScreen {
   // ══ UI ═════════════════════════════════════════════════════════════════
   /** 从 ServerConfig 读出三个槽（已填的地址 + 当前生效地址） */
   private loadServers(): void {
-    const all: string[] = ServerConfig.get().allServers;
-    const filled: string[] = ['', '', ''];
-    for (let i = 0; i < 3; i++) {
-      filled[i] = i < all.length ? all[i] : '';
-    }
-    this.srvSlots = filled;
+    this.srvList = ServerConfig.get().allServers.slice();
     this.srvActive = ServerConfig.get().baseUrl;
-    this.srvProbe = ['', '', ''];
+    this.srvProbe = [];
+    for (let i = 0; i < this.srvList.length; i++) {
+      this.srvProbe.push('');
+    }
     this.srvMsg = '';
   }
 
   /** 三个槽派生出的有效地址 */
   private srvFilled(): string[] {
     const out: string[] = [];
-    for (const v of this.srvSlots) {
+    for (const v of this.srvList) {
       if (v.trim() !== '') {
         out.push(v.trim());
       }
@@ -715,23 +715,40 @@ export struct SettingsScreen {
     return out;
   }
 
+  /** 追加一条空候选（用户点「添加服务器」） */
+  private addServer(): void {
+    this.srvList.push('');
+    this.srvProbe.push('');
+    this.srvMsg = '';
+  }
+
+  /** 删除第 i 条候选 */
+  private removeServer(i: number): void {
+    if (i < this.srvList.length) {
+      this.srvList.splice(i, 1);
+      this.srvProbe.splice(i, 1);
+      this.srvMsg = '';
+    }
+  }
+
   /** 逐槽探活 */
   private async testServers(): Promise<void> {
-    const states: string[] = ['', '', ''];
+    const states: string[] = [];
     let okCount = 0;
-    for (let i = 0; i < 3; i++) {
-      const url = this.srvSlots[i].trim();
+    for (let i = 0; i < this.srvList.length; i++) {
+      const url = this.srvList[i].trim();
       if (url === '') {
+        states.push('');
         continue;
       }
       try {
         const r: ProbeResult = await ServerRouter.probe(url);
-        states[i] = r.ok ? 'ok' : 'bad';
+        states.push(r.ok ? 'ok' : 'bad');
         if (r.ok) {
           okCount += 1;
         }
       } catch (e) {
-        states[i] = 'bad';
+        states.push('bad');
       }
     }
     this.srvProbe = states;
@@ -745,16 +762,11 @@ export struct SettingsScreen {
       this.srvMsg = '至少填一个地址';
       return;
     }
-    const prevActive = ServerConfig.get().baseUrl;
+    // 与 suenmusic 的模型一致：候选列表指向**同一套后端**（同 DB / 同 JWT），
+    // 换路径不需要重新登录，所以这里只落库，不清 token。
+    // 生效地址由 ServerRouter 按顺序探活自己选，用户不用手点「设为生效」。
     await ServerConfig.get().setServers(next, next[0]);
-    this.srvActive = next[0];
-    if (next[0] !== prevActive) {
-      // 换了生效服务器：旧 token 在新服务器上无效，留着只会全站 401。
-      // 本端没有「退出登录」入口，所以这里直接清 token 并回登录页重新登。
-      await ServerConfig.get().clearToken();
-      router.replaceUrl({ url: 'pages/LoginPage' });
-      return;
-    }
+    this.srvActive = ServerConfig.get().baseUrl;
     this.srvMsg = '已保存';
   }
 
@@ -780,13 +792,22 @@ export struct SettingsScreen {
         .border({ width: 1, color: this.tok().line })
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
-          this.srvSlots[$$.index] = v;
+          this.srvList[$$.index] = v;
         })
       if ($$.value.trim() !== '' && $$.value.trim() === this.srvActive) {
         Text('生效')
           .fontSize(9)
           .fontColor(this.tok().accent)
       }
+      Text('×')
+        .fontSize(14)
+        .fontColor(this.tok().ink3)
+        .width(26)
+        .height(26)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          this.removeServer($$.index);
+        })
     }
     .width('100%')
     .margin({ bottom: 8 })
@@ -1875,9 +1896,33 @@ export struct SettingsScreen {
       .width('100%')
       .margin({ bottom: 13 })
 
-      this.serverSlot({ index: 0, value: this.srvSlots[0], state: this.srvProbe[0] })
-      this.serverSlot({ index: 1, value: this.srvSlots[1], state: this.srvProbe[1] })
-      this.serverSlot({ index: 2, value: this.srvSlots[2], state: this.srvProbe[2] })
+      // 用户自己添加的候选（第一条优先级最高）；没有就显示空态引导
+      if (this.srvList.length === 0) {
+        Text('还没有服务器，点下面「添加服务器」')
+          .fontSize(11)
+          .fontColor(this.tok().ink3)
+          .width('100%')
+          .margin({ bottom: 8 })
+      } else {
+        ForEach(this.srvList, (url: string, i: number) => {
+          this.serverSlot({ index: i, value: url, state: i < this.srvProbe.length ? this.srvProbe[i] : '' })
+        }, (url: string, i: number) => `srv-${i}-${url}`)
+      }
+
+      Row({ space: 8 }) {
+        Text('+ 添加服务器')
+          .fontSize(11)
+          .fontColor(this.tok().accent)
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .border({ width: 1, color: this.tok().accent })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .onClick(() => {
+            this.addServer();
+          })
+        Blank()
+      }
+      .width('100%')
+      .margin({ bottom: 8 })
 
       Row({ space: 8 }) {
         Text(this.srvMsg)
