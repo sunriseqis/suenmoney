@@ -1,5 +1,10 @@
 # 图标改用鸿蒙内置 Symbol —— 交接单（给 DevEco Code）
 
+> ✅ **已执行（2026-10-25，commit 4850406）**：`IconPaths.ets` / `IconView.ets` 已删除，
+> 分类图标改为 `CatIconView`（内置 Symbol），支付品牌改为随包 `pay_*.svg` + `Image` 染色，
+> 非品牌支付图标走内置 Symbol。本文件保留作为历史记录，**不再作为待办**。
+> 后续相关裁决见 `docs/memory/2026-10-26-记账页交互与多服务器模型.md`。
+
 > **状态（2026-10-25）：已落地，方案在第五节基础上升级。**
 > 品牌图形不再用 Path 手绘（方案 A 也放弃了），改为**随包 SVG 媒体**
 > （`resources/base/media/pay_*.svg`）+ `Image` 原生解码 + `fillColor` 染品牌色；
