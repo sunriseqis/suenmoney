@@ -1553,6 +1553,35 @@ export struct SettingsScreen {
   }
 
   // ── 设备区 ──────────────────────────────────────────────────────────────
+
+  /** 主题选项（紧凑版：一排三个 pill，替代原来 56px 大预览的 theme-card） */
+  @Builder
+  themeChip(value: string, label: string) {
+    Text(label)
+      .fontSize(this.isCyber() ? 10.5 : 12)
+      .fontWeight(FontWeight.Bold)
+      .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
+      .letterSpacing(this.isCyber() ? 0.8 : 0)
+      .maxLines(1)
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .padding({ top: 9, bottom: 9 })
+      .fontColor(this.themeMode === value
+        ? (this.isCyber() ? this.tok().accent : this.tok().accentInk)
+        : this.tok().ink2)
+      .backgroundColor(this.themeMode === value
+        ? (this.isCyber() ? 'rgba(0,255,136,0.1)' : this.tok().accent)
+        : this.tok().surface2)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+      .border({
+        width: this.tok().borderW,
+        color: this.themeMode === value ? this.tok().accent : this.tok().line
+      })
+      .onClick(() => {
+        this.switchTheme(value);
+      })
+  }
+
   /** 主题卡（web theme-cards--3：移动端单列，56px 预览 + 标签 + 描述） */
   @Builder
   themeCard() {
@@ -1569,10 +1598,11 @@ export struct SettingsScreen {
       .width('100%')
       .margin({ bottom: 13 })
 
-      Column({ space: 12 }) {
-        this.themeOption('light', '水果硬糖', '浅色 · 贴纸硬阴影')
-        this.themeOption('dark', '赛博朋克', '深色 · 切角霓虹')
-        this.themeOption('system', '跟随系统', '浅色 / 深色自动')
+      // 主题收敛成三个横排选项（用户裁决：不要大预览块），一排占满宽度
+      Row({ space: 8 }) {
+        this.themeChip('light', '水果硬糖')
+        this.themeChip('dark', '赛博朋克')
+        this.themeChip('system', '跟随系统')
       }
       .width('100%')
     }
@@ -1585,151 +1615,9 @@ export struct SettingsScreen {
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
-  /** 单个主题选项（web .theme-card） */
-  @Builder
-  themeOption(value: string, label: string, desc: string) {
-    Column({ space: 8 }) {
-      if (value === 'light') {
-        this.prevCandy()
-      } else if (value === 'dark') {
-        this.prevCyber()
-      } else {
-        this.prevSystem()
-      }
-      Text(label)
-        .fontSize(12)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.tok().ink)
-      Text(desc)
-        .fontSize(10.5)
-        .fontColor(this.tok().ink3)
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .padding(10)
-    .borderRadius(this.isCyber() ? 1 : this.tok().rMd)
-    .backgroundColor(this.isCyber() ? Color.Transparent : this.tok().surface)
-    .border({
-      width: this.themeMode === value
-        ? (this.isCyber() ? 1 : 2)
-        : (this.isCyber() ? 1 : 2),
-      color: this.themeMode === value
-        ? (this.isCyber() ? this.tok().accent : this.tok().line2)
-        : this.tok().line
-    })
-    .shadow(this.themeMode === value
-      ? (this.isCyber()
-        ? { radius: 10, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.6)' } as ShadowOptions
-        : parseShadow('3px 3px 0 #1E293B') as ShadowOptions)
-      : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
-    .onClick(() => {
-      this.switchTheme(value);
-    })
-  }
 
-  /** 水果硬糖预览（web .tp-candy） */
-  @Builder
-  prevCandy() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Stack({ alignContent: Alignment.TopStart }) {
-        Row()
-          .position({ x: 16, y: 18 })
-          .width(34)
-          .height(7)
-          .borderRadius(4)
-          .backgroundColor('#8B5CF6')
-        Row()
-          .position({ x: 16, y: 31 })
-          .width(34)
-          .height(6)
-          .borderRadius(4)
-          .backgroundColor('#F472B6')
-      }
-      .width('100%')
-      .height('100%')
-      .margin(8)
-      .borderRadius(6)
-      .backgroundColor('#FFFFFF')
-      .border({ width: 2, color: '#1E293B' })
-      .shadow(parseShadow('3px 3px 0 #E2E8F0') as ShadowOptions)
-    }
-    .width('100%')
-    .height(56)
-    .borderRadius(8)
-    .backgroundColor('#FFFDF5')
-    .border({ width: 1, color: 'rgba(0,0,0,0.12)' })
-    .clip(true)
-  }
 
-  /** 赛博朋克预览（web .tp-cyber） */
-  @Builder
-  prevCyber() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Stack({ alignContent: Alignment.TopStart }) {
-        Row()
-          .position({ x: 16, y: 18 })
-          .width(30)
-          .height(5)
-          .backgroundColor('#00ff88')
-          .shadow({ radius: 6, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.8)' } as ShadowOptions)
-        Row()
-          .position({ x: 16, y: 30 })
-          .width(30)
-          .height(4)
-          .backgroundColor('#ff00ff')
-      }
-      .width('100%')
-      .height('100%')
-      .margin(7)
-      .backgroundColor('#12121a')
-      .border({ width: 1, color: '#00ff88' })
-      .shadow({ radius: 8, offsetX: 0, offsetY: 0, color: 'rgba(0,255,136,0.4)' } as ShadowOptions)
-    }
-    .width('100%')
-    .height(56)
-    .borderRadius(8)
-    .backgroundColor('#0a0a0f')
-    .border({ width: 1, color: 'rgba(0,0,0,0.12)' })
-    .clip(true)
-  }
 
-  /** 跟随系统预览（web .tp-system：左右分色） */
-  @Builder
-  prevSystem() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Stack({ alignContent: Alignment.TopStart }) {
-        Row()
-          .position({ x: 16, y: 20 })
-          .width(30)
-          .height(6)
-          .borderRadius(4)
-          .backgroundColor('#8B5CF6')
-        Row()
-          .position({ x: 16, y: 32 })
-          .width(30)
-          .height(5)
-          .backgroundColor('#00ff88')
-      }
-      .width('100%')
-      .height('100%')
-      .margin(8)
-      .borderRadius(6)
-      .border({ width: 2, color: '#1E293B' })
-      .linearGradient({
-        angle: 105,
-        colors: [['#FFFFFF', 0], ['#FFFFFF', 0.5], ['#12121a', 0.5], ['#12121a', 1]]
-      })
-    }
-    .width('100%')
-    .height(56)
-    .borderRadius(8)
-    .linearGradient({
-      angle: 105,
-      colors: [['#FFFDF5', 0], ['#FFFDF5', 0.5], ['#0a0a0f', 0.5], ['#0a0a0f', 1]]
-    })
-    .border({ width: 1, color: 'rgba(0,0,0,0.12)' })
-    .clip(true)
-  }
 
   /** 修改口令卡（web「我的账号」口令部分） */
   @Builder
