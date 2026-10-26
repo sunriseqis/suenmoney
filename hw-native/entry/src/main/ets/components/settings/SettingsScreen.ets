@@ -672,8 +672,23 @@ export struct SettingsScreen {
   }
 
   // ══ UI ═════════════════════════════════════════════════════════════════
+  /** 当前左栏选中一级分类的颜色（二级分类继承它） */
+  private parentColor(): string {
+    for (const root of this.categories) {
+      if (root.id === this.railRootId) {
+        return categoryColorOf(root.name, root.color);
+      }
+    }
+    return categoryColorOf('', '');
+  }
+
   build() {
-    Stack({ alignContent: Alignment.Bottom }) {
+    // ⚠ 必须给 Stack 显式尺寸：否则 Scroll 的 height('100%') 没有参照，
+    //   内容短的 tab（设备区）会被 Alignment.Bottom 推向底部居中，切 tab 就来回跳。
+    Stack({ alignContent: Alignment.TopStart }) {
+      // Scroll 必须放在一个「高度确定」的容器里（layoutWeight 撑满）：
+      // 直接把 Scroll 当 Stack 子节点时，内容比视口短会被居中（设备区就是这样跳的）
+      Column() {
       Scroll() {
         Column({ space: 12 }) {
           this.settingsTabs()
@@ -707,13 +722,24 @@ export struct SettingsScreen {
           }
         }
         .width('100%')
+        // 内容比视口短时（设备区），Scroll 会把内容列垂直居中 → 切 tab 整屏跳动。
+        // 给一个「至少占满视口」的下限，内容就永远从顶部开始。
+        .constraintSize({ minHeight: '100%' })
+        .justifyContent(FlexAlign.Start)
+        .alignItems(HorizontalAlign.Start)
         .padding({ bottom: 8 })
       }
       .width('100%')
-      .height('100%')
+      .layoutWeight(1)
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
+      }
+      .width('100%')
+      .height('100%')
 
+      // 浮层兜底容器：撑满高度 + 底对齐，替代原来 Stack 的 Alignment.Bottom
+      // （Bottom 对齐会把「设备」这种内容短的 tab 整屏推到底部居中，切 tab 就跳）
+      Column() {
       // 轻提示（web .toast）：底部居中、2 秒消失
       if (this.toastText !== '') {
         Text(this.toastText)
@@ -768,6 +794,11 @@ export struct SettingsScreen {
         .border({ width: 2, color: this.tok().danger })
         .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
       }
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%')
     .height('100%')
@@ -1043,10 +1074,12 @@ export struct SettingsScreen {
         } else {
           ForEach(this.railChildren(), (kid: CategoryNode) => {
             Row({ space: 8 }) {
+              // 二级分类的**颜色跟随一级**（Web PCatIcon 的 colorName = 父分类名），
+              // 图标本身仍按二级自己的名字解析
               CatIconView({
                 catName: kid.name,
                 iconSize: 26,
-                color: categoryColorOf(kid.name, kid.color)
+                color: this.parentColor()
               })
               Column({ space: 2 }) {
                 Row({ space: 6 }) {
