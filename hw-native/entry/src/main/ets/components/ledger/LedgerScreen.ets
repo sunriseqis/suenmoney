@@ -107,6 +107,9 @@ export struct LedgerScreen {
   @State sheetOpen: boolean = false;
   /** 非 null 表示抽屉处于编辑态 */
   @State editingRow: ExpenseItem | null = null;
+  /** 期间快选月历（点期间标签弹出） */
+  @State calOpen: boolean = false;
+  @State calYearV: number = Number(currentMonthKey().substring(0, 4));
   /** 下拉手势进度 0..1（驱动顶部「+」指示器的缩放/透明度） */
   @State pullProgress: number = 0;
   /** 下拉手势累计位移 */
@@ -857,6 +860,11 @@ export struct LedgerScreen {
                   .fontColor(this.tok().ink)
                   .textAlign(TextAlign.Center)
                   .constraintSize({ minWidth: 76 })
+                  // 点期间标签 → 弹出月历，快速跳月份/年份（比一直点 ‹ › 快）
+                  .onClick(() => {
+                    this.calYearV = Number(this.anchorMonth.substring(0, 4));
+                    this.calOpen = true;
+                  })
                 this.navChevron('›', 1)
               }
 
@@ -1451,6 +1459,148 @@ export struct LedgerScreen {
     .shadow(cardShadow(this.tok(), this.isCyber()) as ShadowOptions)
   }
 
+
+  /** 期间快选月历：年 ‹ › + 12 个月格；点月份落到该月，另有「整年 / 回到本月」 */
+  @Builder
+  periodCalendar() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.calOpen = false;
+        })
+      Column({ space: 10 }) {
+        Row() {
+          Text('选择期间')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink)
+          Blank()
+          Text('关闭')
+            .fontSize(11)
+            .fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.calOpen = false;
+            })
+        }
+        .width('100%')
+
+        Row() {
+          Text('‹')
+            .fontSize(18)
+            .fontColor(this.tok().ink2)
+            .width(34)
+            .height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.calYearV = this.calYearV - 1;
+            })
+          Blank()
+          Text(`${this.calYearV} 年`)
+            .fontSize(15)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber()))
+            .fontColor(this.tok().ink)
+          Blank()
+          Text('›')
+            .fontSize(18)
+            .fontColor(this.tok().ink2)
+            .width(34)
+            .height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.calYearV = this.calYearV + 1;
+            })
+        }
+        .width('100%')
+
+        Grid() {
+          ForEach(CAL_MONTHS, (mm: number) => {
+            GridItem() {
+              Text(`${mm}月`)
+                .fontSize(12)
+                .width('100%')
+                .height(38)
+                .textAlign(TextAlign.Center)
+                .fontFamily(fontMonoOf())
+                .fontColor(this.calMonthActive(mm) ? this.tok().accentInk : this.tok().ink2)
+                .backgroundColor(this.calMonthActive(mm) ? this.tok().accent : this.tok().surface2)
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+                .border({ width: 1, color: this.tok().line })
+                .onClick(() => {
+                  this.anchorMonth = monthKeyOf(this.calYearV, mm);
+                  this.anchorYear = String(this.calYearV);
+                  this.tier = 0;
+                  this.calOpen = false;
+                  this.loading = true;
+                  this.reload().then(() => {
+                    this.loading = false;
+                  });
+                })
+            }
+          }, (mm: number) => `cal-${mm}`)
+        }
+        .columnsTemplate('repeat(4, 1fr)')
+        .columnsGap(6)
+        .rowsGap(6)
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Text('整年')
+            .fontSize(11.5)
+            .layoutWeight(1)
+            .height(32)
+            .textAlign(TextAlign.Center)
+            .fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .border({ width: 1, color: this.tok().line })
+            .onClick(() => {
+              this.anchorYear = String(this.calYearV);
+              this.tier = 1;
+              this.calOpen = false;
+              this.loading = true;
+              this.reload().then(() => {
+                this.loading = false;
+              });
+            })
+          Text('回到本月')
+            .fontSize(11.5)
+            .layoutWeight(1)
+            .height(32)
+            .textAlign(TextAlign.Center)
+            .fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .border({ width: 1, color: this.tok().line })
+            .onClick(() => {
+              this.anchorMonth = currentMonthKey();
+              this.anchorYear = currentMonthKey().substring(0, 4);
+              this.tier = 0;
+              this.calOpen = false;
+              this.loading = true;
+              this.reload().then(() => {
+                this.loading = false;
+              });
+            })
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /** 月历里「当前选中的月」高亮 */
+  private calMonthActive(mm: number): boolean {
+    return this.tier === 0 && this.anchorMonth === monthKeyOf(this.calYearV, mm);
+  }
+
   /** 年档单格：月份 + 本月标记 + 笔数 + 金额 + 进度条（点击进该月） */
   @Builder
   yearCell(label: string, isCurrent: boolean, amountText: string, count: number, pct: number) {
@@ -1612,12 +1762,22 @@ export struct LedgerScreen {
           }
         }
         .width('100%')
+        // 内容比视口短时（空月份/空年份很常见），Scroll 会把内容列**垂直居中** →
+        // 切档/切屏就整页上下跳。给一个「至少占满视口」的下限，永远从顶部开始。
+        .constraintSize({ minHeight: '100%' })
+        .justifyContent(FlexAlign.Start)
+        .alignItems(HorizontalAlign.Start)
         .padding({ bottom: 8 })
       }
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
+
+      // 期间快选月历（点期间标签弹出）
+      if (this.calOpen) {
+        this.periodCalendar()
+      }
 
       // 下拉记一笔的指示器：撑满高度的透明命中层 + 顶对齐（用 .overlay 会挡住整页点击）
       Column() {
@@ -1703,6 +1863,13 @@ export struct LedgerScreen {
 }
 
 /** 当前月（YYYY-MM）。与 Web 的 currentMonth() 同义，用本地时区 */
+const CAL_MONTHS: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+/** (年, 月) → 'YYYY-MM' */
+function monthKeyOf(year: number, month: number): string {
+  return `${year}-${month < 10 ? '0' + month : String(month)}`;
+}
+
 function currentMonthKey(): string {
   const now = new Date();
   const m = now.getMonth() + 1;
