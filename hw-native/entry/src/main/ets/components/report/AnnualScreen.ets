@@ -72,7 +72,11 @@ export struct AnnualScreen {
   }
 
   private yearDelta(): number | null {
-    return this.report !== null && this.report.yearAgo !== undefined ? this.report.yearAgo.changeRatio : null;
+    if (this.report === null || this.report.yearAgo === undefined) {
+      return null;
+    }
+    // 上年无数据时服务端会给 null 或干脆不带这个字段 → undefined*100 = NaN
+    return ratioOf(this.report.yearAgo.changeRatio);
   }
 
   private yearDeltaPct(): string {
@@ -384,6 +388,8 @@ export struct AnnualScreen {
             .justifyContent(FlexAlign.End)
             .alignItems(HorizontalAlign.Center)
             .onClick(() => {
+              // 同上：把月份带到报表，空月也要如实落到那个月（而不是跳回当前月）
+              AppStorage.setOrCreate('pickMonth', m.month);
               this.backToReport();
             })
           }, (m: MonthPoint) => m.month)
@@ -573,6 +579,9 @@ export struct AnnualScreen {
         }
       }
       .width('100%')
+      .constraintSize({ minHeight: '100%' })
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
       .padding({ bottom: 8 })
     }
     .width('100%')
@@ -586,4 +595,9 @@ export struct AnnualScreen {
 interface TopCatView {
   name: string;
   cents: number;
+}
+
+/** 服务端可能没给的比率 → null（避免 `NaN%`） */
+function ratioOf(r: number | null | undefined): number | null {
+  return typeof r === 'number' && Number.isFinite(r) ? r : null;
 }

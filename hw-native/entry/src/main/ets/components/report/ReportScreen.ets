@@ -52,7 +52,16 @@ export struct ReportScreen {
   @State summary: SummaryReport | null = null;
   @State loading: boolean = true;
 
+  /** 其它屏下钻过来时带的月份（概况热力格 / 年度报告月柱） */
+  @StorageLink('pickMonth') pickMonth: string = '';
+
   aboutToAppear(): void {
+    // 有下钻月份就落到那个月（哪怕它是空月，也要如实展示空态）
+    if (this.pickMonth !== '') {
+      this.anchorMonth = this.pickMonth;
+      this.tier = 0;
+      this.pickMonth = '';
+    }
     this.load();
   }
 
@@ -69,6 +78,110 @@ export struct ReportScreen {
   }
 
   /** 四个报表并发拉（web load()：失败置 null，不清屏以外的状态） */
+
+  /** 期间快选月历（点期间标签弹出）：年 ‹ › + 12 个月格 */
+  @State calOpen: boolean = false;
+  @State calYearV: number = Number(currentMonthKey().substring(0, 4));
+
+  private calMonthActive(mm: number): boolean {
+    return this.tier === 0 && this.anchorMonth === monthKeyOf(this.calYearV, mm);
+  }
+
+  private applyPeriod(month: string, tier: number): void {
+    // anchorYear 是从 anchorMonth 派生的方法，不能赋值
+    this.anchorMonth = month;
+    this.tier = tier;
+    this.calOpen = false;
+    this.load();
+  }
+
+  @Builder
+  periodCalendar() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.calOpen = false;
+        })
+      Column({ space: 10 }) {
+        Row() {
+          Text('选择期间').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+          Blank()
+          Text('关闭').fontSize(11).fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.calOpen = false;
+            })
+        }
+        .width('100%')
+
+        Row() {
+          Text('‹').fontSize(18).fontColor(this.tok().ink2).width(34).height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.calYearV = this.calYearV - 1;
+            })
+          Blank()
+          Text(`${this.calYearV} 年`).fontSize(15).fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber())).fontColor(this.tok().ink)
+          Blank()
+          Text('›').fontSize(18).fontColor(this.tok().ink2).width(34).height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.calYearV = this.calYearV + 1;
+            })
+        }
+        .width('100%')
+
+        Grid() {
+          ForEach(CAL_MONTHS, (mm: number) => {
+            GridItem() {
+              Text(`${mm}月`).fontSize(12).width('100%').height(38)
+                .textAlign(TextAlign.Center).fontFamily(fontMonoOf())
+                .fontColor(this.calMonthActive(mm) ? this.tok().accentInk : this.tok().ink2)
+                .backgroundColor(this.calMonthActive(mm) ? this.tok().accent : this.tok().surface2)
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+                .border({ width: 1, color: this.tok().line })
+                .onClick(() => {
+                  this.applyPeriod(monthKeyOf(this.calYearV, mm), 0);
+                })
+            }
+          }, (mm: number) => `cal-${mm}`)
+        }
+        .columnsTemplate('repeat(4, 1fr)')
+        .columnsGap(6)
+        .rowsGap(6)
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Text('整年').fontSize(11.5).layoutWeight(1).height(32).textAlign(TextAlign.Center)
+            .fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .border({ width: 1, color: this.tok().line })
+            .onClick(() => {
+              this.applyPeriod(monthKeyOf(this.calYearV, Number(this.anchorMonth.substring(5, 7))), 1);
+            })
+          Text('回到本月').fontSize(11.5).layoutWeight(1).height(32).textAlign(TextAlign.Center)
+            .fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .border({ width: 1, color: this.tok().line })
+            .onClick(() => {
+              this.applyPeriod(currentMonthKey(), 0);
+            })
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
   private async load(): Promise<void> {
     this.loading = true;
     let m: MonthlyReport | null = null;
@@ -137,11 +250,11 @@ export struct ReportScreen {
 
   private deltaRatio(): number | null {
     if (this.tier === 0) {
-      return this.monthReport !== null ? this.monthReport.change.ratio : null;
+      return this.monthReport !== null ? ratioOf(this.monthReport.change.ratio) : null;
     }
     if (this.tier === 1) {
       return this.yearReport !== null && this.yearReport.yearAgo !== undefined
-        ? this.yearReport.yearAgo.changeRatio : null;
+        ? ratioOf(this.yearReport.yearAgo.changeRatio) : null;
     }
     return null;
   }
@@ -409,6 +522,10 @@ export struct ReportScreen {
         Row({ space: 4 }) {
           this.periodChevron('‹', -1)
           Text(this.periodLabel())
+            .onClick(() => {
+              this.calYearV = Number(this.anchorMonth.substring(0, 4));
+              this.calOpen = true;
+            })
             .fontSize(13)
             .fontWeight(FontWeight.Bold)
             .fontFamily(fontDisplayOf(this.isCyber()))
@@ -1009,6 +1126,7 @@ export struct ReportScreen {
   }
 
   build() {
+    Stack({ alignContent: Alignment.Center }) {
     Scroll() {
       Column({ space: 12 }) {
         this.headCard()
@@ -1025,12 +1143,23 @@ export struct ReportScreen {
         }
       }
       .width('100%')
+      .constraintSize({ minHeight: '100%' })
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
       .padding({ bottom: 8 })
     }
     .width('100%')
     .height('100%')
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+
+      // 期间快选月历
+      if (this.calOpen) {
+        this.periodCalendar()
+      }
+    }
+    .width('100%')
+    .height('100%')
   }
 }
 
@@ -1044,6 +1173,18 @@ function formatCompactCents(cents: number): string {
   }
   const wan = abs / 1000000;
   return `${sign}¥${wan >= 100 ? wan.toFixed(0) : wan.toFixed(1)}万`;
+}
+
+/** 服务端可能没给的比率 → null（undefined * 100 = NaN → 界面出现 NaN%） */
+function ratioOf(r: number | null | undefined): number | null {
+  return typeof r === 'number' && Number.isFinite(r) ? r : null;
+}
+
+const CAL_MONTHS: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+/** (年, 月) → 'YYYY-MM' */
+function monthKeyOf(year: number, month: number): string {
+  return `${year}-${month < 10 ? '0' + month : String(month)}`;
 }
 
 function currentMonthKey(): string {

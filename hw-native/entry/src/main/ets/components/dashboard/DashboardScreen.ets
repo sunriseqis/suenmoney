@@ -73,6 +73,110 @@ export struct DashboardScreen {
   }
 
   /** 三个报表并发拉（web load()：失败置 null，不清屏以外的状态） */
+
+  /** 期间快选月历（点期间标签弹出）：年 ‹ › + 12 个月格 */
+  @State calOpen: boolean = false;
+  @State calYearV: number = Number(currentMonthKey().substring(0, 4));
+
+  private calMonthActive(mm: number): boolean {
+    return this.tier === 0 && this.anchorMonth === monthKeyOf(this.calYearV, mm);
+  }
+
+  private applyPeriod(month: string, tier: number): void {
+    // anchorYear 是从 anchorMonth 派生的方法，不能赋值
+    this.anchorMonth = month;
+    this.tier = tier;
+    this.calOpen = false;
+    this.load();
+  }
+
+  @Builder
+  periodCalendar() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.calOpen = false;
+        })
+      Column({ space: 10 }) {
+        Row() {
+          Text('选择期间').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+          Blank()
+          Text('关闭').fontSize(11).fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.calOpen = false;
+            })
+        }
+        .width('100%')
+
+        Row() {
+          Text('‹').fontSize(18).fontColor(this.tok().ink2).width(34).height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.calYearV = this.calYearV - 1;
+            })
+          Blank()
+          Text(`${this.calYearV} 年`).fontSize(15).fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber())).fontColor(this.tok().ink)
+          Blank()
+          Text('›').fontSize(18).fontColor(this.tok().ink2).width(34).height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.calYearV = this.calYearV + 1;
+            })
+        }
+        .width('100%')
+
+        Grid() {
+          ForEach(CAL_MONTHS, (mm: number) => {
+            GridItem() {
+              Text(`${mm}月`).fontSize(12).width('100%').height(38)
+                .textAlign(TextAlign.Center).fontFamily(fontMonoOf())
+                .fontColor(this.calMonthActive(mm) ? this.tok().accentInk : this.tok().ink2)
+                .backgroundColor(this.calMonthActive(mm) ? this.tok().accent : this.tok().surface2)
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+                .border({ width: 1, color: this.tok().line })
+                .onClick(() => {
+                  this.applyPeriod(monthKeyOf(this.calYearV, mm), 0);
+                })
+            }
+          }, (mm: number) => `cal-${mm}`)
+        }
+        .columnsTemplate('repeat(4, 1fr)')
+        .columnsGap(6)
+        .rowsGap(6)
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Text('整年').fontSize(11.5).layoutWeight(1).height(32).textAlign(TextAlign.Center)
+            .fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .border({ width: 1, color: this.tok().line })
+            .onClick(() => {
+              this.applyPeriod(monthKeyOf(this.calYearV, Number(this.anchorMonth.substring(5, 7))), 1);
+            })
+          Text('回到本月').fontSize(11.5).layoutWeight(1).height(32).textAlign(TextAlign.Center)
+            .fontColor(this.tok().ink2)
+            .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+            .border({ width: 1, color: this.tok().line })
+            .onClick(() => {
+              this.applyPeriod(currentMonthKey(), 0);
+            })
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
   private async load(): Promise<void> {
     this.loading = true;
     this.errorText = '';
@@ -187,11 +291,11 @@ export struct DashboardScreen {
 
   private deltaRatio(): number | null {
     if (this.tier === 0) {
-      return this.monthReport !== null ? this.monthReport.change.ratio : null;
+      return this.monthReport !== null ? ratioOf(this.monthReport.change.ratio) : null;
     }
     if (this.tier === 1) {
       return this.yearReport !== null && this.yearReport.yearAgo !== undefined
-        ? this.yearReport.yearAgo.changeRatio : null;
+        ? ratioOf(this.yearReport.yearAgo.changeRatio) : null;
     }
     return null;
   }
@@ -458,7 +562,11 @@ export struct DashboardScreen {
           // 右半区吃剩余宽度（layoutWeight），标签自己占中间余量 —— 这样永远不会把 › 顶出卡片
           Row({ space: 4 }) {
             this.periodChevron('‹', -1)
-            Text(this.periodLabel())
+              Text(this.periodLabel())
+              .onClick(() => {
+                this.calYearV = Number(this.anchorMonth.substring(0, 4));
+                this.calOpen = true;
+              })
               .fontSize(10.5)
               .fontFamily(fontMonoOf())
               .fontColor(this.tok().ink2)
@@ -840,6 +948,8 @@ export struct DashboardScreen {
               : { radius: 0, offsetX: 0, offsetY: 0, color: Color.Transparent } as ShadowOptions)
           }
           .onClick(() => {
+            // 下钻必须把「点的是哪个月」带过去，否则报表永远开在当前月（看起来像"跳到最新月份"）
+            AppStorage.setOrCreate('pickMonth', cell.month);
             AppStorage.setOrCreate('activeScreen', 'report');
           })
         }, (cell: Rolling) => cell.month)
@@ -990,12 +1100,22 @@ export struct DashboardScreen {
           }
         }
         .width('100%')
+        // 内容比视口短时（空月份/空年份很常见），Scroll 会把内容列**垂直居中** →
+        // 切档/切屏就整页上下跳。给一个「至少占满视口」的下限，永远从顶部开始。
+        .constraintSize({ minHeight: '100%' })
+        .justifyContent(FlexAlign.Start)
+        .alignItems(HorizontalAlign.Start)
         .padding({ bottom: 8 })
       }
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
+
+      // 期间快选月历
+      if (this.calOpen) {
+        this.periodCalendar()
+      }
 
       // 轻提示（web useToast → PToast）：底部居中、2 秒消失
       if (this.toastText !== '') {
@@ -1043,6 +1163,22 @@ function elapsedDaysOf(month: string): number {
   }
   const day = new Date().getDate();
   return Math.min(total, Math.max(1, day));
+}
+
+/**
+ * 把「服务端可能没给 / 给了非法值」的比例归一成 null。
+ * 只判 `=== null` 不够：字段缺失时是 undefined → `undefined * 100` = NaN，
+ * 界面上就是 `NaN%`（上年无数据时必现）。
+ */
+function ratioOf(r: number | null | undefined): number | null {
+  return typeof r === 'number' && Number.isFinite(r) ? r : null;
+}
+
+const CAL_MONTHS: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+/** (年, 月) → 'YYYY-MM' */
+function monthKeyOf(year: number, month: number): string {
+  return `${year}-${month < 10 ? '0' + month : String(month)}`;
 }
 
 function currentMonthKey(): string {

@@ -92,6 +92,10 @@ export struct ExpenseEditor {
   @State preview: ExpensePreview | null = null;
   @State categories: CategoryNode[] = [];
   @State payments: PaymentMethodItem[] = [];
+  /** 消费日期自绘日历（替代系统 DatePickerDialog） */
+  @State dateCalOpen: boolean = false;
+  @State dateCalYear: number = 0;
+  @State dateCalMonth: number = 0;
   @State categoryOpen: boolean = false;
   @State paymentOpen: boolean = false;
   @State railRootId: string = '';
@@ -410,18 +414,59 @@ export struct ExpenseEditor {
 
   /** 日期选择（系统 DatePickerDialog，不自己画日历） */
   private pickDate(): void {
-    const selected = parseDateKey(this.spendDate);
-    const start = new Date(2000, 0, 1);
-    const end = new Date(2100, 11, 31);
-    DatePickerDialog.show({
-      start: start,
-      end: end,
-      selected: selected,
-      onDateAccept: (value: Date) => {
-        this.spendDate = toDateKey(value);
-        this.refreshPreview();
-      }
-    });
+    // 系统 DatePickerDialog 与本应用的设计语言不一致（圆角/配色/字体都是系统的），
+    // 改为自绘日历：月份 ‹ › + 星期表头 + 6×7 日格。
+    const d = parseDateKey(this.spendDate);
+    this.dateCalYear = d.getFullYear();
+    this.dateCalMonth = d.getMonth() + 1;
+    this.dateCalOpen = true;
+  }
+
+  /** 该年该月的天数 */
+  private daysInMonth(y: number, m: number): number {
+    return new Date(y, m, 0).getDate();
+  }
+
+  /** 该年该月 1 号是星期几（0=周日） */
+  private firstWeekday(y: number, m: number): number {
+    return new Date(y, m - 1, 1).getDay();
+  }
+
+  /** 日历格：前置留白用 0 表示 */
+  private dayCells(): number[] {
+    const out: number[] = [];
+    const lead = this.firstWeekday(this.dateCalYear, this.dateCalMonth);
+    for (let i = 0; i < lead; i++) {
+      out.push(0);
+    }
+    const total = this.daysInMonth(this.dateCalYear, this.dateCalMonth);
+    for (let d = 1; d <= total; d++) {
+      out.push(d);
+    }
+    while (out.length % 7 !== 0) {
+      out.push(0);
+    }
+    return out;
+  }
+
+  private shiftDateMonth(delta: number): void {
+    let m = this.dateCalMonth + delta;
+    let y = this.dateCalYear;
+    if (m < 1) {
+      m = 12;
+      y = y - 1;
+    } else if (m > 12) {
+      m = 1;
+      y = y + 1;
+    }
+    this.dateCalMonth = m;
+    this.dateCalYear = y;
+  }
+
+  private pickDay(day: number): void {
+    this.spendDate = dateKeyOf(this.dateCalYear, this.dateCalMonth, day);
+    this.dateCalOpen = false;
+    this.refreshPreview();
   }
 
   /** 删除是软删（墓碑），但仍要二次确认 —— 用户看到的是「没了」 */
@@ -546,6 +591,119 @@ export struct ExpenseEditor {
       this.categoryOpen = false;
       this.refreshPreview();
     })
+  }
+
+
+  /** 消费日期日历（自绘，替代系统 DatePickerDialog） */
+  @Builder
+  dateCalendar() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.dateCalOpen = false;
+        })
+      Column({ space: 10 }) {
+        Row() {
+          Text('消费日期')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink)
+          Blank()
+          Text('关闭')
+            .fontSize(11)
+            .fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.dateCalOpen = false;
+            })
+        }
+        .width('100%')
+
+        Row() {
+          Text('‹')
+            .fontSize(18)
+            .fontColor(this.tok().ink2)
+            .width(34)
+            .height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.shiftDateMonth(-1);
+            })
+          Blank()
+          Text(`${this.dateCalYear} 年 ${this.dateCalMonth} 月`)
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(fontDisplayOf(this.isCyber()))
+            .fontColor(this.tok().ink)
+          Blank()
+          Text('›')
+            .fontSize(18)
+            .fontColor(this.tok().ink2)
+            .width(34)
+            .height(30)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.shiftDateMonth(1);
+            })
+        }
+        .width('100%')
+
+        Row() {
+          ForEach(WEEKDAYS, (w: string) => {
+            Text(w)
+              .fontSize(10)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+          }, (w: string) => `wd-${w}`)
+        }
+        .width('100%')
+
+        Grid() {
+          ForEach(this.dayCells(), (d: number, idx: number) => {
+            GridItem() {
+              if (d === 0) {
+                Text('')
+                  .width('100%')
+                  .height(34)
+              } else {
+                Text(`${d}`)
+                  .fontSize(12.5)
+                  .fontFamily(fontMonoOf())
+                  .width('100%')
+                  .height(34)
+                  .textAlign(TextAlign.Center)
+                  .fontColor(this.spendDate === dateKeyOf(this.dateCalYear, this.dateCalMonth, d)
+                    ? this.tok().accentInk
+                    : this.tok().ink)
+                  .backgroundColor(this.spendDate === dateKeyOf(this.dateCalYear, this.dateCalMonth, d)
+                    ? this.tok().accent
+                    : Color.Transparent)
+                  .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+                  .onClick(() => {
+                    this.pickDay(d);
+                  })
+              }
+            }
+          }, (d: number, idx: number) => `day-${idx}-${d}`)
+        }
+        .columnsTemplate('repeat(7, 1fr)')
+        .columnsGap(2)
+        .rowsGap(2)
+        .width('100%')
+        .height(240)
+      }
+      .width('88%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder
@@ -696,7 +854,159 @@ export struct ExpenseEditor {
     return this.themeName === 'cyber';
   }
 
+  /** 分类选择弹窗：遮罩 + 居中卡片（原来是页面内联展开，会把键盘顶走） */
+  @Builder
+  catPickerSheet() {
+    Stack({ alignContent: Alignment.Center }) {
+      // 遮罩：点一下关闭
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.categoryOpen = false;
+        })
+      Column({ space: 8 }) {
+        Row() {
+          Text('选择分类')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink)
+          Blank()
+          Text('关闭')
+            .fontSize(11)
+            .fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.categoryOpen = false;
+            })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          List({ space: 4 }) {
+            ForEach(this.categories, (root: CategoryNode) => {
+              ListItem() {
+                Text(root.name)
+                  .fontSize(11)
+                  .width('100%')
+                  .padding(6)
+                  .fontColor(this.railRootId === root.id ? this.tok().ink : this.tok().ink3)
+                  .backgroundColor(this.railRootId === root.id ? this.tok().surface2 : this.tok().surface)
+                  .borderRadius(6)
+                  .onClick(() => {
+                    this.railRootId = root.id;
+                  })
+              }
+            }, (root: CategoryNode) => root.id)
+          }
+          .width(88)
+          .height(160)
+          .scrollBar(BarState.Off)
+
+          Grid() {
+            ForEach(this.railChildren(), (kid: CategoryNode) => {
+              GridItem() {
+                Text(kid.name)
+                  .fontSize(11)
+                  .width('100%')
+                  .textAlign(TextAlign.Center)
+                  .padding(6)
+                  .fontColor(this.categoryId === kid.id ? this.tok().accentInk : this.tok().ink2)
+                  .backgroundColor(this.categoryId === kid.id ? this.tok().accent : this.tok().surface)
+                  .borderRadius(6)
+                  .onClick(() => {
+                    this.categoryId = kid.id;
+                    this.categoryOpen = false;
+                  })
+              }
+            }, (kid: CategoryNode) => kid.id)
+          }
+          .columnsTemplate('repeat(3, 1fr)')
+          .columnsGap(6)
+          .rowsGap(6)
+          .layoutWeight(1)
+          .height(160)
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /** 支付方式选择弹窗 */
+  @Builder
+  payPickerSheet() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.paymentOpen = false;
+        })
+      Column({ space: 8 }) {
+        Row() {
+          Text('选择支付方式')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.tok().ink)
+          Blank()
+          Text('关闭')
+            .fontSize(11)
+            .fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.paymentOpen = false;
+            })
+        }
+        .width('100%')
+
+        List({ space: 4 }) {
+          ForEach(this.payments, (p: PaymentMethodItem) => {
+            ListItem() {
+              Row() {
+                Text(p.name)
+                  .fontSize(12)
+                  .fontColor(this.paymentId === p.id ? this.tok().ink : this.tok().ink2)
+                Blank()
+                if (p.type === 'credit') {
+                  Text(`${p.billingDay ?? 0} 日账单 · ${p.repaymentDay ?? 0} 日还`)
+                    .fontSize(9)
+                    .fontColor(this.tok().ink3)
+                }
+              }
+              .width('100%')
+              .padding(8)
+              .backgroundColor(this.paymentId === p.id ? this.tok().surface2 : this.tok().surface)
+              .borderRadius(6)
+              .onClick(() => {
+                this.paymentId = p.id;
+                this.paymentOpen = false;
+                this.refreshPreview();
+              })
+            }
+          }, (p: PaymentMethodItem) => p.id)
+        }
+        .width('100%')
+        .height(160)
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
   build() {
+    Stack({ alignContent: Alignment.Center }) {
     Column({ space: 10 }) {
       // 标题行：退款标记紧挨标题，**不再放右上角**
       // （右上角是 sheet 的系统关闭按钮位置，两者叠在一起会把金额盖住）
@@ -850,86 +1160,6 @@ export struct ExpenseEditor {
           .width('100%')
       }
 
-      // 分类面板（左一级导航 + 右二级网格）
-      if (this.categoryOpen) {
-        Row({ space: 8 }) {
-          List({ space: 4 }) {
-            ForEach(this.categories, (root: CategoryNode) => {
-              ListItem() {
-                Text(root.name)
-                  .fontSize(11)
-                  .width('100%')
-                  .padding(6)
-                  .fontColor(this.railRootId === root.id ? this.tok().ink : this.tok().ink3)
-                  .backgroundColor(this.railRootId === root.id ? this.tok().surface2 : this.tok().surface)
-                  .borderRadius(6)
-                  .onClick(() => {
-                    this.railRootId = root.id;
-                  })
-              }
-            }, (root: CategoryNode) => root.id)
-          }
-          .width(88)
-          .height(140)
-
-          Grid() {
-            ForEach(this.railChildren(), (kid: CategoryNode) => {
-              GridItem() {
-                Text(kid.name)
-                  .fontSize(11)
-                  .width('100%')
-                  .textAlign(TextAlign.Center)
-                  .padding(6)
-                  .fontColor(this.categoryId === kid.id ? this.tok().accentInk : this.tok().ink2)
-                  .backgroundColor(this.categoryId === kid.id ? this.tok().accent : this.tok().surface)
-                  .borderRadius(6)
-                  .onClick(() => {
-                    this.categoryId = kid.id;
-                    this.categoryOpen = false;
-                  })
-              }
-            }, (kid: CategoryNode) => kid.id)
-          }
-          .columnsTemplate('repeat(3, 1fr)')
-          .columnsGap(6)
-          .rowsGap(6)
-          .layoutWeight(1)
-          .height(140)
-        }
-        .width('100%')
-      }
-
-      // 支付面板
-      if (this.paymentOpen) {
-        List({ space: 4 }) {
-          ForEach(this.payments, (p: PaymentMethodItem) => {
-            ListItem() {
-              Row() {
-                Text(p.name)
-                  .fontSize(12)
-                  .fontColor(this.paymentId === p.id ? this.tok().ink : this.tok().ink2)
-                Blank()
-                if (p.type === 'credit') {
-                  Text(`${p.billingDay ?? 0} 日账单 · ${p.repaymentDay ?? 0} 日还`)
-                    .fontSize(9)
-                    .fontColor(this.tok().ink3)
-                }
-              }
-              .width('100%')
-              .padding(8)
-              .backgroundColor(this.paymentId === p.id ? this.tok().surface2 : this.tok().surface)
-              .borderRadius(6)
-              .onClick(() => {
-                this.paymentId = p.id;
-                this.paymentOpen = false;
-                this.refreshPreview();
-              })
-            }
-          }, (p: PaymentMethodItem) => p.id)
-        }
-        .width('100%')
-        .height(120)
-      }
 
       // 键盘上方只保留一行摘要（R107）：本月已支出，不 await，拿不到显示占位
       Row({ space: 6 }) {
@@ -973,6 +1203,20 @@ export struct ExpenseEditor {
     .width('100%')
     .padding(14)
     .backgroundColor(this.tok().bg)
+
+    // 分类 / 支付方式：**弹窗**（遮罩 + 居中卡片），不再在底部内联展开把键盘顶走
+    if (this.categoryOpen) {
+      this.catPickerSheet()
+    }
+    if (this.paymentOpen) {
+      this.payPickerSheet()
+    }
+    if (this.dateCalOpen) {
+      this.dateCalendar()
+    }
+    }
+    .width('100%')
+    .height('100%')
   }
 
   /** 当前一级下的二级（没有二级就用一级自己） */
@@ -986,6 +1230,8 @@ export struct ExpenseEditor {
   }
 }
 
+const WEEKDAYS: string[] = ['日', '一', '二', '三', '四', '五', '六'];
+
 const KEYPAD_KEYS: string[] = ['7', '8', '9', 'B', '4', '5', '6', 'C', '1', '2', '3', 'OK', '0', '00', '.'];
 
 interface OfflineExpensePayload {
@@ -994,6 +1240,13 @@ interface OfflineExpensePayload {
   paymentMethodId: string;
   spendDate: string;
   note: string;
+}
+
+/** (年,月,日) → 'YYYY-MM-DD' */
+function dateKeyOf(y: number, m: number, d: number): string {
+  const mm = m < 10 ? `0${m}` : `${m}`;
+  const dd = d < 10 ? `0${d}` : `${d}`;
+  return `${y}-${mm}-${dd}`;
 }
 
 /** 'YYYY-MM-DD' → Date（本地时区零点，避免时区偏移一天） */
