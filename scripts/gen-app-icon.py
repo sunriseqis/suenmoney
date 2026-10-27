@@ -14,11 +14,16 @@ import os
 
 SS = 4  # 超采样倍数（抗锯齿）
 
-INK = (233, 238, 246)     # 机身（亮）
-ACCENT = (0, 255, 136)    # 主题绿
-SCREEN = (4, 23, 13)      # 显示屏底
-KEY_OFF = (138, 143, 153)  # 未点亮的键
-PLATE = (10, 10, 15)      # 底板
+def _c(rgb, alpha=1.0):
+    """0-255 的 RGB → 0..1 的 RGBA（混合前必须归一化，否则会被 clamp 成纯白）"""
+    return (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0, alpha)
+
+
+INK = _c((233, 238, 246))     # 机身（亮）
+ACCENT = _c((0, 255, 136))    # 主题绿
+SCREEN = _c((4, 23, 13))      # 显示屏底
+KEY_OFF = _c((138, 143, 153))  # 未点亮的键
+PLATE = _c((10, 10, 15))      # 底板
 
 LIT_KEYS = [0, 1, 2, 5, 8, 9, 10, 13, 16, 17, 18]
 
@@ -65,17 +70,17 @@ def draw_mark(px, size):
     oy = (size - s) / 2
 
     # 机身
-    rounded_rect(px, size, ox, oy, s, s, s * 0.22, INK + (1.0,))
+    rounded_rect(px, size, ox, oy, s, s, s * 0.22, INK)
 
     pad = s * 0.08
     # 显示屏
     sx, sy = ox + pad, oy + pad
     sw, sh = s - pad * 2, s * 0.24
-    rounded_rect(px, size, sx, sy, sw, sh, s * 0.06, SCREEN + (1.0,))
+    rounded_rect(px, size, sx, sy, sw, sh, s * 0.06, SCREEN)
     # 指示灯 + 内容条
-    circle(px, size, sx + s * 0.06 + s * 0.04, sy + sh / 2, s * 0.04, ACCENT + (1.0,))
+    circle(px, size, sx + s * 0.06 + s * 0.04, sy + sh / 2, s * 0.04, ACCENT)
     rounded_rect(px, size, sx + s * 0.06 + s * 0.12, sy + sh / 2 - s * 0.035,
-                 s * 0.34, s * 0.07, s * 0.02, ACCENT + (1.0,))
+                 s * 0.34, s * 0.07, s * 0.02, ACCENT)
 
     # 4×5 键盘
     ky = sy + sh + s * 0.06
@@ -92,7 +97,8 @@ def draw_mark(px, size):
 
 
 def blank(size, color):
-    return [c / 255.0 for c in color] * (size * size)
+    # color 已是 0..1 的 RGBA，直接复制即可（先前误把 alpha 也除了 255 → 底板近乎全透明）
+    return list(color) * (size * size)
 
 
 def write_png(path, px, size):
@@ -122,7 +128,7 @@ def write_png(path, px, size):
 
 def render(size, with_plate):
     big = size * SS
-    px = blank(big, PLATE + (1.0,)) if with_plate else [0.0] * (big * big * 4)
+    px = blank(big, PLATE) if with_plate else [0.0] * (big * big * 4)
     draw_mark(px, big)
     # 降采样
     out = [0.0] * (size * size * 4)
