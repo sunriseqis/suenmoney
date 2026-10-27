@@ -16,6 +16,7 @@ import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { formatYuan } from '../../common/contract/Contract';
 
+import { fieldBgOf, fieldBorderWOf } from '../../common/ui/UiStyle';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { CATEGORY_COLORS, categoryColorOf } from '../../common/ui/CategoryIcon';
@@ -787,9 +788,9 @@ export struct SettingsScreen {
         .fontFamily(fontMonoOf())
         .layoutWeight(1)
         .height(34)
-        .backgroundColor(this.tok().surface2)
+        .backgroundColor(this.isCyber() ? this.tok().surface3 : this.tok().surface2)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
-        .border({ width: 1, color: this.tok().line })
+        .border({ width: fieldBorderWOf(1, this.isCyber()), color: this.tok().line })
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
           this.srvList[$$.index] = v;
@@ -1820,8 +1821,8 @@ export struct SettingsScreen {
           .height(40)
           .fontSize(13)
           .fontColor(this.tok().ink)
-          .backgroundColor(this.tok().surface)
-          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .backgroundColor(fieldBgOf(this.tok().surface, this.tok().surface2, this.isCyber()))
+          .border({ width: fieldBorderWOf(this.tok().borderW, this.isCyber()), color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
           .onChange((v: string) => {
             this.pwdCurrent = v;
@@ -1840,8 +1841,8 @@ export struct SettingsScreen {
           .height(40)
           .fontSize(13)
           .fontColor(this.tok().ink)
-          .backgroundColor(this.tok().surface)
-          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .backgroundColor(fieldBgOf(this.tok().surface, this.tok().surface2, this.isCyber()))
+          .border({ width: fieldBorderWOf(this.tok().borderW, this.isCyber()), color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
           .onChange((v: string) => {
             this.pwdNew = v;
@@ -2121,8 +2122,9 @@ export struct SettingsScreen {
       .height(40)
       .fontSize(13)
       .fontColor(this.tok().ink)
-      .backgroundColor(this.tok().surface)
-      .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+      // cyber 下输入框体要走 surface2，否则贴在 bg 上看不出边界（用户反馈可见性差）
+      .backgroundColor(fieldBgOf(this.tok().surface, this.tok().surface2, this.isCyber()))
+      .border({ width: fieldBorderWOf(this.tok().borderW, this.isCyber()), color: outlineStrongOf(this.isCyber()) })
       .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
       .onChange((v: string) => {
         onChange(v);
