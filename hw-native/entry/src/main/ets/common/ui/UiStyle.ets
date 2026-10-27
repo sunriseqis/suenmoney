@@ -158,5 +158,18 @@ export function cyberClipCommands(w: number, h: number, n: number): string {
   return `M0 ${n} L${n} 0 L${w} 0 L${w} ${h - n} L${w - n} ${h} L0 ${h} Z`;
 }
 
+/**
+ * 输入框体底色：cyber 下不能直接用 surface(#12121a)——它贴在 bg(#0a0a0f) 上几乎看不出边界。
+ * 统一走 surface2(#1c1c2e)，配合加粗到 1.5 的描边。
+ */
+export function fieldBgOf(surface: string, surface2: string, isCyber: boolean): string {
+  return isCyber ? surface2 : surface;
+}
+
+/** 输入框描边宽度：cyber 1.5 / candy 跟随 borderW（通常 1~2） */
+export function fieldBorderWOf(borderW: number, isCyber: boolean): number {
+  return isCyber ? 1.5 : borderW;
+}
+
 /** R35 焦点环：聚焦时的高亮描边颜色（Candy/Cyber 同色） */
 export const FOCUS_RING: string = '#5DB8FF';
