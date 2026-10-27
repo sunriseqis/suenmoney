@@ -27,8 +27,16 @@ import { window } from '@kit.ArkUI';
 
 const DOMAIN = 0x0000;
 
+/**
+ * 客户端构建标记：每次出包改一次。
+ * 用途：装机后 `hdc shell hilog -x | grep SuenMoneyBuild` 就能确认「设备上跑的到底是哪一版」，
+ * 不用再去比对 hap 哈希（设备上 /data/app 下的 hap 没权限读）。
+ */
+const CLIENT_BUILD = '2026-10-27.4';
+
 export default class EntryAbility extends UIAbility {
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
+    hilog.info(DOMAIN, 'SuenMoneyBuild', 'client build %{public}s', CLIENT_BUILD);
     // 底座三件套：主题、服务端与令牌、本地库。
     // 顺序无关，但都必须在这里完成 —— 页面 aboutToAppear 时就要能拿到。
     await Fonts.register(this.context);
