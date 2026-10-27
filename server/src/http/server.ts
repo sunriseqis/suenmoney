@@ -47,6 +47,29 @@ export async function buildServer(
     bodyLimit: 512 * 1024,
   });
 
+  /**
+   * 容忍「声明 JSON 但 body 为空」的请求。
+   *
+   * 默认的 JSON 解析器会把 `Content-Type: application/json` + 空 body 判成 400
+   * `Body cannot be empty when content-type is set to 'application/json'`。
+   * DELETE 天然没有 body，而某些客户端（鸿蒙原生 http 模块、部分反代）会无条件带上
+   * 这个头 —— 结果就是「删一条流水」直接 400，业务代码根本没被调用。
+   *
+   * 这里把空体当 `{}` 处理：对 DELETE/POST 都是安全降级（真需要字段的路由自己会校验必填）。
+   */
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    const raw = typeof body === 'string' ? body.trim() : '';
+    if (raw === '') {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(raw));
+    } catch (e) {
+      done(e as Error, undefined);
+    }
+  });
+
   await app.register(cors, {
     origin: (origin, cb) => {
       // 允许没有 Origin 头的内部/curl 请求
