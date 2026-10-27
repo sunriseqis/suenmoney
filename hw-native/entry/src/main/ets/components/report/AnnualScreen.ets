@@ -134,16 +134,16 @@ export struct AnnualScreen {
     return `${this.total() > 0 ? Math.round((t.cents / this.total()) * 100) : 0}%`;
   }
 
-  /** 大数字字号：clamp(36px,5vw,52px) 移动端约 38 */
+  /** 大数字字号：Web 移动端 `.hero-amt` 是 34px（views.css:775） */
   private heroSize(): number {
     const s = formatYuan(this.total()).replace('¥', '');
     if (s.length <= 8) {
-      return 38;
+      return 34;
     }
     if (s.length <= 10) {
-      return 30;
+      return 28;
     }
-    return 24;
+    return 22;
   }
 
   private shiftYear(delta: number): void {

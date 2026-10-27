@@ -557,7 +557,7 @@ export struct ExpenseEditor {
           this.quickCell(this.quickAt(0)!)
         }
       }
-      .width(62)
+      .width(54)
       .height(40)
 
       Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(40)
@@ -626,19 +626,20 @@ export struct ExpenseEditor {
             this.refreshPreview();
           })
         }, (p: PaymentMethodItem) => p.id)
-        if (this.payments.length > 4) {
-          Button('更多')
-            .fontSize(9)
-            .layoutWeight(1)
-            .width('100%')
-            .backgroundColor(this.tok().surface3)
-            .fontColor(this.tok().ink3)
-            .onClick(() => {
-              this.paymentOpen = true;
-            })
-        }
+        // 「更多」常驻（Web ExpenseSheet.vue:546-557：取前 4 个 + 固定「更多」），
+        // 支付方式少于 4 个时它就是打开完整列表的入口，不隐藏
+        Button('更多')
+          .fontSize(9)
+          .layoutWeight(1)
+          .width('100%')
+          .backgroundColor(this.tok().surface3)
+          .fontColor(this.tok().ink3)
+          .onClick(() => {
+            this.paymentOpen = true;
+          })
       }
-      .width(62)
+      // Web 移动端键盘左列是 54px（views.css:899；桌面才是 62px）
+      .width(54)
       .height(210)
       .padding({ right: 6 })
 

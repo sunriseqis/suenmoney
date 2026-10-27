@@ -661,7 +661,7 @@ export struct ReportScreen {
                   .fontFamily(fontMonoOf())
                   .fontFeature('"tnum" on')
                   .fontColor(this.tok().ink3)
-                  .width(38)
+                  .width(32)   // Web 移动端图例栅格是 9px/1fr/64px/32px（views.css:1148-1157）
                   .textAlign(TextAlign.End)
               }
               .width('100%')

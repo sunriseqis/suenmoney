@@ -396,14 +396,16 @@ export struct DashboardScreen {
 
   /** 概况大金额字号：clamp(36px, 5vw, 52px) 移动端约 38；位数多时收缩防撑爆 */
   private heroAmountSize(): number {
+    // Web 移动端 `.hero-amt` 是 34px（views.css:775）；流水顶卡 `.mh-amt` 才是 38px。
+    // 位数多时按档收缩，避免折行把卡撑高。
     const s = formatYuan(this.totalCents()).replace('¥', '');
     if (s.length <= 8) {
-      return 38;
+      return 34;
     }
     if (s.length <= 10) {
-      return 30;
+      return 28;
     }
-    return 24;
+    return 22;
   }
 
   private switchTier(v: number): void {
