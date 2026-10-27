@@ -16,6 +16,7 @@ import { ServerConfig } from '../common/net/ServerConfig';
 import { ProbeResult, ServerRouter } from '../common/net/ServerRouter';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
 import { FOCUS_RING, radiusOf, outlineStrongOf, fontMonoOf } from '../common/ui/UiStyle';
+import { BrandMark } from '../components/BrandMark';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { displayFont, bodyFont } from '../common/theme/Fonts';
 import { ensureFonts } from '../common/theme/FontRegistry';
@@ -126,16 +127,32 @@ struct LoginPage {
 
   build() {
     Column({ space: 14 }) {
-      Text('SuenMoney')
-        .fontSize(26)
-        .fontWeight(FontWeight.Bold)
-        .fontFamily(displayFont(ThemeManager.get().name === 'candy'))
-        .fontColor(this.tok().ink)
+      // 品牌块（Web LoginView.vue:113-119）：徽标 56 + 名称 + 英文副标
+      Column({ space: 8 }) {
+        BrandMark({ markSize: 56 })
+        Text('SuenMoney')
+          .fontSize(26)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(displayFont(ThemeManager.get().name === 'candy'))
+          .fontColor(this.tok().ink)
+        Text('FAMILY LEDGER · 单账本')
+          .fontSize(9.5)
+          .fontFamily(fontMonoOf())
+          .letterSpacing(1.6)
+          .fontColor(this.tok().ink3)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
 
+      // 卡头：标题 + 一句说明（Web：`登录` + cap `家庭共用`）
       Text('登录')
         .fontSize(12)
         .fontFamily(bodyFont(ThemeManager.get().name === 'candy'))
         .fontColor(this.tok().ink3)
+      Text('用你的账号进入账本。')
+        .fontSize(10.5)
+        .fontColor(this.tok().ink3)
+        .width('100%')
 
       TextInput({ placeholder: '登录名' })
         .border({ width: this.usernameFocus ? 2 : 1, color: this.usernameFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
@@ -150,7 +167,6 @@ struct LoginPage {
         })
         .height(44)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
 
@@ -168,7 +184,6 @@ struct LoginPage {
         })
         .height(44)
         .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
 
@@ -223,6 +238,15 @@ struct LoginPage {
           .fontColor(this.tok().ink2)
           .onClick(() => {
             this.testServer();
+          })
+        Button('保存')
+          .fontSize(12).height(40)
+          .backgroundColor(this.tok().surface)
+          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
+          .fontColor(this.tok().ink2)
+          .onClick(() => {
+            this.saveServer();
           })
       }
       .width('100%')

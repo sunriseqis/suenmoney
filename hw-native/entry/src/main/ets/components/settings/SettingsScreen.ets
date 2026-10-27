@@ -947,7 +947,8 @@ export struct SettingsScreen {
     .bindSheet($$this.sheetOpen, this.settingsSheet(), {
       height: SheetSize.LARGE,
       dragBar: true,
-      showClose: true,
+      // 和记账抽屉一致：不要系统关闭按钮（它压住内容右上角，会盖到表单第一行）
+      showClose: false,
       backgroundColor: this.tok().bg
     })
   }

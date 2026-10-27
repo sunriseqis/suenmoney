@@ -18,7 +18,6 @@ import { DashboardScreen } from '../components/dashboard/DashboardScreen';
 import { AnnualScreen } from '../components/report/AnnualScreen';
 import { ReportScreen } from '../components/report/ReportScreen';
 import { SettingsScreen } from '../components/settings/SettingsScreen';
-import { BrandMark } from '../components/BrandMark';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { fontBodyOf, fontDisplayOf, fontMonoOf, parseShadow, radiusOf } from '../common/ui/UiStyle';
@@ -89,49 +88,13 @@ struct MainPage {
   }
 
 
-  /** 顶栏标题（web PAGE_META；sub 在移动端隐藏 app.css:756） */
-  private topTitle(): string {
-    if (this.screen === 'dashboard') {
-      return '概况';
-    }
-    if (this.screen === 'ledger') {
-      return '流水';
-    }
-    if (this.screen === 'report') {
-      return '报表';
-    }
-    if (this.screen === 'annual') {
-      return '年度报告';
-    }
-    return '设置';
-  }
-
-  /** 顶栏 ‹ 的返回目的地：年度报告回报表（web history.back 落报表），其余回流水 */
-  private backTarget(): string {
-    return this.screen === 'annual' ? 'report' : 'ledger';
-  }
-
   /**
    * 顶栏（web .topbar，移动端 views.css:1118：padding 8 12、gap 8、标题 15px）。
    * 流水页也渲染（topbar--bare 只影响返回键的有无，样式无差别）。
    */
 
-  /**
-   * 「记一笔」跨屏管线：流水屏持有记账抽屉，别屏点击时先切屏、
-   * 再延迟写 createRequest（等 LedgerScreen 挂载完 @Watch 才能收到）。
-   */
-  private openCreate(): void {
-    if (this.screen !== 'ledger') {
-      AppStorage.setOrCreate(SCREEN_STORAGE_KEY, 'ledger');
-    }
-    setTimeout(() => {
-      AppStorage.setOrCreate('createRequest', Date.now());
-    }, 200);
-  }
-
 
   /** 待同步条数与离线态：从 AppStorage 订阅，LedgerScreen 维护 */
-  @StorageLink('offline') offline: boolean = false;
 
 
   /** 底部构建戳：含离线/待同步内联提示（C.1） */
