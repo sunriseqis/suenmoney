@@ -574,8 +574,19 @@ export struct SettingsScreen {
       this.showToast('计划已终止');
       await this.reload();
     } catch (e) {
-      this.errorText = (e as ApiError).message;
+      this.reportError((e as ApiError).message);
     }
+  }
+
+  /**
+   * 操作失败出口。
+   * 之前只写 `errorText`，而它是渲染在整个设置滚动区的**最底部**——
+   * 在计划卡上点删除失败时，用户什么都看不到，表现为「不报错也不成功」。
+   * 现在同时弹 toast（底部居中、2 秒消失，一定在视野内）。
+   */
+  private reportError(message: string): void {
+    this.errorText = message;
+    this.showToast(message);
   }
 
   private async removePlan(p: PlanItem): Promise<void> {
@@ -584,7 +595,7 @@ export struct SettingsScreen {
       this.showToast('计划已删除');
       await this.reload();
     } catch (e) {
-      this.errorText = (e as ApiError).message;
+      this.reportError((e as ApiError).message);
     }
   }
 
@@ -600,7 +611,7 @@ export struct SettingsScreen {
       }
       await this.reload();
     } catch (e) {
-      this.errorText = (e as ApiError).message;
+      this.reportError((e as ApiError).message);
     }
   }
 
@@ -610,7 +621,7 @@ export struct SettingsScreen {
       this.showToast('已忽略本期');
       await this.reload();
     } catch (e) {
-      this.errorText = (e as ApiError).message;
+      this.reportError((e as ApiError).message);
     }
   }
 
@@ -637,7 +648,7 @@ export struct SettingsScreen {
       this.showToast('已撤销入账');
       await this.reload();
     } catch (e) {
-      this.errorText = (e as ApiError).message;
+      this.reportError((e as ApiError).message);
     }
   }
 
@@ -647,7 +658,7 @@ export struct SettingsScreen {
       this.showToast('已恢复为待处理');
       await this.reload();
     } catch (e) {
-      this.errorText = (e as ApiError).message;
+      this.reportError((e as ApiError).message);
     }
   }
 
