@@ -61,7 +61,13 @@ export class ApiClient {
     const cfg = ServerConfig.get();
     const url = path.startsWith('http') ? path : `${cfg.baseUrl}${path}`;
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // Content-Type 只在**真的有 body** 时发。
+    // 之前无条件带 application/json，DELETE（如删流水）没 body 时服务端 Fastify 会直接
+    // 报 `Body cannot be empty when content-type is set to 'application/json'`。
+    const headers: Record<string, string> = {};
+    if (options.body !== null) {
+      headers['Content-Type'] = 'application/json';
+    }
     if (options.withAuth && cfg.authToken !== '') {
       headers['Authorization'] = `Bearer ${cfg.authToken}`;
     }
