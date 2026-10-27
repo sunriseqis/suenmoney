@@ -701,7 +701,7 @@ export struct ExpenseEditor {
       // 标题行：退款标记紧挨标题，**不再放右上角**
       // （右上角是 sheet 的系统关闭按钮位置，两者叠在一起会把金额盖住）
       Row({ space: 8 }) {
-        Text(this.props.editing === null ? '记一笔' : '编辑')
+        Text(this.props.editing === null ? '记一笔' : '编辑支出')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.tok().ink)

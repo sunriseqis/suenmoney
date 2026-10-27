@@ -1648,6 +1648,8 @@ export struct LedgerScreen {
     .bindSheet($$this.sheetOpen, this.expenseSheet(), {
       // 贴合内容高度：既没有底部空白，也不会把键盘撑大
       height: SheetSize.FIT_CONTENT,
+      // Web 移动端抽屉圆角 `22px 22px 0 0`，cyber 下为 0（app.css:762-773）
+      radius: this.isCyber() ? LengthMetrics.vp(0) : LengthMetrics.vp(22),
       dragBar: true,
       // 不要系统关闭按钮：它压在内容右上角，和「退款冲销」标记一起盖住金额；
       // 关闭走抽屉内的「取消」、下拉收起、或点 OK 保存后自动关。
