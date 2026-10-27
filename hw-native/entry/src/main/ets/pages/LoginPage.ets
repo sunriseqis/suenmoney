@@ -155,7 +155,7 @@ struct LoginPage {
         .width('100%')
 
       TextInput({ placeholder: '登录名' })
-        .border({ width: this.usernameFocus ? 2 : 1, color: this.usernameFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
+        .border({ width: this.usernameFocus ? 2 : (this.isCyber() ? 1.5 : 1), color: this.usernameFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
         .onFocus(() => {
           this.usernameFocus = true;
         })
@@ -166,12 +166,14 @@ struct LoginPage {
           this.username = v;
         })
         .height(44)
-        .backgroundColor(this.tok().surface)
+        // cyber 下 surface(#12121a) 贴在 bg(#0a0a0f) 上几乎看不出边界 →
+        // 输入框体改用 surface2(#1c1c2e)，描边加粗到 1.5
+        .backgroundColor(this.isCyber() ? this.tok().surface2 : this.tok().surface)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
 
       TextInput({ placeholder: '口令' })
-        .border({ width: this.passwordFocus ? 2 : 1, color: this.passwordFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
+        .border({ width: this.passwordFocus ? 2 : (this.isCyber() ? 1.5 : 1), color: this.passwordFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
         .onFocus(() => {
           this.passwordFocus = true;
         })
@@ -183,7 +185,9 @@ struct LoginPage {
           this.password = v;
         })
         .height(44)
-        .backgroundColor(this.tok().surface)
+        // cyber 下 surface(#12121a) 贴在 bg(#0a0a0f) 上几乎看不出边界 →
+        // 输入框体改用 surface2(#1c1c2e)，描边加粗到 1.5
+        .backgroundColor(this.isCyber() ? this.tok().surface2 : this.tok().surface)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
 
@@ -224,8 +228,8 @@ struct LoginPage {
           .layoutWeight(1)
           .fontSize(12.5)
           .fontFamily(fontMonoOf())
-          .backgroundColor(this.tok().surface2)
-          .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+          .backgroundColor(this.isCyber() ? this.tok().surface3 : this.tok().surface2)
+          .border({ width: this.isCyber() ? 1.5 : this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
           .onChange((v: string) => {
             this.serverUrl = v;
