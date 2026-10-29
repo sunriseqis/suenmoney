@@ -171,6 +171,20 @@ const TODO_COLUMNS = `id, plan_id, period_seq, amount_cents, posting_date, repay
 
 const nowIso = (): string => new Date().toISOString();
 
+/**
+ * 本地时区的「今天」（YYYY-MM-DD）。
+ *
+ * ⚠ 不能用 `nowIso().substring(0,10)` —— 那是 UTC 日期，北京时间 00:00–07:59
+ * 会落到前一天，入账日期就会记错一天。
+ * 服务端以 TZ=Asia/Shanghai 运行，这里取本地年月日即可。
+ */
+const localToday = (): string => {
+  const d = new Date();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${d.getFullYear()}-${m < 10 ? '0' + m : m}-${day < 10 ? '0' + day : day}`;
+};
+
 export function toSyncPlan(row: PlanRow): Record<string, unknown> {
   return {
     id: row.id,
@@ -1062,11 +1076,15 @@ export function confirmTodo(
   /**
    * `spendDate` 是「实际哪天付的」，**不影响报表月份归属**。
    *
-   * 归属仍以待办的还款日为准：这笔钱在计划里就是那天该付的，
-   * 隔了几天才补点确认不该把它挪到别的月份去 —— 否则「忘记点确认」
-   * 会莫名其妙地改变历史报表。逾期确认时允许改的只是记录上的实际付款日。
+   * 归属仍以待办的还款日为准（`repayment_date` 不动）—— 这笔钱在计划里就是那天该付的，
+   * 挪月份会改历史报表。
+   *
+   * 但**记录日期默认取实际入账日**（用户 2026-10-29 裁决：「逾期就当作记录那天花的」）：
+   * 昨天到期、今天才结清的期次，流水里就该显示今天，而不是昨天。
+   * 归属月份与行内日期因此可能不同（9 月的期次今天入账 → 在 9 月列表里显示「今日」），
+   * 这是用户明确接受的代价。
    */
-  const finalSpendDate = spendDate ?? todo.repayment_date;
+  const finalSpendDate = spendDate ?? localToday();
   parseDate(finalSpendDate);
 
   const expenseId = ulid();

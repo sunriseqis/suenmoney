@@ -1678,6 +1678,16 @@ export struct SettingsScreen {
     return out;
   }
 
+  /**
+   * 「已处理」列表的日期：**实际入账日**（postedDate），没有才回退还款日。
+   * 用户 2026-10-29：「设置页的计划页按实际付款日期显示」。
+   */
+  private doneDateOf(t: PlanTodoItem): string {
+    return t.postedDate !== undefined && t.postedDate !== null && t.postedDate !== ''
+      ? t.postedDate
+      : t.repaymentDate;
+  }
+
   /** 该期次是否已逾期 */
   private isTodoOverdue(t: PlanTodoItem): boolean {
     return t.repaymentDate < todayKey();
@@ -1863,7 +1873,7 @@ export struct SettingsScreen {
                 .maxLines(1)
               this.tag(t.status === 'skipped' ? '已忽略' : '已入账', t.status === 'skipped' ? 'dash' : 'accent')
             }
-            Text(`${t.repaymentDate} · ${formatYuan(t.amountCents)}`)
+            Text(`${this.doneDateOf(t)} · ${formatYuan(t.amountCents)}`)
               .fontSize(10.5)
               .fontColor(this.tok().ink3)
           }
@@ -1901,7 +1911,7 @@ export struct SettingsScreen {
                   .maxLines(1)
                 this.tag(t.status === 'skipped' ? '已忽略' : '已入账', t.status === 'skipped' ? 'dash' : 'accent')
               }
-              Text(`${t.repaymentDate} · ${formatYuan(t.amountCents)}`)
+              Text(`${this.doneDateOf(t)} · ${formatYuan(t.amountCents)}`)
                 .fontSize(10.5)
                 .fontColor(this.tok().ink3)
             }

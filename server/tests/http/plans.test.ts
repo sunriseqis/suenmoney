@@ -16,6 +16,18 @@ import type { FastifyInstance } from 'fastify';
 import { migrate, openDatabase } from '../../src/db/index.ts';
 import { buildServer } from '../../src/http/server.ts';
 
+/**
+ * 本地时区「今天」。入账记录的 spend_date 现在取**实际入账日**（用户 2026-10-29 裁决），
+ * 所以断言不能再用固定的还款日，得跟实现用同一套算法。
+ */
+function localToday(): string {
+  const d = new Date();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${d.getFullYear()}-${m < 10 ? '0' + m : m}-${day < 10 ? '0' + day : day}`;
+}
+
+
 const tempDir = mkdtempSync(join(tmpdir(), 'suenmoney-plan-'));
 const db = openDatabase(join(tempDir, 'test.sqlite'));
 migrate(db);
@@ -327,7 +339,8 @@ describe('确认待办', () => {
 
     const { todo, expenseId } = res.json();
     assert.equal(todo.status, 'confirmed');
-    assert.equal(todo.postedDate, '2026-06-01');
+    // spend_date 现在是「实际入账日」（用户裁决），归属月份仍按还款日
+    assert.equal(todo.postedDate, localToday(), '记录日期应为实际入账日');
     assert.equal(todo.expenseId, expenseId);
 
     const expense = await app.inject({
@@ -665,7 +678,7 @@ describe('自动入账', () => {
 
     const todos = settled.json().todos as Array<Record<string, unknown>>;
     assert.equal(todos[0]!['status'], 'confirmed');
-    assert.equal(todos[0]!['postedDate'], '2026-10-05');
+    assert.equal(todos[0]!['postedDate'], localToday(), '记录日期应为实际入账日');
     assert.equal(todos[1]!['status'], 'pending', '未到期的期不该被提前入账');
 
     const report = await app.inject({

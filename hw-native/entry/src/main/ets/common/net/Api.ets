@@ -103,6 +103,11 @@ export interface ExpenseItem {
   repaymentDate: string;
   note: string;
   source: string;
+  /**
+   * 计划来源的记录属于第几期（服务端一直有下发，之前接口漏声明导致被丢弃）。
+   * 流水条目要显示「京东分期 · iPhone · 3期」，历史记录也能靠它补全。
+   */
+  planPeriodSeq?: number | null;
 }
 
 export interface ExpensePage {
@@ -326,6 +331,8 @@ export interface PlanTodoItem {
   repaymentDate: string;
   willAutoPost: boolean;
   status: string;
+  /** 实际入账日（已入账时有值）；设置页「已处理」按它显示，而不是还款日 */
+  postedDate?: string | null;
 }
 
 export interface UserCreateRequest {
