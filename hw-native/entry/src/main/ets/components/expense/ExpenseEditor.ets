@@ -356,6 +356,8 @@ export struct ExpenseEditor {
           totalAmountCents: total,
           periods: this.periods,
           firstDueDate: this.spendDate,
+          // 分期必须带消费日（服务端按它推算各期账单/还款日）
+          purchaseDate: this.spendDate,
           remindDaysBefore: 3,
           autoPost: false,
           note: this.note

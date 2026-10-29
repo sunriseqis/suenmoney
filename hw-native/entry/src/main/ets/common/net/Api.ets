@@ -470,6 +470,12 @@ export interface PlanCreateRequest {
   remindDaysBefore: number;
   autoPost: boolean;
   note: string;
+  /**
+   * 消费日（`source === 'installment'` 时**必填**）。
+   * 服务端要按它推算各期账单/还款日；之前接口漏了这个字段，
+   * 记账页建分期必然报「分期必须提供消费日」。
+   */
+  purchaseDate?: string;
 }
 
 /** 24 条路径的客户端封装（H0 阶段先落只读 + 登录，写操作随 H3 接） */

@@ -445,16 +445,15 @@ export struct LedgerScreen {
   }
 
   /**
-   * 备注文案：计划来源补「· N期」。
+   * 期次文案（`3期`），非计划来源返回空串。
    * 用户 2026-10-29：「流水条目不会显示多少期，比如京东分期-3期」。
-   * 期次取自 `planPeriodSeq` 而不是塞进 note —— 这样**历史记录也能补全**。
+   * 取自 `planPeriodSeq`，所以**历史记录也能显示**。
    */
-  private noteTextOf(row: ExpenseItem): string {
-    const base = row.note !== '' ? row.note : '—';
+  private periodSeqOf(row: ExpenseItem): string {
     if (row.source === 'plan' && row.planPeriodSeq !== undefined && row.planPeriodSeq !== null) {
-      return `${base} · ${row.planPeriodSeq}期`;
+      return `${row.planPeriodSeq}期`;
     }
-    return base;
+    return '';
   }
 
   private paymentNameOf(row: ExpenseItem): string {
@@ -1425,6 +1424,10 @@ export struct LedgerScreen {
       .border({ width: 1, color: mixHex(this.categoryColorOf(row), this.tok().surface, 0.45) })
 
       Column({ space: 3 }) {
+        // 第一行：分类（主字号）+ 标题(=note) + 归属，后两者用小字
+        // 用户 2026-10-29：备注/支付/归属挤一行显示不全，改成
+        //   第一行 分类 · 标题 · 归属
+        //   第二行 支付 · 期数
         Row({ space: 6 }) {
           Text(this.categoryNameOf(row))
             .fontSize(12.5)
@@ -1442,29 +1445,35 @@ export struct LedgerScreen {
               .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
               .border({ width: 1, color: this.tok().danger })
           }
-        }
-
-        Row({ space: 6 }) {
-          Text(this.noteTextOf(row))
-            .fontSize(10)
-            .fontColor(this.tok().ink3)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: '45%' })
-          Text('·')
-            .fontSize(10)
-            .fontColor(this.tok().ink3)
-          Text(this.paymentNameOf(row))
-            .fontSize(10)
-            .fontColor(this.tok().ink3)
-            .maxLines(1)
-          Text('·')
-            .fontSize(10)
-            .fontColor(this.tok().ink3)
+          if (row.note !== '') {
+            Text(row.note)
+              .fontSize(10)
+              .fontColor(this.tok().ink3)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
           Text(row.ownerName !== '' ? row.ownerName : '—')
             .fontSize(10)
             .fontColor(this.tok().ink3)
             .maxLines(1)
+        }
+
+        // 第二行：支付方式 + 期数（计划来源才有）
+        Row({ space: 6 }) {
+          Text(this.paymentNameOf(row))
+            .fontSize(10)
+            .fontColor(this.tok().ink3)
+            .maxLines(1)
+          if (this.periodSeqOf(row) !== '') {
+            Text('·')
+              .fontSize(10)
+              .fontColor(this.tok().ink3)
+            Text(this.periodSeqOf(row))
+              .fontSize(10)
+              .fontFamily(fontMonoOf())
+              .fontColor(this.tok().ink3)
+          }
         }
       }
       .alignItems(HorizontalAlign.Start)
