@@ -328,16 +328,35 @@ export struct LedgerScreen {
     }
   }
 
+  /**
+   * 当前档位的合计（对齐 Web `periodTotalCents` computed）：
+   * 月档取月报、年档取年报、全部档取汇总。
+   * 之前顶卡大金额硬用 `monthTotalCents`，切到年/全部档后数字仍是月合计 —— 显示错误。
+   */
+  private periodTotalCents(): number {
+    if (this.tier === 0) {
+      return this.monthTotalCents;
+    }
+    if (this.tier === 1) {
+      return this.yearTotalCents;
+    }
+    return this.allTotalCents;
+  }
+
   private async loadYear(): Promise<void> {
     const body = await Api.yearlyReport(this.anchorYear);
     this.yearPoints = body.report.months;
     this.yearTotalCents = body.report.totalCents;
+    // 年档的「上期」= 去年（Web prevTotalCents 同源）；不设的话环比会拿月档的上期算
+    this.prevTotalCents = body.report.yearAgo !== undefined ? body.report.yearAgo.totalCents : 0;
   }
 
   private async loadAll(): Promise<void> {
     const body = await Api.summaryReport();
     this.allYears = body.report.years;
     this.allTotalCents = body.report.totalCents;
+    // 全部档没有「上期」（Web prevTotalCents 返回 0），环比胶囊不显示
+    this.prevTotalCents = 0;
   }
 
   /** 本地筛选（离线路径用；线上由服务端过滤） */
@@ -466,7 +485,7 @@ export struct LedgerScreen {
 
   /** 大金额字号：常态 38（web .mh-amt），位数多时按档收缩防撑爆 */
   private heroAmountSize(): number {
-    const s = formatYuan(this.monthTotalCents).replace('¥', '');
+    const s = formatYuan(this.periodTotalCents()).replace('¥', '');
     if (s.length <= 8) {
       return 38;
     }
@@ -480,13 +499,13 @@ export struct LedgerScreen {
     if (this.prevTotalCents <= 0) {
       return null;
     }
-    return (this.monthTotalCents - this.prevTotalCents) / this.prevTotalCents;
+    return (this.periodTotalCents() - this.prevTotalCents) / this.prevTotalCents;
   }
 
   /** 日均：当月总额 / 已过天数（与 Web perDayCents 同义） */
   private perDayCents(): number {
     const day = new Date().getDate();
-    return day > 0 ? Math.round(this.monthTotalCents / day) : 0;
+    return day > 0 ? Math.round(this.periodTotalCents() / day) : 0;
   }
 
   /** 期间标签（web period-label） */
@@ -643,7 +662,7 @@ export struct LedgerScreen {
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.tok().ink2)
-          Text(formatYuan(this.monthTotalCents).replace('¥', ''))
+          Text(formatYuan(this.periodTotalCents()).replace('¥', ''))
             .fontSize(this.heroAmountSize())
             .fontWeight(FontWeight.Bolder)
             .fontFamily(fontDisplayOf(this.isCyber()))
@@ -1538,6 +1557,16 @@ export struct LedgerScreen {
               Math.round(point.totalCents / this.yearCellMax() * 100)
             )
           }
+          // 下钻：点年格 → 切到该月的月档（Web drillMonth）
+          // 之前格子上没有 onClick，点了没反应
+          .onClick(() => {
+            this.anchorMonth = point.month;
+            this.tier = 0;
+            this.loading = true;
+            this.loadTier().then(() => {
+              this.loading = false;
+            });
+          })
         }, (point: MonthPoint) => point.month)
       }
       .columnsTemplate('1fr 1fr 1fr')
@@ -1795,6 +1824,16 @@ export struct LedgerScreen {
                 Math.round(point.totalCents / this.allCellMax() * 100)
               )
             }
+            // 全部档点年格 → 切到该年的年档（同 Web drillYear）
+            .onClick(() => {
+              this.anchorYear = point.year;
+              this.anchorMonth = `${point.year}-01`;
+              this.tier = 1;
+              this.loading = true;
+              this.loadTier().then(() => {
+                this.loading = false;
+              });
+            })
           }, (point: YearPoint) => point.year)
         }
         .columnsTemplate('1fr 1fr 1fr')
