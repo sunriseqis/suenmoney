@@ -444,6 +444,19 @@ export struct LedgerScreen {
     return cat !== undefined ? cat.name : '—';
   }
 
+  /**
+   * 备注文案：计划来源补「· N期」。
+   * 用户 2026-10-29：「流水条目不会显示多少期，比如京东分期-3期」。
+   * 期次取自 `planPeriodSeq` 而不是塞进 note —— 这样**历史记录也能补全**。
+   */
+  private noteTextOf(row: ExpenseItem): string {
+    const base = row.note !== '' ? row.note : '—';
+    if (row.source === 'plan' && row.planPeriodSeq !== undefined && row.planPeriodSeq !== null) {
+      return `${base} · ${row.planPeriodSeq}期`;
+    }
+    return base;
+  }
+
   private paymentNameOf(row: ExpenseItem): string {
     if (row.paymentMethodName !== '') {
       return row.paymentMethodName;
@@ -1432,7 +1445,7 @@ export struct LedgerScreen {
         }
 
         Row({ space: 6 }) {
-          Text(row.note !== '' ? row.note : '—')
+          Text(this.noteTextOf(row))
             .fontSize(10)
             .fontColor(this.tok().ink3)
             .maxLines(1)
