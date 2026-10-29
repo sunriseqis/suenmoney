@@ -23,6 +23,26 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
+	<!-- 随包字体：与鸿蒙端 resources/rawfile/fonts 同源的 4 个可变字族，
+	     这里用 fontTools 从可变字体切出的静态权重实例（Outfit 的默认权重是 100/Thin，
+	     不切实例的话正文会全部显示成极细字重）。
+	     族名保持一致，代码里用 .custom("Outfit", size:) + .weight(.bold) 选变体。 -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>JetBrainsMono-Bold.ttf</string>
+		<string>JetBrainsMono-Medium.ttf</string>
+		<string>JetBrainsMono-Regular.ttf</string>
+		<string>Orbitron-Bold.ttf</string>
+		<string>Orbitron-Regular.ttf</string>
+		<string>Outfit-Black.ttf</string>
+		<string>Outfit-Bold.ttf</string>
+		<string>Outfit-Medium.ttf</string>
+		<string>Outfit-Regular.ttf</string>
+		<string>PlusJakartaSans-Bold.ttf</string>
+		<string>PlusJakartaSans-Medium.ttf</string>
+		<string>PlusJakartaSans-Regular.ttf</string>
+	</array>
+
 	<!-- 局域网自建服务端是明文 HTTP（http://192.168.x.x:5310）。
 	     不开这条，URLSession 会直接拒绝请求，表现为「连不上服务端」，
 	     但错误信息不会告诉你其实是 ATS 拦的。 -->

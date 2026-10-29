@@ -106,6 +106,19 @@ public struct RootView: View {
 
     @ViewBuilder
     private var screenBody: some View {
+        // 切屏过渡：Web 侧是路由切换 + 淡入，这里用「淡入 + 轻微位移」对齐观感
+        Group {
+            screenContent
+        }
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .trailing)),
+            removal: .opacity
+        ))
+        .animation(appCurve, value: app.screen)
+    }
+
+    @ViewBuilder
+    private var screenContent: some View {
         switch app.screen {
         case .ledger:
             LedgerScreen()

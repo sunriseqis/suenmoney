@@ -722,12 +722,7 @@ public struct ExpenseEditor: View {
             }
             .padding(14)
             .frame(width: 320)
-            .background(Color(css: tokens.bg))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
         }
     }
 
@@ -809,12 +804,7 @@ public struct ExpenseEditor: View {
             }
             .padding(14)
             .frame(width: 330)
-            .background(Color(css: tokens.bg))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
         }
     }
 

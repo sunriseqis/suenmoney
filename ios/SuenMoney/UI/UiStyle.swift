@@ -131,6 +131,97 @@ private func toRGB(_ hex: String) -> (Double, Double, Double) {
     )
 }
 
+extension View {
+    /// 顶卡质感（原型 `.card--pop` 的移动端覆盖）：
+    ///   candy → 深色硬阴影 `4px 4px 0 line2`（比普通卡片的 3px 淡紫明显得多）
+    ///   cyber → 绿色发光 `radius 16 rgba(0,255,136,0.35)` + 顶部半透明绿渐变 + 绿描边
+    ///
+    /// 这是「一眼能看出是不是同一个设计」的地方：普通卡片用 `card()`，
+    /// 顶卡必须用它自己的这套，否则 cyber 下完全没有科技感、candy 下缺一记重阴影。
+    public func heroCard(_ tokens: ThemeTokens, _ isCyber: Bool, radius: CGFloat = 20) -> some View {
+        let r = radiusOf(tokens, isCyber, radius)
+        let shape = RoundedRectangle(cornerRadius: r)
+        return self
+            .background(
+                ZStack {
+                    shape.fill(Color(css: tokens.surface))
+                    if isCyber {
+                        // angle 180：#0F00FF88 (0%) → surface (62%)
+                        shape.fill(
+                            LinearGradient(
+                                colors: [Color(css: "#0F00FF88"), Color(css: tokens.surface)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
+                    }
+                }
+            )
+            .overlay(
+                shape.stroke(
+                    Color(css: isCyber ? "rgba(0,255,136,0.45)" : tokens.line2),
+                    lineWidth: isCyber ? 1 : 2
+                )
+            )
+            .background {
+                if isCyber {
+                    // 发光是模糊的，用 .shadow 才对
+                    EmptyView()
+                } else {
+                    // candy：4px 硬阴影（深色），同样用实心偏移画
+                    shape.fill(Color(css: tokens.line2)).offset(x: 4, y: 4)
+                }
+            }
+            .shadow(color: isCyber ? Color(css: "rgba(0,255,136,0.35)") : .clear,
+                    radius: isCyber ? 16 : 0, x: 0, y: 0)
+    }
+}
+
+// MARK: - 动效
+
+/// 原型统一动效曲线 `cubic-bezier(.2, 0, 0, 1)` —— 起步快、收尾稳，
+/// 与 Web/鸿蒙的 `transition-timing-function` 同一根曲线。
+public let appCurve = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.28)
+/// 短动作（点击反馈、指示器）
+public let appCurveFast = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.18)
+/// 抽屉/浮层
+public let appCurveSheet = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.32)
+
+// MARK: - 统一卡片修饰符
+
+extension View {
+    /// 卡片质感（原型 `.card`）：底色 + 圆角/直角 + 描边 + **阴影**。
+    ///
+    /// 阴影是最容易被漏掉的一环：鸿蒙端有 36 处 `.shadow(cardShadow(...))`，
+    /// 而 iOS 侧最初只有 1 处 —— 于是 candy 主题的「贴纸硬阴影」完全消失，
+    /// 整屏看起来就是「只有颜色对、质感不对」。
+    ///
+    /// SwiftUI 的 `.shadow(radius: 0)` 等价 CSS 的 `box-shadow: Xpx Ypx 0`（实心、无模糊），
+    /// 所以直接透传 parseShadow 的结果即可。
+    public func card(_ tokens: ThemeTokens, _ isCyber: Bool,
+                     radius: CGFloat = 16,
+                     surface: String? = nil,
+                     border: String? = nil,
+                     shadow: Bool = true) -> some View {
+        let r = radiusOf(tokens, isCyber, radius)
+        let shape = RoundedRectangle(cornerRadius: r)
+        let sh = cardShadow(tokens, isCyber)
+        let hasHardShadow = shadow && (sh.offsetX != 0 || sh.offsetY != 0) && sh.color != "transparent"
+
+        return self
+            .background(shape.fill(Color(css: surface ?? tokens.surface)))
+            .overlay(shape.stroke(Color(css: border ?? tokens.line), lineWidth: tokens.borderW))
+            // 硬阴影必须用「层叠的实心图形 + 偏移」来画。
+            // SwiftUI 的 .shadow(radius: 0) 仍然会做抗锯齿，看起来是柔光；
+            // 而原型是 CSS `box-shadow: 3px 3px 0 #E9EEF6` —— 边缘锋利、完全不模糊。
+            .background {
+                if hasHardShadow {
+                    shape.fill(Color(css: sh.color))
+                        .offset(x: sh.offsetX, y: sh.offsetY)
+                }
+            }
+    }
+}
+
 // MARK: - 常用修饰符
 
 extension View {

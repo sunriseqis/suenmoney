@@ -179,7 +179,7 @@ public struct SettingsScreen: View {
             tabButton("设备", 2)
         }
         .padding(4)
-        .background(Color(css: isCyber ? .clear : tokens.surface2))
+        .background(Color(css: isCyber ? "transparent" : tokens.surface2))
         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
         .overlay(
             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -197,7 +197,7 @@ public struct SettingsScreen: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(section == value
-                            ? Color(css: isCyber ? tokens.accent.opacity(0.1) : tokens.accent)
+                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
         }
@@ -281,12 +281,7 @@ public struct SettingsScreen: View {
         content()
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(css: tokens.surface))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - ① 分类管理
@@ -558,7 +553,7 @@ public struct SettingsScreen: View {
                     }
                     // 已结束的计划收进「已完成」（默认收起）
                     moreRow(endedPlans.count, endedPlansOpen, "已完成") {
-                        endedPlansOpen.toggle()
+                        withAnimation(appCurveFast) { endedPlansOpen.toggle() }
                     }
                     if endedPlansOpen {
                         ForEach(Array(endedPlans.enumerated()), id: \.element.id) { idx, p in
@@ -654,7 +649,7 @@ public struct SettingsScreen: View {
                     doneRow(t, isLast: idx == doneVisible.count - 1 && !doneMoreOpen)
                 }
                 // 只显示含本月前 2 月共 3 个月，其余收进「显示更多」
-                moreRow(doneHidden.count, doneMoreOpen, "") { doneMoreOpen.toggle() }
+                moreRow(doneHidden.count, doneMoreOpen, "") { withAnimation(appCurveFast) { doneMoreOpen.toggle() } }
                 if doneMoreOpen {
                     ForEach(Array(doneHidden.enumerated()), id: \.element.id) { idx, t in
                         doneRow(t, isLast: idx == doneHidden.count - 1)
@@ -725,7 +720,7 @@ public struct SettingsScreen: View {
                     ForEach(Array(dueVisible.enumerated()), id: \.element.id) { idx, t in
                         dueRow(t, isLast: idx == dueVisible.count - 1 && dueHidden.isEmpty)
                     }
-                    moreRow(dueHidden.count, dueMoreOpen, "") { dueMoreOpen.toggle() }
+                    moreRow(dueHidden.count, dueMoreOpen, "") { withAnimation(appCurveFast) { dueMoreOpen.toggle() } }
                     if dueMoreOpen {
                         ForEach(Array(dueHidden.enumerated()), id: \.element.id) { idx, t in
                             dueRow(t, isLast: idx == dueHidden.count - 1)
@@ -882,7 +877,7 @@ public struct SettingsScreen: View {
     }
 
     private func themePill(_ label: String, _ mode: ThemeMode) -> some View {
-        Button { theme.setMode(mode) } label: {
+        Button { withAnimation(appCurve) { theme.setMode(mode) } } label: {
             Text(label)
                 .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10.5 : 12).weight(.bold))
                 .foregroundStyle(Color(css: theme.mode == mode
@@ -891,7 +886,7 @@ public struct SettingsScreen: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 7)
                 .background(theme.mode == mode
-                            ? Color(css: isCyber ? tokens.accent.opacity(0.1) : tokens.accent)
+                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color(css: tokens.surface2))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
