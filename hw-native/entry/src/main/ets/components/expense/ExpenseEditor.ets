@@ -696,7 +696,7 @@ export struct ExpenseEditor {
         .width('100%')
         .height(240)
       }
-      .width('88%')
+      .width(330)
       .padding(14)
       .backgroundColor(this.tok().bg)
       .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
@@ -1065,10 +1065,12 @@ export struct ExpenseEditor {
 
       TextInput({ placeholder: '备注（选填）', text: this.note })
         .height(36)
-        .backgroundColor(this.tok().surface)
-        .border({ width: this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
+        // cyber 下 surface(#12121a) 贴在 bg(#0a0a0f) 上边界不清 → 用 surface2
+        .backgroundColor(this.isCyber() ? this.tok().surface2 : this.tok().surface)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
         .fontColor(this.tok().ink)
+        // placeholder 不给色会用默认深灰，深色主题下几乎看不见
+        .placeholderColor(this.tok().ink3)
         .onChange((v: string) => {
           this.note = v;
         })

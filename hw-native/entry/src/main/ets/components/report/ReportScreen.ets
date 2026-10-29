@@ -153,6 +153,9 @@ export struct ReportScreen {
         .columnsGap(6)
         .rowsGap(6)
         .width('100%')
+        // ⚠ Grid 不给高度会撑满父容器 → 卡片被拉成全屏高、内容贴顶。
+        // 12 格 4 列 3 行：格高 38 + 行距 6 → 3*38 + 2*6 = 126
+        .height(126)
 
         Row({ space: 8 }) {
           Text('整年').fontSize(11.5).layoutWeight(1).height(32).textAlign(TextAlign.Center)
@@ -172,7 +175,7 @@ export struct ReportScreen {
         }
         .width('100%')
       }
-      .width('86%')
+      .width(300)
       .padding(14)
       .backgroundColor(this.tok().bg)
       .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
@@ -529,6 +532,9 @@ export struct ReportScreen {
             .fontSize(13)
             .fontWeight(FontWeight.Bold)
             .fontFamily(fontDisplayOf(this.isCyber()))
+            // ⚠ 必须显式给色：Text 不给 fontColor 会用默认黑，
+            // 在 cyber 主题下就是黑字黑底（用户报「日期文字可见性差」）
+            .fontColor(this.tok().ink)
             .textAlign(TextAlign.Center)
             .maxLines(1)
             .layoutWeight(1)
@@ -541,14 +547,8 @@ export struct ReportScreen {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // toolbar 第二行：年度报告入口（web margin-left:auto，移动端换行后靠右）
-      Row() {
-        this.annualBtn()
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: 8 })
-
+      // 顶部年度报告入口**已移除**（用户 2026-10-29 裁决）：页面底部已有年度报告横幅，
+      // 同一入口出现两次是冗余。
       // report-facts：期间支出大数 + 环比/对比/日均/笔数
       Column({ space: 6 }) {
         Column({ space: 2 }) {
@@ -669,31 +669,6 @@ export struct ReportScreen {
           this.shift(delta);
         }
       })
-  }
-
-  /** 年度报告按钮（web PBtn ghost sm + Sparkles） */
-  @Builder
-  annualBtn() {
-    Row({ space: 7 }) {
-      Text('✦')
-        .fontSize(12)
-        .fontColor(this.tok().ink2)
-      Text(`${this.anchorYear()} 年度报告`)
-        .fontSize(this.isCyber() ? 11 : 11.5)
-        .fontWeight(FontWeight.Bold)
-        .fontFamily(this.isCyber() ? fontMonoOf() : fontBodyOf(false))
-        .letterSpacing(this.isCyber() ? 1.54 : 0)
-        .fontColor(this.tok().ink2)
-    }
-    .alignItems(VerticalAlign.Center)
-    .height(30)
-    .padding({ left: 11, right: 11 })
-    .backgroundColor(Color.Transparent)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-    .border({ width: this.tok().borderW, color: this.isCyber() ? this.tok().line : Color.Transparent })
-    .onClick(() => {
-      this.openAnnual();
-    })
   }
 
   // ══════════════ ② 支出构成 report-compose ══════════════
