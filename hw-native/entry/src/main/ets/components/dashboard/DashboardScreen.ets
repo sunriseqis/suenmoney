@@ -148,6 +148,9 @@ export struct DashboardScreen {
         .columnsGap(6)
         .rowsGap(6)
         .width('100%')
+        // ⚠ Grid 不给高度会撑满父容器 → 卡片被拉成全屏高、内容贴顶。
+        // 12 格 4 列 3 行：格高 38 + 行距 6 → 3*38 + 2*6 = 126
+        .height(126)
 
         Row({ space: 8 }) {
           Text('整年').fontSize(11.5).layoutWeight(1).height(32).textAlign(TextAlign.Center)
@@ -167,7 +170,7 @@ export struct DashboardScreen {
         }
         .width('100%')
       }
-      .width('86%')
+      .width(300)
       .padding(14)
       .backgroundColor(this.tok().bg)
       .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))

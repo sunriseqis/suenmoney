@@ -181,6 +181,12 @@ export struct AnnualScreen {
     this.yearOptions = out;
   }
 
+  /** 年份网格高度：3 列、格高 52、行距 6 */
+  private yearGridHeight(): number {
+    const rows = Math.max(1, Math.ceil(this.yearOptions.length / 3));
+    return rows * 52 + (rows - 1) * 6;
+  }
+
   private pickYear(y: string): void {
     this.year = y;
     this.yearCalOpen = false;
@@ -239,9 +245,11 @@ export struct AnnualScreen {
           .columnsGap(6)
           .rowsGap(6)
           .width('100%')
+          // Grid 不定高会撑满父容器 → 卡片被拉全屏高
+          .height(this.yearGridHeight())
         }
       }
-      .width('86%')
+      .width(320)
       .padding(14)
       .backgroundColor(this.tok().bg)
       .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
