@@ -152,7 +152,7 @@ public struct ReportScreen: View {
     /// 环比：`ratioOf` 归一（NaN → nil → 胶囊不显示）
     private func deltaRatio() -> Double? {
         if tier == 0 { return ratioOf(monthReport?.change.ratio) }
-        if tier == 1 { return ratioOf(yearReport?.yearAgo?.changeRatio) }
+        if tier == 1 { return ratioOf(yearReport?.yearAgo?.change?.ratio) }
         return nil
     }
 
@@ -266,7 +266,7 @@ public struct ReportScreen: View {
                     segButton("全部", 2)
                 }
                 .padding(4)
-                .background(Color(css: isCyber ? .clear : tokens.surface2))
+                .background(Color(css: isCyber ? "transparent" : tokens.surface2))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -331,12 +331,7 @@ public struct ReportScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func factItem(_ label: String, _ value: String) -> some View {
@@ -360,7 +355,7 @@ public struct ReportScreen: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(tier == value
-                            ? Color(css: isCyber ? tokens.accent.opacity(0.1) : tokens.accent)
+                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
         }
@@ -427,12 +422,7 @@ public struct ReportScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func dimChip(_ label: String, _ value: String) -> some View {
@@ -502,12 +492,7 @@ public struct ReportScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - ④ repayCard（还款节奏）
@@ -538,12 +523,7 @@ public struct ReportScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - ⑤ annualBanner（年度报告**唯一**入口）
@@ -679,12 +659,7 @@ public struct ReportScreen: View {
             }
             .padding(14)
             .frame(width: 300)
-            .background(Color(css: tokens.bg))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
         }
     }
 }

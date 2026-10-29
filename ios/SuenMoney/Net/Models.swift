@@ -221,17 +221,14 @@ public struct MonthPointRef: Decodable {
     public let totalCents: Int
 }
 
-/// 同比（年报用；月报用 YearAgoRef）
+/// 同比（月报与年报**同构**：`{label, totalCents, change:{deltaCents, ratio}}`）
+///
+/// 原来写成平铺的 `changeCents` / `changeRatio` 是错的 —— 服务端实际返回嵌套结构，
+/// 解码会直接失败（年报页整页空白）。
 public struct YearAgoCompare: Decodable {
     public let label: String
     public let totalCents: Int
-    public let changeCents: Int
-    public let changeRatio: Double?
-}
-
-public struct YearAgoRef: Decodable {
-    public let label: String
-    public let totalCents: Int
+    public let change: MonthChange?
 }
 
 public struct LargestExpense: Decodable {
@@ -266,7 +263,9 @@ public struct MemberBucket: Decodable, Identifiable {
     public let name: String
     public let cents: Int
     public let count: Int
-    public let ratio: Double
+    /// ⚠ 服务端**不返回**这个字段（实测）。声明为必需会让整个 MonthlyReport 解码失败 ——
+    /// Swift 的 Codable 是严格的，而 ArkTS 的 interface 不做运行时校验，所以鸿蒙端没暴露这个问题。
+    public let ratio: Double?
 
     public var id: String { ownerId }
 }
@@ -285,8 +284,8 @@ public struct MonthlyReport: Decodable {
     public let count: Int
     public let previous: MonthPointRef
     public let change: MonthChange
-    /// 去年同月（服务端返回；缺省视为 0）
-    public let yearAgo: YearAgoRef?
+    /// 去年同月（与年报同构，带 change）
+    public let yearAgo: YearAgoCompare?
     public let largest: LargestExpense?
     public let categories: [CategoryBucket]
     public let paymentMethods: [PaymentBucket]

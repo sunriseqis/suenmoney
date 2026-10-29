@@ -22,10 +22,18 @@ public final class AuthStore {
 
     public private(set) var current: UserSummary?
 
-    private init() {}
+    /// 登录态**必须是 @Observable 的存储属性**。
+    ///
+    /// 原来写成 computed `!ServerConfig.shared.authToken.isEmpty` 是个隐蔽的坑：
+    /// `@Observable` 只追踪**自己**的存储属性，读另一个非 Observable 对象的字段
+    /// 不会建立依赖 —— 于是 `login()` 成功、token 也存进 Keychain 了，
+    /// 但 `RootView` 里 `if auth.isAuthenticated` 永远求值成 false，界面卡在登录页。
+    /// （服务端日志显示登录成功、界面却不动，就是这个原因。）
+    public private(set) var isAuthenticated: Bool
 
-    public var isAuthenticated: Bool {
-        !ServerConfig.shared.authToken.isEmpty
+    private init() {
+        // 冷启动：Keychain 里已有令牌就认为已登录（随后 refreshMe 校验有效性）
+        isAuthenticated = !ServerConfig.shared.authToken.isEmpty
     }
 
     public var user: UserSummary? { current }
@@ -36,6 +44,7 @@ public final class AuthStore {
         let body = try await Api.login(username: username, password: password)
         ServerConfig.shared.saveToken(body.token)
         current = body.user
+        isAuthenticated = true
         return body.user
     }
 
@@ -43,6 +52,7 @@ public final class AuthStore {
     public func logout() {
         ServerConfig.shared.clearToken()
         current = nil
+        isAuthenticated = false
     }
 
     /// 拉当前用户（启动时校验令牌是否还有效）
@@ -57,6 +67,7 @@ public final class AuthStore {
             if err.kind == .unauthorized {
                 ServerConfig.shared.clearToken()
                 current = nil
+                isAuthenticated = false
             }
             return nil
         } catch {

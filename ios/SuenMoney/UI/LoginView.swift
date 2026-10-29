@@ -97,12 +97,21 @@ public struct LoginView: View {
                     .focused($focus, equals: .username)
                     .font(.system(size: 13))
                     .foregroundStyle(Color(css: tokens.ink))
+                    .submitLabel(.next)
+                    .onSubmit { focus = .password }
+                    .accessibilityIdentifier("login.username")
             }
             fieldBox {
                 SecureField("口令", text: $password)
                     .focused($focus, equals: .password)
                     .font(.system(size: 13))
                     .foregroundStyle(Color(css: tokens.ink))
+                    .submitLabel(.go)
+                    .onSubmit {
+                        focus = nil
+                        Task { await doLogin() }
+                    }
+                    .accessibilityIdentifier("login.password")
             }
         }
     }
@@ -134,6 +143,7 @@ public struct LoginView: View {
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
         }
         .disabled(busy)
+        .accessibilityIdentifier("login.submit")
     }
 
     // MARK: 服务端（只保留一个输入口）
@@ -248,6 +258,7 @@ public struct LoginView: View {
             return
         }
 
+        focus = nil
         do {
             try await auth.login(username: username, password: password)
             // 登录成功后立刻补一次同步（离线账在别的设备上要先落本地）

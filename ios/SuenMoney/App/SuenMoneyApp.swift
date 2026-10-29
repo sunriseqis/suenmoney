@@ -17,9 +17,14 @@ import SwiftUI
 
 @main
 struct SuenMoneyApp: App {
-    @State private var theme = ThemeManager.shared
-    @State private var auth = AuthStore.shared
-    @State private var network = NetworkMonitor.shared
+    // ⚠ 这三个**不能**用属性初始化器（`= ThemeManager.shared`）：
+    //   Swift 里属性初始化器先于 `init()` body 执行，而 `AuthStore.init` 要读
+    //   Keychain 里的令牌 —— 那时 `ServerConfig.load()` 还没跑，读到的永远是空串，
+    //   于是冷启动时 isAuthenticated 恒为 false，界面永远停在登录页。
+    //   改成在 init 里「先 load 配置、再取单例」。
+    @State private var theme: ThemeManager
+    @State private var auth: AuthStore
+    @State private var network: NetworkMonitor
 
     /// 构建标记：用于在设备日志里确认装的是哪一版
     static let clientBuild = "2026-10-29.1-ios"
@@ -33,10 +38,15 @@ struct SuenMoneyApp: App {
             print("[SuenMoney] 本地库打开失败：\(error)")
         }
 
-        // 2) 令牌与服务器配置
+        // 2) 令牌与服务器配置（必须在取 AuthStore 之前）
         ServerConfig.shared.load()
 
-        // 3) 网络监听
+        // 3) 现在才能取单例：AuthStore.init 依赖上一步读到的令牌
+        _theme = State(initialValue: ThemeManager.shared)
+        _auth = State(initialValue: AuthStore.shared)
+        _network = State(initialValue: NetworkMonitor.shared)
+
+        // 4) 网络监听
         NetworkMonitor.shared.start()
 
         print("[SuenMoney] client build \(SuenMoneyApp.clientBuild)")

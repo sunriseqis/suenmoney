@@ -93,6 +93,10 @@ public struct DashboardScreen: View {
                     .padding(.vertical, 10)
                     .background(Color(css: tokens.ink))
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                    .background {
+                        // toast 的硬阴影：4px 4px 0 rgba(0,0,0,0.18)
+                        Capsule().fill(Color(css: "rgba(0,0,0,0.18)")).offset(x: 4, y: 4)
+                    }
                     .padding(.bottom, 26)
             }
         }
@@ -295,7 +299,7 @@ public struct DashboardScreen: View {
                     segButton("全部", 2)
                 }
                 .padding(4)
-                .background(Color(css: isCyber ? .clear : tokens.surface2))
+                .background(Color(css: isCyber ? "transparent" : tokens.surface2))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -418,7 +422,7 @@ public struct DashboardScreen: View {
             // 待办
             if !todos.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    Button { todoOpen.toggle() } label: {
+                    Button { withAnimation(appCurveFast) { todoOpen.toggle() } } label: {
                         HStack(spacing: 8) {
                             Circle().fill(Color(css: todoDotColor())).frame(width: 6, height: 6)
                             Text("\(todos.count) 笔待处理")
@@ -468,12 +472,7 @@ public struct DashboardScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func heroSize() -> CGFloat {
@@ -500,7 +499,7 @@ public struct DashboardScreen: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(tier == value
-                            ? Color(css: isCyber ? tokens.accent.opacity(0.1) : tokens.accent)
+                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
         }
@@ -580,12 +579,7 @@ public struct DashboardScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - ③ 累计与跨度
@@ -615,12 +609,7 @@ public struct DashboardScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func kvRow(_ label: String, _ value: String) -> some View {
@@ -738,12 +727,7 @@ public struct DashboardScreen: View {
             }
             .padding(14)
             .frame(width: 300)
-            .background(Color(css: tokens.bg))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
         }
     }
 }

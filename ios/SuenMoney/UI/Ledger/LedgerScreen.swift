@@ -487,7 +487,9 @@ public struct LedgerScreen: View {
         return categoryNames[row.categoryId]?.name ?? "—"
     }
 
-    private func categoryColorOf(_ row: ExpenseItem) -> String {
+    /// 某一行的分类色（与全局 `categoryColorOf(name:explicit:)` 区分开 ——
+    /// 同名会让 View 内部优先解析成实例方法，变成自递归）
+    private func rowColorOf(_ row: ExpenseItem) -> String {
         let explicit = categoryNames[row.categoryId]?.color ?? row.categoryColor
         return categoryColorOf(categoryNameOf(row), explicit)
     }
@@ -612,15 +614,15 @@ public struct LedgerScreen: View {
             .onEnded { value in
                 let hit = atTop && value.translation.height > 60
                 if hit {
-                    withAnimation(.easeOut(duration: 0.12)) { pullProgress = 1 }
+                    withAnimation(appCurveFast) { pullProgress = 1 }
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
                         editingRow = nil
                         sheetOpen = true
-                        withAnimation(.easeOut(duration: 0.16)) { pullProgress = 0 }
+                        withAnimation(appCurveFast) { pullProgress = 0 }
                     }
                 } else {
-                    withAnimation(.easeOut(duration: 0.16)) { pullProgress = 0 }
+                    withAnimation(appCurveFast) { pullProgress = 0 }
                 }
             }
     }
@@ -684,18 +686,7 @@ public struct LedgerScreen: View {
             }
         }
         .padding(14)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 20)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 20))
-                .stroke(Color(css: isCyber ? tokens.accent : tokens.line2),
-                        lineWidth: isCyber ? 1 : 2)
-                .opacity(isCyber ? 0.45 : 1)
-        )
-        .shadow(color: Color(css: cardShadow(tokens, isCyber).color),
-                radius: cardShadow(tokens, isCyber).radius / 2,
-                x: cardShadow(tokens, isCyber).offsetX,
-                y: cardShadow(tokens, isCyber).offsetY)
+        .heroCard(tokens, isCyber, radius: 20)
     }
 
     private var dashedLine: some View {
@@ -745,7 +736,7 @@ public struct LedgerScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             // 收起态只给条数 + 箭头（用户 2026-10-29 裁决：金额/逾期数都去掉）
             Button {
-                todoOpen.toggle()
+                withAnimation(appCurveFast) { todoOpen.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Circle()
@@ -874,7 +865,7 @@ public struct LedgerScreen: View {
                 )
 
                 Button {
-                    withAnimation(.easeOut(duration: 0.2)) { advOpen.toggle() }
+                    withAnimation(appCurveFast) { advOpen.toggle() }
                 } label: {
                     Text(advOpen ? "收起" : "筛选")
                         .font(.system(size: 11.5, weight: .bold))
@@ -896,12 +887,7 @@ public struct LedgerScreen: View {
             }
         }
         .padding(14)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private var advancedArea: some View {
@@ -932,7 +918,7 @@ public struct LedgerScreen: View {
 
             // 筛选
             Button {
-                withAnimation(.easeOut(duration: 0.2)) { showFilters.toggle() }
+                withAnimation(appCurveFast) { showFilters.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Text(activeFilterCount() > 0 ? "筛选 · \(activeFilterCount())" : "筛选")
@@ -995,7 +981,7 @@ public struct LedgerScreen: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(active
-                            ? Color(css: isCyber ? tokens.accent.opacity(0.1) : tokens.accent)
+                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
@@ -1049,7 +1035,7 @@ public struct LedgerScreen: View {
                 .padding(.horizontal, 11)
                 .padding(.vertical, 5)
                 .background(active
-                            ? Color(css: isCyber ? tokens.accent.opacity(0.1) : tokens.amber)
+                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.amber))
                             : Color(css: isCyber ? tokens.surface2 : tokens.surface))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
@@ -1130,24 +1116,19 @@ public struct LedgerScreen: View {
             }
         }
         .padding(14)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     /// 流水行：第一行 分类 + 标题(note) + 归属；第二行 支付 · 期数；右侧金额
     private func expenseRow(_ row: ExpenseItem) -> some View {
         HStack(spacing: 10) {
-            CatIconView(catName: categoryNameOf(row), iconSize: 19, color: categoryColorOf(row))
+            CatIconView(catName: categoryNameOf(row), iconSize: 19, color: rowColorOf(row))
                 .frame(width: 34, height: 34)
-                .background(Color(css: mixHex(categoryColorOf(row), tokens.surface, 0.12)))
+                .background(Color(css: mixHex(rowColorOf(row), tokens.surface, 0.12)))
                 .clipShape(RoundedRectangle(cornerRadius: 9))
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Color(css: mixHex(categoryColorOf(row), tokens.surface, 0.45)), lineWidth: 1)
+                        .stroke(Color(css: mixHex(rowColorOf(row), tokens.surface, 0.45)), lineWidth: 1)
                 )
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1244,12 +1225,7 @@ public struct LedgerScreen: View {
             }
         }
         .padding(14)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func monthCell(_ point: MonthPoint) -> some View {
@@ -1331,12 +1307,7 @@ public struct LedgerScreen: View {
             }
         }
         .padding(14)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func yearCell(_ point: YearPoint) -> some View {
@@ -1485,12 +1456,7 @@ public struct LedgerScreen: View {
             }
             .padding(14)
             .frame(width: 300)
-            .background(Color(css: tokens.bg))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
         }
     }
 

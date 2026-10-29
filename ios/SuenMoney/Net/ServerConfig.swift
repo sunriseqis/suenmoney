@@ -35,6 +35,7 @@ public final class ServerConfig: @unchecked Sendable {
     /// 启动时读一次（App.init 里调用）
     public func load() {
         token = Keychain.read(key: keyToken) ?? ""
+        print("[ServerConfig] load: tokenLen=\(token.count) servers=\(servers.count) active=\(active)")
         if let raw = UserDefaults.standard.string(forKey: keyServers),
            let data = raw.data(using: .utf8),
            let parsed = try? JSONDecoder().decode([String].self, from: data),
@@ -92,7 +93,12 @@ public enum Keychain {
         add[kSecValueData as String] = data
         // 首次解锁后可读、不随备份迁移（换机时令牌本就该失效重登）
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(add as CFDictionary, nil)
+        let status = SecItemAdd(add as CFDictionary, nil)
+        if status != errSecSuccess {
+            // 写失败此前是**完全静默**的：登录「成功」了但令牌没落盘，
+            // 冷启动又回到登录页，现象和「登录不上」一模一样。
+            print("[Keychain] 写入失败 \(key) status=\(status)")
+        }
     }
 
     public static func read(key: String) -> String? {
@@ -104,9 +110,10 @@ public enum Keychain {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data,
               let text = String(data: data, encoding: .utf8) else {
+            print("[Keychain] 读取失败 \(key) status=\(status)")
             return nil
         }
         return text

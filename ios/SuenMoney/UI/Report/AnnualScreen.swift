@@ -127,7 +127,7 @@ public struct AnnualScreen: View {
 
     /// 同比：`ratioOf` 归一（NaN → nil → 不显示）
     private func yearDelta() -> Double? {
-        ratioOf(report?.yearAgo?.changeRatio)
+        ratioOf(report?.yearAgo?.change?.ratio)
     }
 
     // MARK: - 年份条
@@ -163,19 +163,14 @@ public struct AnnualScreen: View {
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                     .overlay(
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                            .stroke(Color(css: isCyber ? tokens.line : .clear), lineWidth: tokens.borderW)
+                            .stroke(Color(css: isCyber ? tokens.line : "transparent"), lineWidth: tokens.borderW)
                     )
             }
             .buttonStyle(.plain)
         }
         .padding(14)
         .frame(maxWidth: .infinity)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func chevronBtn(_ symbol: String, _ action: @escaping () -> Void) -> some View {
@@ -184,7 +179,7 @@ public struct AnnualScreen: View {
                 .font(.system(size: 20))
                 .foregroundStyle(Color(css: tokens.ink2))
                 .frame(width: 38, height: 38)
-                .background(Color(css: isCyber ? .clear : tokens.surface))
+                .background(Color(css: isCyber ? "transparent" : tokens.surface))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -204,7 +199,7 @@ public struct AnnualScreen: View {
                     .font(.system(size: 16))
                     .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.accentInk))
                     .frame(width: 34, height: 34)
-                    .background(Color(css: isCyber ? .clear : tokens.accent))
+                    .background(Color(css: isCyber ? "transparent" : tokens.accent))
                     .clipShape(RoundedRectangle(cornerRadius: isCyber ? 1 : 17))
                     .overlay(
                         RoundedRectangle(cornerRadius: isCyber ? 1 : 17)
@@ -270,12 +265,7 @@ public struct AnnualScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private func statCell(_ label: String, _ value: String) -> some View {
@@ -327,7 +317,9 @@ public struct AnnualScreen: View {
                         } label: {
                             VStack(spacing: 4) {
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color(css: m.month == currentMonthKey() ? tokens.accent : tokens.accent.opacity(0.55)))
+                                    .fill(m.month == currentMonthKey()
+                                          ? Color(css: tokens.accent)
+                                          : Color(css: tokens.accent).opacity(0.55))
                                     .frame(height: max(4, CGFloat(Double(m.totalCents) / Double(monthsMax())) * 100))
                                 Text("\(Int(m.month.dropFirst(5).prefix(2)) ?? 0)月")
                                     .font(.custom(fontMonoOf(), size: 8.5))
@@ -343,12 +335,7 @@ public struct AnnualScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - 最高支出月 / 单笔最贵
@@ -379,12 +366,7 @@ public struct AnnualScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     private var largestCard: some View {
@@ -414,12 +396,7 @@ public struct AnnualScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - 支出最多的分类
@@ -459,12 +436,7 @@ public struct AnnualScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(css: tokens.surface))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .card(tokens, isCyber, radius: 16)
     }
 
     // MARK: - 年份快选
@@ -524,12 +496,7 @@ public struct AnnualScreen: View {
             }
             .padding(14)
             .frame(width: 320)
-            .background(Color(css: tokens.bg))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 16))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
         }
     }
 }
