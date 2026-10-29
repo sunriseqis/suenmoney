@@ -32,7 +32,7 @@ const DOMAIN = 0x0000;
  * 用途：装机后 `hdc shell hilog -x | grep SuenMoneyBuild` 就能确认「设备上跑的到底是哪一版」，
  * 不用再去比对 hap 哈希（设备上 /data/app 下的 hap 没权限读）。
  */
-const CLIENT_BUILD = '2026-10-29.1';
+const CLIENT_BUILD = '2026-10-29.2';
 
 export default class EntryAbility extends UIAbility {
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
