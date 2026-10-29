@@ -196,7 +196,9 @@ export struct SettingsScreen {
       this.payments = pays.paymentMethods;
       const planBody = await Api.plans();
       this.plans = planBody.plans;
-      const todoBody = await Api.planTodos(todayKey());
+      // 设置页是「计划任务」管理页：要能看见并手动处理**所有**待处理期次，
+      // 不做提醒窗口过滤（提醒窗口只用于流水页顶卡/概况页的提醒）。
+      const todoBody = await Api.planTodosAll(todayKey());
       this.todos = todoBody.todos;
       const skipped = await Api.doneTodos('skipped');
       const done = await Api.doneTodos('confirmed');
@@ -615,10 +617,20 @@ export struct SettingsScreen {
     }
   }
 
+  /**
+   * 「忽略」：别再提醒我（账怎么算看计划类型，与流水页顶卡同一口径）。
+   * - 自动入账 → `ackTodo`：只摘提醒，`status` 仍 pending，到期照旧自动入账；
+   * - 非自动入账 → `skipTodo`：这一期不提醒也不入账；逾期后会以「逾期」形态重现。
+   */
   private async skipTodo(t: PlanTodoItem): Promise<void> {
     try {
-      await Api.skipTodo(t.id);
-      this.showToast('已忽略本期');
+      if (t.willAutoPost) {
+        await Api.ackTodo(t.id);
+        this.showToast('已忽略提醒，到期自动入账');
+      } else {
+        await Api.skipTodo(t.id);
+        this.showToast('已忽略本期，不会入账');
+      }
       await this.reload();
     } catch (e) {
       this.reportError((e as ApiError).message);
@@ -1707,22 +1719,17 @@ export struct SettingsScreen {
                 this.actTodo(t);
               })
 
-            // more-menu：跳过不可逆，收进「更多」
-            Text('更多')
+            // 「更多」里只有一个「忽略本期」→ 直接做成按钮（用户 2026-10-29 裁决）
+            Text('忽略')
               .fontSize(11)
               .fontFamily(fontMonoOf())
               .fontColor(this.tok().ink3)
-              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+              .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
               .border({ width: 1, color: this.tok().line })
-              .bindMenu([
-                {
-                  value: '忽略本期',
-                  action: () => {
-                    this.skipTodo(t);
-                  }
-                }
-              ])
+              .onClick(() => {
+                this.skipTodo(t);
+              })
           }
           .width('100%')
           .padding({ top: 11, bottom: 11 })

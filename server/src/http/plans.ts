@@ -172,6 +172,11 @@ export async function planRoutes(app: FastifyInstance): Promise<void> {
          * 默认 false —— 计划详情要看得见它们（那一期仍然是 `pending`）。
          */
         hideAcked: optionalBoolParam(query['hideAcked'], 'hideAcked'),
+        /**
+         * 提醒列表口径（流水页顶卡）：传今天的日期，只返回「该提醒」的期次——
+         * 进入提醒窗口的 pending，加上被忽略但已逾期的非自动入账期次。
+         */
+        reminderToday: optionalDateParam(query['reminderToday'], 'reminderToday'),
         limit: optionalIntParam(query['limit'], 'limit'),
       }),
     };

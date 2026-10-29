@@ -592,7 +592,19 @@ export class Api {
   }
 
   /** 传 today 才会触发服务端「到期自动入账」结算 */
+  /**
+   * 提醒列表（流水页顶卡）：**只取该提醒的期次**，不是所有待办。
+   *
+   * 服务端 `reminderToday` 口径 = 进入提醒窗口（还款日 − remind_days_before，默认 3 天）
+   * 的 pending，加上「被忽略但已逾期的非自动入账期次」（逾期重现）。
+   * 计划详情/设置页要看全部待办，走 planTodosAll。
+   */
   static planTodos(today: string): Promise<PlanTodoList> {
+    return Api.http().get<PlanTodoList>(`/api/plan-todos?reminderToday=${today}&today=${today}`);
+  }
+
+  /** 全部 pending 待办（设置页「待处理期次」用，不做提醒窗口过滤） */
+  static planTodosAll(today: string): Promise<PlanTodoList> {
     return Api.http().get<PlanTodoList>(`/api/plan-todos?status=pending&today=${today}`);
   }
 
