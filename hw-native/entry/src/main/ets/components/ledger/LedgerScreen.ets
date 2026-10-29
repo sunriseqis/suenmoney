@@ -36,6 +36,8 @@ export interface HeroTodo {
   willAutoPost: boolean;
   /** 距还款日天数（负=逾期） */
   daysUntil: number;
+  /** 'pending' 待处理；'skipped' 曾被忽略、现已逾期重现 */
+  status: string;
 }
 
 export interface HeroFactModel {
@@ -260,7 +262,8 @@ export struct LedgerScreen {
           periodSeq: t.periodSeq,
           amountCents: t.amountCents,
           willAutoPost: t.willAutoPost,
-          daysUntil: days
+          daysUntil: days,
+          status: t.status
         });
       }
       // 按紧急度排序 —— 逾期最前，其余按剩余天数升序
@@ -268,6 +271,60 @@ export struct LedgerScreen {
       this.heroTodos = list;
     } catch (e) {
       this.heroTodos = [];
+    }
+  }
+
+  /** 逾期：还款日已过（含被忽略后重现的期次） */
+  private todoOverdue(t: HeroTodo): boolean {
+    return t.status === 'skipped' || t.daysUntil < 0;
+  }
+
+  /** 待办标签：逾期 / 还有N天 / 今天 / 自动 */
+  private todoTag(t: HeroTodo): string {
+    if (this.todoOverdue(t)) {
+      return t.daysUntil < 0 ? `逾期 ${-t.daysUntil} 天` : '逾期';
+    }
+    if (t.daysUntil === 0) {
+      return '今天';
+    }
+    return t.willAutoPost ? `自动 · 还有 ${t.daysUntil} 天` : `还有 ${t.daysUntil} 天`;
+  }
+
+  /**
+   * 「处理」= 立即入账。
+   *
+   * 两种计划都走同一条路：`confirmTodo` 直接生成支出记录。
+   * 逾期重现的期次（status='skipped'）也允许 —— 服务端已放开 skipped → confirmed。
+   */
+  private async processTodo(t: HeroTodo): Promise<void> {
+    try {
+      await Api.confirmTodo(t.id, '');
+      this.showToast('已入账');
+      await this.loadHeroTodos();
+      await this.reload();
+    } catch (e) {
+      this.showToast((e as ApiError).message);
+    }
+  }
+
+  /**
+   * 「忽略」= 别再提醒我（但账怎么算，取决于计划是不是自动入账）：
+   * - 自动入账 → `ackTodo`：只摘掉提醒，`status` 仍是 pending，**到期照旧自动入账**；
+   * - 非自动入账 → `skipTodo`：这一期不提醒、也不入账（用户自己承担）。
+   *   若之后逾期且没人处理，会以「逾期」形态重新出现（只给入账，不给忽略）。
+   */
+  private async ignoreTodo(t: HeroTodo): Promise<void> {
+    try {
+      if (t.willAutoPost) {
+        await Api.ackTodo(t.id);
+        this.showToast('已忽略提醒，到期自动入账');
+      } else {
+        await Api.skipTodo(t.id);
+        this.showToast('已忽略本期，不会入账');
+      }
+      await this.loadHeroTodos();
+    } catch (e) {
+      this.showToast((e as ApiError).message);
     }
   }
 
@@ -446,18 +503,11 @@ export struct LedgerScreen {
     return n;
   }
 
-  private dueTotalCents(): number {
-    let sum = 0;
-    for (const t of this.heroTodos) {
-      sum += t.amountCents;
-    }
-    return sum;
-  }
-
   private overdueCount(): number {
     let n = 0;
     for (const t of this.heroTodos) {
-      if (t.daysUntil < 0) {
+      // skipped = 曾被忽略、已逾期重现，同样算逾期
+      if (t.status === 'skipped' || t.daysUntil < 0) {
         n++;
       }
     }
@@ -636,23 +686,13 @@ export struct LedgerScreen {
             .height(6)
             .borderRadius(3)
             .backgroundColor(this.todoDotColor())
-          Text(`${this.heroTodos.length} 笔待办`)
+          // 收起态只给条数 + 箭头（用户 2026-10-29 裁决：金额/逾期数都去掉，
+          // 展开后每条的金额和逾期天数已经写清楚了，汇总条不用重复）
+          Text(`${this.heroTodos.length} 笔待处理`)
             .fontSize(11.5)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.tok().ink)
-          Text(formatYuan(this.dueTotalCents()))
-            .fontSize(10.5)
-            .fontFamily(fontMonoOf())
-            .fontFeature('"tnum" on')
-            .fontColor(this.tok().ink2)
-          if (this.overdueCount() > 0) {
-            Text(`${this.overdueCount()} 笔逾期`)
-              .fontSize(10)
-              .fontWeight(FontWeight.Bold)
-              .fontFamily(fontMonoOf())
-              .fontColor(this.tok().danger)
-          }
-          Blank()
+            .layoutWeight(1)
           Text(this.todoOpen ? '⌃' : '⌄')
             .fontSize(11)
             .fontColor(this.tok().ink3)
@@ -672,32 +712,65 @@ export struct LedgerScreen {
       if (this.todoOpen && this.heroTodos.length > 0) {
         Column() {
           ForEach(this.heroTodos, (t: HeroTodo, idx: number) => {
-            Row({ space: 8 }) {
-              Row()
-                .width(4)
-                .height(20)
-                .borderRadius(2)
-                .backgroundColor(t.willAutoPost ? this.tok().warn : this.tok().danger)
-              Text(`${t.periodSeq}期 · ${t.planName}`)
-                .fontSize(11.5)
-                .fontColor(this.tok().ink)
-                .layoutWeight(1)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(t.willAutoPost ? '自动' : '需手动')
-                .fontSize(10)
-                .fontWeight(FontWeight.Bold)
-                .fontFamily(fontMonoOf())
-                .fontColor(t.willAutoPost ? this.tok().warn : this.tok().danger)
-              Text(formatYuan(t.amountCents))
-                .fontSize(10.5)
-                .fontWeight(FontWeight.Bold)
-                .fontFamily(fontMonoOf())
-                .fontFeature('"tnum" on')
-                .fontColor(this.tok().ink)
+            Column({ space: 5 }) {
+              Row({ space: 8 }) {
+                Row()
+                  .width(4)
+                  .height(18)
+                  .borderRadius(2)
+                  .backgroundColor(this.todoOverdue(t) ? this.tok().danger
+                    : (t.willAutoPost ? this.tok().warn : this.tok().accent))
+                Text(`${t.periodSeq}期 · ${t.planName}`)
+                  .fontSize(11.5)
+                  .fontColor(this.tok().ink)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(this.todoTag(t))
+                  .fontSize(9.5)
+                  .fontWeight(FontWeight.Bold)
+                  .fontFamily(fontMonoOf())
+                  .fontColor(this.todoOverdue(t) ? this.tok().danger
+                    : (t.willAutoPost ? this.tok().warn : this.tok().ink3))
+              }
+              .width('100%')
+
+              Row({ space: 8 }) {
+                Text(formatYuan(t.amountCents))
+                  .fontSize(11)
+                  .fontWeight(FontWeight.Bold)
+                  .fontFamily(fontMonoOf())
+                  .fontFeature('"tnum" on')
+                  .fontColor(this.tok().ink)
+                  .layoutWeight(1)
+                // 逾期只给「入账」：这一期已经被忽略过一次，再给忽略等于无限拖延
+                if (!this.todoOverdue(t)) {
+                  Text('忽略')
+                    .fontSize(10.5)
+                    .fontColor(this.tok().ink2)
+                    .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                    .border({ width: 1, color: this.tok().line })
+                    .onClick(() => {
+                      this.ignoreTodo(t);
+                    })
+                }
+                Text(this.todoOverdue(t) ? '入账' : '处理')
+                  .fontSize(10.5)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.tok().accentInk)
+                  .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                  .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                  .backgroundColor(this.tok().accent)
+                  .onClick(() => {
+                    this.processTodo(t);
+                  })
+              }
+              .width('100%')
             }
             .width('100%')
-            .padding({ top: 5, bottom: 5 })
+            .alignItems(HorizontalAlign.Start)
+            .padding({ top: 6, bottom: 6 })
             .border(idx < this.heroTodos.length - 1
               ? { width: { bottom: 1 }, color: this.tok().line }
               : { width: 0 })

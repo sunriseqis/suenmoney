@@ -350,6 +350,20 @@ export interface TodoFilter {
    * 详情里那一期仍然是 `pending`、也仍然要显示，用户得能看见自己确认过什么。
    */
   hideAcked?: boolean | undefined;
+  /**
+   * 「提醒列表」口径（流水页顶卡用）：只返回**该提醒**的期次。
+   *
+   * 两类：
+   *   1. `status = 'pending'` 且还款日 **≤ today + 3 天**（含已逾期）—— 提醒窗口
+   *      **固定提前 3 天，不看计划里配的 `remind_days_before`**（用户 2026-10-29 裁决）；
+   *   2. `status = 'skipped'` 且**已逾期**且**该计划不是自动入账** —— 逾期重现。
+   *
+   * 第 2 条是用户 2026-10-29 的裁决：「忽略」只是「这次别提醒我」，
+   * 不是「这笔不用还了」。非自动入账的期次被忽略后，过了还款日仍没人处理，
+   * 就该以逾期形态重新出现（此时只给「入账」，不再给「忽略」）。
+   * 自动入账的期次不需要这条：它们到期会被 settleAutoPost 结掉。
+   */
+  reminderToday?: string | undefined;
   limit?: number | undefined;
   orderBy?: 'repayment_date' | 'period_seq' | undefined;
 }
@@ -380,6 +394,15 @@ export function listTodos(db: DatabaseSync, filter: TodoFilter = {}): PlanTodoAp
   }
   if (filter.hideAcked === true) {
     where.push('ack_at IS NULL');
+  }
+  if (filter.reminderToday !== undefined) {
+    where.push(`(
+      (status = 'pending' AND repayment_date <= date(?, '+3 days') AND ack_at IS NULL)
+      OR (status = 'skipped' AND repayment_date < ? AND plan_id IN (
+        SELECT id FROM plans WHERE deleted_at IS NULL AND auto_post = 0
+      ))
+    )`);
+    params.push(filter.reminderToday, filter.reminderToday);
   }
 
   const limit = Math.min(Math.max(filter.limit ?? 200, 1), 500);
@@ -1025,7 +1048,16 @@ export function confirmTodo(
   if (plan === null) throw notFound('待办所属的计划已被删除');
 
   if (todo.status === 'confirmed') throw conflict('这一期已经确认过了');
-  if (todo.status !== 'pending') throw conflict(`这一期已作废（${todo.status}），无法确认`);
+  /**
+   * 允许 `skipped` → 直接确认。
+   *
+   * 用户 2026-10-29 裁决：非自动入账的期次被「忽略」后，逾期会重新以提醒形态出现，
+   * 那时只给「入账」一个按钮 —— 点它就该真的入账。
+   * 所以这里不能把 skipped 当"已作废"挡掉，否则逾期提醒点了没反应。
+   */
+  if (todo.status !== 'pending' && todo.status !== 'skipped') {
+    throw conflict(`这一期已作废（${todo.status}），无法确认`);
+  }
 
   /**
    * `spendDate` 是「实际哪天付的」，**不影响报表月份归属**。
@@ -1079,7 +1111,7 @@ export function confirmTodo(
         `UPDATE plan_todos
             SET status = 'confirmed', posted_date = ?, confirmed_by = ?, confirmed_at = ?,
                 expense_id = ?, updated_at = ?, rev = rev + 1
-          WHERE id = ? AND status = 'pending' AND deleted_at IS NULL`,
+          WHERE id = ? AND status IN ('pending', 'skipped') AND deleted_at IS NULL`,
       )
       .run(finalSpendDate, actorId, timestamp, expenseId, timestamp, todoId);
 
