@@ -37,6 +37,7 @@ public enum ThemeName: String {
 private let keyMode = "suenmoney:theme-mode"
 
 @Observable
+@MainActor
 public final class ThemeManager {
     public static let shared = ThemeManager()
 

@@ -104,6 +104,8 @@ public struct LedgerScreen: View {
     // 下拉
     @State private var pullProgress: CGFloat = 0
     @State private var atTop: Bool = true
+    /// 搜索防抖任务（每次输入取消上一个，避免并发请求乱序覆盖）
+    @State private var searchTask: Task<Void, Never>?
 
     // 提示
     @State private var toastText: String = ""
@@ -111,6 +113,9 @@ public struct LedgerScreen: View {
     @State private var pendingSync: Int = 0
 
     @FocusState private var searchFocused: Bool
+
+    /// 分页大小：与鸿蒙 `PAGE_SIZE = 100` 一致
+    private static let pageSize = 100
 
     public init() {}
 
@@ -185,12 +190,6 @@ public struct LedgerScreen: View {
         .onChange(of: app.createRequest) { _, _ in
             editingRow = nil
             sheetOpen = true
-        }
-        .onChange(of: anchorMonth) { _, _ in
-            Task { await loadTier() }
-        }
-        .onChange(of: tier) { _, _ in
-            Task { await loadTier() }
         }
         .gesture(pullGesture)
         .sheet(isPresented: $sheetOpen) {
@@ -281,9 +280,9 @@ public struct LedgerScreen: View {
         do {
             let page = try await Api.expenses(
                 month: anchorMonth,
-                limit: 50,
+                limit: Self.pageSize,
                 cursor: reset ? nil : cursor,
-                q: keyword,
+                q: keyword.trimmingCharacters(in: .whitespaces),
                 categoryId: filterCategory,
                 paymentMethodId: filterPayment,
                 ownerId: filterOwner
@@ -430,18 +429,35 @@ public struct LedgerScreen: View {
                 let name = categoryNameOf(row).lowercased()
                 if !row.note.lowercased().contains(q) && !name.contains(q) { return false }
             }
-            if !filterCategory.isEmpty && row.categoryId != filterCategory { return false }
+            if !filterCategory.isEmpty {
+                // 筛选项只列一级分类，但记录可能挂在**二级**分类上 →
+                // 必须把二级归到它的父级再比，否则选了一级分类却筛不出二级的记录
+                var rootId = row.categoryId
+                if let cat = categoryNames[row.categoryId], !cat.parentId.isEmpty {
+                    rootId = cat.parentId
+                }
+                if rootId != filterCategory { return false }
+            }
             if !filterPayment.isEmpty && row.paymentMethodId != filterPayment { return false }
             if !filterOwner.isEmpty && row.ownerId != filterOwner { return false }
             return true
         }
     }
 
+    /// 排序后的行（与 Web `sortedItems` / 鸿蒙 `sortedRows` 同规则）
+    ///
+    /// 按日期时：**同日按 id 倒序** —— 同一天多笔的先后不该随刷新抖动。
+    /// 按金额时：金额倒序（退款是负数，按原值比而不是绝对值 —— 鸿蒙就是这么比的）。
     private func sortedRows() -> [ExpenseItem] {
         if sortMode == 1 {
-            return rows.sorted { abs($0.amountCents) > abs($1.amountCents) }
+            return rows.sorted { $0.amountCents > $1.amountCents }
         }
-        return rows
+        return rows.sorted { a, b in
+            if a.spendDate == b.spendDate {
+                return a.id > b.id
+            }
+            return a.spendDate > b.spendDate
+        }
     }
 
     private func dayGroups() -> [LedgerDayGroup] {
@@ -499,8 +515,12 @@ public struct LedgerScreen: View {
         return Double(periodTotalCents() - prevTotalCents) / Double(prevTotalCents)
     }
 
+    /// 日均：**期间总额 / 今天是几号**（与鸿蒙 `perDayCents` 同义）
+    ///
+    /// 注意不是 `elapsedDaysOf(anchorMonth)` —— 那是概况页的口径（按月算已过天数）。
+    /// 流水页顶卡看的是「这个月到今天的日均」，翻到历史月时仍除以今天的日号。
     private func perDayCents() -> Int {
-        let day = elapsedDaysOf(anchorMonth)
+        let day = Calendar.current.component(.day, from: Date())
         return day > 0 ? Int((Double(periodTotalCents()) / Double(day)).rounded()) : 0
     }
 
@@ -547,12 +567,18 @@ public struct LedgerScreen: View {
             anchorYear = String(anchorMonth.prefix(4))
             anchorMonth = "\(anchorYear)-01"
         }
+        // 显式加载：不用 onChange(tier)+onChange(anchorMonth) 双订阅 ——
+        // 那样切到年档会触发两次（先旧档位、再新档位），列表会闪一下
+        Task { await loadTier() }
     }
 
     private func shiftPeriod(_ delta: Int) {
         if tier == 0 {
             anchorMonth = shiftMonth(anchorMonth, delta)
-        } else if tier == 1 {
+            Task { await loadMonth(reset: true) }
+            return
+        }
+        if tier == 1 {
             anchorYear = String((Int(anchorYear) ?? 2026) + delta)
             anchorMonth = "\(anchorYear)-01"
             Task { await loadYear() }
@@ -564,6 +590,7 @@ public struct LedgerScreen: View {
         anchorYear = String(month.prefix(4))
         tier = newTier
         calOpen = false
+        Task { await loadTier() }
     }
 
     private func clearFilters() {
@@ -827,8 +854,12 @@ public struct LedgerScreen: View {
                         .focused($searchFocused)
                         .onSubmit { Task { await loadMonth(reset: true) } }
                         .onChange(of: keyword) { _, _ in
-                            Task {
+                            // 取消上一个防抖任务：不取消的话每敲一个字都排一个请求，
+                            // 先发的可能后到，列表会被旧结果覆盖
+                            searchTask?.cancel()
+                            searchTask = Task {
                                 try? await Task.sleep(nanoseconds: 300_000_000)
+                                guard !Task.isCancelled else { return }
                                 await loadMonth(reset: true)
                             }
                         }

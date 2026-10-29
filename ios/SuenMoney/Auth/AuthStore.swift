@@ -10,7 +10,13 @@
 
 import Foundation
 
+/// 登录态。
+///
+/// ⚠ 必须 `@MainActor`：`login` / `refreshMe` 是 async，里面会写 `current`。
+/// 不加的话它们在**非隔离上下文**执行，改的却是被 SwiftUI 观察的状态 ——
+/// Swift 6 严格并发会直接报错，宽松模式下则是「偶发的界面不刷新」。
 @Observable
+@MainActor
 public final class AuthStore {
     public static let shared = AuthStore()
 

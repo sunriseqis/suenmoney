@@ -35,7 +35,12 @@ public enum DbError: Error, LocalizedError {
 }
 
 /// 极简 SQLite 封装：只提供本项目需要的 execute / query 两种形态。
-public final class Db {
+///
+/// `@unchecked Sendable`：`SyncEngine`（actor）与主线程都会访问同一个连接，
+/// Swift 6 严格并发会因此报「非 Sendable 跨隔离域传递」。
+/// 这里**不是**无视风险 —— 所有入口都用 `NSRecursiveLock` 串行化了，
+/// 所以跨线程安全；`@unchecked` 只是告诉编译器「这份保证由我手工提供」。
+public final class Db: @unchecked Sendable {
     public static let shared = Db()
 
     /// 表结构版本，改表时 +1 并在 migrate 里补分支
@@ -43,10 +48,22 @@ public final class Db {
 
     private var handle: OpaquePointer?
 
+    /// 串行化所有 SQL 访问。
+    ///
+    /// Apple 自带的 libsqlite3 编译为 **multi-thread** 模式（不是 serialized）：
+    /// 同一个连接**不能**被多个线程同时使用。而本项目里：
+    ///   · 主线程：列表/记账直接读本地库（`ExpenseDao`）
+    ///   · SyncEngine（actor）：后台推拉时写本地库
+    /// 两者并发就会撞 `database is locked` 甚至崩溃。
+    /// 用递归锁而不是 `DispatchQueue.sync`：后者在嵌套调用时会死锁。
+    private let lock = NSRecursiveLock()
+
     private init() {}
 
     /// 打开（首次会创建）并迁移到当前表结构版本
     public func open(path: String? = nil) throws {
+        lock.lock()
+        defer { lock.unlock() }
         if handle != nil { return }
 
         let filePath: String
@@ -78,6 +95,8 @@ public final class Db {
     }
 
     public func close() {
+        lock.lock()
+        defer { lock.unlock() }
         if let h = handle {
             sqlite3_close(h)
             handle = nil
@@ -88,6 +107,8 @@ public final class Db {
 
     /// 执行不取结果的语句
     public func execute(_ sql: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
         guard let h = handle else { throw DbError.notOpen }
         var errMsg: UnsafeMutablePointer<CChar>?
         if sqlite3_exec(h, sql, nil, nil, &errMsg) != SQLITE_OK {
@@ -99,6 +120,8 @@ public final class Db {
 
     /// 带参数的写（INSERT / UPDATE / DELETE）
     public func run(_ sql: String, _ args: [Any?] = []) throws {
+        lock.lock()
+        defer { lock.unlock() }
         guard let h = handle else { throw DbError.notOpen }
         let stmt = try prepare(sql)
         defer { sqlite3_finalize(stmt) }
@@ -110,6 +133,8 @@ public final class Db {
 
     /// 查询：返回每行「列名 → 值」
     public func query(_ sql: String, _ args: [Any?] = []) throws -> [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
         guard handle != nil else { throw DbError.notOpen }
         let stmt = try prepare(sql)
         defer { sqlite3_finalize(stmt) }

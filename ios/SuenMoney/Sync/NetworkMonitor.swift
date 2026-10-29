@@ -15,6 +15,7 @@ import Foundation
 import Network
 
 @Observable
+@MainActor
 public final class NetworkMonitor {
     public static let shared = NetworkMonitor()
 
@@ -33,13 +34,13 @@ public final class NetworkMonitor {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
             let nowOnline = path.status == .satisfied
-            let wasOnline = self.isOnline
-            DispatchQueue.main.async {
+            Task { @MainActor in
+                let wasOnline = self.isOnline
                 self.isOnline = nowOnline
-            }
-            // 从「无网」变「有网」：补一次推送
-            if nowOnline && !wasOnline {
-                Task { _ = await SyncEngine.shared.syncNow() }
+                // 从「无网」变「有网」：补一次推送
+                if nowOnline && !wasOnline {
+                    _ = await SyncEngine.shared.syncNow()
+                }
             }
         }
         monitor.start(queue: queue)

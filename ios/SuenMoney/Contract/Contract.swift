@@ -312,23 +312,20 @@ public func firstWeekday(year: Int, month: Int) -> Int {
     return Calendar.current.component(.weekday, from: date)
 }
 
-/// 该月已过天数（月档「日均」用）
+/// 该月已过天数（概况页「日均」用）
+///
+/// 口径与鸿蒙 `DashboardScreen.elapsedDaysOf` 一致：
+/// **非当前月一律返回整月天数**（历史月和未来月都是）—— 不是「未来月返回 0」。
+/// 未来月总额本来就是 0，返回 0 会让 `0/0` 需要额外兜底，返回整月天数更简单也更一致。
 public func elapsedDaysOf(_ month: String) -> Int {
     let parts = month.split(separator: "-").map(String.init)
     guard parts.count >= 2, let y = Int(parts[0]), let m = Int(parts[1]) else { return 0 }
-    let cal = Calendar.current
-    let today = Date()
-    let todayParts = cal.dateComponents([.year, .month, .day], from: today)
-    if todayParts.year == y && todayParts.month == m {
-        return todayParts.day ?? 1
+    let total = daysInMonth(year: y, month: m)
+    if month != currentMonthKey() {
+        return total
     }
-    // 过去的月份算整月；未来月份算 0
-    let nowTotal = (todayParts.year ?? 0) * 12 + (todayParts.month ?? 0)
-    let targetTotal = y * 12 + m
-    if targetTotal < nowTotal {
-        return daysInMonth(year: y, month: m)
-    }
-    return 0
+    let day = Calendar.current.component(.day, from: Date())
+    return min(total, max(1, day))
 }
 
 // MARK: - 内部工具

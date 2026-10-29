@@ -112,6 +112,15 @@ public struct AnnualScreen: View {
 
     private func count() -> Int { report?.count ?? 0 }
 
+    private func total() -> Int { report?.totalCents ?? 0 }
+
+    /// 空月数（全年 12 个月里支出为 0 的月数）
+    private func quietMonths() -> Int {
+        months().filter { $0.totalCents == 0 }.count
+    }
+
+    private func yearAgoCents() -> Int { report?.yearAgo?.totalCents ?? 0 }
+
     private func topCat() -> CategoryBucket? {
         (report?.categories ?? []).filter { $0.cents > 0 }.max { $0.cents < $1.cents }
     }
@@ -219,18 +228,44 @@ public struct AnnualScreen: View {
                 Text("全年支出")
                     .font(.custom(fontMonoOf(), size: 10.5))
                     .foregroundStyle(Color(css: tokens.ink2))
-                Text(formatYuan(report?.totalCents ?? 0))
+                Text(formatYuan(total()))
                     .font(.custom(fontDisplayOf(isCyber), size: 34).weight(.heavy))
                     .tracking(-0.68)
                     .lineLimit(1)
                     .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
             }
 
-            // 四格统计
+            // hero-delta：环比胶囊 + 去年
             HStack(spacing: 8) {
-                statCell("笔数", "\(count())")
-                statCell("月均", formatYuan(report?.average3YearsCents ?? 0))
-                statCell("同比", yearDelta().map { "\(String(format: "%+.0f", $0 * 100))%" } ?? "—")
+                if let ratio = yearDelta() {
+                    Text("\(String(format: "%+.1f", ratio * 100))%")
+                        .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                        .foregroundStyle(Color(css: ratio > 0 ? tokens.danger : tokens.ok))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok), lineWidth: isCyber ? 1 : 1.5)
+                        )
+                }
+                Text("去年 \(formatYuan(yearAgoCents()))")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color(css: tokens.ink2))
+            }
+
+            // hero-metrics：月均 / 单笔均值 / 空月（与鸿蒙 statCell 三项一致）
+            HStack(spacing: 10) {
+                statCell("月均", formatYuan(Int((Double(total()) / 12).rounded())))
+                statCell("单笔均值", formatYuan(count() > 0 ? total() / count() : 0))
+                statCell("空月", "\(quietMonths()) 个月")
+            }
+            .padding(.top, 14)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .foregroundStyle(Color(css: tokens.line))
+                    .frame(height: 1)
             }
         }
         .padding(14)

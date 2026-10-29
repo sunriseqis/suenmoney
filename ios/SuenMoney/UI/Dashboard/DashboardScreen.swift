@@ -102,28 +102,32 @@ public struct DashboardScreen: View {
 
     // MARK: - 加载
 
+    /// 三个报表**都拉**（与鸿蒙 `load()` 同构）。
+    ///
+    /// 不能只拉当前档位：三块卡各自依赖不同数据源 ——
+    /// 热力格要 `monthly.rolling12Months`、累计卡要 `summary`、年档指标要 `yearly`。
+    /// 只拉当前档位的话，切到年档时热力格会变空（它就是靠 monthly 画的）。
+    /// 单个失败置 nil、不清其他（Web 同策略）。
     private func load() async {
         loading = true
         defer { loading = false }
         errorText = ""
-        do {
-            if tier == 0 {
-                monthReport = try await Api.monthlyReport(month: anchorMonth).report
-            } else if tier == 1 {
-                yearReport = try await Api.yearlyReport(year: anchorYear).report
-            } else {
-                summary = try await Api.summaryReport().report
-            }
-            // 累计卡始终要 summary
-            if summary == nil || tier != 2 {
-                summary = try await Api.summaryReport().report
-            }
-            await loadTodos()
-        } catch let err as ApiError {
-            errorText = err.message
-        } catch {
-            errorText = "加载失败"
+
+        var m: MonthlyReport?
+        var y: YearlyReport?
+        var s: SummaryReport?
+        m = try? await Api.monthlyReport(month: anchorMonth).report
+        y = try? await Api.yearlyReport(year: anchorYear).report
+        s = try? await Api.summaryReport().report
+
+        monthReport = m
+        yearReport = y
+        summary = s
+
+        if m == nil && y == nil && s == nil {
+            errorText = "报表加载失败，请检查网络后重试"
         }
+        await loadTodos()
     }
 
     private func loadTodos() async {
@@ -253,10 +257,12 @@ public struct DashboardScreen: View {
     }
 
     /// 热力色：按占最大值比例在 surface3 → accent 之间混
+    /// 比例区间与鸿蒙一致：**18% 起步**（`(18 + pct*82)/100`），
+    /// 不是 25% —— 最低档的色差会明显不同。
     private func heatColor(_ cents: Int) -> String {
         if cents <= 0 { return tokens.surface3 }
-        let ratio = min(1.0, Double(cents) / Double(rolling12Max()))
-        return mixHex(tokens.accent, tokens.surface3, 0.25 + ratio * 0.75)
+        let pct = min(1.0, Double(cents) / Double(rolling12Max()))
+        return mixHex(tokens.accent, tokens.surface3, (18 + pct * 82) / 100)
     }
 
     private func overdueCount() -> Int {

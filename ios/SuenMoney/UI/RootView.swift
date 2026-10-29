@@ -26,6 +26,7 @@ public enum ScreenKey: String {
 }
 
 @Observable
+@MainActor
 public final class AppState {
     public var screen: ScreenKey = .ledger
     /// 跨屏下钻带的月份（概况热力格 / 年度报告月柱 → 报表）
