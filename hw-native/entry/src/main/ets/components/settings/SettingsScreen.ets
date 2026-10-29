@@ -41,6 +41,16 @@ import {
  * 服务器地址单槽的渲染参数。
  * ArkUI 的多参数 @Builder 不会随状态刷新，所以统一用「单对象 + $$」传递。
  */
+interface DueRowModel {
+  todo: PlanTodoItem;
+  isLast: boolean;
+}
+
+interface PlanRowModel {
+  plan: PlanItem;
+  isLast: boolean;
+}
+
 interface SrvSlot {
   index: number;
   value: string;
@@ -138,6 +148,12 @@ export struct SettingsScreen {
   @State formError: string = '';
   // ── 分类表单 ──
   @State railRootId: string = '';
+  /** 还款计划卡：「已完成」折叠开关（已结束的计划默认收起） */
+  @State endedPlansOpen: boolean = false;
+  /** 已处理卡：「显示更多」开关（只显示含本月前 2 月共 3 个月） */
+  @State doneMoreOpen: boolean = false;
+  /** 待处理卡：「显示更多」开关（只显示含本月后 2 月共 3 个月） */
+  @State dueMoreOpen: boolean = false;
   // ── 多服务器（R98 的三槽，登录后要能改，否则换了地址就永远进不去）──
   /** 用户自己维护的候选服务器列表（不是几个空框） */
   @State srvList: string[] = [];
@@ -1457,6 +1473,286 @@ export struct SettingsScreen {
 
   // ── 计划区 ──────────────────────────────────────────────────────────────
   /** 还款计划卡 */
+  /** 单条待处理期次行 */
+  @Builder
+  dueRow($$: DueRowModel) {
+    Row({ space: 12 }) {
+      Row()
+        .width(4)
+        .height(24)
+        .borderRadius(2)
+        .backgroundColor(urgencyColorOf($$.todo.repaymentDate, this.tok()))
+      Column({ space: 2 }) {
+        Text(`${$$.todo.periodSeq}期 · ${$$.todo.planName}`)
+          .fontSize(12.5)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tok().ink)
+          .maxLines(1)
+        Text(`${formatMonthDay($$.todo.repaymentDate)} · ${formatYuan($$.todo.amountCents)}`)
+          .fontSize(10.5)
+          .fontColor(this.tok().ink3)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Text($$.todo.willAutoPost ? '确认' : '入账')
+        .fontSize(11.5)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
+        .padding({ left: 11, right: 11, top: 4, bottom: 4 })
+        .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+        .backgroundColor(this.tok().accent)
+        .onClick(() => {
+          this.actTodo($$.todo);
+        })
+
+      // 「更多」里只有一个「忽略本期」→ 直接做成按钮（用户 2026-10-29 裁决）
+      // 逾期不给忽略：已经拖过一次了，再给忽略等于无限延期（与流水页顶卡同一规则）
+      if (!this.isTodoOverdue($$.todo)) {
+        Text('忽略')
+          .fontSize(11)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+          .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+          .border({ width: 1, color: this.tok().line })
+          .onClick(() => {
+            this.skipTodo($$.todo);
+          })
+      }
+    }
+    .width('100%')
+    .padding({ top: 11, bottom: 11 })
+    .border($$.isLast === false
+      ? { width: { bottom: 1 }, color: this.tok().line }
+      : { width: 0 })
+  }
+
+  /** 单条计划行（进行中与已完成共用） */
+  @Builder
+  planRow($$: PlanRowModel) {
+      Row({ space: 12 }) {
+        Stack() {
+          CatIconView({
+            catName: $$.plan.categoryName !== undefined ? $$.plan.categoryName : $$.plan.name,
+            iconSize: 18,
+            color: categoryColorOf($$.plan.categoryName !== undefined ? $$.plan.categoryName : $$.plan.name, '')
+          })
+        }
+        .width(26)
+        .height(26)
+        .borderRadius(this.isCyber() ? 1 : 9)
+        .backgroundColor(Color.Transparent)
+
+        Column({ space: 2 }) {
+          Row({ space: 6 }) {
+            Text($$.plan.name)
+              .fontSize(12.5)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.tok().ink)
+              .maxLines(1)
+            if ($$.plan.state !== 'active') {
+              this.tag('已结束', 'dash')
+            } else if ($$.plan.autoPost) {
+              this.tag('自动', 'accent')
+            }
+          }
+          Text(this.planSeqText($$.plan))
+            .fontSize(10.5)
+            .fontColor(this.tok().ink3)
+          // 进度刻度：最多 12 段（360 期逐期画只会变一片灰点）
+          Row({ space: 2 }) {
+            ForEach(this.planTicks($$.plan), (filled: boolean, tIdx: number) => {
+              Row()
+                .layoutWeight(1)
+                .height(4)
+                .borderRadius(2)
+                .backgroundColor(filled ? this.tok().accent : this.tok().surface3)
+            }, (filled: boolean, tIdx: number) => `${$$.plan.id}-${tIdx}`)
+          }
+          .width('100%')
+          .margin({ top: 4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        // more-menu：危险动作（终止/删除）收进「更多」
+        Text('更多')
+          .fontSize(11)
+          .fontFamily(fontMonoOf())
+          .fontColor(this.tok().ink3)
+          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+          .border({ width: 1, color: this.tok().line })
+          .bindMenu([
+            {
+              value: $$.plan.state === 'active' ? '终止计划' : '已结束',
+              action: () => {
+                if ($$.plan.state === 'active') {
+                  this.endPlan($$.plan);
+                }
+              }
+            },
+            {
+              value: '删除计划',
+              action: () => {
+                this.removePlan($$.plan);
+              }
+            }
+          ])
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+      .padding({ top: 11, bottom: 11 })
+      .border($$.isLast === false
+        ? { width: { bottom: 1 }, color: this.tok().line }
+        : { width: 0 })
+  }
+
+  // ── 计划与期次的可见范围（用户 2026-10-29 裁决）────────────────────────
+  //
+  // · 还款计划卡：计划本身没有日期属性，不按月份折叠；
+  //   但**已结束**的计划收进「已完成」按钮里，默认收起。
+  // · 已处理/已忽略卡：只显示 **含本月的前 2 月共 3 个月**，其余进「显示更多」。
+  // · 待处理期次卡：只显示 **含本月的后 2 月共 3 个月**，其余进「显示更多」；
+  //   **逾期期次永远置顶**，且不受窗口限制。
+
+  /** 本月 + offset 的 'YYYY-MM' */
+  private monthKeyOffset(offset: number): string {
+    const base = todayKey();
+    const y = Number(base.substring(0, 4));
+    const m = Number(base.substring(5, 7));
+    const total = y * 12 + (m - 1) + offset;
+    const ny = Math.floor(total / 12);
+    const nm = total % 12 + 1;
+    return `${ny}-${nm < 10 ? '0' + nm : String(nm)}`;
+  }
+
+  /** 进行中的计划 */
+  private activePlans(): PlanItem[] {
+    const out: PlanItem[] = [];
+    for (const p of this.plans) {
+      if (p.state === 'active') {
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  /** 已结束的计划（收进「已完成」） */
+  private endedPlans(): PlanItem[] {
+    const out: PlanItem[] = [];
+    for (const p of this.plans) {
+      if (p.state !== 'active') {
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  /** 已处理：窗口内（本月-2 ~ 本月） */
+  private doneVisible(): PlanTodoItem[] {
+    const lo = this.monthKeyOffset(-2);
+    const hi = this.monthKeyOffset(0);
+    const out: PlanTodoItem[] = [];
+    for (const t of this.doneTodos) {
+      const m = t.repaymentDate.substring(0, 7);
+      if (m >= lo && m <= hi) {
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /** 已处理：窗口外（进「显示更多」） */
+  private doneHidden(): PlanTodoItem[] {
+    const lo = this.monthKeyOffset(-2);
+    const hi = this.monthKeyOffset(0);
+    const out: PlanTodoItem[] = [];
+    for (const t of this.doneTodos) {
+      const m = t.repaymentDate.substring(0, 7);
+      if (!(m >= lo && m <= hi)) {
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /** 该期次是否已逾期 */
+  private isTodoOverdue(t: PlanTodoItem): boolean {
+    return t.repaymentDate < todayKey();
+  }
+
+  /** 待处理：逾期期次（永远置顶，不受窗口限制） */
+  private dueOverdue(): PlanTodoItem[] {
+    const today = todayKey();
+    const out: PlanTodoItem[] = [];
+    for (const t of this.todos) {
+      if (t.repaymentDate < today) {
+        out.push(t);
+      }
+    }
+    out.sort((a: PlanTodoItem, b: PlanTodoItem) => (a.repaymentDate < b.repaymentDate ? -1 : 1));
+    return out;
+  }
+
+  /** 待处理：窗口内（本月 ~ 本月+2）且未逾期 */
+  private dueVisible(): PlanTodoItem[] {
+    const today = todayKey();
+    const lo = this.monthKeyOffset(0);
+    const hi = this.monthKeyOffset(2);
+    const out: PlanTodoItem[] = [];
+    for (const t of this.todos) {
+      if (t.repaymentDate < today) {
+        continue;
+      }
+      const m = t.repaymentDate.substring(0, 7);
+      if (m >= lo && m <= hi) {
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /** 待处理：窗口外且未逾期（进「显示更多」） */
+  private dueHidden(): PlanTodoItem[] {
+    const today = todayKey();
+    const lo = this.monthKeyOffset(0);
+    const hi = this.monthKeyOffset(2);
+    const out: PlanTodoItem[] = [];
+    for (const t of this.todos) {
+      if (t.repaymentDate < today) {
+        continue;
+      }
+      const m = t.repaymentDate.substring(0, 7);
+      if (!(m >= lo && m <= hi)) {
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /** 「显示更多 N 条」按钮 */
+  @Builder
+  moreRow(hidden: number, open: boolean, label: string, onToggle: () => void) {
+    if (hidden > 0 || open) {
+      Row({ space: 6 }) {
+        Text(open ? `收起${label}` : `显示更多${label}（${hidden}）`)
+          .fontSize(11)
+          .fontColor(this.tok().ink2)
+        Text(open ? '⌃' : '⌄')
+          .fontSize(10)
+          .fontColor(this.tok().ink3)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 10, bottom: 4 })
+      .onClick(() => {
+        onToggle();
+      })
+    }
+  }
+
   @Builder
   plansCard() {
     Column() {
@@ -1494,84 +1790,18 @@ export struct SettingsScreen {
       if (this.plans.length === 0) {
         this.emptyState($r('sys.symbol.calendar'), '还没有计划')
       } else {
-        ForEach(this.plans, (p: PlanItem, idx: number) => {
-          Row({ space: 12 }) {
-            Stack() {
-              CatIconView({
-                catName: p.categoryName !== undefined ? p.categoryName : p.name,
-                iconSize: 18,
-                color: categoryColorOf(p.categoryName !== undefined ? p.categoryName : p.name, '')
-              })
-            }
-            .width(26)
-            .height(26)
-            .borderRadius(this.isCyber() ? 1 : 9)
-            .backgroundColor(Color.Transparent)
-
-            Column({ space: 2 }) {
-              Row({ space: 6 }) {
-                Text(p.name)
-                  .fontSize(12.5)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(this.tok().ink)
-                  .maxLines(1)
-                if (p.state !== 'active') {
-                  this.tag('已结束', 'dash')
-                } else if (p.autoPost) {
-                  this.tag('自动', 'accent')
-                }
-              }
-              Text(this.planSeqText(p))
-                .fontSize(10.5)
-                .fontColor(this.tok().ink3)
-              // 进度刻度：最多 12 段（360 期逐期画只会变一片灰点）
-              Row({ space: 2 }) {
-                ForEach(this.planTicks(p), (filled: boolean, tIdx: number) => {
-                  Row()
-                    .layoutWeight(1)
-                    .height(4)
-                    .borderRadius(2)
-                    .backgroundColor(filled ? this.tok().accent : this.tok().surface3)
-                }, (filled: boolean, tIdx: number) => `${p.id}-${tIdx}`)
-              }
-              .width('100%')
-              .margin({ top: 4 })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            // more-menu：危险动作（终止/删除）收进「更多」
-            Text('更多')
-              .fontSize(11)
-              .fontFamily(fontMonoOf())
-              .fontColor(this.tok().ink3)
-              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
-              .border({ width: 1, color: this.tok().line })
-              .bindMenu([
-                {
-                  value: p.state === 'active' ? '终止计划' : '已结束',
-                  action: () => {
-                    if (p.state === 'active') {
-                      this.endPlan(p);
-                    }
-                  }
-                },
-                {
-                  value: '删除计划',
-                  action: () => {
-                    this.removePlan(p);
-                  }
-                }
-              ])
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Top)
-          .padding({ top: 11, bottom: 11 })
-          .border(idx < this.plans.length - 1
-            ? { width: { bottom: 1 }, color: this.tok().line }
-            : { width: 0 })
+        ForEach(this.activePlans(), (p: PlanItem, idx: number) => {
+          this.planRow({ plan: p, isLast: idx === this.activePlans().length - 1 && !this.endedPlansOpen })
         }, (p: PlanItem) => p.id)
+        // 已结束的计划收进「已完成」（默认收起）
+        this.moreRow(this.endedPlans().length, this.endedPlansOpen, '已完成', () => {
+          this.endedPlansOpen = !this.endedPlansOpen;
+        })
+        if (this.endedPlansOpen) {
+          ForEach(this.endedPlans(), (p: PlanItem, idx: number) => {
+            this.planRow({ plan: p, isLast: idx === this.endedPlans().length - 1 })
+          }, (p: PlanItem) => `ended-${p.id}`)
+        }
       }
     }
     .width('100%')
@@ -1614,7 +1844,7 @@ export struct SettingsScreen {
           .letterSpacing(this.isCyber() ? 1.25 : 0)
           .fontColor(this.tok().ink)
           .layoutWeight(1)
-        Text(`${this.doneTodos.length} 条`)
+        Text(`${this.doneVisible().length} 条`)
           .fontSize(9.5)
           .fontFamily(fontMonoOf())
           .fontColor(this.tok().ink3)
@@ -1622,7 +1852,7 @@ export struct SettingsScreen {
       .width('100%')
       .margin({ bottom: 13 })
 
-      ForEach(this.doneTodos, (t: PlanTodoItem, idx: number) => {
+      ForEach(this.doneVisible(), (t: PlanTodoItem, idx: number) => {
         Row({ space: 12 }) {
           Column({ space: 2 }) {
             Row({ space: 6 }) {
@@ -1650,10 +1880,48 @@ export struct SettingsScreen {
         }
         .width('100%')
         .padding({ top: 11, bottom: 11 })
-        .border(idx < this.doneTodos.length - 1
+        .border(idx < this.doneVisible().length - 1 || this.doneMoreOpen
           ? { width: { bottom: 1 }, color: this.tok().line }
           : { width: 0 })
       }, (t: PlanTodoItem) => `done-${t.id}`)
+
+      // 只显示含本月前 2 月共 3 个月，其余收进「显示更多」
+      this.moreRow(this.doneHidden().length, this.doneMoreOpen, '', () => {
+        this.doneMoreOpen = !this.doneMoreOpen;
+      })
+      if (this.doneMoreOpen) {
+        ForEach(this.doneHidden(), (t: PlanTodoItem, idx: number) => {
+          Row({ space: 12 }) {
+            Column({ space: 2 }) {
+              Row({ space: 6 }) {
+                Text(`${t.planName} · ${t.periodSeq} 期`)
+                  .fontSize(12.5)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.tok().ink)
+                  .maxLines(1)
+                this.tag(t.status === 'skipped' ? '已忽略' : '已入账', t.status === 'skipped' ? 'dash' : 'accent')
+              }
+              Text(`${t.repaymentDate} · ${formatYuan(t.amountCents)}`)
+                .fontSize(10.5)
+                .fontColor(this.tok().ink3)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            Text(t.status === 'skipped' ? '恢复' : '撤销')
+              .fontSize(11.5)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.tok().ink2)
+              .onClick(() => {
+                this.restoreOrRevert(t);
+              })
+          }
+          .width('100%')
+          .padding({ top: 11, bottom: 11 })
+          .border(idx < this.doneHidden().length - 1
+            ? { width: { bottom: 1 }, color: this.tok().line }
+            : { width: 0 })
+        }, (t: PlanTodoItem) => `doneh-${t.id}`)
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -1676,7 +1944,7 @@ export struct SettingsScreen {
           .letterSpacing(this.isCyber() ? 1.25 : 0)
           .fontColor(this.tok().ink)
           .layoutWeight(1)
-        Text(`${this.todos.length} 笔`)
+        Text(`${this.dueOverdue().length + this.dueVisible().length} 笔`)
           .fontSize(9.5)
           .fontFamily(fontMonoOf())
           .fontColor(this.tok().ink3)
@@ -1684,59 +1952,25 @@ export struct SettingsScreen {
       .width('100%')
       .margin({ bottom: 13 })
 
-      if (this.todos.length === 0) {
+      if (this.dueOverdue().length === 0 && this.dueVisible().length === 0 && this.dueHidden().length === 0) {
         this.emptyState($r('sys.symbol.checkmark'), '没有待处理的期次')
       } else {
-        ForEach(this.todos, (t: PlanTodoItem, idx: number) => {
-          Row({ space: 12 }) {
-            Row()
-              .width(4)
-              .height(24)
-              .borderRadius(2)
-              .backgroundColor(urgencyColorOf(t.repaymentDate, this.tok()))
-
-            Column({ space: 2 }) {
-              Text(`${t.periodSeq}期 · ${t.planName}`)
-                .fontSize(12.5)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.tok().ink)
-                .maxLines(1)
-              Text(`${formatMonthDay(t.repaymentDate)} · ${formatYuan(t.amountCents)}`)
-                .fontSize(10.5)
-                .fontColor(this.tok().ink3)
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            Text(t.willAutoPost ? '确认' : '入账')
-              .fontSize(11.5)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.isCyber() ? '#04170d' : this.tok().accentInk)
-              .padding({ left: 11, right: 11, top: 4, bottom: 4 })
-              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-              .backgroundColor(this.tok().accent)
-              .onClick(() => {
-                this.actTodo(t);
-              })
-
-            // 「更多」里只有一个「忽略本期」→ 直接做成按钮（用户 2026-10-29 裁决）
-            Text('忽略')
-              .fontSize(11)
-              .fontFamily(fontMonoOf())
-              .fontColor(this.tok().ink3)
-              .padding({ left: 9, right: 9, top: 4, bottom: 4 })
-              .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
-              .border({ width: 1, color: this.tok().line })
-              .onClick(() => {
-                this.skipTodo(t);
-              })
-          }
-          .width('100%')
-          .padding({ top: 11, bottom: 11 })
-          .border(idx < this.todos.length - 1
-            ? { width: { bottom: 1 }, color: this.tok().line }
-            : { width: 0 })
+        // 逾期永远置顶（不受 3 个月窗口限制）
+        ForEach(this.dueOverdue(), (t: PlanTodoItem, idx: number) => {
+          this.dueRow({ todo: t, isLast: idx === this.dueOverdue().length - 1 && this.dueVisible().length === 0 && this.dueHidden().length === 0 })
+        }, (t: PlanTodoItem) => `od-${t.id}`)
+        // 窗口内：含本月后 2 月共 3 个月
+        ForEach(this.dueVisible(), (t: PlanTodoItem, idx: number) => {
+          this.dueRow({ todo: t, isLast: idx === this.dueVisible().length - 1 && this.dueHidden().length === 0 })
         }, (t: PlanTodoItem) => t.id)
+        this.moreRow(this.dueHidden().length, this.dueMoreOpen, '', () => {
+          this.dueMoreOpen = !this.dueMoreOpen;
+        })
+        if (this.dueMoreOpen) {
+          ForEach(this.dueHidden(), (t: PlanTodoItem, idx: number) => {
+            this.dueRow({ todo: t, isLast: idx === this.dueHidden().length - 1 })
+          }, (t: PlanTodoItem) => `dh-${t.id}`)
+        }
       }
     }
     .width('100%')
