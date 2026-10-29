@@ -18,6 +18,9 @@ export struct AnnualScreen {
   @StorageLink(THEME_STORAGE_KEY) themeName: string = ThemeManager.get().name;
   /** 年份由报表屏写入（web route.query.year） */
   @StorageLink('annualYear') @Watch('reload') year: string = String(new Date().getFullYear());
+  /** 年份快选（点年份条弹出）：数据来自 summaryReport.years（真实有数据的年份） */
+  @State yearCalOpen: boolean = false;
+  @State yearOptions: YearOption[] = [];
   @State report: YearlyReport | null = null;
   @State loading: boolean = true;
 
@@ -158,18 +161,112 @@ export struct AnnualScreen {
     AppStorage.setOrCreate('activeScreen', 'report');
   }
 
+  /** 打开年份快选：拉 summaryReport 拿「真实有数据的年份」（降序），补上当前选中的年份 */
+  private async openYearPicker(): Promise<void> {
+    this.yearCalOpen = true;
+    const out: YearOption[] = [];
+    try {
+      const s = (await Api.summaryReport()).report;
+      for (const y of s.years) {
+        out.push({ year: y.year, totalCents: y.totalCents, count: y.count });
+      }
+    } catch (e) {
+      // 拉不到也至少给出当前年份，避免空弹层
+    }
+    const hasCur = out.some((o: YearOption) => o.year === this.year);
+    if (!hasCur) {
+      out.push({ year: this.year, totalCents: 0, count: 0 });
+    }
+    out.sort((a: YearOption, b: YearOption) => (a.year < b.year ? 1 : -1));
+    this.yearOptions = out;
+  }
+
+  private pickYear(y: string): void {
+    this.year = y;
+    this.yearCalOpen = false;
+  }
+
+  /** 年份快选弹层 */
+  @Builder
+  yearPicker() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.yearCalOpen = false;
+        })
+      Column({ space: 10 }) {
+        Row() {
+          Text('选择年份').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.tok().ink)
+          Blank()
+          Text('关闭').fontSize(11).fontColor(this.tok().ink3)
+            .onClick(() => {
+              this.yearCalOpen = false;
+            })
+        }
+        .width('100%')
+
+        if (this.yearOptions.length === 0) {
+          Text('加载中…').fontSize(11).fontColor(this.tok().ink3)
+            .width('100%').textAlign(TextAlign.Center)
+        } else {
+          Grid() {
+            ForEach(this.yearOptions, (o: YearOption) => {
+              GridItem() {
+                Column({ space: 2 }) {
+                  // Column 没有 fontColor —— 颜色要分别写在两个 Text 上
+                  Text(`${o.year}`).fontSize(14).fontWeight(FontWeight.Bold)
+                    .fontFamily(fontMonoOf()).fontFeature('"tnum" on')
+                    .fontColor(this.year === o.year ? this.tok().accentInk : this.tok().ink)
+                  Text(o.count > 0 ? `${o.count} 笔` : '无数据').fontSize(9.5)
+                    .fontFamily(fontMonoOf()).fontFeature('"tnum" on')
+                    .fontColor(this.year === o.year ? this.tok().accentInk : this.tok().ink3)
+                }
+                .width('100%').height(52)
+                .justifyContent(FlexAlign.Center)
+                .backgroundColor(this.year === o.year ? this.tok().accent : this.tok().surface2)
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+                .border({ width: 1, color: this.year === o.year ? this.tok().accent : this.tok().line })
+                .onClick(() => {
+                  this.pickYear(o.year);
+                })
+              }
+            }, (o: YearOption) => `yr-${o.year}`)
+          }
+          .columnsTemplate('repeat(3, 1fr)')
+          .columnsGap(6)
+          .rowsGap(6)
+          .width('100%')
+        }
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(this.tok().bg)
+      .borderRadius(radiusOf(this.tok(), this.isCyber(), 16))
+      .border({ width: this.tok().borderW, color: this.tok().line })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
   // ══════════════ ① 顶栏：年份切换 ══════════════
 
   @Builder
   yearBar() {
     Row({ space: 10 }) {
       this.chevronBtn('‹', -1)
-      Text(this.year)
+      Text(`${this.year} 年`)
         .fontSize(15)
         .fontWeight(FontWeight.Bold)
         .fontFamily(fontMonoOf())
         .fontFeature('"tnum" on')
         .fontColor(this.tok().ink)
+        // 点年份 → 快选弹层（比一直点 ‹ › 快）
+        .onClick(() => {
+          this.openYearPicker();
+        })
       this.chevronBtn('›', 1)
       Blank()
       // 返回报表（PBtn ghost sm）
@@ -550,6 +647,7 @@ export struct AnnualScreen {
   }
 
   build() {
+    Stack({ alignContent: Alignment.Center }) {
     Scroll() {
       Column({ space: 12 }) {
         this.yearBar()
@@ -588,6 +686,14 @@ export struct AnnualScreen {
     .height('100%')
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+
+      // 年份快选
+      if (this.yearCalOpen) {
+        this.yearPicker()
+      }
+    }
+    .width('100%')
+    .height('100%')
   }
 }
 
@@ -600,4 +706,11 @@ interface TopCatView {
 /** 服务端可能没给的比率 → null（避免 `NaN%`） */
 function ratioOf(r: number | null | undefined): number | null {
   return typeof r === 'number' && Number.isFinite(r) ? r : null;
+}
+
+/** 年份快选项（来自 summaryReport.years） */
+interface YearOption {
+  year: string;
+  totalCents: number;
+  count: number;
 }
