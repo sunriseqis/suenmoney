@@ -29,6 +29,7 @@ public struct ReportScreen: View {
     @State private var dim: String = "cat"
 
     @State private var monthReport: MonthlyReport?
+    @State private var prevMonthReport: MonthlyReport?
     @State private var yearReport: YearlyReport?
     @State private var summary: SummaryReport?
     @State private var loading: Bool = true
@@ -81,21 +82,33 @@ public struct ReportScreen: View {
 
     // MARK: - 加载
 
+    /// 四个报表**都拉**（与鸿蒙 `ReportScreen.load()` 同构）：
+    /// 本月 / 上月 / 年报 / 汇总。
+    ///
+    /// 上月是给涨跌榜兜底用的（月报里 `categories[].previousCents` 缺省时还能对一下），
+    /// 年报与汇总在非对应档位也要有值（构成条、还款节奏会跨档复用）。
+    /// 单个失败置 nil、不清其他。
     private func load() async {
         loading = true
         defer { loading = false }
-        do {
-            if tier == 0 {
-                monthReport = try await Api.monthlyReport(month: anchorMonth).report
-            } else if tier == 1 {
-                yearReport = try await Api.yearlyReport(year: anchorYear).report
-            } else {
-                summary = try await Api.summaryReport().report
-            }
-        } catch let err as ApiError {
-            errorText = err.message
-        } catch {
-            errorText = "加载失败"
+        errorText = ""
+
+        var m: MonthlyReport?
+        var p: MonthlyReport?
+        var y: YearlyReport?
+        var s: SummaryReport?
+        m = try? await Api.monthlyReport(month: anchorMonth).report
+        p = try? await Api.monthlyReport(month: shiftMonth(anchorMonth, -1)).report
+        y = try? await Api.yearlyReport(year: anchorYear).report
+        s = try? await Api.summaryReport().report
+
+        monthReport = m
+        prevMonthReport = p
+        yearReport = y
+        summary = s
+
+        if m == nil && y == nil && s == nil {
+            errorText = "报表加载失败，请检查网络后重试"
         }
     }
 
@@ -143,8 +156,16 @@ public struct ReportScreen: View {
         return nil
     }
 
+    /// 日均 / 单笔均值（与鸿蒙 `ReportScreen.perDayCents` 同义）
+    ///
+    /// ⚠ 非月档**不是**「总额 / 天数」：年档/全部档下这个位置显示的是
+    /// **单笔均值**（总额 / 笔数）。鸿蒙端就是这么分的，照抄。
     private func perDayCents() -> Int {
-        let day = max(1, elapsedDaysOf(anchorMonth))
+        if tier != 0 {
+            let n = activeCount()
+            return n > 0 ? activeTotal() / max(1, n) : 0
+        }
+        let day = max(1, Calendar.current.component(.day, from: Date()))
         return activeTotal() / day
     }
 

@@ -20,7 +20,10 @@ private let keyServers = "suenmoney:servers"
 private let keyActive = "suenmoney:active-server"
 private let keychainService = "com.suenmoney.app"
 
-public final class ServerConfig {
+/// `@unchecked Sendable`：`ApiClient` 在任意线程读 `authToken` / `baseUrl`，
+/// 写只发生在登录与设置页（主线程）。字段都是 String/[String] 的值拷贝，
+/// 读到的要么是旧值要么是新值，不会读到半个状态 —— 故可安全标记。
+public final class ServerConfig: @unchecked Sendable {
     public static let shared = ServerConfig()
 
     private var token: String = ""

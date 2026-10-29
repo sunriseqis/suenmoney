@@ -281,8 +281,16 @@ public struct ExpenseEditor: View {
             }
         } catch let err as ApiError {
             if err.kind == .network && editing == nil && !installment {
-                // 离线：进 Outbox，等联网补传
+                // 离线普通记账：进 Outbox，等联网补传
                 await enqueueOffline(cents: value)
+            } else if err.kind == .network {
+                // ⚠ 与鸿蒙的一处**有意差异**：鸿蒙在分期离线时也会入队，
+                //    但队列里只有 createExpense 的字段（没有 periods/purchaseDate），
+                //    补传后变成一笔**普通支出** —— 用户以为记了分期，实际没记。
+                //    iOS 侧宁可明确报错，也不静默降级成错误的账。
+                errorText = installment
+                    ? "分期需要联网创建（离线无法确定各期还款日）"
+                    : "网络不可用，请稍后再试"
             } else {
                 errorText = err.message
             }
@@ -291,15 +299,30 @@ public struct ExpenseEditor: View {
         }
     }
 
-    /// 离线记账：入队 + 本地先落一条（乐观显示）
+    /// 离线写入。
+    ///
+    /// 刻意**不做乐观行**（与鸿蒙同）：本地算不出还款日（账单周期那段逻辑只在服务端），
+    /// 硬造一行会让「这个月的合计」先对后错。所以只入队 + 明确告知，
+    /// 联网后同步进账，用户看到的是「已排队」而不是「已入账」。
+    ///
+    /// 回调传 **空串**：调用方据此不做高亮（本地没有这条记录，高亮无处可指）。
     private func enqueueOffline(cents value: Int) async {
         let id = ulid()
-        let payload = """
-        {"amountCents":\(isRefund ? -value : value),"categoryId":"\(categoryId)","paymentMethodId":"\(paymentId)","spendDate":"\(spendDate)","note":"\(note.replacingOccurrences(of: "\"", with: "\\\""))"}
-        """
+        // 用 JSONEncoder 而不是手拼字符串：手拼只转义双引号，
+        // note 里出现反斜杠/换行/制表符就会得到非法 JSON，补传时整批失败
+        let draft = SyncCreateExpense(
+            id: id,
+            amountCents: isRefund ? -value : value,
+            categoryId: categoryId,
+            paymentMethodId: paymentId,
+            spendDate: spendDate,
+            note: note
+        )
+        let payload = ApiClient.shared.encode(draft)
         do {
             try Outbox.enqueue(.createExpense, entityId: id, payload: payload)
-            onSaved(id)
+            // 空串 = 「已排队，但没有可高亮的本地行」
+            onSaved("")
         } catch {
             errorText = "离线队列写入失败"
         }

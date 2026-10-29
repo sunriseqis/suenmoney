@@ -16,6 +16,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public struct ProbeResult {
     public let url: String
@@ -26,18 +29,23 @@ public struct ProbeResult {
 }
 
 public enum ServerRouter {
-    private static var chosen: String = ""
-    private static var cooldownUntil: Date = .distantPast
+    /// `chosen` / `cooldownUntil` 会被多个并发请求读写（例如两屏同时刷新），
+    /// Swift 6 下 static var 的数据竞争是编译期错误 → 用锁串行化。
+    private static let stateLock = NSLock()
+    private nonisolated(unsafe) static var chosen: String = ""
+    private nonisolated(unsafe) static var cooldownUntil: Date = .distantPast
     private static let probeTimeout: TimeInterval = 4
     private static let cooldown: TimeInterval = 10
 
     /// 当前是否处于离线冷却期
     public static var isCoolingDown: Bool {
-        Date() < cooldownUntil
+        stateLock.lock(); defer { stateLock.unlock() }
+        return Date() < cooldownUntil
     }
 
     public static var current: String {
-        chosen.isEmpty ? ServerConfig.shared.baseUrl : chosen
+        stateLock.lock(); defer { stateLock.unlock() }
+        return chosen.isEmpty ? ServerConfig.shared.baseUrl : chosen
     }
 
     /// 单地址探活（登录页「测试」按钮也用它）
@@ -74,18 +82,23 @@ public enum ServerRouter {
             print("[ServerRouter] probe \(url) → \(result.ok ? "ok" : result.reason) \(result.latencyMs)ms")
             #endif
             if result.ok {
+                stateLock.lock()
                 chosen = url
                 cooldownUntil = .distantPast
+                stateLock.unlock()
                 ServerConfig.shared.setServers(servers, active: url)
                 return url
             }
         }
+        stateLock.lock()
         cooldownUntil = Date().addingTimeInterval(cooldown)
+        stateLock.unlock()
         return ""
     }
 
     /// 请求失败时调用：清掉当前选择，下次请求会重新选路
     public static func invalidate() {
+        stateLock.lock(); defer { stateLock.unlock() }
         chosen = ""
         cooldownUntil = Date().addingTimeInterval(cooldown)
     }

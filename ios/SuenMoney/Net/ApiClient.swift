@@ -19,6 +19,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public enum HttpMethod: String {
     case get = "GET"
@@ -50,7 +53,8 @@ private struct ServerErrorBody: Decodable {
     let code: String?
 }
 
-public final class ApiClient {
+/// `Sendable`：URLSession 本身线程安全，本类**没有可变状态**（只有 let session）。
+public final class ApiClient: Sendable {
     public static let shared = ApiClient()
     private let session: URLSession
 
@@ -58,7 +62,12 @@ public final class ApiClient {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 4
         cfg.timeoutIntervalForResource = 10
+        // 默认就是 false，显式写出来是为了表明意图：**不要在无网时挂起等待** ——
+        // 挂起会让请求卡到超时才失败，而我们要的是「立刻失败 → 进离线模式」。
+        // Linux 的 FoundationNetworking 把该属性实现为只读，故加条件编译（不影响 iOS）。
+        #if !canImport(FoundationNetworking)
         cfg.waitsForConnectivity = false
+        #endif
         session = URLSession(configuration: cfg)
     }
 
