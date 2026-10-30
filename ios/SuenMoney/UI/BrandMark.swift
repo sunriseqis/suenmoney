@@ -25,6 +25,11 @@ public struct BrandMark: View {
 
     private var tokens: ThemeTokens { theme.tokens }
 
+    /// 键盘区可用高 = markSize * 0.56（减去显示屏与间距），5 行 + 4 个 1.5 间距
+    private var keyHeight: CGFloat {
+        (markSize * 0.56 - 4 * 1.5) / 5
+    }
+
     public var body: some View {
         if markSize < 32 {
             simplified
@@ -67,6 +72,9 @@ public struct BrandMark: View {
             .clipShape(RoundedRectangle(cornerRadius: markSize * 0.06))
 
             // 4×5 键盘：亮键拼 S
+            // ⚠ 键高必须**定高**，不能用 aspectRatio(1)：
+            // 可用高度只有 markSize*0.56（56 → 31.36），而 5 行正方形键需要 59.175，
+            // 溢出部分会被 clipShape 裁掉底部约 2.7 行，「S」图案残缺。
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 1.5), count: 4),
                 spacing: 1.5
@@ -74,7 +82,7 @@ public struct BrandMark: View {
                 ForEach(0..<keyCount, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color(css: litKeys.contains(i) ? tokens.accent : tokens.ink3))
-                        .aspectRatio(1, contentMode: .fill)
+                        .frame(height: keyHeight)
                 }
             }
             .frame(width: markSize * 0.84)

@@ -1437,8 +1437,9 @@ public struct LedgerScreen: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text(point.year)
-                        .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
-                        .foregroundStyle(Color(css: tokens.ink2))
+                        // 与月档格子同源：15pt 标题体 + ink（鸿蒙复用同一个 yearCell）
+                        .font(.custom(fontDisplayOf(isCyber), size: 15).weight(.bold))
+                        .foregroundStyle(Color(css: tokens.ink))
                     Spacer(minLength: 0)
                     Text("\(point.count ?? 0) 笔")
                         .font(.custom(fontMonoOf(), size: 10.5))

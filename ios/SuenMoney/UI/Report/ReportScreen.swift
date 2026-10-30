@@ -728,16 +728,18 @@ public struct ReportScreen: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                // 一句话结论（鸿蒙有，iOS 之前整段缺失）
-                Text(conclusion())
-                    .font(.system(size: 11))
-                    .lineSpacing(4)
-                    .foregroundStyle(Color(css: tokens.ink2))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 10)
-                    .overlay(alignment: .top) { dashedRule }
-                    .padding(.top, 12)
             }
+
+            // 一句话结论：写在 if/else **之外**（鸿蒙同）——
+            // 年档/全部档、以及「没有可对比分类」的空态下也照常显示
+            Text(conclusion())
+                .font(.system(size: 11))
+                .lineSpacing(4)
+                .foregroundStyle(Color(css: tokens.ink2))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 10)
+                .overlay(alignment: .top) { dashedRule }
+                .padding(.top, 12)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

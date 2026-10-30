@@ -189,7 +189,8 @@ public struct LoginView: View {
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                     .overlay(
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                            .stroke(Color(css: tokens.line2), lineWidth: isCyber ? 1.5 : tokens.borderW)
+                            .stroke(Color(css: outlineStrongOf(isCyber)),
+                                    lineWidth: isCyber ? 1.5 : tokens.borderW)
                     )
 
                 smallButton("测试") {
