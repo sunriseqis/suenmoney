@@ -78,6 +78,30 @@ public struct ExpenseEditor: View {
                 amountArea
                 fieldRows
 
+                // 分期付款（仅信用卡、非退款时；**编辑态也显示**）
+                if isCredit && !isRefund {
+                    HStack(spacing: 6) {
+                        Text("分期付款")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(css: tokens.ink2))
+                        Spacer(minLength: 0)
+                        Toggle("", isOn: $installment)
+                            .labelsHidden()
+                            .tint(Color(css: tokens.accent))
+                    }
+                }
+                // 退款（分期开启时禁用）
+                HStack(spacing: 6) {
+                    Text("退款")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(css: tokens.ink2))
+                    Spacer(minLength: 0)
+                    Toggle("", isOn: $isRefund)
+                        .labelsHidden()
+                        .tint(Color(css: tokens.accent))
+                        .disabled(installment)
+                }
+
                 // 键盘上方只保留一行摘要（R107）
                 HStack(spacing: 6) {
                     Text("本月已支出")
@@ -554,14 +578,7 @@ public struct ExpenseEditor: View {
                     .minimumScaleFactor(0.5)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
-            // 账期预览：信用卡要显示「账单月 · 还款日」
-            if let p = preview, isCredit {
-                Text(crossesMonth
-                     ? "记入 \(String(p.postingDate.prefix(7))) · \(String(p.repaymentDate.dropFirst(5))) 还（跨月）"
-                     : "\(String(p.postingDate.prefix(7))) 账单 · \(String(p.repaymentDate.dropFirst(5))) 还")
-                    .font(.custom(fontMonoOf(), size: 10))
-                    .foregroundStyle(Color(css: crossesMonth ? tokens.warn : tokens.ink3))
-            }
+            // 账期预览已移到备注下方独立一行（鸿蒙位置），这里不再重复
             if installment {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -601,6 +618,31 @@ public struct ExpenseEditor: View {
                 dateCalOpen = true
             }
             fieldRow(label: "支付方式", value: paymentName) { paymentOpen = true }
+
+            // 账期预览（鸿蒙：备注下方独立一行，**所有支付方式都显示**）
+            HStack(spacing: 4) {
+                if let p = preview {
+                    if crossesMonth {
+                        Text("这笔会记在").font(.system(size: 10)).foregroundStyle(Color(css: tokens.accent))
+                        Text(monthLabelCN(p.postingDate)).font(.system(size: 10)).foregroundStyle(Color(css: tokens.accent))
+                        Text("（还款日 \(dateShort(p.repaymentDate))）").font(.system(size: 10)).foregroundStyle(Color(css: tokens.accent))
+                    } else {
+                        Text("还款日 \(p.repaymentDate)")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                    }
+                } else {
+                    Text("账期未取到")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                }
+                Spacer(minLength: 0)
+                Text(formatYuan(isRefund ? -cents : cents))
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(css: tokens.ink2))
+            }
+            .frame(maxWidth: .infinity)
             // 备注：**整行输入框，无左标签**（鸿蒙同）；聚焦时 2px #5DB8FF 焦点环；
             // placeholder 必须显式给色，否则深色底上几乎不可见
             TextField("", text: $note,
@@ -620,33 +662,38 @@ public struct ExpenseEditor: View {
         }
     }
 
-    /// 字段行（鸿蒙 `fieldRow`）：label 9pt ink3 / value 13pt ink / 高度 34 / 无强调描边
+    /// 字段行（鸿蒙 `fieldRow`）：**label 在上、value 在下两行竖排**，无固定高、无描边
+    /// padding 10、bg surface2、radius rMd → 行高约 53
     private func fieldRow(label: String, value: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Text(label)
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color(css: tokens.ink3))
-                    .frame(width: 46, alignment: .leading)
-                Text(value)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color(css: tokens.ink))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                    Text(value)
+                        .font(.system(size: 13, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(Color(css: tokens.ink))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Text("›")
-                    .font(.system(size: 13))
+                    .font(.system(size: 16))
                     .foregroundStyle(Color(css: tokens.ink3))
             }
-            .padding(.horizontal, 9)
-            .frame(height: 34)
+            .padding(10)
             .background(Color(css: tokens.surface2))
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
-            .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-            )
         }
         .buttonStyle(.plain)
+    }
+
+    /// `YYYY-MM-DD` → `2026 年 11 月`（鸿蒙 `monthLabel`）
+    private func monthLabelCN(_ date: String) -> String {
+        let y = Int(date.prefix(4)) ?? 2026
+        let m = Int(date.dropFirst(5).prefix(2)) ?? 1
+        return "\(y) 年 \(m) 月"
     }
 
     private func dateShort(_ date: String) -> String {
