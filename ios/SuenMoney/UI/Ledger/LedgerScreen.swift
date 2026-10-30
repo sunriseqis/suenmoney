@@ -131,7 +131,7 @@ public struct LedgerScreen: View {
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // 顶部哨兵：可见即「已在顶部」（下拉手势的前置条件）
+                    // 顶部锚点（回顶用）+ 偏移测量
                     Color.clear.frame(height: 0).id("top")
                         .onAppear { atTop = true }
                         .onDisappear { atTop = false }
@@ -153,9 +153,21 @@ public struct LedgerScreen: View {
                     }
                 }
                 .padding(.bottom, 8)
-                // 内容比视口短时（空月份/空年份很常见），ScrollView 会把内容**垂直居中**
-                // → 切档/切屏就整页上下跳。用 GeometryReader 撑到至少一屏高。
                 .frame(maxWidth: .infinity, alignment: .top)
+                // 用几何偏移判断「是否在顶部」——0 高度哨兵的 onAppear 在 ScrollView 里
+                // 触发不可靠，会让下拉记账时灵时不灵。
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ScrollOffsetKey.self,
+                            value: geo.frame(in: .named("ledgerScroll")).minY
+                        )
+                    }
+                )
+            }
+            .coordinateSpace(name: "ledgerScroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { y in
+                atTop = y >= -2
             }
             .scrollIndicators(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -199,7 +211,7 @@ public struct LedgerScreen: View {
             editingRow = nil
             sheetOpen = true
         }
-        .gesture(pullGesture)
+        .simultaneousGesture(pullGesture)
         .sheet(isPresented: $sheetOpen) {
             ExpenseEditor(editing: editingRow) { savedId in
                 sheetOpen = false
@@ -218,9 +230,12 @@ public struct LedgerScreen: View {
                     }
                 }
             }
-            .presentationDetents([.large])
+            // 鸿蒙是 SheetSize.FIT_CONTENT（贴合内容高度）。
+            // 用 .large 会占满整屏、内容全挤在顶部、下面一大片空白 —— 就是「位置偏移」。
+            .presentationDetents([.fraction(0.72)])
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(isCyber ? 0 : 22)
+            .presentationBackground(Color(css: tokens.bg))
         }
     }
 
@@ -378,9 +393,16 @@ public struct LedgerScreen: View {
 
     // MARK: - 待办动作
 
-    /// 逾期：还款日已过（含被忽略后重现的期次）
+    /// 逾期：还款日已过（含被忽略后重现的期次）—— 只影响**颜色与标签**
     private func todoOverdue(_ t: HeroTodo) -> Bool {
         t.status == "skipped" || t.daysUntil < 0
+    }
+
+    /// 「被忽略后逾期重现」的期次才**不给忽略按钮**（用户 2026-10-29 裁决：
+    /// 「如被忽略的…则提醒逾期，逾期的处理按钮则立即入账。同时不显示忽略按钮」）。
+    /// 普通逾期（从未忽略过）仍应同时给「忽略」和「处理」。
+    private func todoSkippedAgain(_ t: HeroTodo) -> Bool {
+        t.status == "skipped"
     }
 
     /// 待办标签：逾期 / 今天 / 还有N天
@@ -656,9 +678,11 @@ public struct LedgerScreen: View {
                     .font(.custom(fontMonoOf(), size: 9.5))
                     .tracking(1.33)
                     .foregroundStyle(Color(css: tokens.ink3))
-                HStack(alignment: .bottom, spacing: 2) {
+                // ¥ 用**基线对齐**：鸿蒙是 VerticalAlign.Bottom，但 SwiftUI 的 .bottom 按
+                // frame 底（大字号 Text 的 frame 含行高留白）会显得偏下。
+                HStack(alignment: .lastTextBaseline, spacing: 4) {
                     Text("¥")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: heroAmountSize() * 0.5, weight: .bold))
                         .foregroundStyle(Color(css: tokens.ink2))
                     Text(formatYuan(periodTotalCents()).replacingOccurrences(of: "¥", with: ""))
                         .font(.custom(fontDisplayOf(isCyber), size: heroAmountSize()).weight(.black))
@@ -818,8 +842,8 @@ public struct LedgerScreen: View {
                     .font(.custom(fontMonoOf(), size: 11).weight(.bold))
                     .foregroundStyle(Color(css: tokens.ink))
                 Spacer(minLength: 0)
-                // 逾期只给「入账」：已经拖过一次，再给忽略等于无限延期
-                if !todoOverdue(t) {
+                // 只有「被忽略后重现」才不给忽略；普通逾期两个按钮都在
+                if !todoSkippedAgain(t) {
                     pillButton("忽略", filled: false) { Task { await ignoreTodo(t) } }
                 }
                 pillButton(todoOverdue(t) ? "入账" : "处理", filled: true) {
@@ -865,7 +889,12 @@ public struct LedgerScreen: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Color(css: tokens.ink))
                         .focused($searchFocused)
-                        .onSubmit { Task { await loadMonth(reset: true) } }
+                        // 点搜索框自动展开高级区（鸿蒙 onFocus → advOpen = true），
+                        // 否则用户找不到档位切换
+                        .onChange(of: searchFocused) { _, on in
+                            if on { withAnimation(appCurveFast) { advOpen = true } }
+                        }
+                        .onSubmit { Task { await reload() } }
                         .onChange(of: keyword) { _, _ in
                             // 取消上一个防抖任务：不取消的话每敲一个字都排一个请求，
                             // 先发的可能后到，列表会被旧结果覆盖
@@ -886,22 +915,20 @@ public struct LedgerScreen: View {
                         .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
                 )
 
-                Button {
-                    withAnimation(appCurveFast) { advOpen.toggle() }
-                } label: {
-                    Text(advOpen ? "收起" : "筛选")
-                        .font(.system(size: 11.5, weight: .bold))
-                        .foregroundStyle(Color(css: tokens.ink2))
-                        .padding(.horizontal, 11)
-                        .frame(height: 34)
-                        .background(Color(css: tokens.surface))
-                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-                        )
+                // 只有展开时才出现「收起」，且是纯文字（鸿蒙无边框无底色）。
+                // 之前常驻一个「筛选」按钮，与高级区里真正的筛选按钮语义重复。
+                if advOpen {
+                    Button {
+                        withAnimation(appCurveFast) { advOpen = false }
+                    } label: {
+                        Text("收起")
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(Color(css: tokens.ink2))
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
             if advOpen {
@@ -1549,6 +1576,14 @@ public struct LedgerScreen: View {
                 .opacity(Double(pullProgress))
             }
         }
+    }
+}
+
+/// ScrollView 内容相对滚动容器顶部的偏移（>0 或约 0 表示在顶部）
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
