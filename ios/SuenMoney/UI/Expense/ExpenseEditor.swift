@@ -210,6 +210,8 @@ public struct ExpenseEditor: View {
         // 都没选时给第一个可用项，避免保存键永远是灰的
         if categoryId.isEmpty { categoryId = quickCats().first?.id ?? categories.first?.id ?? "" }
         if paymentId.isEmpty { paymentId = payments.first?.id ?? "" }
+        // 兜底：支付方式不是信用卡时不能残留分期状态
+        if findPayment(paymentId)?.type != "credit" { installment = false }
         await refreshPreview()
     }
 
@@ -238,6 +240,17 @@ public struct ExpenseEditor: View {
 
     private func findPayment(_ id: String) -> PaymentMethodItem? {
         payments.first { $0.id == id }
+    }
+
+    /// 切换支付方式（**所有入口都走它**）。
+    /// 关键：切到非信用卡时自动清掉「分期」——否则分期状态会残留，
+    /// 且按钮消失后再也无法取消。
+    private func setPayment(_ id: String) {
+        paymentId = id
+        if findPayment(id)?.type != "credit" {
+            installment = false
+        }
+        Task { await refreshPreview() }
     }
 
     private var categoryName: String {
@@ -462,14 +475,13 @@ public struct ExpenseEditor: View {
             }
             // 分期（仅新建时）
             if editing == nil {
-                // 只有信用卡类可以分期（鸿蒙 `isCredit()` 守卫）；现金分期没有业务意义
-                toggleChip("分期", installment) {
-                    guard isCredit else {
-                        errorText = "只有信用卡可以分期"
-                        return
+                // **只有信用卡类才显示「分期」**（现金分期没有业务意义）。
+                // 之前常驻显示 + 点了报错但不 toggle，用户会觉得"点不掉"。
+                if isCredit {
+                    toggleChip("分期", installment) {
+                        installment.toggle()
+                        if installment { isRefund = false }
                     }
-                    installment.toggle()
-                    if installment { isRefund = false }
                 }
             }
             if editing != nil {
@@ -683,8 +695,7 @@ public struct ExpenseEditor: View {
             VStack(spacing: 6) {
                 ForEach(Array(payments.prefix(4)), id: \.id) { p in
                     Button {
-                        paymentId = p.id
-                        Task { await refreshPreview() }
+                        setPayment(p.id)
                     } label: {
                         HStack(spacing: 4) {
                             PayIconView(name: p.name, icon: p.icon, iconSize: 13,
@@ -840,9 +851,8 @@ public struct ExpenseEditor: View {
                 FlowRow(spacing: 6) {
                     ForEach(payments) { p in
                         Button {
-                            paymentId = p.id
+                            setPayment(p.id)
                             paymentOpen = false
-                            Task { await refreshPreview() }
                         } label: {
                             HStack(spacing: 5) {
                                 PayIconView(name: p.name, icon: p.icon, iconSize: 14)
