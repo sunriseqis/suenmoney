@@ -149,6 +149,7 @@ public struct AnnualScreen: View {
             } label: {
                 Text("\(year) 年")
                     .font(.custom(fontMonoOf(), size: 15).weight(.bold))
+                    .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink))
             }
             .buttonStyle(.plain)
@@ -161,7 +162,7 @@ public struct AnnualScreen: View {
                 app.screen = .report
             } label: {
                 Text("返回报表")
-                    .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
+                    .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 11 : 11.5).weight(.bold))
                     .tracking(isCyber ? 1.54 : 0)
                     .foregroundStyle(Color(css: tokens.ink2))
                     .padding(.horizontal, 11)
@@ -234,23 +235,26 @@ public struct AnnualScreen: View {
             }
 
             // 大金额：¥ 独立成段（0.5 倍字号 + ink2），数字按长度自适应 34/28/22
-            HStack(alignment: .bottom, spacing: 4) {
+            // 鸿蒙 hero 有 margin top 8 / bottom 4
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text("¥")
                     .font(.system(size: heroSize() * 0.5, weight: .bold))
                     .foregroundStyle(Color(css: tokens.ink2))
                 Text(formatYuan(total()).replacingOccurrences(of: "¥", with: ""))
                     .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.black))
-                    .tracking(isCyber ? 1.14 : -0.68)
+                    .tracking(isCyber ? 0.4 : -1.33)
                     .monospacedDigit()
                     .lineLimit(1)
                     .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             // hero-delta：环比胶囊 + 去年
             HStack(spacing: 8) {
                 if let ratio = yearDelta() {
-                    Text("\(String(format: "%+.1f", ratio * 100))%")
+                    Text("\(String(format: "%.1f", ratio * 100))%")
                         .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
                         .foregroundStyle(Color(css: ratio > 0 ? tokens.danger : tokens.ok))
                         .padding(.horizontal, 8)
@@ -269,7 +273,7 @@ public struct AnnualScreen: View {
             // hero-metrics：月均 / 单笔均值 / 空月（与鸿蒙 statCell 三项一致）
             HStack(spacing: 10) {
                 statCell("月均", formatYuan(Int((Double(total()) / 12).rounded())))
-                statCell("单笔均值", formatYuan(count() > 0 ? total() / count() : 0))
+                statCell("单笔均值", formatYuan(count() > 0 ? Int((Double(total()) / Double(count())).rounded()) : 0))
                 statCell("空月", "\(quietMonths()) 个月")
             }
             .padding(.top, 14)
@@ -346,7 +350,7 @@ public struct AnnualScreen: View {
                                     .fill(Color(css: m.totalCents > 0
                                                 ? mixHex(tokens.accent, tokens.surface, 0.75)
                                                 : tokens.surface3))
-                                    .frame(height: max(4, CGFloat(Double(m.totalCents) / Double(monthsMax())) * 100))
+                                    .frame(height: max(4, (Double(m.totalCents) / Double(monthsMax()) * 100).rounded()))
                                 Text("\(Int(m.month.dropFirst(5).prefix(2)) ?? 0)")
                                     .font(.custom(fontMonoOf(), size: 9.5))
                                     .monospacedDigit()
@@ -357,7 +361,7 @@ public struct AnnualScreen: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(height: 130, alignment: .bottom)
+                .frame(height: 140, alignment: .bottom)
             }
         }
         .padding(14)
@@ -377,12 +381,15 @@ public struct AnnualScreen: View {
             if let peak = report?.peakMonth {
                 Text(formatMonthLabel(peak.month))
                     .font(.custom(fontDisplayOf(isCyber), size: 26).weight(.bold))
+                    .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Text(formatYuan(peak.totalCents))
                     .font(.system(size: 10.5))
+                    .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink2))
+                    .padding(.top, 4)
             } else {
                 Text("没有数据")
                     .font(.system(size: 12))
@@ -406,13 +413,16 @@ public struct AnnualScreen: View {
             if let big = report?.largest {
                 Text(formatYuan(big.cents))
                     .font(.custom(fontDisplayOf(isCyber), size: 26).weight(.bold))
+                    .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Text("\(big.categoryName) · \(formatMonthDay(big.repaymentDate))")
+                Text("\(big.categoryName) · \(big.repaymentDate)")
                     .font(.system(size: 10.5))
+                    .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink2))
                     .lineLimit(2)
+                    .padding(.top, 4)
             } else {
                 Text("没有数据")
                     .font(.system(size: 12))
@@ -450,10 +460,11 @@ public struct AnnualScreen: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(formatYuan(cat.cents))
-                    .font(.custom(fontMonoOf(), size: 11))
+                    .font(.custom(fontMonoOf(), size: 12).weight(.medium))
                     .monospacedDigit()
-                    .foregroundStyle(Color(css: tokens.ink2))
-                Text("\(Int((ratioOf(cat.ratio) ?? 0) * 100))%")
+                    .foregroundStyle(Color(css: tokens.ink))
+                // 本地算（鸿蒙同）：服务端 ratio 缺失时也能出数；四舍五入不是截断
+                Text("\(total() > 0 ? Int((Double(cat.cents) / Double(total()) * 100).rounded()) : 0)%")
                     .font(.custom(fontMonoOf(), size: 10.5))
                     .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink2))
@@ -522,7 +533,7 @@ public struct AnnualScreen: View {
             }
             .padding(14)
             .frame(width: 320)
-            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg, shadow: false)
         }
     }
 }

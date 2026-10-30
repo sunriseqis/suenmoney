@@ -27,6 +27,8 @@ public struct LoginView: View {
     @State private var probeText: String = ""
     @State private var errorText: String = ""
     @State private var busy: Bool = false
+    /// 地址预填只跑一次（鸿蒙 `aboutToAppear` 语义）
+    @State private var didPrefill: Bool = false
 
     @FocusState private var focus: Field?
     private enum Field { case username, password, server }
@@ -48,7 +50,7 @@ public struct LoginView: View {
                         .foregroundStyle(Color(css: tokens.danger))
                 }
                 loginButton
-                Divider().overlay(Color(css: tokens.line))
+                Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
                 serverBlock
             }
             .padding(20)
@@ -56,7 +58,11 @@ public struct LoginView: View {
         .scrollBounceBehavior(.basedOnSize)
         .background(Color(css: tokens.bg).ignoresSafeArea())
         .onAppear {
-            serverUrl = ServerConfig.shared.baseUrl
+            // 只预填一次：每次出现都重置会把用户改了一半的地址冲掉
+            if !didPrefill {
+                serverUrl = ServerConfig.shared.baseUrl
+                didPrefill = true
+            }
         }
     }
 
@@ -78,8 +84,9 @@ public struct LoginView: View {
 
     /// 「登录」标题**水平居中**（鸿蒙 Column 默认 HorizontalAlign.Center），
     /// 下面那句说明才是左对齐 —— 之前两行都左对齐，与基准版式不同。
+    /// 鸿蒙里「登录」与「用你的账号进入账本。」是 `Column({space:14})` 的兄弟节点
     private var cardHead: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("登录")
                 .font(.custom(fontBodyOf(isCyber), size: 12))
                 .foregroundStyle(Color(css: tokens.ink3))
@@ -92,7 +99,7 @@ public struct LoginView: View {
     }
 
     private var inputs: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 14) {
             fieldBox(focused: focus == .username) {
                 TextField("登录名", text: $username)
                     .textInputAutocapitalization(.never)
@@ -157,7 +164,7 @@ public struct LoginView: View {
     // MARK: 服务端（只保留一个输入口）
 
     private var serverBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("服务端")
                 .font(.system(size: 11))
                 .foregroundStyle(Color(css: tokens.ink3))
@@ -220,7 +227,7 @@ public struct LoginView: View {
     // MARK: 动作
 
     private var filledServer: String {
-        serverUrl.trimmingCharacters(in: .whitespaces)
+        serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 保存这一个地址（登录前手填的地址，作为候选列表首项）
