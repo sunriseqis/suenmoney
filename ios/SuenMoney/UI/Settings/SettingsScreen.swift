@@ -108,6 +108,8 @@ public struct SettingsScreen: View {
     @State private var railRootId: String = ""
     /// 计划表单的每期金额（元文本，提交时转分）
     @State private var planAmountText: String = ""
+    /// 计划首期还款日（默认今天）
+    @State private var planFirstDue: String = ""
     @State private var formBillingDay: Int = 0
     @State private var formRepayDay: Int = 0
     @State private var editingId: String = ""
@@ -324,11 +326,19 @@ public struct SettingsScreen: View {
                 .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
                 .padding(.horizontal, 11)
                 .padding(.vertical, 4)
+                .background(Color(css: isCyber ? "transparent" : tokens.surface))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                        .stroke(Color(css: isCyber ? tokens.accent : tokens.line2), lineWidth: tokens.borderW)
+                        .stroke(Color(css: isCyber ? "rgba(0,255,136,0.55)" : tokens.line2),
+                                lineWidth: tokens.borderW)
                 )
+                .background {
+                    // candy 硬阴影（实心偏移，不能用 .shadow）
+                    if !isCyber {
+                        Capsule().fill(Color(css: tokens.line2)).offset(x: 3, y: 3)
+                    }
+                }
         }
         .buttonStyle(.plain)
     }
@@ -377,9 +387,9 @@ public struct SettingsScreen: View {
         categories.first { $0.id == railRootId }
     }
 
+    /// 二级列表：**不做 [root] 回退**（鸿蒙同）——没有二级时让空态文案出现
     private var railChildren: [CategoryNode] {
-        guard let root = railRoot else { return [] }
-        return root.children.isEmpty ? [root] : root.children
+        railRoot?.children ?? []
     }
 
     /// 二级分类的颜色跟随一级
@@ -1073,8 +1083,9 @@ public struct SettingsScreen: View {
                 } else {
                     ForEach(Array(srvList.enumerated()), id: \.offset) { idx, url in
                         HStack(spacing: 8) {
+                            // 圆点颜色 = **探活状态**（不是「是否生效」）
                             Circle()
-                                .fill(Color(css: url == srvActive ? tokens.ok : tokens.ink3))
+                                .fill(Color(css: probeColor(idx)))
                                 .frame(width: 7, height: 7)
                             // 行内可编辑（原来只能看）
                             TextField("http://主机:端口", text: Binding(
@@ -1107,20 +1118,13 @@ public struct SettingsScreen: View {
                                     .foregroundStyle(Color(css: tokens.ink3))
                             }
                             Button {
-                                Task { await testServers() }
-                            } label: {
-                                Text("测试")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Color(css: tokens.ink2))
-                            }
-                            .buttonStyle(.plain)
-                            Button {
                                 srvList.remove(at: idx)
                                 if srvProbe.indices.contains(idx) { srvProbe.remove(at: idx) }
                             } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Color(css: tokens.danger))
+                                Text("×")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Color(css: tokens.ink3))
+                                    .frame(width: 26, height: 26)
                             }
                             .buttonStyle(.plain)
                         }
@@ -1135,13 +1139,13 @@ public struct SettingsScreen: View {
                         srvProbe.append("")
                     } label: {
                         Text("+ 添加服务器")
-                            .font(.system(size: 11.5, weight: .bold))
-                            .foregroundStyle(Color(css: tokens.ink2))
-                            .padding(.horizontal, 11)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(css: tokens.accent))
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .overlay(
                                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
+                                    .stroke(Color(css: tokens.accent), lineWidth: 1)
                             )
                     }
                     .buttonStyle(.plain)
@@ -1149,27 +1153,25 @@ public struct SettingsScreen: View {
                     Button {
                         Task { await testServers() }
                     } label: {
-                        Text("全部测试")
-                            .font(.system(size: 11.5, weight: .bold))
+                        Text("测试")
+                            .font(.system(size: 11))
                             .foregroundStyle(Color(css: tokens.ink2))
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-                            )
+                            .frame(height: 30)
+                            .padding(.horizontal, 12)
+                            .background(Color(css: tokens.surface2))
+                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
                     }
                     .buttonStyle(.plain)
                     Button {
                         saveServers()
                     } label: {
-                        Text("保存并生效")
-                            .font(.system(size: 11.5, weight: .bold))
+                        Text("保存")
+                            .font(.system(size: 11))
                             .foregroundStyle(Color(css: tokens.accentInk))
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
+                            .frame(height: 30)
+                            .padding(.horizontal, 14)
                             .background(Color(css: tokens.accent))
-                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
                     }
                     .buttonStyle(.plain)
                 }
@@ -1181,6 +1183,15 @@ public struct SettingsScreen: View {
                 }
             }
         }
+    }
+
+    /// 探活状态色：ok → ok / bad → danger / 未测 → line
+    private func probeColor(_ idx: Int) -> String {
+        guard srvProbe.indices.contains(idx) else { return tokens.line }
+        let v = srvProbe[idx]
+        if v.hasPrefix("可用") { return tokens.ok }
+        if v.hasPrefix("连不上") { return tokens.danger }
+        return tokens.line
     }
 
     /// 逐条探活（鸿蒙 testServers）
@@ -1201,15 +1212,10 @@ public struct SettingsScreen: View {
             return
         }
         srvList = cleaned
-        Task {
-            let chosen = await ServerRouter.choose(cleaned)
-            if chosen.isEmpty {
-                srvMsg = "所有地址都连不上"
-            } else {
-                srvActive = chosen
-                srvMsg = "已保存，当前生效：\(chosen)"
-            }
-        }
+        // 鸿蒙保存**不强制探活**：第一个地址即生效，探活是「测试」按钮的事
+        srvActive = cleaned[0]
+        ServerConfig.shared.setServers(cleaned, active: cleaned[0])
+        srvMsg = "已保存"
     }
 
     private func persistServers() {
@@ -1335,9 +1341,8 @@ public struct SettingsScreen: View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
                 plainCardTitle("检查更新")
-                HStack {
-                    Spacer(minLength: 0)
-                    smBtn("检查") {
+                HStack(spacing: 10) {
+                    Button {
                         Task {
                             // 之前这里直接写「已是最新版本」，根本没发请求 —— 谎报。
                             // 与鸿蒙一致：探 /api/health，显示服务端版本与连通性。
@@ -1351,12 +1356,30 @@ public struct SettingsScreen: View {
                                 updateMsg = "检查失败"
                             }
                         }
+                    } label: {
+                        Text(updateMsg == "检查中…" ? "检查中…" : "检查更新")
+                            .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10 : 11.5).weight(.bold))
+                            .foregroundStyle(Color(css: tokens.ink))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                    .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                            )
+                            .background {
+                                if !isCyber {
+                                    Capsule().fill(Color(css: tokens.line2)).offset(x: 3, y: 3)
+                                }
+                            }
                     }
-                }
-                if !updateMsg.isEmpty {
-                    Text(updateMsg)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color(css: tokens.ink3))
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                    if !updateMsg.isEmpty {
+                        Text(updateMsg)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
         }
@@ -1452,17 +1475,31 @@ public struct SettingsScreen: View {
         }
 
         if kind == .category {
-            VStack(alignment: .leading, spacing: 6) {
-                fieldLabel("归属类别")
-                Picker("归属类别", selection: $formParent) {
-                    Text("（一级分类）").tag("")
-                    ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
-                        Text(root.name).tag(root.id)
+            // 归属类别：**只在编辑二级时出现**（鸿蒙 `!editingRoot() && editingId != ''`）
+            if !editingId.isEmpty && !formParent.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("归属类别")
+                    FlowRow(spacing: 6) {
+                        ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
+                            let on = formParent == root.id
+                            Button { formParent = root.id } label: {
+                                Text(root.name)
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .foregroundStyle(Color(css: on ? tokens.onColor : tokens.ink2))
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 5)
+                                    .background(Color(css: on ? tokens.amber : tokens.surface))
+                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                            .stroke(Color(css: on ? tokens.line2 : tokens.line),
+                                                    lineWidth: on ? 2 : 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
-                .pickerStyle(.menu)
-                .tint(Color(css: tokens.accent))
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1489,20 +1526,7 @@ public struct SettingsScreen: View {
         }
 
         if kind == .payment {
-            VStack(alignment: .leading, spacing: 6) {
-                fieldLabel("类型")
-                Picker("类型", selection: $formType) {
-                    Text("现金/借记").tag("cash")
-                    Text("信用卡").tag("credit")
-                }
-                .pickerStyle(.segmented)
-            }
-            if formType == "credit" {
-                HStack(spacing: 10) {
-                    dayField("账单日", $formBillingDay)
-                    dayField("还款日", $formRepayDay)
-                }
-            }
+            // 顺序：名称 → 图标 → 类型 → 账单日 → 还款日（鸿蒙同）
             VStack(alignment: .leading, spacing: 6) {
                 fieldLabel("图标")
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
@@ -1510,6 +1534,29 @@ public struct SettingsScreen: View {
                     ForEach(payOptions, id: \.id) { opt in
                         payIconOption(opt.id.rawValue)
                     }
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("类型")
+                FlowRow(spacing: 6) {
+                    typePill("信用卡（有账单/还款日）", "credit")
+                    typePill("即时结算", "cash")
+                }
+            }
+            if formType == "credit" {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("账单日")
+                    plainField("1-31", Binding(
+                        get: { String(formBillingDay) },
+                        set: { formBillingDay = Int($0) ?? 0 }
+                    ))
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("还款日")
+                    plainField("1-31", Binding(
+                        get: { String(formRepayDay) },
+                        set: { formRepayDay = Int($0) ?? 0 }
+                    ))
                 }
             }
         }
@@ -1538,19 +1585,32 @@ public struct SettingsScreen: View {
                 .pickerStyle(.menu)
                 .tint(Color(css: tokens.accent))
             }
-            HStack(spacing: 10) {
-                dayField("期数", $formBillingDay)
-                dayField("提前提醒(天)", $formRepayDay)
-            }
             VStack(alignment: .leading, spacing: 6) {
                 fieldLabel("每期金额（元）")
                 plainField("0.00", $planAmountText)
                     .keyboardType(.decimalPad)
             }
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("期数")
+                plainField("12", Binding(
+                    get: { String(formBillingDay) },
+                    set: { formBillingDay = Int($0) ?? 12 }
+                ))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("首期还款日")
+                plainField(todayKey(), $planFirstDue)
+                    .keyboardType(.numbersAndPunctuation)
+            }
             HStack(spacing: 8) {
-                Text("到期自动入账")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(css: tokens.ink2))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("到期自动入账")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(css: tokens.ink2))
+                    Text("关闭则每期需要手动点「入账」")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                }
                 Spacer(minLength: 0)
                 Toggle("", isOn: $formEnabled)
                     .labelsHidden()
@@ -1601,6 +1661,25 @@ public struct SettingsScreen: View {
                     .stroke(Color(css: outlineStrongOf(isCyber)),
                             lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
             )
+    }
+
+    /// 类型 pill（鸿蒙同形态：选中琥珀底 + 2px line2 描边）
+    private func typePill(_ label: String, _ value: String) -> some View {
+        let on = formType == value
+        return Button { formType = value } label: {
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color(css: on ? tokens.onColor : tokens.ink2))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(Color(css: on ? tokens.amber : tokens.surface))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                        .stroke(Color(css: on ? tokens.line2 : tokens.line), lineWidth: on ? 2 : 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private func iconOption(_ value: String, _ label: String, _ symbol: String) -> some View {
@@ -1759,10 +1838,11 @@ public struct SettingsScreen: View {
         formName = ""
         formParent = categories.first?.id ?? ""
         formIcon = payments.first?.id ?? ""
-        formBillingDay = 3      // 期数
+        formBillingDay = 12     // 期数默认 12（鸿蒙同）
         formRepayDay = 3        // 提前提醒天数
         formEnabled = false     // 到期自动入账
         planAmountText = ""
+        planFirstDue = todayKey()
         sheetKind = .plan
     }
 
@@ -1824,14 +1904,14 @@ public struct SettingsScreen: View {
                     busy = false
                     return
                 }
-                let firstDue = shiftMonth(String(todayKey().prefix(7)), 1) + "-01"
+                let firstDue = planFirstDue.isEmpty ? todayKey() : planFirstDue
                 try await Api.createPlan(PlanCreateRequest(
                     name: name,
                     categoryId: formParent,
                     paymentMethodId: formIcon,
                     source: "manual",
                     amountCents: perCents,
-                    totalAmountCents: perCents * formBillingDay,
+                    totalAmountCents: 0,   // 鸿蒙同：总额交给服务端按分期规则算
                     periods: formBillingDay,
                     firstDueDate: firstDue,
                     remindDaysBefore: max(1, formRepayDay),

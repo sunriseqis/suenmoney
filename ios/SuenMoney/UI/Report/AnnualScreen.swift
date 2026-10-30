@@ -241,7 +241,7 @@ public struct AnnualScreen: View {
                     .font(.system(size: heroSize() * 0.5, weight: .bold))
                     .foregroundStyle(Color(css: tokens.ink2))
                 Text(formatYuan(total()).replacingOccurrences(of: "¥", with: ""))
-                    .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.black))
+                    .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.heavy))
                     .tracking(isCyber ? 0.4 : -1.33)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -306,9 +306,9 @@ public struct AnnualScreen: View {
                 .monospacedDigit()
                 .foregroundStyle(Color(css: tokens.ink))
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
             Text(label)
                 .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 9.5 : 10.5))
+                .tracking(isCyber ? 1.14 : 0.42)
                 .foregroundStyle(Color(css: tokens.ink3))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -345,7 +345,9 @@ public struct AnnualScreen: View {
                             app.screen = .report
                         } label: {
                             VStack(spacing: 4) {
-                                RoundedRectangle(cornerRadius: 2)
+                                // 仅上两角 3（web `border-radius:3px 3px 0 0`）
+                                UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 0,
+                                                       bottomTrailingRadius: 0, topTrailingRadius: 3)
                                     // 0 支出的月份用 surface3（灰柱），否则「空月」看不出来
                                     .fill(Color(css: m.totalCents > 0
                                                 ? mixHex(tokens.accent, tokens.surface, 0.75)
@@ -372,7 +374,7 @@ public struct AnnualScreen: View {
     // MARK: - 最高支出月 / 单笔最贵
 
     private var peakCard: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("最高支出月")
                 .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
                 .tracking(isCyber ? 1.25 : 0)
@@ -384,7 +386,6 @@ public struct AnnualScreen: View {
                     .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
                 Text(formatYuan(peak.totalCents))
                     .font(.system(size: 10.5))
                     .monospacedDigit()
@@ -404,7 +405,7 @@ public struct AnnualScreen: View {
     }
 
     private var largestCard: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("单笔最贵")
                 .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
                 .tracking(isCyber ? 1.25 : 0)
@@ -416,12 +417,11 @@ public struct AnnualScreen: View {
                     .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
                 Text("\(big.categoryName) · \(big.repaymentDate)")
                     .font(.system(size: 10.5))
                     .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink2))
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .padding(.top, 4)
             } else {
                 Text("没有数据")
@@ -452,7 +452,7 @@ public struct AnnualScreen: View {
                     .foregroundStyle(Color(css: tokens.ink3))
             }
             // 鸿蒙这里只有「名称 / 金额 / 百分比」三个 Text，没有图标块
-            HStack(spacing: 10) {
+            HStack(spacing: 0) {
                 Text(cat.name)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Color(css: tokens.ink))

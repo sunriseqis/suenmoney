@@ -79,7 +79,7 @@ export struct AnnualScreen {
       return null;
     }
     // 上年无数据时服务端会给 null 或干脆不带这个字段 → undefined*100 = NaN
-    return ratioOf(this.report.yearAgo.changeRatio);
+    return ratioOf(this.report.yearAgo.change?.ratio);
   }
 
   private yearDeltaPct(): string {

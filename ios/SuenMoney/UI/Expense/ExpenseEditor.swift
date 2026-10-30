@@ -102,6 +102,14 @@ public struct ExpenseEditor: View {
                         .disabled(installment)
                 }
 
+                // 错误提示在**退款行之后、本月已支出之前**（鸿蒙位置）
+                if !errorText.isEmpty {
+                    Text(errorText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(css: tokens.danger))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 // 键盘上方只保留一行摘要（R107）
                 HStack(spacing: 6) {
                     Text("本月已支出")
@@ -151,13 +159,7 @@ public struct ExpenseEditor: View {
                     quickBar
                     keypad
                 }
-                // 错误提示在**键盘之前**（原来在最后，会被安全区裁掉）
-                if !errorText.isEmpty {
-                    Text(errorText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(css: tokens.danger))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+
             }
             .padding(14)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -240,8 +242,7 @@ public struct ExpenseEditor: View {
         // 都没选时给第一个可用项，避免保存键永远是灰的
         if categoryId.isEmpty {
             // 默认选**二级**（鸿蒙 `firstRoot.children[0].id`），不是一级
-            categoryId = quickCats().first?.id
-                ?? categories.first?.children.first?.id
+            categoryId = categories.first?.children.first?.id
                 ?? categories.first?.id
                 ?? ""
         }
@@ -289,8 +290,14 @@ public struct ExpenseEditor: View {
         Task { await refreshPreview() }
     }
 
+    /// 分类显示名：二级带父级前缀（`餐饮 · 外卖`，鸿蒙同）
     private var categoryName: String {
-        findCategory(categoryId)?.name ?? "选择分类"
+        guard let cat = findCategory(categoryId) else { return "选择分类" }
+        if let pid = cat.parentId, !pid.isEmpty,
+           let parent = categories.first(where: { $0.id == pid }) {
+            return "\(parent.name) · \(cat.name)"
+        }
+        return cat.name
     }
 
     private var paymentName: String {
@@ -361,9 +368,11 @@ public struct ExpenseEditor: View {
     }
 
     /// 这笔的归属月份是否与消费日期不同（跨月警告）
+    /// 跨月判定：比 **repaymentDate** 的月份（与文案「还款日」口径一致；
+    /// 用 postingDate 会在账单日/还款日分属两月时判错）
     private var crossesMonth: Bool {
         guard let p = preview else { return false }
-        return String(p.postingDate.prefix(7)) != String(spendDate.prefix(7))
+        return String(p.repaymentDate.prefix(7)) != String(spendDate.prefix(7))
     }
 
     private var isCredit: Bool {
@@ -526,16 +535,15 @@ public struct ExpenseEditor: View {
                 }
             }
             if editing != nil {
+                // 鸿蒙是**纯文字**（无描边无底色）
                 Button { confirmDeleteOpen = true } label: {
                     Text("删除")
-                        .font(.system(size: 11.5, weight: .bold))
+                        .font(.system(size: 11))
                         .foregroundStyle(Color(css: tokens.danger))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                .stroke(Color(css: tokens.danger), lineWidth: 1)
-                        )
+                        .padding(.leading, 8)
+                        .padding(.trailing, 8)
+                        .padding(.top, 4)
+                        .padding(.bottom, 4)
                 }
                 .buttonStyle(.plain)
             }
@@ -612,7 +620,7 @@ public struct ExpenseEditor: View {
     private var fieldRows: some View {
         VStack(spacing: 6) {
             fieldRow(label: "分类", value: categoryName) { openCategoryPicker() }
-            fieldRow(label: "消费日期", value: dateShort(spendDate)) {
+            fieldRow(label: "消费日期", value: spendDate) {
                 dateCalYear = Int(spendDate.prefix(4)) ?? 2026
                 dateCalMonth = Int(spendDate.dropFirst(5).prefix(2)) ?? 1
                 dateCalOpen = true
@@ -647,7 +655,7 @@ public struct ExpenseEditor: View {
             // placeholder 必须显式给色，否则深色底上几乎不可见
             TextField("", text: $note,
                       prompt: Text("备注（选填）").foregroundStyle(Color(css: tokens.ink3)))
-                .font(.system(size: 12))
+                .font(.system(size: 16))
                 .foregroundStyle(Color(css: tokens.ink))
                 .focused($noteFocused)
                 .padding(.horizontal, 9)
@@ -774,7 +782,8 @@ public struct ExpenseEditor: View {
                     } label: {
                         HStack(spacing: 4) {
                             PayIconView(name: p.name, icon: p.icon, iconSize: 13,
-                                        tinted: paymentId != p.id)
+                                        tinted: paymentId != p.id,
+                                        foreground: paymentId == p.id ? Color(css: tokens.accentInk) : nil)
                             Text(shortName(p.name))
                                 .font(.system(size: 9.5))
                                 .foregroundStyle(Color(css: paymentId == p.id ? tokens.accentInk : tokens.ink2))
@@ -911,19 +920,15 @@ public struct ExpenseEditor: View {
                             Button {
                                 railRootId = root.id     // 只切 rail，不改 categoryId
                             } label: {
-                                HStack(spacing: 4) {
-                                    CatIconView(catName: root.name, iconSize: 13,
-                                                color: on ? tokens.ink : tokens.ink2)
-                                    Text(root.name)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color(css: on ? tokens.ink : tokens.ink2))
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 6)
-                                .background(Color(css: on ? tokens.surface2 : "transparent"))
-                                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+                                // 鸿蒙是纯文字行（无图标）
+                                Text(root.name)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(css: on ? tokens.ink : tokens.ink3))
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(6)
+                                    .background(Color(css: on ? tokens.surface2 : tokens.surface))
+                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 6)))
                             }
                             .buttonStyle(.plain)
                         }

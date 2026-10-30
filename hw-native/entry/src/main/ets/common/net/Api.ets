@@ -169,12 +169,16 @@ export interface MonthPointRef {
 }
 
 /** 去年同月（R83 对照四格用） */
-/** 同比（年报用；月报用 YearAgoRef） */
+/**
+ * 同比（月报与年报**同构**：`{label, totalCents, change:{deltaCents, ratio}}`）
+ *
+ * ⚠ 原来声明成扁平的 `changeCents` / `changeRatio` 与服务端实际返回不符，
+ * 运行期取到 undefined → 年档恒无环比胶囊、结论恒走「第一段可对比」。
+ */
 export interface YearAgoCompare {
   label: string;
   totalCents: number;
-  changeCents: number;
-  changeRatio: number | null;
+  change?: MonthChange;
 }
 
 export interface YearAgoRef {

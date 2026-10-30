@@ -29,6 +29,8 @@ public struct LoginView: View {
     @State private var busy: Bool = false
     /// 地址预填只跑一次（鸿蒙 `aboutToAppear` 语义）
     @State private var didPrefill: Bool = false
+    /// 口令明文切换（对齐 ArkUI `showPasswordIcon` 默认 true）
+    @State private var showPassword: Bool = false
 
     @FocusState private var focus: Field?
     private enum Field { case username, password, server }
@@ -56,6 +58,7 @@ public struct LoginView: View {
             .padding(20)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
         .background(Color(css: tokens.bg).ignoresSafeArea())
         .onAppear {
             // 只预填一次：每次出现都重置会把用户改了一半的地址冲掉
@@ -112,7 +115,14 @@ public struct LoginView: View {
                     .accessibilityIdentifier("login.username")
             }
             fieldBox(focused: focus == .password) {
-                SecureField("口令", text: $password)
+                HStack(spacing: 6) {
+                    Group {
+                        if showPassword {
+                            TextField("口令", text: $password)
+                        } else {
+                            SecureField("口令", text: $password)
+                        }
+                    }
                     .focused($focus, equals: .password)
                     .font(.system(size: 16))
                     .foregroundStyle(Color(css: tokens.ink))
@@ -122,6 +132,15 @@ public struct LoginView: View {
                         Task { await doLogin() }
                     }
                     .accessibilityIdentifier("login.password")
+
+                    // ArkUI 的 TextInput 默认带明文切换图标，iOS 的 SecureField 没有 → 自绘
+                    Button { showPassword.toggle() } label: {
+                        Image(systemName: showPassword ? "eye.slash" : "eye")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }
@@ -137,8 +156,9 @@ public struct LoginView: View {
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                    .stroke(Color(css: focused ? focusRing : outlineStrongOf(isCyber)),
-                            lineWidth: focused ? 2 : fieldBorderWOf(tokens.borderW, isCyber))
+                    // 鸿蒙常态 candy 1 / cyber 1.5，聚焦 2（1→2 有加粗反馈）
+                    .strokeBorder(Color(css: focused ? focusRing : outlineStrongOf(isCyber)),
+                                  lineWidth: focused ? 2 : (isCyber ? 1.5 : 1))
             )
     }
 
@@ -189,8 +209,8 @@ public struct LoginView: View {
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                     .overlay(
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                            .stroke(Color(css: outlineStrongOf(isCyber)),
-                                    lineWidth: isCyber ? 1.5 : tokens.borderW)
+                            .strokeBorder(Color(css: outlineStrongOf(isCyber)),
+                                          lineWidth: isCyber ? 1.5 : tokens.borderW)
                     )
 
                 smallButton("测试") {
