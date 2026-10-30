@@ -42,12 +42,16 @@ public final class ThemeManager {
     public static let shared = ThemeManager()
 
     public private(set) var mode: ThemeMode = .dark
-    /// 系统当前是否深色（`mode == .system` 时用它决定生效主题）
-    public var systemDark: Bool = true
+    /// 系统当前是否深色（`mode == .system` 时用它决定生效主题）。
+    ///
+    /// ⚠ 初值必须取**真实系统值**：硬编码 true 会让 `mode == .system` + 系统浅色时
+    /// 首帧先渲染 cyber（#0a0a0f）再跳到 candy（#FFFDF5）——一次明显的深色闪烁。
+    public var systemDark: Bool
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: keyMode) ?? "dark"
         mode = ThemeMode(rawValue: saved) ?? .dark
+        systemDark = UITraitCollection.current.userInterfaceStyle == .dark
     }
 
     /// 生效主题名（candy 浅色 / cyber 深色）
