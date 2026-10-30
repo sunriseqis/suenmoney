@@ -45,6 +45,7 @@ public struct ExpenseEditor: View {
     @State private var dateCalYear: Int = 0
     @State private var dateCalMonth: Int = 0
     @State private var categoryOpen: Bool = false
+    @State private var railRootId: String = ""
     @State private var paymentOpen: Bool = false
     /// 删除二次确认（鸿蒙有确认弹窗，iOS 之前点了就删）
     @State private var confirmDeleteOpen: Bool = false
@@ -126,11 +127,12 @@ public struct ExpenseEditor: View {
                     quickBar
                     keypad
                 }
+                // 错误提示在**键盘之前**（原来在最后，会被安全区裁掉）
                 if !errorText.isEmpty {
                     Text(errorText)
                         .font(.system(size: 11))
                         .foregroundStyle(Color(css: tokens.danger))
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(14)
@@ -160,7 +162,9 @@ public struct ExpenseEditor: View {
 
     private func prefill() {
         if let row = editing {
-            amountText = centsToInput(abs(row.amountCents))
+            // 固定两位小数（鸿蒙 `formatCents().replace(/,/g,'')`）：
+            // 用 centsToInput 会在整元时返回 "1000"，再按 0 会静默变成 10000
+            amountText = formatCents(abs(row.amountCents)).replacingOccurrences(of: ",", with: "")
             categoryId = row.categoryId
             paymentId = row.paymentMethodId
             spendDate = row.spendDate
@@ -180,7 +184,9 @@ public struct ExpenseEditor: View {
     private func loadDict() async {
         do {
             let cats = try await Api.categories()
-            categories = cats.categories.filter { $0.isEnabled }
+            // **保留全量**（含停用）：直接过滤会让停用一级的整棵子树消失，
+            // 历史记录回填时 findCategory 返回 nil → 显示「选择分类」
+            categories = cats.categories
             let pays = try await Api.paymentMethods()
             payments = pays.paymentMethods.filter { $0.isEnabled }
         } catch {
@@ -208,7 +214,13 @@ public struct ExpenseEditor: View {
         if findCategory(categoryId) == nil { categoryId = "" }
         if !payments.contains(where: { $0.id == paymentId }) { paymentId = "" }
         // 都没选时给第一个可用项，避免保存键永远是灰的
-        if categoryId.isEmpty { categoryId = quickCats().first?.id ?? categories.first?.id ?? "" }
+        if categoryId.isEmpty {
+            // 默认选**二级**（鸿蒙 `firstRoot.children[0].id`），不是一级
+            categoryId = quickCats().first?.id
+                ?? categories.first?.children.first?.id
+                ?? categories.first?.id
+                ?? ""
+        }
         if paymentId.isEmpty { paymentId = payments.first?.id ?? "" }
         // 兜底：支付方式不是信用卡时不能残留分期状态
         if findPayment(paymentId)?.type != "credit" { installment = false }
@@ -466,9 +478,14 @@ public struct ExpenseEditor: View {
             Text(editing == nil ? "记一笔" : "编辑支出")
                 .font(.custom(fontDisplayOf(isCyber), size: 16).weight(.bold))
                 .foregroundStyle(Color(css: tokens.ink))
+            // 退款标记**紧跟标题**（鸿蒙 `Row({space:8})` 内第二项），文案「退款冲销」
+            if isRefund {
+                Text("退款冲销")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(css: tokens.danger))
+            }
             Spacer(minLength: 0)
 
-            // 退款冲销
             toggleChip("退款", isRefund) {
                 isRefund.toggle()
                 if isRefund { installment = false }   // 退款与分期互斥
@@ -546,31 +563,27 @@ public struct ExpenseEditor: View {
                     .foregroundStyle(Color(css: crossesMonth ? tokens.warn : tokens.ink3))
             }
             if installment {
-                HStack(spacing: 6) {
-                    Text("分")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(css: tokens.ink3))
-                    ForEach([3, 6, 12, 24], id: \.self) { n in
-                        Button { periods = n } label: {
-                            Text("\(n) 期")
-                                .font(.system(size: 10.5, weight: .bold))
-                                .foregroundStyle(Color(css: periods == n ? tokens.accentInk : tokens.ink2))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(periods == n ? Color(css: tokens.accent) : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                        .stroke(Color(css: tokens.line), lineWidth: 1)
-                                )
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        ForEach([3, 6, 12, 24], id: \.self) { n in
+                            Button { periods = n } label: {
+                                Text("\(n) 期")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color(css: periods == n ? tokens.accentInk : tokens.ink2))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    // 未选是 surface2、无描边（鸿蒙同）
+                                    .background(Color(css: periods == n ? tokens.accent : tokens.surface2))
+                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        Spacer(minLength: 0)
                     }
-                    if cents > 0 {
-                        Text("每期 \(formatYuan(cents / periods))")
-                            .font(.custom(fontMonoOf(), size: 10))
-                            .foregroundStyle(Color(css: tokens.ink3))
-                    }
+                    // 每期金额独立整行，带「约」字
+                    Text("每期约 \(formatYuan(cents / max(1, periods)))")
+                        .font(.custom(fontMonoOf(), size: 9))
+                        .foregroundStyle(Color(css: tokens.ink3))
                 }
             }
         }
@@ -581,32 +594,29 @@ public struct ExpenseEditor: View {
 
     private var fieldRows: some View {
         VStack(spacing: 6) {
-            fieldRow(label: "分类", value: categoryName) { categoryOpen = true }
+            fieldRow(label: "分类", value: categoryName) { openCategoryPicker() }
             fieldRow(label: "消费日期", value: dateShort(spendDate)) {
                 dateCalYear = Int(spendDate.prefix(4)) ?? 2026
                 dateCalMonth = Int(spendDate.dropFirst(5).prefix(2)) ?? 1
                 dateCalOpen = true
             }
             fieldRow(label: "支付方式", value: paymentName) { paymentOpen = true }
-            // 备注：cyber 下 surface 贴 bg 看不出边界 → surface2；placeholder 必须显式给色
-            HStack(spacing: 8) {
-                Text("备注")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(css: tokens.ink3))
-                    .frame(width: 56, alignment: .leading)
-                TextField("备注（选填）", text: $note)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(css: tokens.ink))
-                    .focused($noteFocused)
-                    .padding(.horizontal, 9)
-                    .frame(height: 34)
-                    .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
-                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                            .stroke(Color(css: outlineStrongOf(isCyber)), lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
-                    )
-            }
+            // 备注：**整行输入框，无左标签**（鸿蒙同）；聚焦时 2px #5DB8FF 焦点环；
+            // placeholder 必须显式给色，否则深色底上几乎不可见
+            TextField("", text: $note,
+                      prompt: Text("备注（选填）").foregroundStyle(Color(css: tokens.ink3)))
+                .font(.system(size: 12))
+                .foregroundStyle(Color(css: tokens.ink))
+                .focused($noteFocused)
+                .padding(.horizontal, 9)
+                .frame(height: 36)
+                .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                        .stroke(Color(css: noteFocused ? focusRing : outlineStrongOf(isCyber)),
+                                lineWidth: noteFocused ? 2 : fieldBorderWOf(tokens.borderW, isCyber))
+                )
         }
     }
 
@@ -629,7 +639,7 @@ public struct ExpenseEditor: View {
             }
             .padding(.horizontal, 9)
             .frame(height: 34)
-            .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+            .background(Color(css: tokens.surface2))
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
@@ -647,36 +657,54 @@ public struct ExpenseEditor: View {
 
     /// 快捷分类条：**5 格与键盘列宽对齐**（第 1 格 54 对齐支付列，后 4 格对齐 7/8/9/B）
     private var quickBar: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<5, id: \.self) { i in
-                if let cat = quickAt(i) {
-                    Button {
-                        categoryId = cat.id
-                        Task { await refreshPreview() }
-                    } label: {
-                        HStack(spacing: 4) {
-                            CatIconView(catName: cat.name, iconSize: 13,
-                                        color: categoryId == cat.id ? tokens.accentInk : catColorOf(cat))
-                            Text(cat.name)
-                                .font(.custom(fontDisplayOf(isCyber), size: 10.5).weight(.bold))
-                                .foregroundStyle(Color(css: categoryId == cat.id ? tokens.accentInk : tokens.ink2))
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
-                        .background(categoryId == cat.id ? Color(css: tokens.accent) : Color(css: tokens.surface))
-                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11))
-                                .stroke(Color(css: categoryId == cat.id ? tokens.accent : tokens.line), lineWidth: 1)
-                        )
+        HStack(spacing: 0) {
+            if let first = quickAt(0) {
+                quickCell(first).frame(width: 54).padding(.trailing, 6)
+            } else {
+                Color.clear.frame(width: 54).padding(.trailing, 6)
+            }
+            // 与键盘同一条物理分割线
+            Rectangle().fill(Color(css: tokens.line)).frame(width: 1, height: 40)
+            HStack(spacing: 5) {
+                ForEach(1..<5, id: \.self) { i in
+                    if let cat = quickAt(i) {
+                        quickCell(cat)
+                    } else {
+                        Color.clear.frame(height: 40)
                     }
-                    .buttonStyle(.plain)
-                } else {
-                    Color.clear.frame(height: 40)
                 }
             }
+            .padding(.leading, 6)
         }
+    }
+
+    private func quickCell(_ cat: CategoryNode) -> some View {
+        let on = categoryId == cat.id
+        let shape = RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11))
+        return Button {
+            categoryId = cat.id
+            Task { await refreshPreview() }
+        } label: {
+            HStack(spacing: 4) {
+                CatIconView(catName: cat.name, iconSize: 13,
+                            color: on ? tokens.accentInk : catColorOf(cat))
+                Text(cat.name)
+                    .font(.custom(fontDisplayOf(isCyber), size: 10.5).weight(.bold))
+                    .foregroundStyle(Color(css: on ? tokens.accentInk : tokens.ink2))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+            .background(shape.fill(Color(css: on ? tokens.accent : tokens.surface)))
+            .overlay(shape.stroke(Color(css: on ? tokens.accent : tokens.line), lineWidth: 1))
+            .background {
+                if !isCyber { shape.fill(Color(css: tokens.line)).offset(x: 2, y: 2) }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func quickAt(_ i: Int) -> CategoryNode? {
@@ -733,7 +761,8 @@ public struct ExpenseEditor: View {
             .frame(maxHeight: .infinity)
             .padding(.trailing, 6)
 
-            Rectangle().fill(Color(css: tokens.line)).frame(width: 1)
+            // 支付列与数字区之间的物理分割线（鸿蒙 `Divider().vertical`）
+            Rectangle().fill(Color(css: tokens.line)).frame(width: 1, height: 210)
 
             // 右：4×4，顺序 789B / 456C / 123+OK / 00.+OK
             //
@@ -763,27 +792,26 @@ public struct ExpenseEditor: View {
         .frame(height: 210)
     }
 
+    /// 键帽（鸿蒙 `keypad` 里的 Button）
+    /// 字号分档：保存 14 / 清空 13 / 其余 19；candy 有 2px 硬阴影；
+    /// 不可保存时保存键用 surface2 底 + ink3 字（否则 candy 下看不出禁用态）。
     private func keyCell(_ key: String) -> some View {
-        Button { press(key) } label: {
-            Text(key == "B" ? "←" : (key == "C" ? "清空" : (key == "OK" ? "保存" : key)))
-                .font(.custom(fontDisplayOf(isCyber), size: key == "OK" ? 14 : (key == "C" ? 13 : 19)).weight(.bold))
-                .foregroundStyle(Color(css: key == "OK"
+        let isOK = key == "OK"
+        let shape = RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11))
+        let fontSize: CGFloat = isOK ? 14 : (key == "C" ? 13 : 19)
+        return Button { press(key) } label: {
+            Text(key == "B" ? "←" : (key == "C" ? "清空" : (isOK ? "保存" : key)))
+                .font(.custom(fontDisplayOf(isCyber), size: fontSize).weight(.bold))
+                .foregroundStyle(Color(css: isOK
                                        ? (canSave ? tokens.accentInk : tokens.ink3)
                                        : tokens.ink))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(css: key == "OK"
-                                  ? (canSave ? tokens.accent : tokens.surface2)
-                                  : tokens.surface))
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11))
-                        .stroke(Color(css: tokens.line), lineWidth: 1)
-                )
+                .background(shape.fill(Color(css: isOK
+                                             ? (canSave ? tokens.accent : tokens.surface2)
+                                             : tokens.surface)))
+                .overlay(shape.stroke(Color(css: tokens.line), lineWidth: 1))
                 .background {
-                    if !isCyber {
-                        RoundedRectangle(cornerRadius: 11)
-                            .fill(Color(css: tokens.line)).offset(x: 2, y: 2)
-                    }
+                    if !isCyber { shape.fill(Color(css: tokens.line)).offset(x: 2, y: 2) }
                 }
         }
         .buttonStyle(.plain)
@@ -814,67 +842,120 @@ public struct ExpenseEditor: View {
 
     // MARK: - 分类弹窗
 
+    /// 分类弹窗（鸿蒙 `catPickerSheet`）：**左侧一级 rail（88 宽）+ 右侧 3 列网格**
+    /// 打开分类弹窗时把 rail 定位到当前选中分类的父级
+    private func openCategoryPicker() {
+        if let cur = findCategory(categoryId) {
+            railRootId = cur.parentId ?? cur.id
+        } else {
+            railRootId = categories.first?.id ?? ""
+        }
+        categoryOpen = true
+    }
+
     private var categoryPicker: some View {
         pickerSheet(title: "选择分类", close: { categoryOpen = false }) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(categories) { root in
-                        Text(root.name)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color(css: tokens.ink3))
-                        FlowRow(spacing: 6) {
-                            pickChip(root.name, catColorOf(root), categoryId == root.id) {
-                                categoryId = root.id
-                                categoryOpen = false
-                                Task { await refreshPreview() }
-                            }
-                            ForEach(root.children) { child in
-                                pickChip(child.name, catColorOf(child), categoryId == child.id) {
-                                    categoryId = child.id
-                                    categoryOpen = false
-                                    Task { await refreshPreview() }
+            HStack(alignment: .top, spacing: 8) {
+                // 左：一级 rail
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(categories) { root in
+                            let on = railRootId == root.id
+                            Button {
+                                railRootId = root.id     // 只切 rail，不改 categoryId
+                            } label: {
+                                HStack(spacing: 4) {
+                                    CatIconView(catName: root.name, iconSize: 13,
+                                                color: on ? tokens.ink : tokens.ink2)
+                                    Text(root.name)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color(css: on ? tokens.ink : tokens.ink2))
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
                                 }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 6)
+                                .background(Color(css: on ? tokens.surface2 : "transparent"))
+                                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
+                .frame(width: 88)
+                .frame(maxHeight: 160)
+
+                // 右：当前一级下的二级，3 列网格
+                let kids = railChildrenForPicker()
+                ScrollView {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                        ForEach(kids) { kid in
+                            let on = categoryId == kid.id
+                            Button {
+                                categoryId = kid.id
+                                categoryOpen = false
+                                Task { await refreshPreview() }
+                            } label: {
+                                Text(kid.name)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(css: on ? tokens.accentInk : tokens.ink2))
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(6)
+                                    .background(Color(css: on ? tokens.accent : tokens.surface2))
+                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 6)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 160)
             }
-            .frame(maxHeight: 300)
         }
+    }
+
+    /// 弹窗里当前 rail 下的二级（没有二级就用一级自己）
+    private func railChildrenForPicker() -> [CategoryNode] {
+        guard let root = categories.first(where: { $0.id == railRootId }) else {
+            return categories.first?.children ?? []
+        }
+        return root.children.isEmpty ? [root] : root.children
     }
 
     // MARK: - 支付弹窗
 
+    /// 支付弹窗（鸿蒙 `payPickerSheet`）：**行式列表**，信用卡显示账单日/还款日
     private var paymentPicker: some View {
         pickerSheet(title: "选择支付方式", close: { paymentOpen = false }) {
             ScrollView {
-                FlowRow(spacing: 6) {
+                VStack(spacing: 4) {
                     ForEach(payments) { p in
+                        let on = paymentId == p.id
                         Button {
                             setPayment(p.id)
                             paymentOpen = false
                         } label: {
-                            HStack(spacing: 5) {
-                                PayIconView(name: p.name, icon: p.icon, iconSize: 14)
+                            HStack {
                                 Text(p.name)
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(Color(css: paymentId == p.id ? tokens.accentInk : tokens.ink))
-                                    .lineLimit(1)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color(css: on ? tokens.ink : tokens.ink2))
+                                Spacer(minLength: 0)
+                                if p.type == "credit" {
+                                    // 账单周期信息：用户据此判断本期归属
+                                    Text("\(p.billingDay ?? 0) 日账单 · \(p.repaymentDay ?? 0) 日还")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Color(css: tokens.ink3))
+                                }
                             }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(paymentId == p.id ? Color(css: tokens.accent) : Color(css: tokens.surface2))
-                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                                    .stroke(Color(css: tokens.line), lineWidth: 1)
-                            )
+                            .padding(8)
+                            .background(Color(css: on ? tokens.surface2 : tokens.surface))
+                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 6)))
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
-            .frame(maxHeight: 300)
+            .frame(maxHeight: 160)
         }
     }
 
@@ -924,7 +1005,7 @@ public struct ExpenseEditor: View {
             }
             .padding(14)
             .frame(width: 320)
-            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg, shadow: false)
         }
     }
 
@@ -1006,7 +1087,7 @@ public struct ExpenseEditor: View {
             }
             .padding(14)
             .frame(width: 330)
-            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg, shadow: false)
         }
     }
 
