@@ -735,12 +735,13 @@ public struct ExpenseEditor: View {
                     .frame(height: keyRowHeight)
                 HStack(spacing: keyGap) { keyCell("4"); keyCell("5"); keyCell("6"); keyCell("C") }
                     .frame(height: keyRowHeight)
+                // 第 3–4 行必须**按列**拆，不能「左边一坨 + 右边保存」：
+                // HStack 会把两个子视图各分一半宽度 → 保存键宽成 2 倍、1/2/3 被压到 1/6。
+                // 改成 4 个等宽列，每列是「两个格子竖排」，第 4 列就是跨两行的保存键。
                 HStack(spacing: keyGap) {
-                    VStack(spacing: keyGap) {
-                        HStack(spacing: keyGap) { keyCell("1"); keyCell("2"); keyCell("3") }
-                        HStack(spacing: keyGap) { keyCell("0"); keyCell("00"); keyCell(".") }
-                    }
-                    // 保存键跨第 3–4 行
+                    VStack(spacing: keyGap) { keyCell("1"); keyCell("0") }
+                    VStack(spacing: keyGap) { keyCell("2"); keyCell("00") }
+                    VStack(spacing: keyGap) { keyCell("3"); keyCell(".") }
                     keyCell("OK")
                 }
                 .frame(height: keyRowHeight * 2 + keyGap)
