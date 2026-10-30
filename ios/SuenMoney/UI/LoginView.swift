@@ -119,9 +119,10 @@ public struct LoginView: View {
         }
     }
 
-    /// cyber 下 surface(#12121a) 贴在 bg(#0a0a0f) 上几乎看不出边界 →
-    /// 输入框体改用 surface2(#1c1c2e)，描边加粗到 1.5
-    private func fieldBox<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    /// 输入框：cyber 用 surface2 底 + 1.5 描边；**聚焦时 2px #5DB8FF 焦点环**（鸿蒙 R35）。
+    /// 之前只有光标、没有描边反馈，外接键盘/自动化时完全看不出焦点在哪。
+    private func fieldBox<Content: View>(focused: Bool,
+                                         @ViewBuilder content: () -> Content) -> some View {
         content()
             .padding(.horizontal, 12)
             .frame(height: 44)
@@ -129,7 +130,8 @@ public struct LoginView: View {
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                    .stroke(Color(css: tokens.line2), lineWidth: isCyber ? 1.5 : 1)
+                    .stroke(Color(css: focused ? focusRing : outlineStrongOf(isCyber)),
+                            lineWidth: focused ? 2 : fieldBorderWOf(tokens.borderW, isCyber))
             )
     }
 

@@ -259,6 +259,13 @@ public struct ReportScreen: View {
         return max(0, min(6, weekday - 1))
     }
 
+    /// 环图数据 = 分类维度的 catRows（前 7 + 其他），与图例同源
+    private func donutSlices() -> [DonutSliceView] {
+        dimRows().filter { $0.cents > 0 }.map {
+            DonutSliceView(id: $0.id, value: $0.cents, color: $0.color)
+        }
+    }
+
     private func dimTotal() -> Int {
         dimRows().reduce(0) { $0 + $1.cents }
     }

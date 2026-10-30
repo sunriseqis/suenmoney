@@ -509,7 +509,8 @@ public struct ExpenseEditor: View {
     /// 之前是左对齐 40pt Heavy + 空值显示 `0` —— 对齐方向、字号、占位三处都不同。
     private var amountArea: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
+            // 鸿蒙这里是 Row 未指定 alignItems → 默认**垂直居中**（不是基线/底部）
+            HStack(alignment: .center, spacing: 2) {
                 Text(isRefund ? "-¥" : "¥")
                     .font(.system(size: 18))
                     .foregroundStyle(Color(css: tokens.ink3))
