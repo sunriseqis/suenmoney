@@ -85,6 +85,58 @@ public func radiusOf(_ tokens: ThemeTokens, _ isCyber: Bool, _ candyValue: CGFlo
     isCyber ? 0 : candyValue
 }
 
+/// 强调描边色（输入框/按钮的「实边」）：cyber #6f6f92 / candy #1E293B
+///
+/// ⚠ 不能用 `tokens.line2`（cyber 下是 #2a2a3a）—— 那会让深色主题的可交互控件
+/// 边界几乎消失。鸿蒙专门为此提供了这个函数，iOS 之前漏了。
+public func outlineStrongOf(_ isCyber: Bool) -> String {
+    isCyber ? "#6f6f92" : "#1E293B"
+}
+
+/// 输入框底色：cyber 用 surface2（surface 贴 bg 看不出边界）/ candy 用 surface
+public func fieldBgOf(_ surface: String, _ surface2: String, _ isCyber: Bool) -> String {
+    isCyber ? surface2 : surface
+}
+
+/// 输入框描边宽度：cyber 1.5 / candy 跟随 borderW
+public func fieldBorderWOf(_ borderW: CGFloat, _ isCyber: Bool) -> CGFloat {
+    isCyber ? 1.5 : borderW
+}
+
+/// R35 焦点环：聚焦时的高亮描边色（candy/cyber 同色）
+public let focusRing = "#5DB8FF"
+
+/// 卡片内距（原型 `--card-pad`）
+public let cardPad: CGFloat = 14
+
+/// cyber 切角的四档尺寸（原型 clip-path 的多边形边长）
+public let cutCard: CGFloat = 14
+public let cutBtn: CGFloat = 7
+public let cutOrb: CGFloat = 6
+public let cutLogo: CGFloat = 8
+
+/// 卡片圆角：candy 用 rCard / cyber 0
+public func cardRadiusOf(_ isCyber: Bool) -> CGFloat {
+    isCyber ? 0 : 20
+}
+
+/// **ArkUI 语义的 8 位十六进制色**：`#AARRGGBB`（注意不是 CSS 的 `#RRGGBBAA`）
+///
+/// 鸿蒙代码里 `'#0F00FF88'` 的意图是「alpha=0x0F(5.9%)、rgb(0,255,136)」= 极淡绿雾。
+/// 若按 CSS 语义解析会得到 rgb(15,0,255)@53% 的蓝紫罩 —— 整张 cyber 顶卡走样。
+public func arkColor(_ hex: String) -> Color {
+    var text = hex
+    if text.hasPrefix("#") { text = String(text.dropFirst()) }
+    guard text.count == 8 else { return Color(css: hex) }
+    var value: UInt64 = 0
+    Scanner(string: text).scanHexInt64(&value)
+    let a = Double((value >> 24) & 0xFF) / 255
+    let r = Double((value >> 16) & 0xFF) / 255
+    let g = Double((value >> 8) & 0xFF) / 255
+    let b = Double(value & 0xFF) / 255
+    return Color(.sRGB, red: r, green: g, blue: b, opacity: a)
+}
+
 /// 字体族
 ///
 /// iOS 上 `Outfit` / `Plus Jakarta Sans` / `JetBrains Mono` **不是系统字体**，
@@ -146,10 +198,15 @@ extension View {
                 ZStack {
                     shape.fill(Color(css: tokens.surface))
                     if isCyber {
-                        // angle 180：#0F00FF88 (0%) → surface (62%)
+                        // angle 180：`#0F00FF88`(0%) → surface(62%)
+                        // 首色必须按 **ArkUI 的 #AARRGGBB** 解析（= rgba(0,255,136,0.06)），
+                        // 用 CSS 的 #RRGGBBAA 会得到 rgb(15,0,255)@53% 的蓝紫罩。
                         shape.fill(
                             LinearGradient(
-                                colors: [Color(css: "#0F00FF88"), Color(css: tokens.surface)],
+                                stops: [
+                                    .init(color: arkColor("#0F00FF88"), location: 0),
+                                    .init(color: Color(css: tokens.surface), location: 0.62)
+                                ],
                                 startPoint: .top, endPoint: .bottom
                             )
                         )
@@ -171,8 +228,9 @@ extension View {
                     shape.fill(Color(css: tokens.line2)).offset(x: 4, y: 4)
                 }
             }
+            // 与 card() 统一口径：CSS blur 16px → SwiftUI radius 8
             .shadow(color: isCyber ? Color(css: "rgba(0,255,136,0.35)") : .clear,
-                    radius: isCyber ? 16 : 0, x: 0, y: 0)
+                    radius: isCyber ? 8 : 0, x: 0, y: 0)
     }
 }
 

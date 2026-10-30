@@ -62,11 +62,21 @@ public struct SettingsScreen: View {
     @State private var formName: String = ""
     @State private var formParent: String = ""
     @State private var formType: String = "cash"
+    /// 编辑时保留的原始字段 —— 表单暂时没有图标/颜色选择器，
+    /// 但**绝不能因此把已有值清空**（鸿蒙会原样带回）。
+    @State private var formIcon: String = ""
+    @State private var formColor: String = ""
+    @State private var formEnabled: Bool = true
+    @State private var formSortOrder: Int = 0
     @State private var formBillingDay: Int = 0
     @State private var formRepayDay: Int = 0
     @State private var editingId: String = ""
     @State private var busy: Bool = false
     @State private var formError: String = ""
+    /// 跨月撤销的二次确认（鸿蒙 R126：撤销跨月入账要先说明「那个月的报表会变」）
+    @State private var revertWarnText: String = ""
+    @State private var pendingRevertId: String = ""
+    @State private var revertWarnOpen: Bool = false
 
     public init() {}
 
@@ -131,6 +141,21 @@ public struct SettingsScreen: View {
             srvActive = ServerConfig.shared.baseUrl
         }
         .sheet(isPresented: $sheetOpen) { formSheet }
+        .alert("撤销跨月入账？", isPresented: $revertWarnOpen) {
+            Button("仍要撤销", role: .destructive) {
+                let id = pendingRevertId
+                Task {
+                    do {
+                        try await Api.revertTodo(id: id)
+                        showToast("已撤销入账")
+                        await reload()
+                    } catch let err as ApiError { reportError(err.message) } catch { reportError("撤销失败") }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(revertWarnText)
+        }
     }
 
     // MARK: - 加载
@@ -172,19 +197,19 @@ public struct SettingsScreen: View {
 
     // MARK: - Tabs
 
+    /// 页签：**下划线形态**（鸿蒙 `stab`）—— 底部 3px accent 下划线 + 整条 1px line 底线。
+    /// 之前做成胶囊分段，形态完全不同。
     private var settingsTabs: some View {
         HStack(spacing: 4) {
             tabButton("账目", 0)
             tabButton("计划与还款", 1)
             tabButton("设备", 2)
+            Spacer(minLength: 0)
         }
-        .padding(4)
-        .background(Color(css: isCyber ? "transparent" : tokens.surface2))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
-        .overlay(
-            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+        }
     }
 
     private func tabButton(_ label: String, _ value: Int) -> some View {
@@ -206,29 +231,36 @@ public struct SettingsScreen: View {
 
     // MARK: - 共用小件
 
+    /// 悬浮圆图标（鸿蒙 `orb`）：34×34、图标 16。
+    /// candy = 实色底(tone) + 2px line2 描边 + 2px 硬阴影；cyber = 透明底 + accent 描边 + 绿光。
     private func orb(_ tone: String, _ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color(css: tone))
-            .frame(width: 26, height: 26)
-            .background(Color(css: mixHex(tone, tokens.surface, 0.14)))
-            .clipShape(RoundedRectangle(cornerRadius: isCyber ? 0 : 9))
-            .overlay(
-                RoundedRectangle(cornerRadius: isCyber ? 0 : 9)
-                    .stroke(Color(css: mixHex(tone, tokens.surface, 0.45)), lineWidth: 1)
-            )
+        let shape = RoundedRectangle(cornerRadius: isCyber ? 1 : 17)
+        return Image(systemName: symbol)
+            .font(.system(size: 16))
+            .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.line2))
+            .frame(width: 34, height: 34)
+            .background(shape.fill(Color(css: isCyber ? "transparent" : tone)))
+            .overlay(shape.stroke(Color(css: isCyber ? tokens.accent : tokens.line2),
+                                  lineWidth: isCyber ? 1 : 2))
+            .background {
+                if !isCyber { shape.fill(Color(css: tokens.line2)).offset(x: 2, y: 2) }
+            }
+            .shadow(color: isCyber ? Color(css: "rgba(0,255,136,0.4)") : .clear,
+                    radius: isCyber ? 5 : 0, x: 0, y: isCyber ? -2 : 0)
     }
 
+    /// 卡片标题（鸿蒙 `cardHead`）：cyber 用 mono / candy 用**正文族**（不是 Outfit 标题族）
     private func cardHead(_ title: String, _ cap: String, tone: String = "", symbol: String = "") -> some View {
         HStack(spacing: 10) {
             if !symbol.isEmpty { orb(tone, symbol) }
             Text(title)
-                .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 12.5 : 15).weight(.bold))
                 .tracking(isCyber ? 1.25 : 0)
                 .foregroundStyle(Color(css: tokens.ink))
             Spacer(minLength: 0)
             Text(cap)
                 .font(.custom(fontMonoOf(), size: 9.5))
+                .tracking(1.52)
                 .foregroundStyle(Color(css: tokens.ink3))
         }
     }
@@ -249,18 +281,19 @@ public struct SettingsScreen: View {
         .buttonStyle(.plain)
     }
 
+    /// 标签（鸿蒙 `tag`）：10pt medium mono、**胶囊**、虚线/实线描边、surface2 底
     private func tag(_ text: String, _ tone: String) -> some View {
-        Text(text)
-            .font(.custom(fontMonoOf(), size: 9))
-            .foregroundStyle(Color(css: tone == "accent" ? tokens.accent
-                                   : (tone == "danger" ? tokens.danger : tokens.ink3)))
-            .padding(.horizontal, 6)
+        let color = tone == "accent" ? tokens.accent : (tone == "warn" ? tokens.warn : tokens.ink2)
+        let outline = tone == "accent" ? tokens.accent : (tone == "warn" ? tokens.warn : tokens.line)
+        return Text(text)
+            .font(.custom(fontMonoOf(), size: 10).weight(.medium))
+            .foregroundStyle(Color(css: color))
+            .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+            .background(Color(css: tone.isEmpty || tone == "dash" ? tokens.surface2 : "transparent"))
+            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
             .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                    .stroke(Color(css: tone == "accent" ? tokens.accent
-                                    : (tone == "danger" ? tokens.danger : tokens.line)), lineWidth: 1)
+                Capsule().stroke(Color(css: outline), lineWidth: 1)
             )
     }
 
@@ -299,6 +332,10 @@ public struct SettingsScreen: View {
                         editingId = ""
                         formName = ""
                         formParent = ""
+                        formIcon = ""
+                        formColor = ""
+                        formEnabled = true
+                        formSortOrder = 0
                         formError = ""
                         sheetKind = "category"
                         sheetOpen = true
@@ -324,6 +361,10 @@ public struct SettingsScreen: View {
                                     editingId = root.id
                                     formName = root.name
                                     formParent = ""
+                                    formIcon = root.icon
+                                    formColor = root.color
+                                    formEnabled = root.isEnabled
+                                    formSortOrder = root.sortOrder
                                     formError = ""
                                     sheetKind = "category"
                                     sheetOpen = true
@@ -358,6 +399,10 @@ public struct SettingsScreen: View {
                                         editingId = child.id
                                         formName = child.name
                                         formParent = root.id
+                                        formIcon = child.icon
+                                        formColor = child.color
+                                        formEnabled = child.isEnabled
+                                        formSortOrder = child.sortOrder
                                         formError = ""
                                         sheetKind = "category"
                                         sheetOpen = true
@@ -387,8 +432,11 @@ public struct SettingsScreen: View {
                         editingId = ""
                         formName = ""
                         formType = "cash"
+                        formIcon = ""
                         formBillingDay = 0
                         formRepayDay = 0
+                        formSortOrder = 0
+                        formEnabled = true
                         formError = ""
                         sheetKind = "payment"
                         sheetOpen = true
@@ -419,8 +467,11 @@ public struct SettingsScreen: View {
                                 editingId = p.id
                                 formName = p.name
                                 formType = p.type
+                                formIcon = p.icon
                                 formBillingDay = p.billingDay ?? 0
                                 formRepayDay = p.repaymentDay ?? 0
+                                formSortOrder = p.sortOrder
+                                formEnabled = p.isEnabled
                                 formError = ""
                                 sheetKind = "payment"
                                 sheetOpen = true
@@ -795,10 +846,19 @@ public struct SettingsScreen: View {
 
     // MARK: - 动作
 
+    /// 入账动作要按计划类型分流：
+    /// 自动入账型走 `ackTodo`（只摘提醒，到期由服务端结算），
+    /// 非自动型才走 `confirmTodo`（立即生成支出）。
+    /// 之前一律 confirmTodo —— 等于把「自动入账」的计划提前手动入账了。
     private func actTodo(_ t: PlanTodoItem) async {
         do {
-            try await Api.confirmTodo(id: t.id)
-            showToast("已入账")
+            if t.willAutoPost {
+                try await Api.ackTodo(id: t.id)
+                showToast("已确认并自动入账")
+            } else {
+                try await Api.confirmTodo(id: t.id)
+                showToast("已手动入账")
+            }
             await reload()
         } catch let err as ApiError {
             reportError(err.message)
@@ -829,16 +889,32 @@ public struct SettingsScreen: View {
                     try await Api.restoreTodo(id: t.id)
                     showToast("已恢复本期")
                 } else {
-                    let crossMonth = !(t.expenseMonth ?? "").isEmpty
-                        && t.expenseMonth != String(todayKey().prefix(7))
+                    // 跨月撤销：先弹确认（鸿蒙 R126），说明「哪个月的报表会变」
+                    if let month = t.expenseMonth, !month.isEmpty,
+                       month != String(todayKey().prefix(7)) {
+                        revertWarnText = "这笔 \(formatYuan(t.amountCents)) 记在 \(month)，撤销后 \(month) 的报表会跟着变。"
+                        pendingRevertId = t.id
+                        revertWarnOpen = true
+                        return
+                    }
                     try await Api.revertTodo(id: t.id)
-                    showToast(crossMonth ? "已撤销（\(t.expenseMonth ?? "") 的报表会跟着变）" : "已撤销入账")
+                    showToast("已撤销入账")
                 }
                 await reload()
             } catch let err as ApiError {
                 reportError(err.message)
             } catch { reportError("操作失败") }
         }
+    }
+
+    private func mergePayment(_ from: PaymentMethodItem, into: PaymentMethodItem) async {
+        do {
+            try await Api.mergePayment(id: from.id, intoId: into.id)
+            showToast("已并入「\(into.name)」")
+            await reload()
+        } catch let err as ApiError {
+            reportError(err.message)
+        } catch { reportError("合并失败") }
     }
 
     private func endPlan(_ p: PlanItem) async {
@@ -868,8 +944,8 @@ public struct SettingsScreen: View {
             VStack(alignment: .leading, spacing: 10) {
                 cardHead("主题", "深色 / 浅色 / 跟随系统")
                 HStack(spacing: 6) {
-                    themePill("深色", .dark)
-                    themePill("浅色", .light)
+                    themePill("水果硬糖", .light)
+                    themePill("赛博朋克", .dark)
                     themePill("跟随系统", .system)
                 }
             }
@@ -948,7 +1024,7 @@ public struct SettingsScreen: View {
                         .keyboardType(.URL)
                         .padding(.horizontal, 9)
                         .frame(height: 34)
-                        .background(Color(css: isCyber ? tokens.surface3 : tokens.surface2))
+                        .background(Color(css: fieldBgOf(tokens.surface2, tokens.surface3, isCyber)))
                         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                         .overlay(
                             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
@@ -1028,17 +1104,41 @@ public struct SettingsScreen: View {
         }
     }
 
+    /// 日期号输入（1–28，避免 2 月溢出）
+    private func dayField(_ label: String, _ value: Binding<Int>) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(Color(css: tokens.ink3))
+            TextField("0", value: value, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .font(.custom(fontMonoOf(), size: 13))
+                .foregroundStyle(Color(css: tokens.ink))
+                .padding(.horizontal, 9)
+                .frame(height: 34)
+                .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                        .stroke(Color(css: outlineStrongOf(isCyber)),
+                                lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
+                )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func secureField(_ placeholder: String, _ text: Binding<String>) -> some View {
         SecureField(placeholder, text: text)
             .font(.system(size: 12))
             .foregroundStyle(Color(css: tokens.ink))
             .padding(.horizontal, 9)
             .frame(height: 34)
-            .background(Color(css: isCyber ? tokens.surface2 : tokens.surface))
+            .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                    .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                    .stroke(Color(css: outlineStrongOf(isCyber)), lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
             )
     }
 
@@ -1051,7 +1151,19 @@ public struct SettingsScreen: View {
                 HStack {
                     Spacer(minLength: 0)
                     smBtn("检查") {
-                        Task { updateMsg = "已是最新版本" }
+                        Task {
+                            // 之前这里直接写「已是最新版本」，根本没发请求 —— 谎报。
+                            // 与鸿蒙一致：探 /api/health，显示服务端版本与连通性。
+                            updateMsg = "检查中…"
+                            do {
+                                let h = try await Api.health()
+                                updateMsg = "服务端 v\(h.version) · 连接正常"
+                            } catch let err as ApiError {
+                                updateMsg = err.message
+                            } catch {
+                                updateMsg = "检查失败"
+                            }
+                        }
                     }
                 }
                 if !updateMsg.isEmpty {
@@ -1072,11 +1184,11 @@ public struct SettingsScreen: View {
                     .font(.system(size: 13))
                     .padding(.horizontal, 10)
                     .frame(height: 38)
-                    .background(Color(css: isCyber ? tokens.surface2 : tokens.surface))
+                    .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                     .overlay(
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                            .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                            .stroke(Color(css: outlineStrongOf(isCyber)), lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
                     )
 
                 if sheetKind == "payment" {
@@ -1085,6 +1197,29 @@ public struct SettingsScreen: View {
                         Text("信用卡").tag("credit")
                     }
                     .pickerStyle(.segmented)
+
+                    // 信用卡才有账单日 / 还款日（鸿蒙同）
+                    if formType == "credit" {
+                        HStack(spacing: 10) {
+                            dayField("账单日", $formBillingDay)
+                            dayField("还款日", $formRepayDay)
+                        }
+                    }
+                } else {
+                    // 归属类别：选一级则成为二级分类（鸿蒙 formParent）
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("归属类别")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                        Picker("归属类别", selection: $formParent) {
+                            Text("（一级分类）").tag("")
+                            ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
+                                Text(root.name).tag(root.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(Color(css: tokens.accent))
+                    }
                 }
 
                 if !formError.isEmpty {
@@ -1137,23 +1272,30 @@ public struct SettingsScreen: View {
         defer { busy = false }
         do {
             if sheetKind == "category" {
+                let isRoot = formParent.isEmpty
                 if editingId.isEmpty {
                     try await Api.createCategory(CategoryCreateRequest(
-                        name: name, parentId: formParent, icon: "", color: "", sortOrder: 0))
+                        name: name, parentId: formParent,
+                        icon: formIcon, color: formColor, sortOrder: formSortOrder))
                 } else {
+                    // 二级分类不写颜色（跟随一级）；停用态原样带回 ——
+                    // 之前这里写死 `icon: ""` / `color: ""` / `isEnabled: true`，
+                    // 用户一编辑就把图标和颜色清空、把停用的分类重新启用。
                     try await Api.patchCategory(id: editingId, CategoryPatchRequest(
-                        name: name, icon: "", color: "", parentId: formParent.isEmpty ? nil : formParent,
-                        isEnabled: true))
+                        name: name, icon: formIcon,
+                        color: isRoot ? formColor : "",
+                        parentId: isRoot ? nil : formParent,
+                        isEnabled: formEnabled))
                 }
             } else {
                 if editingId.isEmpty {
                     try await Api.createPayment(PaymentCreateRequest(
-                        name: name, type: formType, icon: "", billingDay: formBillingDay,
-                        repaymentDay: formRepayDay, sortOrder: 0))
+                        name: name, type: formType, icon: formIcon, billingDay: formBillingDay,
+                        repaymentDay: formRepayDay, sortOrder: formSortOrder))
                 } else {
                     try await Api.patchPayment(id: editingId, PaymentPatchRequest(
-                        name: name, icon: "", billingDay: formBillingDay,
-                        repaymentDay: formRepayDay, sortOrder: 0, isEnabled: true))
+                        name: name, icon: formIcon, billingDay: formBillingDay,
+                        repaymentDay: formRepayDay, sortOrder: formSortOrder, isEnabled: formEnabled))
                 }
             }
             sheetOpen = false

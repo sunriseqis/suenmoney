@@ -22,6 +22,8 @@ struct DashTodo: Identifiable {
     let amountCents: Int
     let repaymentDate: String
     let willAutoPost: Bool
+    /// 距还款日天数（负=逾期）—— 排序用，鸿蒙 `daysUntil`
+    let daysUntil: Int
 }
 
 struct ComposeRow: Identifiable {
@@ -140,8 +142,11 @@ public struct DashboardScreen: View {
             todos = body.todos.map {
                 DashTodo(id: $0.id, planName: $0.planName, periodSeq: $0.periodSeq,
                          amountCents: $0.amountCents, repaymentDate: $0.repaymentDate,
-                         willAutoPost: $0.willAutoPost)
+                         willAutoPost: $0.willAutoPost,
+                         daysUntil: daysUntil($0.repaymentDate, from: todayKey()))
             }
+            // 逾期（负数）最前，其余按剩余天数升序
+            todos.sort { $0.daysUntil < $1.daysUntil }
         } catch {
             todos = []
         }
@@ -176,12 +181,18 @@ public struct DashboardScreen: View {
         return 0
     }
 
-    /// 环比：上期为 0 或字段缺失时返回 nil（**不能**返回 NaN → 界面会显示 `NaN%`）
+    /// 环比：**直接用服务端字段**（鸿蒙口径），不要本地重算。
+    /// 本地除法在「上期为 0 但服务端给了 ratio」时会把胶囊整条吞掉。
     private func deltaRatio() -> Double? {
-        let prev = prevCents()
-        guard prev > 0 else { return nil }
-        let ratio = Double(totalCents() - prev) / Double(prev)
-        return ratio.isFinite ? ratio : nil
+        if tier == 0 { return ratioOf(monthReport?.change.ratio) }
+        if tier == 1 { return ratioOf(yearReport?.yearAgo?.change?.ratio) }
+        return nil
+    }
+
+    private func dueTotalCents() -> Int { todos.reduce(0) { $0 + $1.amountCents } }
+
+    private func compareLabel() -> String {
+        tier == 0 ? "较上月" : (tier == 1 ? "较去年" : "较上一段")
     }
 
     private func countOf() -> Int {
@@ -270,7 +281,28 @@ public struct DashboardScreen: View {
     }
 
     private func overdueCount() -> Int {
-        todos.filter { $0.repaymentDate < todayKey() }.count
+        todos.filter { $0.daysUntil < 0 }.count
+    }
+
+    /// 待办动作：自动入账型 → ackTodo（只摘提醒，到期结算）；非自动 → confirmTodo（立即入账）
+    private func todoAction(_ t: DashTodo, _ kind: String) async {
+        do {
+            if kind == "ack" {
+                try await Api.ackTodo(id: t.id)
+                showToast("已确认并自动入账")
+            } else if kind == "confirm" {
+                try await Api.confirmTodo(id: t.id)
+                showToast("已手动入账")
+            } else {
+                try await Api.skipTodo(id: t.id)
+                showToast("已忽略这笔待办")
+            }
+            await load()
+        } catch let err as ApiError {
+            showToast(err.message)
+        } catch {
+            showToast("操作失败，请重试")
+        }
     }
 
     private func todoDotColor() -> String {
@@ -338,141 +370,217 @@ public struct DashboardScreen: View {
                 }
             }
 
+            // hero-todo：待办条在**大金额之上**（鸿蒙「最紧急的先说」）
+            if !todos.isEmpty { todoBar }
+
             // 大金额 + 环比
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .bottom, spacing: 2) {
+                HStack(alignment: .bottom, spacing: 4) {
                     Text("¥")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: heroSize() * 0.5, weight: .bold))
                         .foregroundStyle(Color(css: tokens.ink2))
                     Text(formatYuan(totalCents()).replacingOccurrences(of: "¥", with: ""))
-                        .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.heavy))
-                        .tracking(isCyber ? 0.38 : -1.33)
+                        .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.black))
+                        .tracking(isCyber ? 1.14 : -1.33)
+                        .monospacedDigit()
                         .lineLimit(1)
                         .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
                 }
-                if let ratio = deltaRatio() {
-                    HStack(spacing: 3) {
-                        Image(systemName: ratio > 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.system(size: 9))
-                        Text("\(String(format: "%.1f", abs(ratio) * 100))%")
-                            .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                HStack(spacing: 8) {
+                    if let ratio = deltaRatio() {
+                        HStack(spacing: 3) {
+                            Image(systemName: ratio > 0 ? "arrow.up.right" : "arrow.down.right")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("\(String(format: "%.1f", abs(ratio) * 100))%")
+                                .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(Color(css: ratio > 0 ? tokens.danger : tokens.ok))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok),
+                                        lineWidth: isCyber ? 1 : 1.5)
+                        )
                     }
-                    .foregroundStyle(Color(css: ratio > 0 ? tokens.danger : tokens.ok))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                            .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok), lineWidth: 1)
-                    )
+                    Text("\(compareLabel()) \(formatYuan(prevCents()))")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Color(css: tokens.ink2))
                 }
             }
 
-            // 三指标
-            HStack(spacing: 8) {
+            // hero-metrics：**数值在上、标签在下**（鸿蒙 metricCell）
+            HStack(spacing: 10) {
                 let labels = metricLabels()
                 let values = metricValues()
                 ForEach(Array(labels.enumerated()), id: \.offset) { i, label in
-                    VStack(spacing: 3) {
-                        Text(label)
-                            .font(.custom(fontMonoOf(), size: 9))
-                            .foregroundStyle(Color(css: tokens.ink3))
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(values.indices.contains(i) ? values[i] : "—")
-                            .font(.custom(fontMonoOf(), size: 12).weight(.bold))
+                            .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 18 : 21).weight(.bold))
+                            .monospacedDigit()
                             .foregroundStyle(Color(css: tokens.ink))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                        Text(label)
+                            .font(.system(size: isCyber ? 9.5 : 10.5))
+                            .foregroundStyle(Color(css: tokens.ink3))
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.vertical, 9)
-            .overlay(alignment: .top) { dashed }
-            .overlay(alignment: .bottom) { dashed }
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+            .overlay(alignment: .top) { dashedRule }
 
-            // 构成条
+            // 构成：一条堆叠占比条（高 9）+ 下方换行图例（鸿蒙口径）
             if !composeRows().isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(composeRows()) { row in
-                        HStack(spacing: 6) {
-                            Circle().fill(Color(css: row.color)).frame(width: 6, height: 6)
-                            Text(row.name)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(Color(css: tokens.ink2))
-                                .frame(width: 52, alignment: .leading)
-                                .lineLimit(1)
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color(css: tokens.surface3))
-                                    Capsule()
-                                        .fill(Color(css: row.color))
-                                        .frame(width: geo.size.width * Double(percentOf(row.cents)) / 100)
-                                }
-                            }
-                            .frame(height: 5)
-                            Text("\(percentOf(row.cents))%")
-                                .font(.custom(fontMonoOf(), size: 9.5))
-                                .foregroundStyle(Color(css: tokens.ink3))
-                                .frame(width: 32, alignment: .trailing)
-                        }
-                    }
-                }
-            }
-
-            // 待办
-            if !todos.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    Button { withAnimation(appCurveFast) { todoOpen.toggle() } } label: {
-                        HStack(spacing: 8) {
-                            Circle().fill(Color(css: todoDotColor())).frame(width: 6, height: 6)
-                            Text("\(todos.count) 笔待处理")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(Color(css: tokens.ink))
-                            Spacer(minLength: 0)
-                            Text(todoOpen ? "⌃" : "⌄")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color(css: tokens.ink3))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Color(css: tokens.surface2))
-                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
-                    }
-                    .buttonStyle(.plain)
-
-                    if todoOpen {
-                        VStack(spacing: 0) {
-                            ForEach(Array(todos.enumerated()), id: \.element.id) { idx, t in
-                                HStack(spacing: 8) {
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(Color(css: urgencyColorOf(t)))
-                                        .frame(width: 4, height: 18)
-                                    Text("\(t.periodSeq)期 · \(t.planName)")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color(css: tokens.ink))
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                    Text(urgencyLabel(t.repaymentDate, today: todayKey()))
-                                        .font(.custom(fontMonoOf(), size: 9.5))
-                                        .foregroundStyle(Color(css: urgencyColorOf(t)))
-                                }
-                                .padding(.vertical, 5)
-                                .overlay(alignment: .bottom) {
-                                    if idx < todos.count - 1 {
-                                        Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
-                                    }
-                                }
+                    GeometryReader { geo in
+                        HStack(spacing: 0) {
+                            ForEach(composeRows()) { row in
+                                Rectangle()
+                                    .fill(Color(css: row.color))
+                                    .frame(width: geo.size.width * Double(row.cents) / Double(max(1, composeTotal())))
                             }
                         }
-                        .padding(.top, 6)
                     }
+                    .frame(height: 9)
+                    .background(Color(css: tokens.surface3))
+                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                            .stroke(Color(css: tokens.line), lineWidth: 1)
+                    )
+                    .padding(.top, 14)
+
+                    FlowRow(spacing: 6) {
+                        ForEach(composeRows()) { row in
+                            HStack(spacing: 5) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color(css: row.color))
+                                    .frame(width: 8, height: 8)
+                                Text(row.name)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(css: tokens.ink2))
+                                Text("\(percentOf(row.cents))%")
+                                    .font(.custom(fontMonoOf(), size: 11).weight(.medium))
+                                    .foregroundStyle(Color(css: tokens.ink2))
+                            }
+                            .padding(.trailing, 8)
+                        }
+                    }
+                    .padding(.top, 9)
                 }
-                .padding(.top, 8)
             }
+
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(tokens, isCyber, radius: 16)
+    }
+
+    /// hero-todo 提醒条：圆点 + 「N 笔待办」+ 合计金额 + 「N 笔逾期」+ 展开箭头
+    private var todoBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { withAnimation(appCurveFast) { todoOpen.toggle() } } label: {
+                HStack(spacing: 8) {
+                    Circle().fill(Color(css: todoDotColor())).frame(width: 6, height: 6)
+                    Text("\(todos.count) 笔待办")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color(css: tokens.ink))
+                    Text(formatYuan(dueTotalCents()))
+                        .font(.custom(fontMonoOf(), size: 10.5))
+                        .monospacedDigit()
+                        .foregroundStyle(Color(css: tokens.ink2))
+                    if overdueCount() > 0 {
+                        Text("\(overdueCount()) 笔逾期")
+                            .font(.custom(fontMonoOf(), size: 10).weight(.bold))
+                            .foregroundStyle(Color(css: tokens.danger))
+                    }
+                    Spacer(minLength: 0)
+                    Text(todoOpen ? "⌃" : "⌄")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(css: tokens.ink2))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color(css: tokens.surface2))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
+                        .stroke(Color(css: tokens.line), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if todoOpen {
+                VStack(spacing: 0) {
+                    ForEach(Array(todos.enumerated()), id: \.element.id) { idx, t in
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color(css: urgencyColorOf(t)))
+                                .frame(width: 4, height: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(t.periodSeq)期 · \(t.planName)")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Color(css: tokens.ink))
+                                    .lineLimit(1)
+                                // 「自动 / 需手动」是「确认 vs 入账」动作的依据，不能省
+                                Text(t.willAutoPost ? "自动" : "需手动")
+                                    .font(.custom(fontMonoOf(), size: 10).weight(.bold))
+                                    .foregroundStyle(Color(css: urgencyColorOf(t)))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(formatYuan(t.amountCents))
+                                .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(Color(css: tokens.ink))
+
+                            Button {
+                                Task { await todoAction(t, t.willAutoPost ? "ack" : "confirm") }
+                            } label: {
+                                Text(t.willAutoPost ? "确认" : "入账")
+                                    .font(.system(size: 11.5, weight: .bold))
+                                    .foregroundStyle(Color(css: tokens.accentInk))
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 4)
+                                    .background(Color(css: tokens.accent))
+                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                            .stroke(Color(css: isCyber ? tokens.line : "transparent"), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+
+                            Menu {
+                                Button("忽略本期") { Task { await todoAction(t, "skip") } }
+                            } label: {
+                                Text("更多")
+                                    .font(.custom(fontMonoOf(), size: 11))
+                                    .foregroundStyle(Color(css: tokens.ink3))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
+                                            .stroke(Color(css: tokens.line), lineWidth: 1)
+                                    )
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        .overlay(alignment: .bottom) {
+                            if idx < todos.count - 1 {
+                                Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            }
+        }
+        .padding(.top, 10)
     }
 
     private func heroSize() -> CGFloat {
@@ -482,11 +590,14 @@ public struct DashboardScreen: View {
         return 22
     }
 
-    private var dashed: some View {
-        Rectangle()
-            .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            .foregroundStyle(Color(css: tokens.line))
-            .frame(height: 1)
+    /// 真虚线（鸿蒙 BorderStyle.Dashed）。用 Path 画，不能用「实心矩形 + 虚线描边」叠。
+    private var dashedRule: some View {
+        Path { p in
+            p.move(to: CGPoint(x: 0, y: 0.5))
+            p.addLine(to: CGPoint(x: 10_000, y: 0.5))
+        }
+        .stroke(Color(css: tokens.line), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        .frame(height: 1)
     }
 
     private func segButton(_ title: String, _ value: Int) -> some View {
@@ -576,10 +687,35 @@ public struct DashboardScreen: View {
                     .buttonStyle(.plain)
                 }
             }
+
+            // footer：近 12 个月合计 + 打开报表（鸿蒙有，iOS 之前整块缺失）
+            HStack(spacing: 10) {
+                Text("近 12 个月合计")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color(css: tokens.ink2))
+                Text(formatYuan(rolling12Total()))
+                    .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(css: tokens.ink))
+                Spacer(minLength: 0)
+                Button { app.screen = .report } label: {
+                    Text("打开报表")
+                        .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
+                        .foregroundStyle(Color(css: tokens.accent))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 10)
+            .overlay(alignment: .top) { dashedRule }
+            .padding(.top, 12)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(tokens, isCyber, radius: 16)
+    }
+
+    private func rolling12Total() -> Int {
+        rolling12().reduce(0) { $0 + ($1.totalCents ?? 0) }
     }
 
     // MARK: - ③ 累计与跨度
@@ -632,17 +768,27 @@ public struct DashboardScreen: View {
     }
 
     /// 悬浮圆图标（web .orb）：candy 贴纸感；cyber 切角线框
+    /// 悬浮圆图标（鸿蒙 `.orb`）：34×34、图标 16。
+    /// candy：**实色底（tone）+ 2px line2 描边 + 2px 硬阴影**；
+    /// cyber：透明底 + 1px accent 描边 + 绿色外发光。
     private func orb(_ tone: String, _ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color(css: tone))
-            .frame(width: 26, height: 26)
-            .background(Color(css: mixHex(tone, tokens.surface, 0.14)))
-            .clipShape(RoundedRectangle(cornerRadius: isCyber ? 0 : 9))
+        let shape = RoundedRectangle(cornerRadius: isCyber ? 1 : 17)
+        return Image(systemName: symbol)
+            .font(.system(size: 16))
+            .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.line2))
+            .frame(width: 34, height: 34)
+            .background(shape.fill(Color(css: isCyber ? "transparent" : tone)))
             .overlay(
-                RoundedRectangle(cornerRadius: isCyber ? 0 : 9)
-                    .stroke(Color(css: mixHex(tone, tokens.surface, 0.45)), lineWidth: 1)
+                shape.stroke(Color(css: isCyber ? tokens.accent : tokens.line2),
+                             lineWidth: isCyber ? 1 : 2)
             )
+            .background {
+                if !isCyber {
+                    shape.fill(Color(css: tokens.line2)).offset(x: 2, y: 2)
+                }
+            }
+            .shadow(color: isCyber ? Color(css: "rgba(0,255,136,0.4)") : .clear,
+                    radius: isCyber ? 5 : 0, x: 0, y: isCyber ? -2 : 0)
     }
 
     // MARK: - 期间月历

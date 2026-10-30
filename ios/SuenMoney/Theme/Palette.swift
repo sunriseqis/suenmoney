@@ -65,10 +65,14 @@ public func categoryColorOf(_ name: String, _ explicit: String) -> String {
 }
 
 /// 名称哈希 → 1..16
+///
+/// ⚠ 基数必须是 **1000003**（与鸿蒙 `CategoryIcon.deriveColorIndex` 一致）。
+/// 用 100000 会让 30 个常见分类名里有 10 个落到不同色槽
+/// （餐饮 12→15、购物 10→13、药品 16→3…），同一账本两端颜色大面积不一致。
 public func deriveColorIndex(_ text: String) -> Int {
     var h = 0
     for ch in text.unicodeScalars {
-        h = (h &* 31 &+ Int(ch.value)) % 100_000
+        h = (h &* 31 &+ Int(ch.value)) % 1_000_003
     }
     return h % categoryColors.count + 1
 }
