@@ -383,9 +383,10 @@ public struct ReportScreen: View {
                 FlowRow(spacing: 8) {
                     if let ratio = deltaRatio() {
                         HStack(spacing: 3) {
-                            Image(systemName: ratio > 0 ? "arrow.up.right" : "arrow.down.right")
-                                .font(.system(size: 9))
-                            Text("\(String(format: "%.1f", abs(ratio) * 100))%")
+                            // 鸿蒙用 ↑/↓ 文字箭头（11pt Bold），不是 SF Symbol 斜箭头
+                            Text(ratio > 0 ? "↑" : "↓")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("\(String(format: "%.1f", ratio * 100))%")
                                 .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
                         }
                         .foregroundStyle(Color(css: ratio > 0 ? tokens.danger : tokens.ok))
