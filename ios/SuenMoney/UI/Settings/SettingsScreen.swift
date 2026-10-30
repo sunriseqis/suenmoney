@@ -54,7 +54,7 @@ let catIconOptions: [(name: String, label: String, symbol: String)] = [
 /// 后者在「同一次 body 更新里同时改 kind 与 isPresented」时，
 /// sheet 内容会拿到**旧值**（实测表现为表单只剩「名称」）。
 enum SheetKind: String, Identifiable {
-    case category, payment, plan
+    case category, payment, plan, merge
     var id: String { rawValue }
 }
 
@@ -110,6 +110,8 @@ public struct SettingsScreen: View {
     @State private var planAmountText: String = ""
     /// 计划首期还款日（默认今天）
     @State private var planFirstDue: String = ""
+    /// 合并支付方式的目标 id
+    @State private var mergeTarget: String = ""
     @State private var formBillingDay: Int = 0
     @State private var formRepayDay: Int = 0
     @State private var editingId: String = ""
@@ -216,6 +218,8 @@ public struct SettingsScreen: View {
         errorText = ""
         do {
             categories = try await Api.categories().categories
+            // 默认选中第一个一级分类（鸿蒙同）
+            if railRootId.isEmpty { railRootId = categories.first?.id ?? "" }
             payments = try await Api.paymentMethods().paymentMethods
             plans = try await Api.plans().plans
             // 设置页是「计划任务」管理页：要能看见并手动处理**所有**待处理期次，
@@ -554,38 +558,63 @@ public struct SettingsScreen: View {
                 if payments.isEmpty {
                     emptyState("creditcard", "还没有支付方式")
                 } else {
-                    ForEach(payments) { p in
+                    ForEach(Array(payments.enumerated()), id: \.element.id) { idx, p in
                         HStack(spacing: 10) {
-                            PayIconView(name: p.name, icon: p.icon, iconSize: 16)
-                                .frame(width: 26, height: 26)
+                            PayIconView(name: p.name, icon: p.icon, iconSize: 18)
+                                .frame(width: 32, height: 32)
+                                .background(Color(css: tokens.surface2))
+                                .clipShape(RoundedRectangle(cornerRadius: isCyber ? 1 : 9))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: isCyber ? 1 : 9)
+                                        .stroke(Color(css: tokens.line), lineWidth: 1)
+                                )
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(p.name)
                                     .font(.system(size: 12.5, weight: .medium))
                                     .foregroundStyle(Color(css: tokens.ink))
-                                Text(p.type == "credit"
-                                     ? "信用卡 · 账单日 \(p.billingDay ?? 0) · 还款日 \(p.repaymentDay ?? 0)"
-                                     : "现金/借记 · 本月 \(p.monthExpenseCount ?? 0) 笔")
-                                    .font(.custom(fontMonoOf(), size: 9.5))
-                                    .foregroundStyle(Color(css: tokens.ink3))
-                                    .lineLimit(1)
+                                if p.type == "credit" {
+                                    Text("\(p.billingDay ?? 1) 日账单 · \(p.repaymentDay ?? 20) 日还款")
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(Color(css: tokens.ink3))
+                                        .lineLimit(1)
+                                }
                             }
                             Spacer(minLength: 0)
-                            if !p.isEnabled { tag("停用", "dash") }
-                            Button {
-                                openPayEdit(p)
-                            } label: {
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color(css: tokens.ink3))
+                            if payments.count > 1 {
+                                Button { openMerge(from: p) } label: {
+                                    Text("合并")
+                                        .font(.system(size: 11.5, weight: .bold))
+                                        .foregroundStyle(Color(css: tokens.ink2))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            iconBtn("square.and.pencil") { openPayEdit(p) }
+                            iconBtn("trash") {
+                                Task {
+                                    do {
+                                        try await Api.deletePayment(id: p.id)
+                                        showToast("支付方式已删除")
+                                        await reload()
+                                    } catch let err as ApiError {
+                                        reportError(err.message.contains("引用")
+                                                    ? "该支付方式已有流水引用，请改为停用"
+                                                    : err.message)
+                                    }
+                                }
+                            }
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 11)
+                        .overlay(alignment: .bottom) {
+                            if idx < payments.count - 1 {
+                                Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
     // MARK: - 计划与期次的可见范围（用户 2026-10-29 裁决）
 
     /// 本月 + offset 的 `YYYY-MM`
@@ -1421,7 +1450,7 @@ public struct SettingsScreen: View {
                 Button {
                     Task { await submitForm() }
                 } label: {
-                    Text(busy ? "保存中…" : (kind == .plan ? "创建" : "保存"))
+                    Text(busy ? "保存中…" : (kind == .plan ? "创建" : (kind == .merge ? "合并" : "保存")))
                         .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
                         .foregroundStyle(Color(css: tokens.accentInk))
                         .padding(.horizontal, 16)
@@ -1619,6 +1648,36 @@ public struct SettingsScreen: View {
             }
         }
 
+        if kind == .merge {
+            Text("把「\(formName)」下的全部流水转到另一个支付方式，原支付方式会被停用。此操作不可撤销。")
+                .font(.system(size: 11))
+                .lineSpacing(5)
+                .foregroundStyle(Color(css: tokens.ink2))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("转到")
+                FlowRow(spacing: 6) {
+                    ForEach(payments.filter { $0.id != editingId }) { p in
+                        let on = mergeTarget == p.id
+                        Button { mergeTarget = p.id } label: {
+                            Text(p.name)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Color(css: on ? tokens.onColor : tokens.ink2))
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 5)
+                                .background(Color(css: on ? tokens.amber : tokens.surface))
+                                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                        .stroke(Color(css: on ? tokens.line2 : tokens.line), lineWidth: on ? 2 : 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+
         if !formError.isEmpty {
             Text(formError)
                 .font(.system(size: 11))
@@ -1631,6 +1690,7 @@ public struct SettingsScreen: View {
         case .category: return editingId.isEmpty ? "新增分类" : "编辑分类"
         case .payment: return editingId.isEmpty ? "新增支付方式" : "编辑支付方式"
         case .plan: return "新建计划"
+        case .merge: return "合并支付方式"
         }
     }
 
@@ -1833,6 +1893,15 @@ public struct SettingsScreen: View {
     }
 
     /// 新建计划：复用 form* 状态（formIcon 存 paymentMethodId、formBillingDay 存期数）
+    /// 合并支付方式：把 from 的流水全部转到 mergeTarget
+    private func openMerge(from p: PaymentMethodItem) {
+        formError = ""
+        editingId = p.id
+        formName = p.name
+        mergeTarget = payments.first { $0.id != p.id }?.id ?? ""
+        sheetKind = .merge
+    }
+
     private func openPlanCreate() {
         formError = ""
         editingId = ""
@@ -1887,6 +1956,17 @@ public struct SettingsScreen: View {
                         isEnabled: formEnabled))
                     showToast("分类已更新")
                 }
+            } else if sheetKind == .merge {
+                guard !mergeTarget.isEmpty else {
+                    formError = "请选择要转到的支付方式"
+                    busy = false
+                    return
+                }
+                try await Api.mergePayment(id: editingId, into: mergeTarget)
+                showToast("已合并")
+                sheetKind = nil
+                await reload()
+                return
             } else if sheetKind == .plan {
                 // 新建计划：每期金额 × 期数 = 总额；首期还款日默认今天 + 1 个月
                 let perCents = parseYuanToCents(planAmountText)
