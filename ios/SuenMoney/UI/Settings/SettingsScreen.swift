@@ -260,19 +260,23 @@ public struct SettingsScreen: View {
         }
     }
 
+    /// 分区页签（鸿蒙 `stab`）：**下划线式**，无背景、无胶囊。
+    /// 选中 = 底部 3px accent 下划线 + ink 字；未选 = ink3 字。
     private func tabButton(_ label: String, _ value: Int) -> some View {
-        Button { section = value } label: {
+        let on = section == value
+        return Button { withAnimation(appCurveFast) { section = value } } label: {
             Text(label)
-                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10.5 : 12).weight(.bold))
-                .foregroundStyle(Color(css: section == value
-                                       ? (isCyber ? tokens.accent : tokens.accentInk)
-                                       : tokens.ink2))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .background(section == value
-                            ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
-                            : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
+                .foregroundStyle(Color(css: on ? tokens.ink : tokens.ink3))
+                .padding(.leading, 10)
+                .padding(.trailing, 10)
+                .padding(.top, 7)
+                .padding(.bottom, 4)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color(css: on ? tokens.accent : "transparent"))
+                        .frame(height: 3)
+                }
         }
         .buttonStyle(.plain)
     }
@@ -1025,7 +1029,7 @@ public struct SettingsScreen: View {
     private var themeCard: some View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
-                cardHead("主题", "深色 / 浅色 / 跟随系统", tone: tokens.accent, symbol: "paintpalette")
+                plainCardTitle("主题")
                 HStack(spacing: 6) {
                     themePill("水果硬糖", .light)
                     themePill("赛博朋克", .dark)
@@ -1062,7 +1066,7 @@ public struct SettingsScreen: View {
     private var serverCard: some View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
-                cardHead("服务器", "按顺序探活 · 4s 快失败", tone: tokens.sky, symbol: "server.rack")
+                plainCardTitle("服务器")
 
                 if srvList.isEmpty {
                     emptyState("server.rack", "还没有服务器，点下面「添加服务器」")
@@ -1126,11 +1130,9 @@ public struct SettingsScreen: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        if !newServer.trimmingCharacters(in: .whitespaces).isEmpty {
-                            srvList.append(newServer.trimmingCharacters(in: .whitespaces))
-                            srvProbe.append("")
-                            newServer = ""
-                        }
+                        // 鸿蒙是 `srvList.push('')` —— 立刻多一个空槽，用户就地输入
+                        srvList.append("")
+                        srvProbe.append("")
                     } label: {
                         Text("+ 添加服务器")
                             .font(.system(size: 11.5, weight: .bold))
@@ -1228,7 +1230,7 @@ public struct SettingsScreen: View {
     private var passwordCard: some View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
-                cardHead("修改密码", "验证当前口令 · 其他设备将退出", tone: tokens.warn, symbol: "lock")
+                plainCardTitle("修改密码")
 
                 VStack(alignment: .leading, spacing: 6) {
                     fieldLabel("当前口令")
@@ -1238,13 +1240,10 @@ public struct SettingsScreen: View {
                     fieldLabel("新口令（至少 8 位）")
                     secureField("至少 8 位", $newPwd)
                 }
-                Text("改口令后其他设备会被退出登录。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color(css: tokens.ink3))
+
 
                 HStack {
-                    Spacer(minLength: 0)
-                    smBtn("确认修改") {
+                    Button {
                         Task {
                             guard !currentPwd.isEmpty, !newPwd.isEmpty else {
                                 pwdMsg = "请填写两个口令"
@@ -1267,8 +1266,21 @@ public struct SettingsScreen: View {
                                 pwdMsg = "修改失败"
                             }
                         }
+                    } label: {
+                        Text("修改口令")
+                            .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10 : 11.5).weight(.bold))
+                            .foregroundStyle(Color(css: tokens.accentInk))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color(css: tokens.accent))
+                            .clipShape(Capsule())
                     }
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
                 }
+                Text("改口令后其他设备会被退出登录。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(css: tokens.ink3))
 
                 if !pwdMsg.isEmpty {
                     Text(pwdMsg)
@@ -1322,7 +1334,7 @@ public struct SettingsScreen: View {
     private var updateCard: some View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
-                cardHead("检查更新", "iOS \(SuenMoneyApp.clientBuild)", tone: tokens.mint, symbol: "arrow.triangle.2.circlepath")
+                plainCardTitle("检查更新")
                 HStack {
                     Spacer(minLength: 0)
                     smBtn("检查") {
@@ -1353,169 +1365,204 @@ public struct SettingsScreen: View {
     // MARK: - 编辑弹窗（分类 / 支付方式）
 
     /// 设置弹层：分类 / 支付方式 / 新建计划 三种形态共用（鸿蒙 `settingsSheet`）
+    /// 设置弹层（鸿蒙 `settingsSheet`）：**自绘头 + 自绘脚**，不用系统导航栏
+    /// 头：标题 + 1px 底线；脚：左实心 accent 主按钮 + 右「取消」
     private func formSheet(_ kind: SheetKind) -> some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            // 自绘头
+            Text(sheetTitle(kind))
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 13 : 15).weight(.bold))
+                .foregroundStyle(Color(css: tokens.ink))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 16)
+                .padding(.trailing, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+                }
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    // 名称
-                    VStack(alignment: .leading, spacing: 6) {
-                        fieldLabel(kind == .plan ? "计划名称" : "名称")
-                        plainField("请输入名称", $formName)
-                    }
+                VStack(alignment: .leading, spacing: 12) {
+                    formBody(kind)
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+            }
 
-                    if kind == .category {
-                        // 归属类别（二级分类可改父级）
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("归属类别")
-                            Picker("归属类别", selection: $formParent) {
-                                Text("（一级分类）").tag("")
-                                ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
-                                    Text(root.name).tag(root.id)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(Color(css: tokens.accent))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+            // 自绘脚
+            HStack(spacing: 10) {
+                Button {
+                    Task { await submitForm() }
+                } label: {
+                    Text(busy ? "保存中…" : (kind == .plan ? "创建" : "保存"))
+                        .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
+                        .foregroundStyle(Color(css: tokens.accentInk))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color(css: tokens.accent))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
 
-                        // 图标选择器（24 项 + 自动）
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("图标")
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
-                                iconOption("", "自动", "wand.and.stars")
-                                ForEach(Array(catIconOptions.enumerated()), id: \.offset) { _, opt in
-                                    iconOption(opt.name, opt.label, opt.symbol)
-                                }
-                            }
-                        }
-
-                        // 颜色选择器（16 色，只对一级显示）
-                        if formParent.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                fieldLabel("颜色")
-                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
-                                    colorOption("")
-                                    ForEach(Array(categoryColors.enumerated()), id: \.offset) { i, hex in
-                                        colorOption("\(i + 1)", hex: hex)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if kind == .payment {
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("类型")
-                            Picker("类型", selection: $formType) {
-                                Text("现金/借记").tag("cash")
-                                Text("信用卡").tag("credit")
-                            }
-                            .pickerStyle(.segmented)
-                        }
-                        // 信用卡才有账单日 / 还款日
-                        if formType == "credit" {
-                            HStack(spacing: 10) {
-                                dayField("账单日", $formBillingDay)
-                                dayField("还款日", $formRepayDay)
-                            }
-                        }
-                        // 支付图标选择器（10 项 + 自动）
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("图标")
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
-                                payIconOption("")
-                                ForEach(payOptions, id: \.id) { opt in
-                                    payIconOption(opt.id.rawValue)
-                                }
-                            }
-                        }
-                    }
-
-                    if kind == .plan {
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("分类")
-                            Picker("分类", selection: $formParent) {
-                                ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
-                                    Text(root.name).tag(root.id)
-                                    ForEach(root.children) { kid in
-                                        Text("  \(kid.name)").tag(kid.id)
-                                    }
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(Color(css: tokens.accent))
-                        }
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("支付方式")
-                            Picker("支付方式", selection: $formIcon) {
-                                ForEach(payments) { p in
-                                    Text(p.name).tag(p.id)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(Color(css: tokens.accent))
-                        }
-                        HStack(spacing: 10) {
-                            dayField("期数", $formBillingDay)
-                            dayField("提前提醒(天)", $formRepayDay)
-                        }
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("每期金额（元）")
-                            plainField("0.00", $planAmountText)
-                                .keyboardType(.decimalPad)
-                        }
-                        // 到期自动入账开关
-                        HStack(spacing: 8) {
-                            Text("到期自动入账")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color(css: tokens.ink))
-                            Spacer(minLength: 0)
-                            Toggle("", isOn: $formEnabled)
-                                .labelsHidden()
-                                .tint(Color(css: tokens.accent))
-                        }
-                    }
-
-                    if !formError.isEmpty {
-                        Text(formError)
-                            .font(.system(size: 11))
+                if !editingId.isEmpty && kind != .plan {
+                    Button(role: .destructive) {
+                        Task { await deleteForm() }
+                    } label: {
+                        Text("删除")
+                            .font(.system(size: 11.5, weight: .bold))
                             .foregroundStyle(Color(css: tokens.danger))
                     }
-
-                    HStack(spacing: 10) {
-                        if !editingId.isEmpty && kind != .plan {
-                            Button(role: .destructive) {
-                                Task { await deleteForm() }
-                            } label: {
-                                Text("删除").frame(maxWidth: .infinity).frame(height: 40)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        Button {
-                            Task { await submitForm() }
-                        } label: {
-                            Text(busy ? "保存中…" : "保存")
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(busy)
-                    }
-                    .padding(.top, 4)
+                    .buttonStyle(.plain)
                 }
-                .padding(16)
+
+                Spacer(minLength: 0)
+                Button { sheetKind = nil } label: {
+                    Text("取消")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(Color(css: tokens.ink2))
+                }
+                .buttonStyle(.plain)
             }
-            .background(Color(css: tokens.bg))
-            .navigationTitle(sheetTitle(kind))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { sheetKind = nil }
+            .padding(.leading, 16)
+            .padding(.trailing, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 14)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+            }
+        }
+        .background(Color(css: tokens.bg))
+        .presentationDetents([.large])
+        .presentationCornerRadius(isCyber ? 0 : 22)
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Color(css: tokens.bg))
+    }
+
+    /// 弹层正文（三种形态的内容）
+    @ViewBuilder
+    private func formBody(_ kind: SheetKind) -> some View {
+        // 名称
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel(kind == .plan ? "计划名称" : "名称")
+            plainField("请输入名称", $formName)
+        }
+
+        if kind == .category {
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("归属类别")
+                Picker("归属类别", selection: $formParent) {
+                    Text("（一级分类）").tag("")
+                    ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
+                        Text(root.name).tag(root.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(Color(css: tokens.accent))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("图标")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                    iconOption("", "自动", "wand.and.stars")
+                    ForEach(Array(catIconOptions.enumerated()), id: \.offset) { _, opt in
+                        iconOption(opt.name, opt.label, opt.symbol)
+                    }
+                }
+            }
+
+            if formParent.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("颜色")
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                        colorOption("")
+                        ForEach(Array(categoryColors.enumerated()), id: \.offset) { i, hex in
+                            colorOption("\(i + 1)", hex: hex)
+                        }
+                    }
                 }
             }
         }
-        .presentationDetents([.large])
-        .presentationBackground(Color(css: tokens.bg))
+
+        if kind == .payment {
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("类型")
+                Picker("类型", selection: $formType) {
+                    Text("现金/借记").tag("cash")
+                    Text("信用卡").tag("credit")
+                }
+                .pickerStyle(.segmented)
+            }
+            if formType == "credit" {
+                HStack(spacing: 10) {
+                    dayField("账单日", $formBillingDay)
+                    dayField("还款日", $formRepayDay)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("图标")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
+                    payIconOption("")
+                    ForEach(payOptions, id: \.id) { opt in
+                        payIconOption(opt.id.rawValue)
+                    }
+                }
+            }
+        }
+
+        if kind == .plan {
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("分类")
+                Picker("分类", selection: $formParent) {
+                    ForEach(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }) { root in
+                        Text(root.name).tag(root.id)
+                        ForEach(root.children) { kid in
+                            Text("  \(kid.name)").tag(kid.id)
+                        }
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(Color(css: tokens.accent))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("支付方式")
+                Picker("支付方式", selection: $formIcon) {
+                    ForEach(payments) { p in
+                        Text(p.name).tag(p.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(Color(css: tokens.accent))
+            }
+            HStack(spacing: 10) {
+                dayField("期数", $formBillingDay)
+                dayField("提前提醒(天)", $formRepayDay)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("每期金额（元）")
+                plainField("0.00", $planAmountText)
+                    .keyboardType(.decimalPad)
+            }
+            HStack(spacing: 8) {
+                Text("到期自动入账")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(css: tokens.ink2))
+                Spacer(minLength: 0)
+                Toggle("", isOn: $formEnabled)
+                    .labelsHidden()
+                    .tint(Color(css: tokens.accent))
+            }
+        }
+
+        if !formError.isEmpty {
+            Text(formError)
+                .font(.system(size: 11))
+                .foregroundStyle(Color(css: tokens.danger))
+        }
     }
 
     private func sheetTitle(_ kind: SheetKind) -> String {
@@ -1524,6 +1571,15 @@ public struct SettingsScreen: View {
         case .payment: return editingId.isEmpty ? "新增支付方式" : "编辑支付方式"
         case .plan: return "新建计划"
         }
+    }
+
+    /// 设备区卡片标题：**纯文字，无 orb 无副标题**（鸿蒙 cardHead/iconBtn 两个 builder 从未被调用）
+    private func plainCardTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 12.5 : 15).weight(.bold))
+            .tracking(isCyber ? 1.25 : 0)
+            .foregroundStyle(Color(css: tokens.ink))
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func fieldLabel(_ text: String) -> some View {
