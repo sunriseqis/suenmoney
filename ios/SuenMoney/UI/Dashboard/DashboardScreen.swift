@@ -219,7 +219,7 @@ public struct DashboardScreen: View {
             let elapsed = max(1, elapsedDaysOf(anchorMonth))
             let days = daysInMonth(year: Int(anchorMonth.prefix(4)) ?? 2026,
                                    month: Int(anchorMonth.dropFirst(5).prefix(2)) ?? 1)
-            let perDay = total / elapsed
+            let perDay = Int((Double(total) / Double(max(1, elapsed))).rounded())
             let projected = Int((Double(total) / Double(elapsed) * Double(days)).rounded())
             return [formatYuan(perDay), "\(countOf()) 笔", formatYuan(projected)]
         }
@@ -322,7 +322,8 @@ public struct DashboardScreen: View {
     // MARK: - ① 顶卡
 
     private var ogHero: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // 鸿蒙是 spacing 0 + 逐段 margin（todo 10 / amount 8-4 / metrics 16 / stack 14 / legend 9）
+        VStack(alignment: .leading, spacing: 0) {
             // hero-eyebrow：期间 Seg + period-nav
             HStack(spacing: 8) {
                 HStack(spacing: isCyber ? 0 : 4) {
@@ -373,8 +374,9 @@ public struct DashboardScreen: View {
             // hero-todo：待办条在**大金额之上**（鸿蒙「最紧急的先说」）
             if !todos.isEmpty { todoBar }
 
-            // 大金额 + 环比
+            // 大金额 + 环比（鸿蒙 amount top 8 / bottom 4）
             VStack(alignment: .leading, spacing: 3) {
+                Color.clear.frame(height: 0)
                 HStack(alignment: .bottom, spacing: 4) {
                     Text("¥")
                         .font(.system(size: heroSize() * 0.5, weight: .bold))
@@ -423,13 +425,15 @@ public struct DashboardScreen: View {
                             .foregroundStyle(Color(css: tokens.ink))
                             .lineLimit(1)
                         Text(label)
-                            .font(.system(size: isCyber ? 9.5 : 10.5))
+                            .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false),
+                                          size: isCyber ? 9.5 : 10.5))
+                            .tracking(isCyber ? 1.14 : 0.42)
                             .foregroundStyle(Color(css: tokens.ink3))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, 16)
             .padding(.bottom, 4)
             .overlay(alignment: .top) { dashedRule }
 
@@ -472,6 +476,7 @@ public struct DashboardScreen: View {
                     }
                     .padding(.top, 9)
                 }
+                .padding(.top, 14)
             }
 
         }
@@ -520,7 +525,7 @@ public struct DashboardScreen: View {
                         HStack(spacing: 8) {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color(css: urgencyColorOf(t)))
-                                .frame(width: 4, height: 24)
+                                .frame(width: 4, height: 22)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(t.periodSeq)期 · \(t.planName)")
                                     .font(.system(size: 11.5))
@@ -577,7 +582,10 @@ public struct DashboardScreen: View {
                         }
                     }
                 }
-                .padding(.top, 6)
+                // 鸿蒙：left/right 10、top 2、bottom 4
+                .padding(.horizontal, 10)
+                .padding(.top, 2)
+                .padding(.bottom, 4)
             }
         }
         .padding(.top, 10)
@@ -601,28 +609,43 @@ public struct DashboardScreen: View {
     }
 
     private func segButton(_ title: String, _ value: Int) -> some View {
-        Button { applyPeriod(anchorMonth, value) } label: {
+        Button {
+            // 切到年档时锚点归到该年 1 月（鸿蒙 `switchTier(1)`）
+            applyPeriod(value == 1 ? "\(anchorYear)-01" : anchorMonth, value)
+        } label: {
             Text(title)
-                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 10.5).weight(.bold))
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10.5 : 12).weight(.bold))
                 .foregroundStyle(Color(css: tier == value
                                        ? (isCyber ? tokens.accent : tokens.accentInk)
                                        : tokens.ink2))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 6)
                 .background(tier == value
                             ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                        .stroke(Color(css: tier == value && !isCyber ? tokens.line2 : "transparent"),
+                                lineWidth: 2)
+                )
         }
         .buttonStyle(.plain)
     }
 
+    /// 期间箭头 30×30（鸿蒙 `periodChevron`），candy 有 surface 底 + 描边
     private func chevron(_ symbol: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(symbol)
-                .font(.system(size: 15))
+                .font(.system(size: 16))
                 .foregroundStyle(Color(css: tokens.ink2))
-                .frame(width: 26, height: 26)
+                .frame(width: 30, height: 30)
+                .background(Color(css: isCyber ? "transparent" : tokens.surface))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                        .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -675,14 +698,25 @@ public struct DashboardScreen: View {
                                 .frame(height: 4)
                         }
                         .padding(.horizontal, 3)
-                        .padding(.vertical, 7)
+                        .padding(.top, 7)
+                        .padding(.bottom, 6)
                         .frame(maxWidth: .infinity)
                         .background(Color(css: tokens.surface2))
-                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 7)))
                         .overlay(
-                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                                .stroke(Color(css: tokens.line), lineWidth: 1)
+                            // 当月格高亮：candy line2 描边、cyber accent 描边
+                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 7))
+                                .stroke(Color(css: cell.month == currentMonthKey()
+                                              ? (isCyber ? tokens.accent : tokens.line2)
+                                              : tokens.line),
+                                        lineWidth: 1)
                         )
+                        .background {
+                            if cell.month == currentMonthKey() && !isCyber {
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(Color(css: tokens.line2)).offset(x: 2, y: 2)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -873,7 +907,7 @@ public struct DashboardScreen: View {
             }
             .padding(14)
             .frame(width: 300)
-            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg, shadow: false)
         }
     }
 }
