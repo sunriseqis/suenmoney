@@ -479,10 +479,83 @@ public struct DashboardScreen: View {
                 .padding(.top, 14)
             }
 
+            // 展开的待办列表在**卡片最底部**（鸿蒙位置：图例之后）
+            if todoOpen && !todos.isEmpty { todoListBlock }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(tokens, isCyber, radius: 16)
+        // candy 主卡是 2px 深墨描边（line2），不是普通卡片的浅灰 line
+        .card(tokens, isCyber, radius: 16, border: isCyber ? tokens.line : tokens.line2)
+    }
+
+    /// 展开后的待办列表（独立块，位置在卡片底部）
+    private var todoListBlock: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(todos.enumerated()), id: \.element.id) { idx, t in
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color(css: urgencyColorOf(t)))
+                        .frame(width: 4, height: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(t.periodSeq)期 · \(t.planName)")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color(css: tokens.ink))
+                            .lineLimit(1)
+                        // 「自动 / 需手动」是「确认 vs 入账」动作的依据
+                        Text(t.willAutoPost ? "自动" : "需手动")
+                            .font(.custom(fontMonoOf(), size: 10).weight(.bold))
+                            .foregroundStyle(Color(css: urgencyColorOf(t)))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(formatYuan(t.amountCents))
+                        .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color(css: tokens.ink))
+
+                    Button {
+                        Task { await todoAction(t, t.willAutoPost ? "ack" : "confirm") }
+                    } label: {
+                        Text(t.willAutoPost ? "确认" : "入账")
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(Color(css: tokens.accentInk))
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 4)
+                            .background(Color(css: tokens.accent))
+                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                    .stroke(Color(css: isCyber ? tokens.line : "transparent"), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Menu {
+                        Button("忽略本期") { Task { await todoAction(t, "skip") } }
+                    } label: {
+                        Text("更多")
+                            .font(.custom(fontMonoOf(), size: 11))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
+                                    .stroke(Color(css: tokens.line), lineWidth: 1)
+                            )
+                    }
+                }
+                .padding(.vertical, 8)
+                .overlay(alignment: .bottom) {
+                    if idx < todos.count - 1 {
+                        Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
+        .padding(.top, 4)
     }
 
     /// hero-todo 提醒条：圆点 + 「N 笔待办」+ 合计金额 + 「N 笔逾期」+ 展开箭头
@@ -519,74 +592,6 @@ public struct DashboardScreen: View {
             }
             .buttonStyle(.plain)
 
-            if todoOpen {
-                VStack(spacing: 0) {
-                    ForEach(Array(todos.enumerated()), id: \.element.id) { idx, t in
-                        HStack(spacing: 8) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color(css: urgencyColorOf(t)))
-                                .frame(width: 4, height: 22)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(t.periodSeq)期 · \(t.planName)")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(Color(css: tokens.ink))
-                                    .lineLimit(1)
-                                // 「自动 / 需手动」是「确认 vs 入账」动作的依据，不能省
-                                Text(t.willAutoPost ? "自动" : "需手动")
-                                    .font(.custom(fontMonoOf(), size: 10).weight(.bold))
-                                    .foregroundStyle(Color(css: urgencyColorOf(t)))
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Text(formatYuan(t.amountCents))
-                                .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
-                                .monospacedDigit()
-                                .foregroundStyle(Color(css: tokens.ink))
-
-                            Button {
-                                Task { await todoAction(t, t.willAutoPost ? "ack" : "confirm") }
-                            } label: {
-                                Text(t.willAutoPost ? "确认" : "入账")
-                                    .font(.system(size: 11.5, weight: .bold))
-                                    .foregroundStyle(Color(css: tokens.accentInk))
-                                    .padding(.horizontal, 11)
-                                    .padding(.vertical, 4)
-                                    .background(Color(css: tokens.accent))
-                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                            .stroke(Color(css: isCyber ? tokens.line : "transparent"), lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-
-                            Menu {
-                                Button("忽略本期") { Task { await todoAction(t, "skip") } }
-                            } label: {
-                                Text("更多")
-                                    .font(.custom(fontMonoOf(), size: 11))
-                                    .foregroundStyle(Color(css: tokens.ink3))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                                            .stroke(Color(css: tokens.line), lineWidth: 1)
-                                    )
-                            }
-                        }
-                        .padding(.vertical, 8)
-                        .overlay(alignment: .bottom) {
-                            if idx < todos.count - 1 {
-                                Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
-                            }
-                        }
-                    }
-                }
-                // 鸿蒙：left/right 10、top 2、bottom 4
-                .padding(.horizontal, 10)
-                .padding(.top, 2)
-                .padding(.bottom, 4)
-            }
         }
         .padding(.top, 10)
     }
