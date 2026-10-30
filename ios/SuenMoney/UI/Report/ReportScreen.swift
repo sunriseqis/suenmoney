@@ -187,15 +187,15 @@ public struct ReportScreen: View {
     private func perDayCents() -> Int {
         if tier != 0 {
             let n = activeCount()
-            return n > 0 ? activeTotal() / max(1, n) : 0
+            return n > 0 ? Int((Double(activeTotal()) / Double(max(1, n))).rounded()) : 0
         }
         let day = max(1, Calendar.current.component(.day, from: Date()))
-        return activeTotal() / day
+        return Int((Double(activeTotal()) / Double(day)).rounded())
     }
 
     private func periodLabel() -> String {
         if tier == 1 { return "\(anchorYear) 年" }
-        if tier == 2 { return "全部" }
+        if tier == 2 { return "全部记录" }
         return formatMonthLabel(anchorMonth)
     }
 
@@ -270,7 +270,8 @@ public struct ReportScreen: View {
         dimRows().reduce(0) { $0 + $1.cents }
     }
 
-    /// 图例百分比的分母恒为**期间总额**（鸿蒙 `activeTotal()`），不是行求和
+    /// 图例百分比的分母恒为**期间总额**（鸿蒙 `activeTotal()`），不是行求和。
+    /// 支付/记录人维度下两者不相等，用行求和会得到与鸿蒙不同的百分比。
     private func percentOf(_ cents: Int) -> Int {
         activeTotal() > 0 ? Int((Double(cents) / Double(activeTotal()) * 100).rounded()) : 0
     }
@@ -390,7 +391,8 @@ public struct ReportScreen: View {
                         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                         .overlay(
                             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok), lineWidth: 1)
+                                .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok),
+                                        lineWidth: isCyber ? 1 : 1.5)
                         )
                     }
                     factItem("对比", formatYuan(prevTotal()))
@@ -407,19 +409,19 @@ public struct ReportScreen: View {
     private func factItem(_ label: String, _ value: String) -> some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(Color(css: tokens.ink3))
-            Text(value)
-                .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
-                .monospacedDigit()
+                .font(.system(size: 10.5))
                 .foregroundStyle(Color(css: tokens.ink2))
+            Text(value)
+                .font(.custom(fontMonoOf(), size: 10.5).weight(.medium))
+                .monospacedDigit()
+                .foregroundStyle(Color(css: tokens.ink))
         }
     }
 
     private func segButton(_ title: String, _ value: Int) -> some View {
         Button { applyPeriod(anchorMonth, value) } label: {
             Text(title)
-                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 10.5).weight(.bold))
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10.5 : 12).weight(.bold))
                 .foregroundStyle(Color(css: tier == value
                                        ? (isCyber ? tokens.accent : tokens.accentInk)
                                        : tokens.ink2))
@@ -429,18 +431,24 @@ public struct ReportScreen: View {
                             ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.accent))
                             : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                // candy 选中补 2px line2 描边（否则「选中」只靠紫底，层级弱）
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                        .stroke(Color(css: tier == value && !isCyber ? tokens.line2 : "transparent"),
+                                lineWidth: 2)
+                )
         }
         .buttonStyle(.plain)
     }
 
-    /// 期间箭头：icon-btn 38×38，带底色与描边（鸿蒙 `navChevron`）
+    /// 期间箭头：30×30、16pt、candy 有 surface 底 + 描边 + 胶囊圆角（鸿蒙 `navChevron`）
     private func chevronButton(_ symbol: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(symbol)
-                .font(.system(size: 18))
+                .font(.system(size: 16))
                 .foregroundStyle(Color(css: tokens.ink2))
-                .frame(width: 38, height: 38)
-                .background(Color(css: tokens.surface))
+                .frame(width: 30, height: 30)
+                .background(Color(css: isCyber ? "transparent" : tokens.surface))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -509,6 +517,7 @@ public struct ReportScreen: View {
                     VStack(spacing: 0) {
                         ForEach(Array(dimRows().enumerated()), id: \.element.id) { idx, row in
                             HStack(spacing: 8) {
+                                // 9×9 **方形圆角块**（鸿蒙 9px/radius 3），不是圆点
                                 RoundedRectangle(cornerRadius: 3)
                                     .fill(Color(css: row.color))
                                     .frame(width: 9, height: 9)
@@ -516,12 +525,17 @@ public struct ReportScreen: View {
                                     .font(.system(size: 11.5))
                                     .foregroundStyle(Color(css: tokens.ink))
                                     .lineLimit(1)
+                                    .truncationMode(.tail)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(formatYuan(row.cents))
                                     .font(.custom(fontMonoOf(), size: 11.5))
                                     .monospacedDigit()
                                     .foregroundStyle(Color(css: tokens.ink))
-                                    .frame(width: 64, alignment: .trailing)
+                                    // 鸿蒙是 64（Plus Jakarta Sans），iOS 用 JetBrainsMono 更宽，
+                                    // 64 会把 ¥1,526.30 挤成两行 → 放到 72 + 允许缩字
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.85)
+                                    .frame(width: 72, alignment: .trailing)
                                 Text("\(percentOf(row.cents))%")
                                     .font(.custom(fontMonoOf(), size: 10))
                                     .monospacedDigit()
@@ -650,13 +664,16 @@ public struct ReportScreen: View {
             cardHead("涨跌榜", "分类环比 · 按差额排序")
 
             if movers().isEmpty {
-                Text("没有可比较的上期数据")
-                    .font(.system(size: 11))
+                // 鸿蒙三元文案：月档说「没有可对比的分类」，其它档引导切到月档
+                Text(tier == 0 ? "该期间没有可对比的分类" : "切到「月」档看涨跌")
+                    .font(.system(size: 12))
                     .foregroundStyle(Color(css: tokens.ink3))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.top, 34)
+                    .padding(.bottom, 34)
+                    .padding(.horizontal, 10)
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: 10) {
                     ForEach(Array(movers().enumerated()), id: \.element.id) { idx, m in
                         HStack(spacing: 9) {
                             CatIconView(catName: m.name, iconSize: 17, color: m.color)
@@ -670,38 +687,46 @@ public struct ReportScreen: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(m.name)
-                                    .font(.system(size: 11.5, weight: .medium))
+                                    .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(Color(css: tokens.ink))
                                     .lineLimit(1)
                                 // 上期为 0 时显示「新增」，不要显示「¥0.00」那种没信息量的对比
                                 Text(m.before > 0
                                      ? "\(formatYuan(m.now)) / 上期 \(formatYuan(m.before))"
                                      : "\(formatYuan(m.now)) / 本期新增")
-                                    .font(.custom(fontMonoOf(), size: 9.5))
+                                    .font(.custom(fontMonoOf(), size: 10))
                                     .foregroundStyle(Color(css: tokens.ink3))
                                     .lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                             VStack(alignment: .trailing, spacing: 2) {
-                                Text("\(m.diff > 0 ? "+" : "") \(formatYuan(m.diff))")
-                                    .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
+                                Text("\(m.diff > 0 ? "+" : "")\(formatYuan(m.diff))")
+                                    .font(.custom(fontMonoOf(), size: 10.5))
                                     .monospacedDigit()
                                     .foregroundStyle(Color(css: m.diff > 0 ? tokens.danger : tokens.ok))
-                                if m.before > 0 {
-                                    Text("\(String(format: "%+.0f", Double(m.diff) / Double(m.before) * 100))%")
-                                        .font(.custom(fontMonoOf(), size: 9.5))
-                                        .monospacedDigit()
-                                        .foregroundStyle(Color(css: tokens.ink3))
-                                }
+                                // 本地算（鸿蒙 `moverPct`）：上期为 0 显示「新增」
+                                Text(m.before > 0
+                                     ? "\(Int((Double(m.diff) / Double(m.before) * 100).rounded()))%"
+                                     : "新增")
+                                    .font(.custom(fontMonoOf(), size: 10))
+                                    .monospacedDigit()
+                                    .foregroundStyle(Color(css: tokens.ink3))
                             }
                         }
-                        .padding(.vertical, 7)
-                        .overlay(alignment: .bottom) {
-                            if idx < movers().count - 1 { dashedRule }
-                        }
+                        // 鸿蒙每行是**独立小卡**（surface2 底 + rMd 圆角 + 1px 描边），
+                        // 不是一张连续列表
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(Color(css: isCyber ? "transparent" : tokens.surface2))
+                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                                .stroke(Color(css: tokens.line), lineWidth: 1)
+                        )
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 // 一句话结论（鸿蒙有，iOS 之前整段缺失）
                 Text(conclusion())
@@ -733,11 +758,18 @@ public struct ReportScreen: View {
                             .foregroundStyle(Color(css: tokens.ink3))
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        RoundedRectangle(cornerRadius: 2)
+                        // 柱顶圆角 5、柱底直角（鸿蒙 `borderRadius{topLeft:5,...}`）
+                        UnevenRoundedRectangle(topLeadingRadius: 5, topTrailingRadius: 5)
                             .fill(Color(css: tokens.pink))
                             .frame(height: max(4, CGFloat(Double(r.totalCents ?? 0) / Double(repayMax())) * 64))
+                            .overlay(
+                                UnevenRoundedRectangle(topLeadingRadius: 5, topTrailingRadius: 5)
+                                    .stroke(Color(css: tokens.line2), lineWidth: isCyber ? 0 : 1)
+                            )
+                            .shadow(color: isCyber ? Color(css: "rgba(255,0,255,0.6)") : .clear,
+                                    radius: isCyber ? 6 : 0, x: 0, y: isCyber ? -2 : 0)
                         Text("\(Int(r.month.dropFirst(5).prefix(2)) ?? 0)月")
-                            .font(.custom(fontMonoOf(), size: 8.5))
+                            .font(.custom(fontMonoOf(), size: 9))
                             .foregroundStyle(Color(css: tokens.ink3))
                     }
                     .frame(maxWidth: .infinity)
@@ -768,19 +800,20 @@ public struct ReportScreen: View {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(anchorYear) 年度报告已生成")
-                        .font(.custom(fontDisplayOf(isCyber), size: 13.5).weight(.bold))
+                        .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 13 : 16).weight(.bold))
                         .foregroundStyle(Color(css: fg))
                     Text("年度全貌 · 年度之最 · 单笔最贵 · 最集中月份 · 12 月走势")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Color(css: fg).opacity(0.85))
-                        .lineLimit(2)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(css: fg).opacity(0.9))
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Text("›")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Color(css: fg))
             }
-            .padding(14)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             .background(
                 ZStack {
                     shape.fill(Color(css: tokens.surface))
