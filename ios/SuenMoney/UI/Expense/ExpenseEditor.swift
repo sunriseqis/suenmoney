@@ -46,8 +46,12 @@ public struct ExpenseEditor: View {
     @State private var dateCalMonth: Int = 0
     @State private var categoryOpen: Bool = false
     @State private var paymentOpen: Bool = false
+    /// 删除二次确认（鸿蒙有确认弹窗，iOS 之前点了就删）
+    @State private var confirmDeleteOpen: Bool = false
 
     @FocusState private var noteFocused: Bool
+    /// 本月已支出（R107：背景信息，不 await，拿不到显示占位）
+    @State private var monthSpentCents: Int?
 
     public init(editing: ExpenseItem?, onSaved: @escaping (String) -> Void) {
         self.editing = editing
@@ -58,7 +62,8 @@ public struct ExpenseEditor: View {
     private var isCyber: Bool { theme.isCyber }
 
     private let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
-    private let keypadKeys: [String] = ["C", "B", "OK", "7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", ""]
+    /// 鸿蒙 KEYPAD_KEYS：789B / 456C / 123OK / 00.（OK 跨第 3–4 行）
+    private let keypadKeys: [String] = ["7", "8", "9", "B", "4", "5", "6", "C", "1", "2", "3", "OK", "0", "00", "."]
 
     // MARK: - 生命周期
 
@@ -68,8 +73,56 @@ public struct ExpenseEditor: View {
                 titleRow
                 amountArea
                 fieldRows
-                quickBar
-                keypad
+
+                // 键盘上方只保留一行摘要（R107）
+                HStack(spacing: 6) {
+                    Text("本月已支出")
+                        .font(.custom(fontMonoOf(), size: 9))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                    Text(monthSpentCents.map { formatYuan($0) } ?? "—")
+                        .font(.custom(fontMonoOf(), size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Color(css: tokens.ink2))
+                    Spacer(minLength: 0)
+                }
+
+                // R111：备注聚焦时**折叠数字键盘**，给一条上方辅助保存条
+                if noteFocused {
+                    HStack(spacing: 8) {
+                        Text(formatYuan(isRefund ? -cents : cents))
+                            .font(.custom(fontDisplayOf(isCyber), size: 14).weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(Color(css: tokens.ink))
+                        Spacer(minLength: 0)
+                        Button { noteFocused = false } label: {
+                            Text("收起键盘")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color(css: tokens.ink3))
+                                .padding(.horizontal, 10)
+                                .frame(height: 32)
+                                .background(Color(css: tokens.surface2))
+                                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                        }
+                        .buttonStyle(.plain)
+                        Button { Task { await save() } } label: {
+                            Text("保存")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color(css: tokens.accentInk))
+                                .padding(.horizontal, 14)
+                                .frame(height: 32)
+                                .background(Color(css: canSave ? tokens.accent : tokens.surface2))
+                                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSave)
+                    }
+                    .padding(8)
+                    .background(Color(css: tokens.surface2))
+                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                } else {
+                    quickBar
+                    keypad
+                }
                 if !errorText.isEmpty {
                     Text(errorText)
                         .font(.system(size: 11))
@@ -86,8 +139,20 @@ public struct ExpenseEditor: View {
             if paymentOpen { paymentPicker }
             if dateCalOpen { dateCalendar }
         }
-        .task { await loadDict() }
+        .task {
+            await loadDict()
+            // 本月已支出：不 await（拿不到就显示 —），别为一行背景信息阻塞抽屉
+            Task {
+                monthSpentCents = try? await Api.monthlyReport(month: String(todayKey().prefix(7))).report.totalCents
+            }
+        }
         .onAppear { prefill() }
+        .confirmationDialog("删除这笔支出？", isPresented: $confirmDeleteOpen, titleVisibility: .visible) {
+            Button("删除", role: .destructive) { confirmDelete() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后不可恢复。")
+        }
     }
 
     private func prefill() {
@@ -118,15 +183,26 @@ public struct ExpenseEditor: View {
         } catch {
             // 离线：用本地缓存
             let names = (try? DictionaryDao.categoryNames()) ?? [:]
-            categories = names.values.map {
+            let flat: [CategoryNode] = names.values.map {
                 CategoryNode(id: $0.id, parentId: $0.parentId.isEmpty ? nil : $0.parentId,
                              name: $0.name, depth: $0.parentId.isEmpty ? 1 : 2,
                              icon: $0.icon, color: $0.color, sortOrder: 0,
                              isEnabled: true, expenseCount: 0, children: [])
             }
+            // 离线时也要把二级挂回一级，否则 findCategory / quickCats 都查不到二级
+            categories = flat.filter { $0.parentId == nil }.map { root in
+                let kids = flat.filter { $0.parentId == root.id }
+                return CategoryNode(id: root.id, parentId: nil, name: root.name, depth: 1,
+                                    icon: root.icon, color: root.color, sortOrder: root.sortOrder,
+                                    isEnabled: root.isEnabled, expenseCount: root.expenseCount,
+                                    children: kids)
+            }
         }
-        // 上次选择可能已被停用 → 清掉
-        if !categories.contains(where: { $0.id == categoryId }) { categoryId = "" }
+        // 上次选择可能已被停用 → 清掉。
+        // ⚠ 必须用 findCategory 递归查（含二级）：
+        //   原来只比顶层数组，导致「记在二级分类上的旧账」打开时被判定无效，
+        //   然后被重置成一级 —— 编辑保存就把分类改错了。
+        if findCategory(categoryId) == nil { categoryId = "" }
         if !payments.contains(where: { $0.id == paymentId }) { paymentId = "" }
         // 都没选时给第一个可用项，避免保存键永远是灰的
         if categoryId.isEmpty { categoryId = quickCats().first?.id ?? categories.first?.id ?? "" }
@@ -134,9 +210,19 @@ public struct ExpenseEditor: View {
         await refreshPreview()
     }
 
-    /// 快捷分类：一级分类取前 5（Web 同）
+    /// 快捷分类：遍历**二级**分类，取「启用且有笔数」的前 5（按笔数降序）。
+    ///
+    /// 之前取的是**一级**前 5 —— 语义完全不同：用户高频记的是「买菜/外卖/打车」这类
+    /// 二级，一级只是「餐饮/交通」这种粗分类。
     private func quickCats() -> [CategoryNode] {
-        Array(categories.filter { $0.parentId == nil || $0.parentId?.isEmpty == true }.prefix(5))
+        var out: [CategoryNode] = []
+        for root in categories {
+            for kid in root.children where kid.isEnabled && kid.expenseCount > 0 {
+                out.append(kid)
+            }
+        }
+        out.sort { $0.expenseCount > $1.expenseCount }
+        return Array(out.prefix(5))
     }
 
     private func findCategory(_ id: String) -> CategoryNode? {
@@ -193,6 +279,16 @@ public struct ExpenseEditor: View {
         if key == "." {
             if !amountText.contains(".") {
                 amountText = (amountText.isEmpty ? "0" : amountText) + "."
+            }
+            return
+        }
+        if key == "00" {
+            // 双零：金额为空时补一个 0，否则追加 00（不能出现前导零）
+            if amountText.isEmpty || amountText == "0" {
+                amountText = "0"
+            } else if !amountText.contains(".") {
+                let next = amountText + "00"
+                if next.count <= 9 { amountText = next }
             }
             return
         }
@@ -357,15 +453,24 @@ public struct ExpenseEditor: View {
             Spacer(minLength: 0)
 
             // 退款冲销
-            toggleChip("退款", isRefund) { isRefund.toggle() }
+            toggleChip("退款", isRefund) {
+                isRefund.toggle()
+                if isRefund { installment = false }   // 退款与分期互斥
+            }
             // 分期（仅新建时）
             if editing == nil {
+                // 只有信用卡类可以分期（鸿蒙 `isCredit()` 守卫）；现金分期没有业务意义
                 toggleChip("分期", installment) {
+                    guard isCredit else {
+                        errorText = "只有信用卡可以分期"
+                        return
+                    }
                     installment.toggle()
+                    if installment { isRefund = false }
                 }
             }
             if editing != nil {
-                Button { confirmDelete() } label: {
+                Button { confirmDeleteOpen = true } label: {
                     Text("删除")
                         .font(.system(size: 11.5, weight: .bold))
                         .foregroundStyle(Color(css: tokens.danger))
@@ -400,18 +505,22 @@ public struct ExpenseEditor: View {
 
     // MARK: - 金额区
 
+    /// 金额区（鸿蒙）：**右对齐** + 34pt Bold + 空值时显示 `0.00`，¥ 是 18pt ink3。
+    /// 之前是左对齐 40pt Heavy + 空值显示 `0` —— 对齐方向、字号、占位三处都不同。
     private var amountArea: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(isRefund ? "-¥" : "¥")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Color(css: isRefund ? tokens.danger : tokens.ink2))
-                Text(amountText.isEmpty ? "0" : amountText)
-                    .font(.custom(fontDisplayOf(isCyber), size: 40).weight(.heavy))
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color(css: tokens.ink3))
+                Text(amountText.isEmpty ? "0.00" : amountText)
+                    .font(.custom(fontDisplayOf(isCyber), size: 34).weight(.bold))
+                    .monospacedDigit()
                     .foregroundStyle(Color(css: tokens.ink))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
             // 账期预览：信用卡要显示「账单月 · 还款日」
             if let p = preview, isCredit {
                 Text(crossesMonth
@@ -457,12 +566,12 @@ public struct ExpenseEditor: View {
     private var fieldRows: some View {
         VStack(spacing: 6) {
             fieldRow(label: "分类", value: categoryName) { categoryOpen = true }
-            fieldRow(label: "支付方式", value: paymentName) { paymentOpen = true }
             fieldRow(label: "消费日期", value: dateShort(spendDate)) {
                 dateCalYear = Int(spendDate.prefix(4)) ?? 2026
                 dateCalMonth = Int(spendDate.dropFirst(5).prefix(2)) ?? 1
                 dateCalOpen = true
             }
+            fieldRow(label: "支付方式", value: paymentName) { paymentOpen = true }
             // 备注：cyber 下 surface 贴 bg 看不出边界 → surface2；placeholder 必须显式给色
             HStack(spacing: 8) {
                 Text("备注")
@@ -475,39 +584,40 @@ public struct ExpenseEditor: View {
                     .focused($noteFocused)
                     .padding(.horizontal, 9)
                     .frame(height: 34)
-                    .background(Color(css: isCyber ? tokens.surface2 : tokens.surface))
+                    .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                     .overlay(
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                            .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                            .stroke(Color(css: outlineStrongOf(isCyber)), lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
                     )
             }
         }
     }
 
+    /// 字段行（鸿蒙 `fieldRow`）：label 9pt ink3 / value 13pt ink / 高度 34 / 无强调描边
     private func fieldRow(label: String, value: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Text(label)
-                    .font(.system(size: 11))
+                    .font(.system(size: 9))
                     .foregroundStyle(Color(css: tokens.ink3))
-                    .frame(width: 56, alignment: .leading)
+                    .frame(width: 46, alignment: .leading)
                 Text(value)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(Color(css: tokens.ink))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text("›")
-                    .font(.system(size: 14))
+                    .font(.system(size: 13))
                     .foregroundStyle(Color(css: tokens.ink3))
             }
             .padding(.horizontal, 9)
             .frame(height: 34)
-            .background(Color(css: isCyber ? tokens.surface2 : tokens.surface))
+            .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                    .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
             )
         }
         .buttonStyle(.plain)
@@ -519,6 +629,7 @@ public struct ExpenseEditor: View {
 
     // MARK: - 快捷分类条（5 格，与键盘列宽对齐，U14）
 
+    /// 快捷分类条：**5 格与键盘列宽对齐**（第 1 格 54 对齐支付列，后 4 格对齐 7/8/9/B）
     private var quickBar: some View {
         HStack(spacing: 5) {
             ForEach(0..<5, id: \.self) { i in
@@ -559,36 +670,104 @@ public struct ExpenseEditor: View {
 
     // MARK: - 数字键盘（左列 54vp + 3×3 数字）
 
+    /// 键盘：**左列 54vp 支付快捷列 + 1vp 竖线 + 4×4 数字网格**（保存键跨第 3–4 行第 4 列）。
+    ///
+    /// 之前是「C/B/保存 塞进左列 + 3×3 数字」，列数与结构都不同 —— 这是抽屉里最显眼的结构差异。
     private var keypad: some View {
-        HStack(alignment: .top, spacing: 5) {
-            // 左列：C / B / OK
-            VStack(spacing: 5) {
-                keyButton("C") { press("C") }
-                keyButton("B") { press("B") }
-                keyButton("保存", isAccent: canSave) { press("OK") }
+        HStack(spacing: 0) {
+            // 左：支付快捷列（前 4 个 + 常驻「更多」）
+            VStack(spacing: 6) {
+                ForEach(Array(payments.prefix(4)), id: \.id) { p in
+                    Button {
+                        paymentId = p.id
+                        Task { await refreshPreview() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            PayIconView(name: p.name, icon: p.icon, iconSize: 13,
+                                        tinted: paymentId != p.id)
+                            Text(shortName(p.name))
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Color(css: paymentId == p.id ? tokens.accentInk : tokens.ink2))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(maxHeight: .infinity)
+                        .padding(.vertical, 7)
+                        .background(Color(css: paymentId == p.id ? tokens.accent : tokens.surface))
+                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                                .stroke(Color(css: tokens.line), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                // 「更多」常驻：支付方式不足 4 个时它是打开完整列表的唯一入口
+                Button { paymentOpen = true } label: {
+                    Text("更多")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                        .frame(maxWidth: .infinity)
+                        .frame(maxHeight: .infinity)
+                        .background(Color(css: tokens.surface3))
+                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                }
+                .buttonStyle(.plain)
             }
             .frame(width: 54)
+            .frame(maxHeight: .infinity)
+            .padding(.trailing, 6)
 
-            // 3×3 数字 + 底行 0 / .
+            Rectangle().fill(Color(css: tokens.line)).frame(width: 1)
+
+            // 右：4×4，顺序 789B / 456C / 123+OK / 00.+OK
+            // SwiftUI 的 Grid 不支持跨行，所以后两行手工拼：右侧「保存」是一整块高键。
             VStack(spacing: 5) {
-                ForEach([["7", "8", "9"], ["4", "5", "6"], ["1", "2", "3"]], id: \.self) { rowKeys in
-                    HStack(spacing: 5) {
-                        ForEach(rowKeys, id: \.self) { k in
-                            keyButton(k) { press(k) }
-                        }
-                    }
-                }
+                HStack(spacing: 5) { keyCell("7"); keyCell("8"); keyCell("9"); keyCell("B") }
+                HStack(spacing: 5) { keyCell("4"); keyCell("5"); keyCell("6"); keyCell("C") }
                 HStack(spacing: 5) {
-                    keyButton("0") { press("0") }
-                    keyButton(".") { press(".") }
-                    // 右下角留空（与 Web 键盘一致）
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                    VStack(spacing: 5) {
+                        HStack(spacing: 5) { keyCell("1"); keyCell("2"); keyCell("3") }
+                        HStack(spacing: 5) { keyCell("0"); keyCell("00"); keyCell(".") }
+                    }
+                    keyCell("OK")
                 }
             }
+            .frame(maxHeight: .infinity)
+            .padding(.leading, 6)
         }
         .frame(height: 210)
+    }
+
+    private func keyCell(_ key: String) -> some View {
+        Button { press(key) } label: {
+            Text(key == "B" ? "←" : (key == "C" ? "清空" : (key == "OK" ? "保存" : key)))
+                .font(.custom(fontDisplayOf(isCyber), size: key == "OK" ? 14 : (key == "C" ? 13 : 19)).weight(.bold))
+                .foregroundStyle(Color(css: key == "OK"
+                                       ? (canSave ? tokens.accentInk : tokens.ink3)
+                                       : tokens.ink))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(css: key == "OK"
+                                  ? (canSave ? tokens.accent : tokens.surface2)
+                                  : tokens.surface))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11))
+                        .stroke(Color(css: tokens.line), lineWidth: 1)
+                )
+                .background {
+                    if !isCyber {
+                        RoundedRectangle(cornerRadius: 11)
+                            .fill(Color(css: tokens.line)).offset(x: 2, y: 2)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func shortName(_ name: String) -> String {
+        // 与鸿蒙 shortName 同：超长截断到 2 字（左列只有 54vp 宽）
+        name.count <= 2 ? name : String(name.prefix(2))
     }
 
     private func keyButton(_ title: String, isAccent: Bool = false, _ action: @escaping () -> Void) -> some View {

@@ -70,7 +70,13 @@ public struct AnnualScreen: View {
             if yearCalOpen { yearPicker }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await load() }
+        .task {
+            // 报表屏可能带了年份过来（鸿蒙 AppStorage('annualYear')）
+            if !app.annualYear.isEmpty, app.annualYear != year {
+                year = app.annualYear
+            }
+            await load()
+        }
     }
 
     // MARK: - 加载
@@ -206,6 +212,15 @@ public struct AnnualScreen: View {
                             .stroke(Color(css: isCyber ? tokens.accent : tokens.line2),
                                     lineWidth: isCyber ? 1 : 2)
                     )
+                    // candy 贴纸硬投影 / cyber 上投绿光
+                    .shadow(color: isCyber ? Color(css: "rgba(0,255,136,0.4)") : .clear,
+                            radius: isCyber ? 5 : 0, x: 0, y: isCyber ? -2 : 0)
+                    .background {
+                        if !isCyber {
+                            RoundedRectangle(cornerRadius: 17)
+                                .fill(Color(css: tokens.line2)).offset(x: 2, y: 2)
+                        }
+                    }
 
                 Text("\(year) 年度全貌")
                     .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
@@ -218,17 +233,19 @@ public struct AnnualScreen: View {
                     .foregroundStyle(Color(css: tokens.ink3))
             }
 
-            // 大金额
-            VStack(alignment: .leading, spacing: 2) {
-                Text("全年支出")
-                    .font(.custom(fontMonoOf(), size: 10.5))
+            // 大金额：¥ 独立成段（0.5 倍字号 + ink2），数字按长度自适应 34/28/22
+            HStack(alignment: .bottom, spacing: 4) {
+                Text("¥")
+                    .font(.system(size: heroSize() * 0.5, weight: .bold))
                     .foregroundStyle(Color(css: tokens.ink2))
-                Text(formatYuan(total()))
-                    .font(.custom(fontDisplayOf(isCyber), size: 34).weight(.heavy))
-                    .tracking(-0.68)
+                Text(formatYuan(total()).replacingOccurrences(of: "¥", with: ""))
+                    .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.black))
+                    .tracking(isCyber ? 1.14 : -0.68)
+                    .monospacedDigit()
                     .lineLimit(1)
                     .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // hero-delta：环比胶囊 + 去年
             HStack(spacing: 8) {
@@ -265,24 +282,32 @@ public struct AnnualScreen: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(tokens, isCyber, radius: 16)
+        // candy 顶卡是 2px 深墨描边（line2），不是普通卡片的浅灰 line
+        .card(tokens, isCyber, radius: 16, border: isCyber ? tokens.line : tokens.line2)
     }
 
+    private func heroSize() -> CGFloat {
+        let s = formatYuan(total()).replacingOccurrences(of: "¥", with: "")
+        if s.count <= 8 { return 34 }
+        if s.count <= 10 { return 28 }
+        return 22
+    }
+
+    /// 三段统计（鸿蒙 `statCell`）：**值在上（21/18 display Bold）、标签在下（10.5/9.5）、
+    /// 裸列无底色无内距**。之前做成灰底 chip + 标签在上，版式完全不同。
     private func statCell(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 3) {
-            Text(label)
-                .font(.custom(fontMonoOf(), size: 9))
-                .foregroundStyle(Color(css: tokens.ink3))
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.custom(fontMonoOf(), size: 12).weight(.bold))
+                .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 18 : 21).weight(.bold))
+                .monospacedDigit()
                 .foregroundStyle(Color(css: tokens.ink))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.6)
+            Text(label)
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 9.5 : 10.5))
+                .foregroundStyle(Color(css: tokens.ink3))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color(css: tokens.surface2))
-        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - 12 个月走势
@@ -317,12 +342,14 @@ public struct AnnualScreen: View {
                         } label: {
                             VStack(spacing: 4) {
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(m.month == currentMonthKey()
-                                          ? Color(css: tokens.accent)
-                                          : Color(css: tokens.accent).opacity(0.55))
+                                    // 0 支出的月份用 surface3（灰柱），否则「空月」看不出来
+                                    .fill(Color(css: m.totalCents > 0
+                                                ? mixHex(tokens.accent, tokens.surface, 0.75)
+                                                : tokens.surface3))
                                     .frame(height: max(4, CGFloat(Double(m.totalCents) / Double(monthsMax())) * 100))
-                                Text("\(Int(m.month.dropFirst(5).prefix(2)) ?? 0)月")
-                                    .font(.custom(fontMonoOf(), size: 8.5))
+                                Text("\(Int(m.month.dropFirst(5).prefix(2)) ?? 0)")
+                                    .font(.custom(fontMonoOf(), size: 9.5))
+                                    .monospacedDigit()
                                     .foregroundStyle(Color(css: tokens.ink3))
                             }
                             .frame(maxWidth: .infinity)
@@ -409,29 +436,28 @@ public struct AnnualScreen: View {
                     .tracking(isCyber ? 1.25 : 0)
                     .foregroundStyle(Color(css: tokens.ink))
                 Spacer(minLength: 0)
-                Text("\(cat.count) 笔")
+                Text("全年")
                     .font(.custom(fontMonoOf(), size: 9.5))
+                    .tracking(1.52)
                     .foregroundStyle(Color(css: tokens.ink3))
             }
+            // 鸿蒙这里只有「名称 / 金额 / 百分比」三个 Text，没有图标块
             HStack(spacing: 10) {
-                CatIconView(catName: cat.name, iconSize: 18,
-                            color: chartColor(tokens, slotOf(cat.color, cat.categoryId)))
-                    .frame(width: 34, height: 34)
-                    .background(Color(css: mixHex(chartColor(tokens, slotOf(cat.color, cat.categoryId)),
-                                                 tokens.surface, 0.14)))
-                    .clipShape(RoundedRectangle(cornerRadius: isCyber ? 0 : 9))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cat.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color(css: tokens.ink))
-                    Text(formatYuan(cat.cents))
-                        .font(.custom(fontMonoOf(), size: 11))
-                        .foregroundStyle(Color(css: tokens.ink2))
-                }
-                Spacer(minLength: 0)
+                Text(cat.name)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color(css: tokens.ink))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(formatYuan(cat.cents))
+                    .font(.custom(fontMonoOf(), size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(css: tokens.ink2))
                 Text("\(Int((ratioOf(cat.ratio) ?? 0) * 100))%")
-                    .font(.custom(fontMonoOf(), size: 13).weight(.bold))
-                    .foregroundStyle(Color(css: tokens.accent))
+                    .font(.custom(fontMonoOf(), size: 10.5))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(css: tokens.ink2))
+                    .padding(.leading, 10)
             }
         }
         .padding(14)

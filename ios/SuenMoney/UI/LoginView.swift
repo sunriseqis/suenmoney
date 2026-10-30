@@ -76,11 +76,14 @@ public struct LoginView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// 「登录」标题**水平居中**（鸿蒙 Column 默认 HorizontalAlign.Center），
+    /// 下面那句说明才是左对齐 —— 之前两行都左对齐，与基准版式不同。
     private var cardHead: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("登录")
                 .font(.custom(fontBodyOf(isCyber), size: 12))
                 .foregroundStyle(Color(css: tokens.ink3))
+                .frame(maxWidth: .infinity)
             Text("用你的账号进入账本。")
                 .font(.system(size: 10.5))
                 .foregroundStyle(Color(css: tokens.ink3))
@@ -90,21 +93,21 @@ public struct LoginView: View {
 
     private var inputs: some View {
         VStack(spacing: 10) {
-            fieldBox {
+            fieldBox(focused: focus == .username) {
                 TextField("登录名", text: $username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($focus, equals: .username)
-                    .font(.system(size: 13))
+                    .font(.system(size: 16))
                     .foregroundStyle(Color(css: tokens.ink))
                     .submitLabel(.next)
                     .onSubmit { focus = .password }
                     .accessibilityIdentifier("login.username")
             }
-            fieldBox {
+            fieldBox(focused: focus == .password) {
                 SecureField("口令", text: $password)
                     .focused($focus, equals: .password)
-                    .font(.system(size: 13))
+                    .font(.system(size: 16))
                     .foregroundStyle(Color(css: tokens.ink))
                     .submitLabel(.go)
                     .onSubmit {
@@ -122,7 +125,7 @@ public struct LoginView: View {
         content()
             .padding(.horizontal, 12)
             .frame(height: 44)
-            .background(Color(css: isCyber ? tokens.surface2 : tokens.surface))
+            .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
@@ -135,12 +138,15 @@ public struct LoginView: View {
             Task { await doLogin() }
         } label: {
             Text(busy ? "登录中…" : "登录")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 16))
                 .foregroundStyle(Color(css: tokens.accentInk))
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
                 .background(Color(css: tokens.accent))
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                // 鸿蒙 Button 默认是 ButtonType.Capsule（44 高即 22 圆角），
+                // 不是 14 圆角矩形 —— 主 CTA 形状是首屏最显眼的差异之一。
+                .clipShape(Capsule())
+                .opacity(busy ? 0.4 : 1)
         }
         .disabled(busy)
         .accessibilityIdentifier("login.submit")
@@ -170,7 +176,7 @@ public struct LoginView: View {
                     .focused($focus, equals: .server)
                     .padding(.horizontal, 10)
                     .frame(height: 40)
-                    .background(Color(css: isCyber ? tokens.surface3 : tokens.surface2))
+                    .background(Color(css: fieldBgOf(tokens.surface2, tokens.surface3, isCyber)))
                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                     .overlay(
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
@@ -204,7 +210,7 @@ public struct LoginView: View {
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                        .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                        .stroke(Color(css: outlineStrongOf(isCyber)), lineWidth: fieldBorderWOf(tokens.borderW, isCyber))
                 )
         }
     }
