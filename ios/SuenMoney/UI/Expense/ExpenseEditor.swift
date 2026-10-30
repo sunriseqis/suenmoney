@@ -73,7 +73,7 @@ public struct ExpenseEditor: View {
 
     public var body: some View {
         ZStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 titleRow
                 amountArea
                 fieldRows
@@ -90,6 +90,30 @@ public struct ExpenseEditor: View {
                             .tint(Color(css: tokens.accent))
                     }
                 }
+                // 期数 chips + 每期约（紧跟分期 Toggle，鸿蒙同序）
+                if installment {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            ForEach([3, 6, 12, 24], id: \.self) { n in
+                                Button { periods = n } label: {
+                                    Text("\(n) 期")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color(css: periods == n ? tokens.accentInk : tokens.ink2))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Color(css: periods == n ? tokens.accent : tokens.surface2))
+                                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        Text("每期约 \(formatYuan(cents / max(1, periods)))")
+                            .font(.custom(fontMonoOf(), size: 9))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                    }
+                }
+
                 // 退款（分期开启时禁用）
                 HStack(spacing: 6) {
                     Text("退款")
@@ -178,11 +202,12 @@ public struct ExpenseEditor: View {
             }
         }
         .onAppear { prefill() }
-        .confirmationDialog("删除这笔支出？", isPresented: $confirmDeleteOpen, titleVisibility: .visible) {
+        .confirmationDialog("删除这笔记录？", isPresented: $confirmDeleteOpen, titleVisibility: .visible) {
             Button("删除", role: .destructive) { confirmDelete() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("删除后不可恢复。")
+            // 让用户看到删的是哪一笔（鸿蒙同）
+            Text("\(categoryName) \(formatYuan(editing?.amountCents ?? 0)) · \(editing?.spendDate ?? "")")
         }
     }
 
@@ -519,21 +544,7 @@ public struct ExpenseEditor: View {
             }
             Spacer(minLength: 0)
 
-            toggleChip("退款", isRefund) {
-                isRefund.toggle()
-                if isRefund { installment = false }   // 退款与分期互斥
-            }
-            // 分期（仅新建时）
-            if editing == nil {
-                // **只有信用卡类才显示「分期」**（现金分期没有业务意义）。
-                // 之前常驻显示 + 点了报错但不 toggle，用户会觉得"点不掉"。
-                if isCredit {
-                    toggleChip("分期", installment) {
-                        installment.toggle()
-                        if installment { isRefund = false }
-                    }
-                }
-            }
+            // 分期/退款**只保留下方 Toggle 行**（鸿蒙标题行没有任何开关控件）
             if editing != nil {
                 // 鸿蒙是**纯文字**（无描边无底色）
                 Button { confirmDeleteOpen = true } label: {
@@ -548,23 +559,6 @@ public struct ExpenseEditor: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-
-    private func toggleChip(_ title: String, _ active: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 10.5, weight: .bold))
-                .foregroundStyle(Color(css: active ? tokens.accentInk : tokens.ink3))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(active ? Color(css: tokens.accent) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                        .stroke(Color(css: active ? tokens.accent : tokens.line), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - 金额区
@@ -587,30 +581,6 @@ public struct ExpenseEditor: View {
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             // 账期预览已移到备注下方独立一行（鸿蒙位置），这里不再重复
-            if installment {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        ForEach([3, 6, 12, 24], id: \.self) { n in
-                            Button { periods = n } label: {
-                                Text("\(n) 期")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Color(css: periods == n ? tokens.accentInk : tokens.ink2))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    // 未选是 surface2、无描边（鸿蒙同）
-                                    .background(Color(css: periods == n ? tokens.accent : tokens.surface2))
-                                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    // 每期金额独立整行，带「约」字
-                    Text("每期约 \(formatYuan(cents / max(1, periods)))")
-                        .font(.custom(fontMonoOf(), size: 9))
-                        .foregroundStyle(Color(css: tokens.ink3))
-                }
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -627,12 +597,31 @@ public struct ExpenseEditor: View {
             }
             fieldRow(label: "支付方式", value: paymentName) { paymentOpen = true }
 
+            // 备注：**整行输入框，无左标签**（鸿蒙同）；聚焦时 2px #5DB8FF 焦点环；
+            // placeholder 必须显式给色，否则深色底上几乎不可见
+            TextField("", text: $note,
+                      prompt: Text("备注（选填）").foregroundStyle(Color(css: tokens.ink3)))
+                .font(.system(size: 16))
+                .foregroundStyle(Color(css: tokens.ink))
+                .focused($noteFocused)
+                .padding(.horizontal, 9)
+                .frame(height: 36)
+                .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                        .stroke(Color(css: noteFocused ? focusRing : outlineStrongOf(isCyber)),
+                                lineWidth: noteFocused ? 2 : fieldBorderWOf(tokens.borderW, isCyber))
+                )
+
             // 账期预览（鸿蒙：备注下方独立一行，**所有支付方式都显示**）
             HStack(spacing: 4) {
                 if let p = preview {
                     if crossesMonth {
                         Text("这笔会记在").font(.system(size: 10)).foregroundStyle(Color(css: tokens.accent))
-                        Text(monthLabelCN(p.postingDate)).font(.system(size: 10)).foregroundStyle(Color(css: tokens.accent))
+                        Text(monthLabelCN(p.repaymentDate))
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color(css: tokens.accent))
                         Text("（还款日 \(dateShort(p.repaymentDate))）").font(.system(size: 10)).foregroundStyle(Color(css: tokens.accent))
                     } else {
                         Text("还款日 \(p.repaymentDate)")
@@ -651,22 +640,7 @@ public struct ExpenseEditor: View {
                     .foregroundStyle(Color(css: tokens.ink2))
             }
             .frame(maxWidth: .infinity)
-            // 备注：**整行输入框，无左标签**（鸿蒙同）；聚焦时 2px #5DB8FF 焦点环；
-            // placeholder 必须显式给色，否则深色底上几乎不可见
-            TextField("", text: $note,
-                      prompt: Text("备注（选填）").foregroundStyle(Color(css: tokens.ink3)))
-                .font(.system(size: 16))
-                .foregroundStyle(Color(css: tokens.ink))
-                .focused($noteFocused)
-                .padding(.horizontal, 9)
-                .frame(height: 36)
-                .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                        .stroke(Color(css: noteFocused ? focusRing : outlineStrongOf(isCyber)),
-                                lineWidth: noteFocused ? 2 : fieldBorderWOf(tokens.borderW, isCyber))
-                )
+
         }
     }
 
@@ -1056,7 +1030,7 @@ public struct ExpenseEditor: View {
                 content()
             }
             .padding(14)
-            .frame(width: 320)
+            .frame(width: UIScreen.main.bounds.width * 0.86)
             .card(tokens, isCyber, radius: 16, surface: tokens.bg, shadow: false)
         }
     }

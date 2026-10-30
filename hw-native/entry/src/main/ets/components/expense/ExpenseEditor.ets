@@ -180,6 +180,20 @@ export struct ExpenseEditor {
   }
 
   /** 账期预览：问服务端，不在客户端重算账单周期 */
+  /**
+   * 切换支付方式（**所有入口都走它**）。
+   * 关键：切到非信用卡时必须清掉 `installment` —— 否则分期行整块消失，
+   * 但 `installment` 仍为 true：① 退款 Toggle 被永久置灰且无处可解；
+   * ② 保存走 `else if (installment)` 分支，给现金建了一个分期计划。
+   */
+  private setPayment(id: string): void {
+    this.paymentId = id;
+    if (!this.isCredit()) {
+      this.installment = false;
+    }
+    this.refreshPreview();
+  }
+
   private async refreshPreview(): Promise<void> {
     if (this.paymentId === '') {
       this.preview = null;
@@ -782,8 +796,7 @@ export struct ExpenseEditor {
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
           .border({ width: 1, color: this.tok().line })
           .onClick(() => {
-            this.paymentId = p.id;
-            this.refreshPreview();
+            this.setPayment(p.id);
           })
         }, (p: PaymentMethodItem) => p.id)
         // 「更多」常驻（Web ExpenseSheet.vue:546-557：取前 4 个 + 固定「更多」），
@@ -987,9 +1000,8 @@ export struct ExpenseEditor {
               .backgroundColor(this.paymentId === p.id ? this.tok().surface2 : this.tok().surface)
               .borderRadius(6)
               .onClick(() => {
-                this.paymentId = p.id;
+                this.setPayment(p.id);
                 this.paymentOpen = false;
-                this.refreshPreview();
               })
             }
           }, (p: PaymentMethodItem) => p.id)
