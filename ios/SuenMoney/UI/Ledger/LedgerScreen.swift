@@ -106,6 +106,8 @@ public struct LedgerScreen: View {
     @State private var atTop: Bool = true
     /// 回顶触发器（保存后滚到列表顶部）
     @State private var scrollTop: Int = 0
+    /// 下拉手势的累计最大位移（只增不减，回拉不回落）
+    @State private var maxPull: CGFloat = 0
     /// 搜索防抖任务（每次输入取消上一个，避免并发请求乱序覆盖）
     @State private var searchTask: Task<Void, Never>?
 
@@ -236,6 +238,8 @@ public struct LedgerScreen: View {
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(isCyber ? 0 : 22)
             .presentationBackground(Color(css: tokens.bg))
+            // 取消/下滑关闭时清掉编辑对象，避免下次打开沿用旧行
+            .onDisappear { editingRow = nil }
         }
     }
 
@@ -303,7 +307,7 @@ public struct LedgerScreen: View {
             rows = applyLocalFilters(local)
             monthTotalCents = total.totalCents
             monthCount = total.count
-            prevTotalCents = 0
+            // 离线时**不动** prevTotalCents（鸿蒙同）：否则环比胶囊会莫名消失
             hasMore = false
             return
         }
@@ -460,11 +464,12 @@ public struct LedgerScreen: View {
     }
 
     private func applyLocalFilters(_ source: [ExpenseItem]) -> [ExpenseItem] {
-        let q = keyword.trimmingCharacters(in: .whitespaces).lowercased()
+        // 与鸿蒙一致：**区分大小写**（`indexOf` 语义）
+        let q = keyword.trimmingCharacters(in: .whitespaces)
         return source.filter { row in
             if !q.isEmpty {
-                let name = categoryNameOf(row).lowercased()
-                if !row.note.lowercased().contains(q) && !name.contains(q) { return false }
+                let name = categoryNameOf(row)
+                if !row.note.contains(q) && !name.contains(q) { return false }
             }
             if !filterCategory.isEmpty {
                 // 筛选项只列一级分类，但记录可能挂在**二级**分类上 →
@@ -568,7 +573,7 @@ public struct LedgerScreen: View {
 
     private func periodLabel() -> String {
         if tier == 1 { return "\(anchorYear) 年" }
-        if tier == 2 { return "全部" }
+        if tier == 2 { return "全部记录" }
         return formatMonthLabel(anchorMonth)
     }
 
@@ -649,11 +654,14 @@ public struct LedgerScreen: View {
         DragGesture(minimumDistance: 20)
             .onChanged { value in
                 guard atTop, value.translation.height > 0 else { return }
-                let p = min(1, value.translation.height / 60)
+                // 累计最大值（只增不减）：回拉时进度不回落，与鸿蒙 `pullMax` 同
+                maxPull = max(maxPull, value.translation.height)
+                let p = min(1, maxPull / 60)
                 if abs(p - pullProgress) > 0.02 { pullProgress = p }
             }
             .onEnded { value in
-                let hit = atTop && value.translation.height > 60
+                let hit = atTop && maxPull > 60
+                maxPull = 0
                 if hit {
                     withAnimation(appCurveFast) { pullProgress = 1 }
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -900,7 +908,7 @@ public struct LedgerScreen: View {
                             // 先发的可能后到，列表会被旧结果覆盖
                             searchTask?.cancel()
                             searchTask = Task {
-                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                try? await Task.sleep(nanoseconds: 400_000_000)
                                 guard !Task.isCancelled else { return }
                                 await loadMonth(reset: true)
                             }
@@ -956,9 +964,10 @@ public struct LedgerScreen: View {
                     calOpen = true
                 } label: {
                     Text(periodLabel())
-                        .font(.custom(fontDisplayOf(isCyber), size: 13).weight(.bold))
+                        .font(.custom(fontDisplayOf(isCyber), size: 14).weight(.bold))
                         .foregroundStyle(Color(css: tokens.ink))
-                        .frame(maxWidth: .infinity)
+                        // 固定最小宽 76：撑满会让标签随月份长短左右抖动
+                        .frame(minWidth: 76)
                         .frame(height: 34)
                 }
                 .buttonStyle(.plain)
@@ -969,7 +978,7 @@ public struct LedgerScreen: View {
             filterToggle
 
             if showFilters {
-                dashedLine.padding(.top, 14)
+                VStack(spacing: 10) {
                 filterGroup("分类", rootCategories, filterCategory, showAll: true) { id in
                     filterCategory = filterCategory == id ? "" : id
                     Task { await loadMonth(reset: true) }
@@ -982,9 +991,10 @@ public struct LedgerScreen: View {
                     filterOwner = filterOwner == id ? "" : id
                     Task { await loadMonth(reset: true) }
                 }
-                // 只输入关键词时也要能清除（鸿蒙条件：filterCount>0 || keyword !== ''）
+                // 「清除」放在记录人组尾部（鸿蒙同），且关键词也能清
                 if activeFilterCount() > 0 || !keyword.isEmpty {
                     HStack {
+                        Spacer(minLength: 0)
                         Button { clearFilters() } label: {
                             Text("清除")
                                 .font(.system(size: 11.5, weight: .bold))
@@ -993,9 +1003,11 @@ public struct LedgerScreen: View {
                                 .padding(.vertical, 6)
                         }
                         .buttonStyle(.plain)
-                        Spacer(minLength: 0)
                     }
                 }
+                }
+                .padding(.top, 14)
+                .overlay(alignment: .top) { dashedLine }
             }
 
             // 排序
@@ -1105,9 +1117,17 @@ public struct LedgerScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                        .stroke(Color(css: active && isCyber ? tokens.accent : tokens.line),
+                        .stroke(Color(css: active
+                                      ? (isCyber ? tokens.accent : tokens.line2)
+                                      : tokens.line),
                                 lineWidth: isCyber ? 1 : 2)
                 )
+                // candy 选中态：2px 硬阴影（按下去的实体感）
+                .background {
+                    if active && !isCyber {
+                        Capsule().fill(Color(css: tokens.line2)).offset(x: 2, y: 2)
+                    }
+                }
         }
         .buttonStyle(.plain)
     }
@@ -1134,7 +1154,7 @@ public struct LedgerScreen: View {
                     .foregroundStyle(Color(css: tokens.ink3))
                     .frame(maxWidth: .infinity)
                     .padding(34)
-            } else if rows.isEmpty {
+            } else if dayGroups().isEmpty {
                 // 有筛选/关键词导致 0 条时说「本月还没有记录」是误导
                 Text("没有符合条件的流水")
                     .font(.system(size: 12))
@@ -1148,11 +1168,13 @@ public struct LedgerScreen: View {
                         // date-cap：组头（今日/昨日/N日 + 日小计）
                         HStack(spacing: 8) {
                             Text(dayTextOf(group.date))
-                                .font(.custom(fontMonoOf(), size: 9.5).weight(.bold))
-                                .foregroundStyle(Color(css: tokens.ink3))
+                                .font(.custom(fontMonoOf(), size: 10.5))
+                                .tracking(0.84)
+                                .foregroundStyle(Color(css: tokens.ink2))
                             Spacer(minLength: 0)
                             Text(formatYuan(group.cents))
-                                .font(.custom(fontMonoOf(), size: 9.5))
+                                .font(.custom(fontMonoOf(), size: 10.5))
+                                .monospacedDigit()
                                 .foregroundStyle(Color(css: tokens.ink3))
                         }
                         .padding(.horizontal, 4)
@@ -1186,7 +1208,7 @@ public struct LedgerScreen: View {
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 14)
-                } else {
+                } else if !rows.isEmpty {
                     Button {
                         shiftPeriod(-1)
                     } label: {
@@ -1279,7 +1301,7 @@ public struct LedgerScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
         .overlay(
             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                .stroke(Color(css: tokens.line), lineWidth: 1)
+                .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -1375,7 +1397,7 @@ public struct LedgerScreen: View {
     private var allCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text("全部")
+                Text("全部记录")
                     .font(.custom(fontDisplayOf(isCyber), size: 15).weight(.bold))
                     .foregroundStyle(Color(css: tokens.ink))
                 Spacer(minLength: 0)
@@ -1517,8 +1539,8 @@ public struct LedgerScreen: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        applyPeriod(monthKeyOf(year: calYear,
-                                               month: Int(anchorMonth.dropFirst(5).prefix(2)) ?? 1), 1)
+                        // 锚点落到该年 1 月（鸿蒙 `anchorYear = String(calYearV)`）
+                        applyPeriod("\(calYear)-01", 1)
                     } label: {
                         Text("整年")
                             .font(.system(size: 11.5))
@@ -1550,7 +1572,7 @@ public struct LedgerScreen: View {
             }
             .padding(14)
             .frame(width: 300)
-            .card(tokens, isCyber, radius: 16, surface: tokens.bg)
+            .card(tokens, isCyber, radius: 16, surface: tokens.bg, shadow: false)
         }
     }
 
@@ -1559,21 +1581,21 @@ public struct LedgerScreen: View {
     private var pullIndicator: some View {
         Group {
             if pullProgress > 0.01 {
-                HStack(spacing: 8) {
-                    BrandMark(34 * min(1, pullProgress))
-                        .frame(height: 34 * min(1, pullProgress))
-                        .clipped()
-                    if pullProgress > 0.35 {
-                        Text("记一笔")
-                            .font(.system(size: 11.5, weight: .bold))
-                            .foregroundStyle(Color(css: tokens.ink2))
-                            .opacity(Double((pullProgress - 0.35) / 0.65))
-                    }
+                // 鸿蒙是**垂直**布局：logo 在上、小字在下，整体 width 96
+                VStack(spacing: 4) {
+                    BrandMark(34)
+                    Text("记一笔")
+                        .font(.custom(fontMonoOf(), size: 9.5).weight(.bold))
+                        .tracking(1.2)
+                        .foregroundStyle(Color(css: tokens.ink2))
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 52 * min(1, pullProgress))
+                .frame(width: 96)
+                // 高度裁切揭示（不是缩放）：logo 尺寸固定
+                .frame(height: 52 * min(1, pullProgress), alignment: .top)
                 .clipped()
-                .opacity(Double(pullProgress))
+                // 起点 0.35（鸿蒙 `0.35 + 0.65 * p`）
+                .opacity(0.35 + 0.65 * Double(min(1, pullProgress)))
+                .frame(maxWidth: .infinity)
             }
         }
     }
