@@ -301,7 +301,9 @@ public struct MonthlyReportBody: Decodable {
 public struct MonthPoint: Decodable, Identifiable {
     public let month: String
     public let totalCents: Int
-    public let count: Int
+    /// ⚠ 服务端 `months[]` 带 count，但 **`peakMonth` 不带**（只有 month/totalCents）。
+    /// 声明成非可选会让整个 YearlyReport 解码失败 → 年报整屏空白。
+    public let count: Int?
 
     public var id: String { month }
 }

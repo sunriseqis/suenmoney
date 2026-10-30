@@ -1246,7 +1246,7 @@ public struct LedgerScreen: View {
                             .foregroundStyle(Color(css: tokens.accent))
                     }
                     Spacer(minLength: 0)
-                    Text("\(point.count) 笔")
+                    Text("\(point.count ?? 0) 笔")
                         .font(.custom(fontMonoOf(), size: 8.5))
                         .foregroundStyle(Color(css: tokens.ink3))
                 }
@@ -1325,7 +1325,7 @@ public struct LedgerScreen: View {
                         .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
                         .foregroundStyle(Color(css: tokens.ink2))
                     Spacer(minLength: 0)
-                    Text("\(point.count) 笔")
+                    Text("\(point.count ?? 0) 笔")
                         .font(.custom(fontMonoOf(), size: 8.5))
                         .foregroundStyle(Color(css: tokens.ink3))
                 }
