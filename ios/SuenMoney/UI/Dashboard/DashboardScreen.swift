@@ -308,7 +308,8 @@ public struct DashboardScreen: View {
     private func todoDotColor() -> String {
         if overdueCount() > 0 { return tokens.danger }
         if todos.contains(where: { !$0.willAutoPost }) { return tokens.warn }
-        return tokens.accent
+        // 无逾期且全自动 → ink3（鸿蒙同）
+        return tokens.ink3
     }
 
     private func urgencyColorOf(_ t: DashTodo) -> String {
@@ -366,7 +367,9 @@ public struct DashboardScreen: View {
                         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                         .overlay(
                             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                .stroke(Color(css: tokens.line), lineWidth: 1)
+                                .stroke(Color(css: tokens.line),
+                                        style: StrokeStyle(lineWidth: 1,
+                                                           dash: isCyber ? [] : [3, 3]))
                         )
                 }
             }
@@ -376,7 +379,6 @@ public struct DashboardScreen: View {
 
             // 大金额 + 环比（鸿蒙 amount top 8 / bottom 4）
             VStack(alignment: .leading, spacing: 3) {
-                Color.clear.frame(height: 0)
                 HStack(alignment: .bottom, spacing: 4) {
                     Text("¥")
                         .font(.system(size: heroSize() * 0.5, weight: .bold))
@@ -433,12 +435,12 @@ public struct DashboardScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.top, 16)
-            .padding(.bottom, 4)
+            .padding(.top, 14)
             .overlay(alignment: .top) { dashedRule }
 
             // 构成：一条堆叠占比条（高 9）+ 下方换行图例（鸿蒙口径）
-            if !composeRows().isEmpty {
+            // 鸿蒙**无空态守卫**：没分类时也画一条 9 高的空轨道
+            if true {
                 VStack(alignment: .leading, spacing: 0) {
                     GeometryReader { geo in
                         HStack(spacing: 0) {
@@ -456,8 +458,6 @@ public struct DashboardScreen: View {
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
                             .stroke(Color(css: tokens.line), lineWidth: 1)
                     )
-                    .padding(.top, 14)
-
                     FlowRow(spacing: 6) {
                         ForEach(composeRows()) { row in
                             HStack(spacing: 5) {
@@ -496,36 +496,37 @@ public struct DashboardScreen: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color(css: urgencyColorOf(t)))
                         .frame(width: 4, height: 22)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(t.periodSeq)期 · \(t.planName)")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Color(css: tokens.ink))
-                            .lineLimit(1)
-                        // 「自动 / 需手动」是「确认 vs 入账」动作的依据
-                        Text(t.willAutoPost ? "自动" : "需手动")
-                            .font(.custom(fontMonoOf(), size: 10).weight(.bold))
-                            .foregroundStyle(Color(css: urgencyColorOf(t)))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("\(t.periodSeq)期 · \(t.planName)")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Color(css: tokens.ink))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // 「自动 / 需手动」与标题同一行（鸿蒙单行 6 段布局）
+                    Text(t.willAutoPost ? "自动" : "需手动")
+                        .font(.custom(fontMonoOf(), size: 10).weight(.bold))
+                        .foregroundStyle(Color(css: urgencyColorOf(t)))
 
                     Text(formatYuan(t.amountCents))
                         .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(Color(css: tokens.ink))
 
+                    // 鸿蒙是**纯文字**按钮（ink2 + 透明底），不是实心强调胶囊
                     Button {
                         Task { await todoAction(t, t.willAutoPost ? "ack" : "confirm") }
                     } label: {
                         Text(t.willAutoPost ? "确认" : "入账")
                             .font(.system(size: 11.5, weight: .bold))
-                            .foregroundStyle(Color(css: tokens.accentInk))
+                            .foregroundStyle(Color(css: tokens.ink2))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 4)
-                            .background(Color(css: tokens.accent))
+                            .background(Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                             .overlay(
                                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                    .stroke(Color(css: isCyber ? tokens.line : "transparent"), lineWidth: 1)
+                                    .stroke(Color(css: isCyber ? tokens.line : "transparent"),
+                                            lineWidth: isCyber ? 1 : tokens.borderW)
                             )
                     }
                     .buttonStyle(.plain)
@@ -544,7 +545,7 @@ public struct DashboardScreen: View {
                             )
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 5)
                 .overlay(alignment: .bottom) {
                     if idx < todos.count - 1 {
                         Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
@@ -596,8 +597,10 @@ public struct DashboardScreen: View {
         .padding(.top, 10)
     }
 
+    /// 长度判定**去掉 ¥**（鸿蒙 `formatYuan(x).replace('¥','')`）：
+    /// 带着 ¥ 会提前一个档位降级
     private func heroSize() -> CGFloat {
-        let s = formatYuan(totalCents())
+        let s = formatYuan(totalCents()).replacingOccurrences(of: "¥", with: "")
         if s.count <= 8 { return 34 }
         if s.count <= 10 { return 28 }
         return 22
@@ -740,7 +743,9 @@ public struct DashboardScreen: View {
                 Button { app.screen = .report } label: {
                     Text("打开报表")
                         .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
-                        .foregroundStyle(Color(css: tokens.accent))
+                        .foregroundStyle(Color(css: tokens.ink2))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
             }
@@ -827,7 +832,7 @@ public struct DashboardScreen: View {
                 }
             }
             .shadow(color: isCyber ? Color(css: "rgba(0,255,136,0.4)") : .clear,
-                    radius: isCyber ? 5 : 0, x: 0, y: isCyber ? -2 : 0)
+                    radius: isCyber ? 10 : 0, x: 0, y: isCyber ? -2 : 0)
     }
 
     // MARK: - 期间月历

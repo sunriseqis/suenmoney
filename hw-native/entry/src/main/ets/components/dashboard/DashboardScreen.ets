@@ -298,7 +298,7 @@ export struct DashboardScreen {
     }
     if (this.tier === 1) {
       return this.yearReport !== null && this.yearReport.yearAgo !== undefined
-        ? ratioOf(this.yearReport.yearAgo.changeRatio) : null;
+        ? ratioOf(this.yearReport.yearAgo.change?.ratio) : null;
     }
     return null;
   }

@@ -184,6 +184,7 @@ public struct LedgerScreen: View {
                 pullIndicator
                 Spacer(minLength: 0)
             }
+            .padding(.top, 12)
             .allowsHitTesting(false)
 
             // 期间快选月历
@@ -204,6 +205,9 @@ public struct LedgerScreen: View {
                         RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
                             .stroke(Color(css: tokens.line2), lineWidth: 2)
                     )
+                    .background {
+                        Capsule().fill(Color(css: "rgba(0,0,0,0.18)")).offset(x: 4, y: 4)
+                    }
                     .padding(.bottom, 26)
             }
         }
@@ -531,9 +535,16 @@ public struct LedgerScreen: View {
 
     /// 某一行的分类色（与全局 `categoryColorOf(name:explicit:)` 区分开 ——
     /// 同名会让 View 内部优先解析成实例方法，变成自递归）
+    /// 行分类色：**有父级取父级**（二级跟随一级），hex 值不直接用（鸿蒙只认 1..16 数字，
+    /// hex 一律回落到按名字哈希，否则同一分类在两端口径不同）
     private func rowColorOf(_ row: ExpenseItem) -> String {
+        if let cat = categoryNames[row.categoryId], !cat.parentId.isEmpty,
+           let parent = categoryNames[cat.parentId] {
+            return categoryColorOf(parent.name, parent.color)
+        }
         let explicit = categoryNames[row.categoryId]?.color ?? row.categoryColor
-        return categoryColorOf(categoryNameOf(row), explicit)
+        let numeric = Int(explicit) != nil ? explicit : ""
+        return categoryColorOf(categoryNameOf(row), numeric)
     }
 
     /// 期次文案（`3期`），非计划来源返回空串
@@ -688,9 +699,9 @@ public struct LedgerScreen: View {
                     .foregroundStyle(Color(css: tokens.ink3))
                 // ¥ 用**基线对齐**：鸿蒙是 VerticalAlign.Bottom，但 SwiftUI 的 .bottom 按
                 // frame 底（大字号 Text 的 frame 含行高留白）会显得偏下。
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
                     Text("¥")
-                        .font(.system(size: heroAmountSize() * 0.5, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Color(css: tokens.ink2))
                     Text(formatYuan(periodTotalCents()).replacingOccurrences(of: "¥", with: ""))
                         .font(.custom(fontDisplayOf(isCyber), size: heroAmountSize()).weight(.black))
@@ -709,7 +720,8 @@ public struct LedgerScreen: View {
                         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                         .overlay(
                             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok), lineWidth: 1)
+                                .stroke(Color(css: ratio > 0 ? tokens.danger : tokens.ok),
+                                        lineWidth: isCyber ? 1 : 1.5)
                         )
                 }
             }
@@ -822,7 +834,8 @@ public struct LedgerScreen: View {
                         todoRow(t, isLast: idx == heroTodos.count - 1)
                     }
                 }
-                .padding(.top, 6)
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
             }
         }
         .padding(.top, 10)
@@ -916,12 +929,21 @@ public struct LedgerScreen: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 40)
-                .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+                // 鸿蒙这里硬编码 '#12121a'（= cyber surface），不是 surface2
+                .background(Color(css: isCyber ? "#12121a" : tokens.surface))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
-                        .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
+                        .stroke(Color(css: searchFocused ? tokens.accent : tokens.line),
+                                lineWidth: tokens.borderW)
                 )
+                .background {
+                    // 聚焦时 3px 主色硬阴影（鸿蒙 `.input:focus`）
+                    if searchFocused {
+                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                            .fill(Color(css: tokens.accent)).offset(x: 3, y: 3)
+                    }
+                }
 
                 // 只有展开时才出现「收起」，且是纯文字（鸿蒙无边框无底色）。
                 // 之前常驻一个「筛选」按钮，与高级区里真正的筛选按钮语义重复。
@@ -948,13 +970,20 @@ public struct LedgerScreen: View {
     }
 
     private var advancedArea: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 档位 Seg
+        VStack(alignment: .leading, spacing: 8) {
+            // 档位 Seg：胶囊轨道（padding 4 + surface2 底 + 描边）
             HStack(spacing: 4) {
                 segButton("按月", tier == 0) { switchTier(0) }
                 segButton("按年", tier == 1) { switchTier(1) }
                 segButton("全部", tier == 2) { switchTier(2) }
             }
+            .padding(4)
+            .background(Color(css: isCyber ? "transparent" : tokens.surface2))
+            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+            .overlay(
+                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
+            )
 
             // 期间导航
             HStack(spacing: 8) {
@@ -994,7 +1023,6 @@ public struct LedgerScreen: View {
                 // 「清除」放在记录人组尾部（鸿蒙同），且关键词也能清
                 if activeFilterCount() > 0 || !keyword.isEmpty {
                     HStack {
-                        Spacer(minLength: 0)
                         Button { clearFilters() } label: {
                             Text("清除")
                                 .font(.system(size: 11.5, weight: .bold))
@@ -1010,11 +1038,18 @@ public struct LedgerScreen: View {
                 .overlay(alignment: .top) { dashedLine }
             }
 
-            // 排序
+            // 排序 Seg：同样带胶囊轨道
             HStack(spacing: 4) {
                 segButton("按日期", sortMode == 0) { sortMode = 0 }
                 segButton("按金额", sortMode == 1) { sortMode = 1 }
             }
+            .padding(4)
+            .background(Color(css: isCyber ? "transparent" : tokens.surface2))
+            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
+            .overlay(
+                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                    .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
+            )
         }
     }
 
@@ -1105,7 +1140,7 @@ public struct LedgerScreen: View {
     private func chipButton(_ title: String, _ active: Bool, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10 : 11.5))
+                .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10 : 11.5).weight(.medium))
                 .foregroundStyle(Color(css: active
                                        ? (isCyber ? tokens.accent : tokens.onColor)
                                        : tokens.ink2))
@@ -1204,6 +1239,11 @@ public struct LedgerScreen: View {
                                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
                                     .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
                             )
+                            .background {
+                                if !isCyber {
+                                    Capsule().fill(Color(css: tokens.line2)).offset(x: 3, y: 3)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity)
@@ -1215,6 +1255,8 @@ public struct LedgerScreen: View {
                         Text("‹ 查看上月")
                             .font(.system(size: 12.5, weight: .bold))
                             .foregroundStyle(Color(css: tokens.ink2))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity)
@@ -1228,7 +1270,7 @@ public struct LedgerScreen: View {
 
     /// 流水行：第一行 分类 + 标题(note) + 归属；第二行 支付 · 期数；右侧金额
     private func expenseRow(_ row: ExpenseItem) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             CatIconView(catName: categoryNameOf(row), iconSize: 19, color: rowColorOf(row))
                 .frame(width: 34, height: 34)
                 .background(Color(css: mixHex(rowColorOf(row), tokens.surface, 0.12)))
@@ -1382,11 +1424,12 @@ public struct LedgerScreen: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 12)
-            .background(Color(css: tokens.surface2))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+            .background(Color(css: tokens.surface))
+            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                    .stroke(Color(css: tokens.line), lineWidth: 1)
+                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                    .stroke(Color(css: isCurrent ? tokens.line2 : tokens.line),
+                            lineWidth: tokens.borderW)
             )
         }
         .buttonStyle(.plain)
@@ -1427,6 +1470,8 @@ public struct LedgerScreen: View {
 
     private func yearCell(_ point: YearPoint) -> some View {
         let pct = Double(point.totalCents) / Double(allCellMax())
+        // 全部档没有「当月」概念（年份格），一律不强调
+        let isCurrent = false
         return Button {
             // 全部档点年格 → 切到该年的年档
             anchorYear = point.year
@@ -1462,11 +1507,12 @@ public struct LedgerScreen: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 12)
-            .background(Color(css: tokens.surface2))
-            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+            .background(Color(css: tokens.surface))
+            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
             .overlay(
-                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                    .stroke(Color(css: tokens.line), lineWidth: 1)
+                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                    .stroke(Color(css: isCurrent ? tokens.line2 : tokens.line),
+                            lineWidth: tokens.borderW)
             )
         }
         .buttonStyle(.plain)

@@ -95,14 +95,18 @@ public struct PayIconView: View {
     public let name: String
     public let icon: String
     public let iconSize: CGFloat
-    /// 是否用品牌色；false 时跟随前景色（列表里通常用品牌色）
+    /// 是否用品牌色；false 时用 `foreground`（列表里通常用品牌色）
     public let tinted: Bool
+    /// 显式前景色（选中态传 `accentInk`）。nil 时回落 `.primary`
+    public let foreground: Color?
 
-    public init(name: String, icon: String = "", iconSize: CGFloat = 18, tinted: Bool = true) {
+    public init(name: String, icon: String = "", iconSize: CGFloat = 18,
+                tinted: Bool = true, foreground: Color? = nil) {
         self.name = name
         self.icon = icon
         self.iconSize = iconSize
         self.tinted = tinted
+        self.foreground = foreground
     }
 
     private var visual: PayVisual { resolvePayVisual(name: name, explicitIcon: icon) }
@@ -121,6 +125,6 @@ public struct PayIconView: View {
                     .font(.system(size: iconSize, weight: .medium))
             }
         }
-        .foregroundStyle(tinted ? Color(css: visual.color) : Color.primary)
+        .foregroundStyle(tinted ? Color(css: visual.color) : (foreground ?? Color.primary))
     }
 }
