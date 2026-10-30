@@ -964,6 +964,39 @@ public struct LedgerScreen: View {
             if advOpen {
                 advancedArea
             }
+
+            if showFilters {
+                VStack(spacing: 10) {
+                filterGroup("分类", rootCategories, filterCategory, showAll: true) { id in
+                    filterCategory = filterCategory == id ? "" : id
+                    Task { await loadMonth(reset: true) }
+                }
+                filterGroup("支付", paymentOptions, filterPayment) { id in
+                    filterPayment = filterPayment == id ? "" : id
+                    Task { await loadMonth(reset: true) }
+                }
+                filterGroup("记录人", ownerOptions, filterOwner) { id in
+                    filterOwner = filterOwner == id ? "" : id
+                    Task { await loadMonth(reset: true) }
+                }
+                // 「清除」放在记录人组尾部（鸿蒙同），且关键词也能清
+                if activeFilterCount() > 0 || !keyword.isEmpty {
+                    HStack {
+                        Button { clearFilters() } label: {
+                            Text("清除")
+                                .font(.system(size: 11.5, weight: .bold))
+                                .foregroundStyle(Color(css: tokens.ink2))
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                }
+                .padding(.top, 14)
+                .overlay(alignment: .top) { dashedLine }
+            }
+
         }
         .padding(14)
         .card(tokens, isCyber, radius: 16)
@@ -1001,42 +1034,11 @@ public struct LedgerScreen: View {
                 }
                 .buttonStyle(.plain)
                 chevronButton("›") { shiftPeriod(1) }
+                // 「筛选」在**期间行尾**（鸿蒙同一个 Row）
+                filterToggle
+                Spacer(minLength: 0)
             }
 
-            // 筛选按钮：有筛选时变**主色实心**（鸿蒙），否则看不出是否启用
-            filterToggle
-
-            if showFilters {
-                VStack(spacing: 10) {
-                filterGroup("分类", rootCategories, filterCategory, showAll: true) { id in
-                    filterCategory = filterCategory == id ? "" : id
-                    Task { await loadMonth(reset: true) }
-                }
-                filterGroup("支付", paymentOptions, filterPayment) { id in
-                    filterPayment = filterPayment == id ? "" : id
-                    Task { await loadMonth(reset: true) }
-                }
-                filterGroup("记录人", ownerOptions, filterOwner) { id in
-                    filterOwner = filterOwner == id ? "" : id
-                    Task { await loadMonth(reset: true) }
-                }
-                // 「清除」放在记录人组尾部（鸿蒙同），且关键词也能清
-                if activeFilterCount() > 0 || !keyword.isEmpty {
-                    HStack {
-                        Button { clearFilters() } label: {
-                            Text("清除")
-                                .font(.system(size: 11.5, weight: .bold))
-                                .foregroundStyle(Color(css: tokens.ink2))
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                }
-                .padding(.top, 14)
-                .overlay(alignment: .top) { dashedLine }
-            }
 
             // 排序 Seg：同样带胶囊轨道
             HStack(spacing: 4) {

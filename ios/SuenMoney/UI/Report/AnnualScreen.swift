@@ -199,7 +199,8 @@ public struct AnnualScreen: View {
     // MARK: - 年度全貌
 
     private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        // 鸿蒙是 Column() 无间距 + 逐段 margin（header 13 / hero 8-4 / metrics 16+14）
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 // orb：日历
                 Image(systemName: "calendar")
@@ -379,6 +380,7 @@ public struct AnnualScreen: View {
                 .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
                 .tracking(isCyber ? 1.25 : 0)
                 .foregroundStyle(Color(css: tokens.ink))
+                .padding(.bottom, 13)
 
             if let peak = report?.peakMonth {
                 Text(formatMonthLabel(peak.month))
@@ -410,6 +412,7 @@ public struct AnnualScreen: View {
                 .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
                 .tracking(isCyber ? 1.25 : 0)
                 .foregroundStyle(Color(css: tokens.ink))
+                .padding(.bottom, 13)
 
             if let big = report?.largest {
                 Text(formatYuan(big.cents))

@@ -542,12 +542,13 @@ public struct SettingsScreen: View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
+                    orb(tokens.sky, "creditcard")
                     Text("支付方式")
                         .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
                         .tracking(isCyber ? 1.25 : 0)
                         .foregroundStyle(Color(css: tokens.ink))
                     Spacer(minLength: 0)
-                    smBtn("新增支付") { openPayCreate() }
+                    smBtn("新增") { openPayCreate() }
                 }
 
                 if payments.isEmpty {
