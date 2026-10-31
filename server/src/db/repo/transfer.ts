@@ -27,6 +27,7 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 
 import { config } from '../../config.ts';
 import { badRequest, conflict } from '../../lib/http-error.ts';
+import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange, type EntityType } from '../sync.ts';
 import { createUserWithId } from './users.ts';
 
@@ -41,8 +42,8 @@ import { createUserWithId } from './users.ts';
  * 导出文件；而显式清单让「导出格式变了」这件事在 diff 里看得见。
  */
 const MEMBER_COLUMNS = [
-  'id', 'username', 'display_name', 'role', 'created_at', 'updated_at',
-  'deleted_at', 'rev', 'device_id',
+  'id', 'username', 'display_name', 'password_hash', 'role',
+  'created_at', 'updated_at', 'deleted_at', 'rev', 'device_id',
 ] as const;
 
 const CATEGORY_COLUMNS = [
@@ -230,8 +231,13 @@ export function buildPackage(
   // 成员 / 分类 / 支付方式没有时间维度，一律全量 —— 这样任意一份导出
   // 都能单独解释它自己引用的每一个 id。
   //
-  // 成员**不含 password_hash**：导出文件是会被随手存进网盘的东西，
-  // 口令哈希不该跟着走。代价见 `requireMembers` —— 导入不建账号。
+  // 成员**含 password_hash**：JSON 备份 = 整个数据库（含账号与口令），
+  // 导入即覆盖 —— 恢复出来的机器能直接用原来的口令登录。
+  //
+  // 代价必须说清：这个文件等同于「整库 + 登录凭据」。所以
+  //   · 本地导出/导入只在管理员手里流转；
+  //   · 推到 WebDAV 时必须先口令加密（见 lib/backup-crypto.ts，产物后缀 .mn）。
+  // 明文 JSON 不进任何远端存储。
   const memberRows = selectRows(db, `SELECT ${MEMBER_COLUMNS.join(', ')} FROM users`);
   const categories = allRows(db, 'categories');
   const paymentMethods = allRows(db, 'payment_methods');
@@ -342,71 +348,42 @@ function csvCell(value: unknown): string {
   return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
 }
 
-function csvLine(cells: readonly unknown[]): string {
-  return cells.map(csvCell).join(',');
+/**
+ * 最小 CSV 解析：支持双引号包裹、引号内逗号/换行、`""` 转义。
+ *
+ * 不引第三方库：只服务本系统自己导出的表 + 常见的 Excel 另存为 CSV，
+ * 这两种格式用不到 RFC4180 以外的扩展（分隔符变体、注释行等）。
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i += 1; }
+        else inQuotes = false;
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+    if (ch === '"') { inQuotes = true; continue; }
+    if (ch === ',') { row.push(cell); cell = ''; continue; }
+    if (ch === '\r') continue;
+    if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue; }
+    cell += ch;
+  }
+  if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
+
+  return rows.filter((r) => r.some((c) => c.trim() !== ''));
 }
 
-const CSV_HEADER = [
-  '消费日', '入账日', '还款日', '金额', '分类', '二级分类',
-  '支付方式', '记录人', '备注', '来源', '计划', '期次',
-] as const;
-
-/**
- * 把数据包摊平成一张对账表。
- *
- * 只导出**未删除**的支出：这张表是拿去和报表核对的，而报表的合计不含墓碑。
- * 带上墓碑会让人对不上账，且看起来像「报表多算了/少算了」。
- *
- * 金额用元、保留两位小数 —— 分是内部存储单位，给人看的表里不该出现。
- */
-export function toExpenseCsv(pkg: ExportPackage): string {
-  const live = pkg.data.expenses.filter((row) => row['deleted_at'] === null);
-
-  const categoryById = new Map(pkg.data.categories.map((row) => [String(row['id']), row]));
-  const paymentById = new Map(pkg.data.paymentMethods.map((row) => [String(row['id']), row]));
-  const memberById = new Map(pkg.data.members.map((row) => [String(row['id']), row]));
-  const planById = new Map(pkg.data.plans.map((row) => [String(row['id']), row]));
-
-  const lines = [csvLine(CSV_HEADER)];
-
-  /**
-   * 按还款日排序 —— 与报表、流水页的顺序一致。
-   * 不排的话行序就是数据库的返回顺序，同一份数据导两次可能不一样，
-   * 用户会以为「怎么跟上次不一样，是不是漏了」。
-   */
-  const sorted = [...live].sort((a, b) => {
-    const left = String(a['repayment_date']);
-    const right = String(b['repayment_date']);
-    return left === right ? String(a['id']).localeCompare(String(b['id'])) : left.localeCompare(right);
-  });
-
-  for (const row of sorted) {
-    const category = categoryById.get(String(row['category_id']));
-    const parent =
-      category !== undefined && category['parent_id'] !== null
-        ? categoryById.get(String(category['parent_id']))
-        : undefined;
-
-    lines.push(
-      csvLine([
-        row['spend_date'],
-        row['posting_date'],
-        row['repayment_date'],
-        (Number(row['amount_cents']) / 100).toFixed(2),
-        parent !== undefined ? parent['name'] : (category?.['name'] ?? ''),
-        parent !== undefined ? category?.['name'] : '',
-        paymentById.get(String(row['payment_method_id']))?.['name'] ?? '',
-        memberById.get(String(row['owner_id']))?.['display_name'] ?? '',
-        row['note'],
-        row['source'] === 'plan' ? '计划生成' : '手动记录',
-        row['plan_id'] === null ? '' : (planById.get(String(row['plan_id']))?.['name'] ?? ''),
-        row['plan_period_seq'] ?? '',
-      ]),
-    );
-  }
-
-  // \r\n + BOM：Excel 认这两个。只给 \n 的话老版本 Excel 会把整张表读成一行。
-  return `\uFEFF${lines.join('\r\n')}\r\n`;
+function csvLine(cells: readonly unknown[]): string {
+  return cells.map(csvCell).join(',');
 }
 
 // ---------------------------------------------------------------------------
@@ -503,13 +480,10 @@ export interface MergeReport {
   overwritten: number;
   /** 恢复前自动存档的快照路径（仅 restore） */
   snapshotPath: string | null;
-  /**
-   * 恢复时新建出来的成员 —— 这些账号**还没有可用的登录密码**，
-   * 管理员必须去「家庭与账号」给它们设一个，否则那人登不进去。
-   */
-  createdMembers: RecoveredMember[];
-  /** 恢复时被备份资料覆盖了昵称的已有成员 */
-  updatedMembers: Array<{ id: string; username: string; displayName: string }>;
+  /** 备份里的账号被覆盖写入的数量（**含口令**） */
+  membersRestored: number;
+  /** 本地有、备份里没有的账号：恢复后被软删除 */
+  membersRemoved: Array<{ id: string; username: string; displayName: string }>;
 }
 
 interface MergeOptions {
@@ -559,129 +533,82 @@ function remapMembersToActor(pkg: ExportPackage, actorId: string): void {
   }
 }
 
-/** 恢复备份时新建出来的成员（需要管理员去设初始登录密码） */
-export interface RecoveredMember {
-  id: string;
-  username: string;
-  displayName: string;
-  role: string;
-}
-
-/** 恢复备份时的成员处理结果 */
-export interface MemberMergeResult {
-  /** 旧 id → 目标库里对应的 id（用于改写 owner_id / confirmed_by） */
-  mapping: Map<string, string>;
-  /** 目标库原本没有、这次新建出来的成员 */
-  created: RecoveredMember[];
-  /** 被备份资料覆盖了昵称/角色的已有成员 */
-  overwritten: Array<{ id: string; username: string; displayName: string }>;
+/** 恢复备份后的成员变化（供响应里回给管理员） */
+export interface MemberRestoreResult {
+  /** 备份里的账号被写入（覆盖）的数量，**含口令** */
+  restored: number;
+  /** 本地有、但备份里没有的账号：软删除（净效果 = 只剩备份里的账号） */
+  removed: Array<{ id: string; username: string; displayName: string }>;
 }
 
 /**
- * 恢复备份时的成员处理：**按角色配对覆盖，多出来的新建**。
+ * 恢复备份时的成员处理：**整库覆盖**。
  *
- * 规则（用户定的，别自作聪明改成按 ULID 精确匹配）：
+ * JSON 备份 = 整个数据库（含 `password_hash`），所以恢复出来的机器
+ * 用**原来的口令**就能登录 —— 这是「换机器 / 重装 / 换 NAS」最省事的路径。
  *
- *   1. **不按 id 对比**。备份是另一台机器的快照，ULID 天然不同，按 id 比必然全不匹配。
- *   2. **管理员覆盖管理员、用户覆盖用户**：同角色按创建顺序一一配对，
- *      备份那一方的人覆盖目标那一方的人（昵称、角色以备份为准）。
- *   3. **密码不覆盖** —— 备份里根本没有 `password_hash`（刻意不导出）。
- *      已有账号的登录密码保持目标库原样，用户照常用原来的口令登录。
- *   4. 备份里人数**多于**目标库的，多出来的**新建账号**。
- *      新建的账号没有可用口令（占位随机串），必须由执行导入的管理员
- *      去「家庭与账号」里设一个初始密码，否则那人登不进去 —— 结果里会列出来。
- *   5. 数据里的 `owner_id` / `confirmed_by` 按上面的配对结果改写。
+ * 具体做法：
+ *   1. 备份里的账号按 id 写入（`ON CONFLICT DO UPDATE`），**password_hash 一起覆盖**；
+ *   2. 本地有、备份里没有的账号 → **软删除**（`deleted_at` 置当前时间，不再能登录，
+ *      但它作为外键目标的行还在，`plan_todos.confirmed_by` 等引用不会断）。
  *
- * 导入动作本身必然是管理员在操作（`requireAdmin` 已保证）。
+ * 为什么软删而不是物理删：`users` 被 `sessions` / `plans.owner_id` /
+ * `plan_todos.confirmed_by` 外键引用，物理删要在事务里 `PRAGMA defer_foreign_keys`
+ * 并级联清会话，一个环节出错就是半截状态。软删达到同样的净效果，风险小得多。
  */
-export function mergeMembersByRole(db: DatabaseSync, pkg: ExportPackage): MemberMergeResult {
-  const mapping = new Map<string, string>();
-  const created: RecoveredMember[] = [];
-  const overwritten: Array<{ id: string; username: string; displayName: string }> = [];
+function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult {
+  const backupIds = new Set(pkg.data.members.map((m) => String(m['id'] ?? '')).filter((x) => x !== ''));
+  const now = new Date().toISOString();
 
-  type UserLite = { id: string; username: string; display_name: string; role: string };
-  const loadTargets = (role: string): UserLite[] => {
-    const rows = db
-      .prepare(
-        `SELECT id, username, display_name, role FROM users
-         WHERE deleted_at IS NULL AND role = ? ORDER BY created_at ASC, id ASC`,
-      )
-      .all(role);
-    return rows as unknown as UserLite[];
-  };
+  let restored = 0;
+  for (const row of pkg.data.members) {
+    const id = String(row['id'] ?? '');
+    if (id === '') continue;
+    const username = String(row['username'] ?? '').trim().toLowerCase();
+    if (username === '') continue;
 
-  const backupMembers = pkg.data.members as readonly Row[];
-
-  for (const role of ['admin', 'member'] as const) {
-    const backups = backupMembers.filter((m) => String(m['role'] ?? 'member') === role);
-    const targets = loadTargets(role);
-
-    for (let i = 0; i < backups.length; i++) {
-      const bm = backups[i]!;
-      const oldId = String(bm['id'] ?? '');
-      if (oldId === '') continue;
-
-      const tgt = targets[i];
-      if (tgt !== undefined) {
-        // ── 已有账号：只覆盖资料，**不碰密码、不碰登录名** ──
-        const displayName = String(bm['display_name'] ?? tgt.display_name).trim() || tgt.display_name;
-        if (displayName !== tgt.display_name) {
-          db.prepare('UPDATE users SET display_name = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
-            .run(displayName, new Date().toISOString(), tgt.id);
-        }
-        mapping.set(oldId, tgt.id);
-        if (displayName !== tgt.display_name) {
-          overwritten.push({ id: tgt.id, username: tgt.username, displayName });
-        }
-        continue;
-      }
-
-      // ── 目标库没有这一号人：新建 ──
-      // 用备份里的原 ULID 建，这样它自己的引用不用改写；
-      // 口令是**无人知道的随机串** → 该账号在管理员设密码前登不进去。
-      const baseName = String(bm['username'] ?? '').trim().toLowerCase() || `user-${oldId.slice(-6).toLowerCase()}`;
-      let username = baseName;
-      let n = 2;
-      while (db.prepare('SELECT 1 AS x FROM users WHERE username = ?').get(username) !== undefined) {
-        username = `${baseName}-${n}`;
-        n += 1;
-        if (n > 100) break;
-      }
-
-      const displayName = String(bm['display_name'] ?? username).trim() || username;
-      const unusable = randomBytes(32).toString('hex'); // 谁都不知道，等于无口令
-
-      createUserWithId(db, { id: oldId, username, displayName, role, password: unusable });
-
-      mapping.set(oldId, oldId);
-      created.push({ id: oldId, username, displayName, role });
-      targets.push({ id: oldId, username, display_name: displayName, role });
-    }
+    db.prepare(
+      `INSERT INTO users (id, username, display_name, password_hash, role,
+                          created_at, updated_at, deleted_at, rev, device_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         username      = excluded.username,
+         display_name  = excluded.display_name,
+         password_hash = excluded.password_hash,
+         role          = excluded.role,
+         updated_at    = excluded.updated_at,
+         deleted_at    = excluded.deleted_at,
+         rev           = users.rev + 1,
+         device_id     = excluded.device_id`,
+    ).run(
+      id,
+      username,
+      String(row['display_name'] ?? username),
+      String(row['password_hash'] ?? ''),
+      String(row['role'] ?? 'member') === 'admin' ? 'admin' : 'member',
+      String(row['created_at'] ?? now),
+      String(row['updated_at'] ?? now),
+      row['deleted_at'] === null || row['deleted_at'] === undefined ? null : String(row['deleted_at']),
+      Number(row['rev'] ?? 1),
+      row['device_id'] === undefined ? null : (row['device_id'] as string | null),
+    );
+    restored += 1;
   }
 
-  // 改写业务数据里的成员引用
-  const remap = (v: unknown): unknown => {
-    if (typeof v !== 'string' || v === '') return v;
-    return mapping.get(v) ?? v;
-  };
-  for (const row of pkg.data.plans) {
-    if (typeof row['owner_id'] === 'string') row['owner_id'] = remap(row['owner_id']);
-  }
-  for (const row of pkg.data.expenses) {
-    if (typeof row['owner_id'] === 'string') row['owner_id'] = remap(row['owner_id']);
-  }
-  for (const row of pkg.data.planTodos) {
-    if (typeof row['confirmed_by'] === 'string' && row['confirmed_by'] !== '') {
-      // 配对后仍找不到对应的人（备份里没列出来的历史操作者）→ 清空，
-      // 而不是硬指到某人头上：那是「谁确认入账」的事实，不该被冒认
-      const mapped = remap(row['confirmed_by']);
-      row['confirmed_by'] = typeof mapped === 'string' && mapping.has(row['confirmed_by'] as string)
-        ? mapped
-        : '';
-    }
+  // 备份里没有的本地账号 → 软删除
+  const locals = db
+    .prepare('SELECT id, username, display_name FROM users WHERE deleted_at IS NULL')
+    .all() as Array<Record<string, unknown>>;
+  const removed: Array<{ id: string; username: string; displayName: string }> = [];
+  for (const u of locals) {
+    const id = String(u['id']);
+    if (backupIds.has(id)) continue;
+    db.prepare('UPDATE users SET deleted_at = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
+      .run(now, now, id);
+    removed.push({ id, username: String(u['username']), displayName: String(u['display_name']) });
   }
 
-  return { mapping, created, overwritten };
+  return { restored, removed };
 }
 
 function requireMembers(db: DatabaseSync, pkg: ExportPackage): void {
@@ -825,24 +752,15 @@ export function mergePackage(
   };
 
   /**
-   * 两种模式对「成员」的处理**刻意不同**：
-   *
-   * · 恢复备份（overwrite=true）—— 备份就是那台机器的全量快照，成员引用必须
-   *   **原样保留**。备份里有、目标库里没有的成员，按备份里的原 ULID 补建出来
-   *   （口令随机，返回给管理员）。不补建就必然整包拒绝，换个库/重装/换机器都会撞上。
-   *
-   * · 导入导出包（overwrite=false）—— 导出包只是「一批流水」，没有「原机器的成员」
-   *   这回事。这里的语义是**谁导入就归谁**：把 owner_id / confirmed_by 一律指向
-   *   当前操作者，不建账号、也不要求目标库认识那些 id。
+   * 成员处理：JSON 备份 = 整个数据库，导入即**整库覆盖**。
+   * 备份里的账号连同 `password_hash` 一起写回；本地多出来的账号软删除。
+   * 见 `restoreUsers`。
    */
-  let memberMerge: MemberMergeResult = { mapping: new Map(), created: [], overwritten: [] };
+  let memberRestore: MemberRestoreResult = { restored: 0, removed: [] };
 
   if (overwrite) {
-    // 恢复备份：按角色配对覆盖，多出来的新建（见 mergeMembersByRole 的规则说明）
-    memberMerge = mergeMembersByRole(db, pkg);
-  } else {
-    // 导入导出包：谁导入就归谁，不建账号
-    remapMembersToActor(pkg, actorId);
+    // 恢复备份 = 整库覆盖（含账号与口令），见 restoreUsers
+    memberRestore = restoreUsers(db, pkg);
   }
 
   let snapshotPath: string | null = null;
@@ -882,9 +800,191 @@ export function mergePackage(
     byTable,
     ...totals,
     snapshotPath,
-    createdMembers: memberMerge.created,
-    updatedMembers: memberMerge.overwritten,
+    membersRestored: memberRestore.restored,
+    membersRemoved: memberRestore.removed,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 流水 CSV（用户级）
+// ---------------------------------------------------------------------------
+
+/** 导出与导入共用这一份列名 —— 两套列名会导致「自己导出的文件自己认不出来」。 */
+const CSV_HEADER = [
+  '消费日期', '入账日期', '还款日', '金额', '一级分类', '二级分类',
+  '支付方式', '记录人', '备注', '来源', '计划', '期次',
+] as const;
+
+/**
+ * 导出流水 CSV。
+ *
+ * `ownerId` 非空 → 只导这个人的（非管理员走这条：a 只能导出 a 的）。
+ * 传 `null` = 全部（仅管理员）。
+ */
+export function buildExpensesCsv(db: DatabaseSync, ownerId: string | null): string {
+  const base = `SELECT e.*, p.name AS pay_name, u.display_name AS owner_name, pl.name AS plan_name
+                FROM expenses e
+                LEFT JOIN payment_methods p ON p.id = e.payment_method_id
+                LEFT JOIN users u ON u.id = e.owner_id
+                LEFT JOIN plans pl ON pl.id = e.plan_id
+                WHERE e.deleted_at IS NULL`;
+  // 按还款日排序 —— 与报表、流水页一致；不排的话同一份数据导两次行序可能不同
+  const order = ' ORDER BY e.repayment_date ASC, e.id ASC';
+  const rows = (ownerId === null
+    ? db.prepare(base + order).all()
+    : db.prepare(`${base} AND e.owner_id = ?${order}`).all(ownerId)) as Array<Record<string, unknown>>;
+
+  const catById = new Map<string, Record<string, unknown>>();
+  for (const c of db.prepare('SELECT id, name, parent_id FROM categories').all() as Array<Record<string, unknown>>) {
+    catById.set(String(c['id']), c);
+  }
+
+  const lines = [csvLine([...CSV_HEADER])];
+  for (const r of rows) {
+    const cat = catById.get(String(r['category_id']));
+    const parent = cat?.['parent_id'] !== null && cat?.['parent_id'] !== undefined
+      ? catById.get(String(cat['parent_id']))
+      : undefined;
+    lines.push(csvLine([
+      String(r['spend_date'] ?? ''),
+      String(r['posting_date'] ?? ''),
+      String(r['repayment_date'] ?? ''),
+      (Number(r['amount_cents'] ?? 0) / 100).toFixed(2),
+      parent !== undefined ? String(parent['name']) : String(cat?.['name'] ?? ''),
+      parent !== undefined ? String(cat?.['name'] ?? '') : '',
+      String(r['pay_name'] ?? ''),
+      String(r['owner_name'] ?? ''),
+      String(r['note'] ?? ''),
+      r['source'] === 'plan' ? '计划生成' : '手动记录',
+      String(r['plan_name'] ?? ''),
+      r['plan_period_seq'] === null || r['plan_period_seq'] === undefined ? '' : String(r['plan_period_seq']),
+    ]));
+  }
+
+  // \r\n + BOM：Excel 认这两个。只给 \n 的话老版本 Excel 会把整张表读成一行。
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
+}
+
+export interface CsvImportReport {
+  created: number;
+  skipped: number;
+  /** 跳过原因（最多 5 条明细，便于界面提示） */
+  problems: Array<{ line: number; reason: string }>;
+}
+
+/**
+ * 导入流水 CSV —— **不看归属，谁导入就归谁**。
+ *
+ * 分类/支付方式按**名字**匹配已有数据；匹配不到就跳过该行并报告原因，
+ * 而不是自动建分类（那会顺着一个拼错的名字长出一堆垃圾分类）。
+ * 计划相关列忽略：CSV 是流水快照，不重建分期关系。
+ */
+export function importExpensesCsv(
+  db: DatabaseSync,
+  csvText: string,
+  actorId: string,
+  ownerId: string,
+): CsvImportReport {
+  const records = parseCsv(csvText.replace(/^\uFEFF/, ''));
+  const report: CsvImportReport = { created: 0, skipped: 0, problems: [] };
+  if (records.length === 0) return report;
+
+  const header = records[0]!.map((h) => h.trim());
+  const idx = (name: string): number => header.indexOf(name);
+  const iDate = idx('消费日期');
+  const iPost = idx('入账日期');
+  const iRepay = idx('还款日');
+  const iAmount = idx('金额');
+  const iCat1 = idx('一级分类');
+  const iCat2 = idx('二级分类');
+  const iPay = idx('支付方式');
+  const iNote = idx('备注');
+
+  if (iDate < 0 || iAmount < 0) {
+    return { created: 0, skipped: 0, problems: [{ line: 1, reason: '缺少必需列：消费日期 / 金额' }] };
+  }
+
+  const payByName = new Map<string, string>();
+  for (const p of db.prepare('SELECT id, name FROM payment_methods WHERE deleted_at IS NULL').all() as Array<Record<string, unknown>>) {
+    payByName.set(String(p['name']).trim(), String(p['id']));
+  }
+
+  const catRows = db.prepare('SELECT id, name, parent_id FROM categories WHERE deleted_at IS NULL').all() as Array<Record<string, unknown>>;
+  const catById = new Map<string, Record<string, unknown>>();
+  for (const c of catRows) catById.set(String(c['id']), c);
+  const catByName = new Map<string, string>();
+  for (const c of catRows) {
+    const parentId = c['parent_id'];
+    if (parentId === null || parentId === undefined) {
+      catByName.set(String(c['name']).trim(), String(c['id']));
+    } else {
+      const parent = catById.get(String(parentId));
+      catByName.set(String(c['name']).trim(), String(c['id']));
+      catByName.set(`${String(parent?.['name'] ?? '')} / ${String(c['name']).trim()}`, String(c['id']));
+    }
+  }
+
+  const now = new Date().toISOString();
+  const insert = db.prepare(
+    `INSERT INTO expenses (id, owner_id, amount_cents, category_id, payment_method_id,
+                           spend_date, posting_date, repayment_date, note, source,
+                           plan_id, plan_period_seq, created_at, updated_at, deleted_at, rev, device_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', NULL, NULL, ?, ?, NULL, 1, NULL)`,
+  );
+
+  for (let i = 1; i < records.length; i++) {
+    const cells = records[i]!;
+    const line = i + 1;
+    const spendDate = (cells[iDate] ?? '').trim();
+    const amountRaw = (cells[iAmount] ?? '').trim().replace(/,/g, '');
+    const cents = Math.round(Number(amountRaw) * 100);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(spendDate)) {
+      report.skipped += 1;
+      if (report.problems.length < 5) report.problems.push({ line, reason: `消费日期不是 YYYY-MM-DD：'${spendDate}'` });
+      continue;
+    }
+    if (!Number.isFinite(cents) || cents === 0) {
+      report.skipped += 1;
+      if (report.problems.length < 5) report.problems.push({ line, reason: `金额无法识别：'${amountRaw}'` });
+      continue;
+    }
+
+    const leaf = iCat2 >= 0 ? (cells[iCat2] ?? '').trim() : '';
+    const root = iCat1 >= 0 ? (cells[iCat1] ?? '').trim() : '';
+    const categoryId = (leaf !== '' ? catByName.get(`${root} / ${leaf}`) : undefined)
+      ?? (leaf !== '' ? catByName.get(leaf) : undefined)
+      ?? (root !== '' ? catByName.get(root) : undefined);
+
+    const payName = iPay >= 0 ? (cells[iPay] ?? '').trim() : '';
+    const paymentId = payByName.get(payName);
+
+    if (categoryId === undefined) {
+      report.skipped += 1;
+      if (report.problems.length < 5) report.problems.push({ line, reason: `分类不存在：'${root}${leaf ? ' / ' + leaf : ''}'` });
+      continue;
+    }
+    if (paymentId === undefined) {
+      report.skipped += 1;
+      if (report.problems.length < 5) report.problems.push({ line, reason: `支付方式不存在：'${payName}'` });
+      continue;
+    }
+
+    const postingDate = iPost >= 0 && /^\d{4}-\d{2}-\d{2}$/.test((cells[iPost] ?? '').trim())
+      ? String(cells[iPost]).trim() : spendDate;
+    const repaymentDate = iRepay >= 0 && /^\d{4}-\d{2}-\d{2}$/.test((cells[iRepay] ?? '').trim())
+      ? String(cells[iRepay]).trim() : postingDate;
+
+    insert.run(
+      ulid(), ownerId, cents, categoryId, paymentId,
+      spendDate, postingDate, repaymentDate,
+      iNote >= 0 ? String(cells[iNote] ?? '') : '',
+      now, now,
+    );
+    report.created += 1;
+  }
+
+  return report;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,12 +7,11 @@
  * 3. 严格保留最近 3 天（3 份）的远程备份，通过 PROPFIND 与 DELETE 自动轮转删除超期备份；
  * 4. 每日定时后台轮询自动备份，防止服务器单点灾难。
  */
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { badRequest } from '../../lib/http-error.ts';
-import { createSnapshot, getSnapshotPath } from './snapshots.ts';
+import { buildPackage } from './transfer.ts';
+import { MnFormatError, mnFileName, packMn, unpackMn } from '../../lib/backup-crypto.ts';
 
 export interface WebdavConfig {
   url: string;
@@ -20,6 +19,11 @@ export interface WebdavConfig {
   password?: string;
   path: string;
   isEnabled: boolean;
+  /**
+   * 备份加密口令。**必填**：推到远端的 JSON 含整库与口令哈希，
+   * 不明文落第三方存储（见 lib/backup-crypto.ts）。
+   */
+  passphrase?: string;
 }
 
 export interface WebdavStatus {
@@ -197,28 +201,28 @@ export async function runWebdavBackup(
   if (!cfg || !cfg.url || !cfg.username || !cfg.password) {
     throw badRequest('尚未配置 WebDAV 服务器或配置不完整');
   }
+  // 门禁：没有口令就不许往远端推 —— 明文 JSON 含账号与口令哈希
+  if (cfg.passphrase === undefined || cfg.passphrase.trim() === '') {
+    throw badRequest('请先设置「备份口令」：推送到 WebDAV 的备份会被口令加密，口令为空不允许上传');
+  }
 
   const { dirUrl } = normalizeWebdavUrls(cfg.url, cfg.path);
   const authHeader = basicAuthHeader(cfg.username, cfg.password);
 
   await ensureRemoteDir(dirUrl, authHeader);
 
-  // 生成本地一致性快照
-  const snapshot = createSnapshot(db);
-  const localFilePath = getSnapshotPath(snapshot.filename);
-  if (!localFilePath) {
-    throw new Error('生成数据库快照失败');
-  }
+  // 生成「整库 JSON」→ gzip → 口令加密 → .mn
+  const pkg = buildPackage(db, { kind: 'all', period: '' }, 'suenmoney-backup');
+  const fileBuffer = packMn(JSON.stringify(pkg), cfg.passphrase);
 
-  const fileBuffer = readFileSync(localFilePath);
-  const targetFilename = snapshot.filename.replace(/^suenmoney-snapshot-/, 'suenmoney-backup-');
+  const targetFilename = mnFileName();
   const targetFileUrl = `${dirUrl}${targetFilename}`;
 
   const putRes = await fetch(targetFileUrl, {
     method: 'PUT',
     headers: {
       Authorization: authHeader,
-      'Content-Type': 'application/x-sqlite3',
+      'Content-Type': 'application/octet-stream',
       'Content-Length': String(fileBuffer.length),
     },
     body: fileBuffer,
@@ -226,7 +230,7 @@ export async function runWebdavBackup(
 
   if (putRes.status !== 200 && putRes.status !== 201 && putRes.status !== 204) {
     const errorText = await putRes.text().catch(() => '');
-    const err = `上传快照到 WebDAV 失败（HTTP ${putRes.status}）：${errorText.slice(0, 100)}`;
+    const err = `上传加密备份到 WebDAV 失败（HTTP ${putRes.status}）：${errorText.slice(0, 100)}`;
     saveWebdavStatus(db, {
       lastBackupAt: new Date().toISOString(),
       lastBackupStatus: 'error',

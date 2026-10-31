@@ -342,6 +342,12 @@ type QueryValue = string | number | boolean | undefined | null;
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
+  /**
+   * 请求体类型。默认 `application/json`（body 会被 JSON.stringify）。
+   * 传别的（如 `text/csv`）时 body 必须是**字符串**，原样发送 ——
+   * 流水 CSV 导入用这条路径，不必让浏览器再包一层 JSON。
+   */
+  contentType?: string;
   query?: Record<string, QueryValue>;
   /**
    * 单次请求的超时覆盖（毫秒）。
@@ -416,9 +422,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   const token = readToken();
   if (token !== null) headers['authorization'] = `Bearer ${token}`;
-  if (options.body !== undefined) headers['content-type'] = 'application/json';
+  const rawContentType = options.contentType;
+  const isRawBody = rawContentType !== undefined && rawContentType !== 'application/json';
+  if (options.body !== undefined) headers['content-type'] = rawContentType ?? 'application/json';
 
-  const bodyStr = options.body === undefined ? undefined : JSON.stringify(options.body);
+  const bodyStr = options.body === undefined
+    ? undefined
+    : isRawBody
+      ? String(options.body)
+      : JSON.stringify(options.body);
 
   // 候选地址列表：当前激活的排在最前，其余按配置顺序紧随其后
   const configuredUrls = readServerUrls();

@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { hasBackedUpToday, localDateString } from '../../src/db/repo/webdav.ts';
-import { todaySnapshotPrefix } from '../../src/db/repo/snapshots.ts';
+import { mnFileName } from '../../src/lib/backup-crypto.ts';
 
 const status = (lastBackupAt: string | null, lastBackupStatus: 'success' | 'error' | null = 'success') => ({
   lastBackupAt,
@@ -42,9 +42,9 @@ describe('localDateString 取服务器本地时区的今天', () => {
     assert.equal(localDateString(new Date('2026-10-01T04:00:00Z')), '2026-10-01');
   });
 
-  test('与每日物理快照的日期前缀同一口径', () => {
-    // snapshots.ts 的每日调度也按「本地今天」判断，凌晨不应退回昨天
-    assert.equal(todaySnapshotPrefix(new Date('2026-10-01T00:30:00+08:00')), 'suenmoney-snapshot-20261001');
+  test('与每日备份的文件名同一口径', () => {
+    // WebDAV 每日调度的文件名也按「本地今天」，凌晨不应退回昨天
+    assert.equal(mnFileName(new Date('2026-10-01T00:30:00+08:00')), 'suenmoney-backup-2026-10-01.mn');
   });
 });
 

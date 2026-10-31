@@ -25,7 +25,8 @@ import {
   mergePackage,
   packageFileName,
   parseScope,
-  toExpenseCsv,
+  buildExpensesCsv,
+  importExpensesCsv,
   validatePackage,
   writePreRestoreSnapshot,
 } from '../db/repo/transfer.ts';
@@ -55,56 +56,39 @@ export async function dataRoutes(app: FastifyInstance): Promise<void> {
    *
    * `scope=all` 全量；`scope=year&period=2026`；`scope=month&period=2026-09`。
    */
-  app.get('/api/export', { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
-    const query = asRecord(request.query);
-    const scope = parseScope(query['scope'], query['period']);
+  /**
+   * 导出流水 CSV —— **所有用户可用**。
+   *
+   * 非管理员只能导出自己记的（`a` 只能导出 `a` 的）；管理员导出全部。
+   * 这与「数据库备份」是两件不同的事：那边是整个库，这边只是流水。
+   */
+  app.get('/api/expenses.csv', { preHandler: [requireAuth] }, async (request, reply) => {
+    const auth = currentAuth(request);
+    const ownerFilter = auth.user.role === 'admin' ? null : auth.user.id;
+    const csv = buildExpensesCsv(getDatabase(), ownerFilter);
 
-    const pkg = buildPackage(getDatabase(), scope, 'suenmoney-export');
-
-    reply.type('application/json; charset=utf-8');
-    attachment(reply, packageFileName(pkg, 'json'));
-    return pkg;
+    reply.type('text/csv; charset=utf-8');
+    attachment(reply, `suenmoney-expenses-${ownerFilter === null ? 'all' : auth.user.username}-${new Date().toISOString().slice(0, 10)}.csv`);
+    return csv;
   });
 
   /**
-   * 导出对账表（CSV，给 Excel 看）。
+   * 导入流水 CSV —— **不看归属，谁导入就归谁**。
    *
-   * 与上面的 JSON 包是**同一份数据的两种投影**，不是两个功能：
-   * JSON 负责「能再导回来」，CSV 负责「人能看懂、能核对」。
-   * 合成一个文件就要么丢结构（CSV 表达不了分类层级与待办状态），
-   * 要么 Excel 打不开（JSON）。
-   */
-  app.get(
-    '/api/export/expenses.csv',
-    { preHandler: [requireAuth, requireAdmin] },
-    async (request, reply) => {
-      const query = asRecord(request.query);
-      const scope = parseScope(query['scope'], query['period']);
-
-      const pkg = buildPackage(getDatabase(), scope, 'suenmoney-export');
-
-      reply.type('text/csv; charset=utf-8');
-      attachment(reply, packageFileName(pkg, 'csv'));
-      return toExpenseCsv(pkg);
-    },
-  );
-
-  /**
-   * 导入数据包 —— **合并去重，不覆盖**。
-   *
-   * 指纹是 `entity_type + id`（主键全部是客户端生成的 ULID），
-   * 所以同一份文件重复导入不会产生重复记录，也不会改动已有记录。
-   * 这一点是刻意的：导入是一个可以放心按两次的按钮。
+   * 分类 / 支付方式按名字匹配已有数据，匹配不到的行跳过并回报原因
+   * （不自动建分类：一个拼错的名字会长出一堆垃圾分类）。
    */
   app.post(
-    '/api/import',
-    { preHandler: [requireAuth, requireAdmin], bodyLimit: UPLOAD_LIMIT },
+    '/api/expenses.csv/import',
+    { preHandler: [requireAuth], bodyLimit: UPLOAD_LIMIT },
     async (request) => {
       const auth = currentAuth(request);
-      const pkg = validatePackage(request.body);
+      const body = request.body;
+      const text = typeof body === 'string' ? body : '';
+      if (text.trim() === '') throw badRequest('文件为空');
 
-      const report = mergePackage(getDatabase(), pkg, auth.user.id, { overwrite: false });
-      return { report, counts: pkg.counts, scope: pkg.scope, generatedAt: pkg.generatedAt };
+      const report = importExpensesCsv(getDatabase(), text, auth.user.id, auth.user.id);
+      return report;
     },
   );
 
@@ -155,24 +139,15 @@ export async function dataRoutes(app: FastifyInstance): Promise<void> {
       });
 
       /**
-       * 恢复时新建出来的成员**没有可用口令**（备份不含 password_hash）。
-       * 必须显式告诉操作者去设初始密码，否则那些人登不进去，
-       * 而且界面上只会表现为「多了个从来没登录过的账号」。
+       * JSON 备份 = 整个数据库：账号和口令一起被覆盖。
+       * 这里只把「哪些本地账号因此被停用」告诉操作者 —— 否则他会发现
+       * 某个原来能登录的账号突然登不进去了，却不知道是恢复带来的。
        */
-      const needsPassword = report.createdMembers.map((m) => ({
-        id: m.id,
-        username: m.username,
-        displayName: m.displayName,
-        role: m.role,
-      }));
-
       return {
         report,
         counts: pkg.counts,
         scope: pkg.scope,
         generatedAt: pkg.generatedAt,
-        /** 新建成员：需要管理员去「家庭与账号」设初始登录密码 */
-        needsPassword,
       };
     },
   );
