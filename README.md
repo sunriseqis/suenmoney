@@ -1,159 +1,185 @@
 # SuenMoney
 
-家庭共用的记账系统。**只记支出**，目标是回答两个问题：
+家庭共用的记账系统。**只记支出**，回答两个问题：
 
 > **这个月 / 今年花了多少？花在什么上面？**
 
-服务端自托管（Docker Compose）。Web 端是记账界面兼管理后台；
-Android / iOS 复用同一份前端代码。
+自托管、单端口、数据完全在自己手里。2.0 起各端都是**原生实现**，不再共用一套 WebView 页面。
 
 ---
 
-## 快速开始
+## 架构
 
-### 方式一：Docker Compose（推荐，自托管生产环境）
+```
+                    ┌─────────────────────────────────────┐
+                    │  server/  Fastify 5 + node:sqlite   │
+                    │  一个进程 · 一个端口 · 同时提供      │
+                    │  页面（静态托管）与 /api            │
+                    └──────────────┬──────────────────────┘
+                                   │ HTTP · 同源
+        ┌──────────────┬───────────┴───────────┬──────────────┐
+        │              │                       │              │
+   web/ (Vue 3)   ios/ (SwiftUI)      hw-native/ (ArkTS)   fn/
+   Web 端/后台     iOS 原生客户端        鸿蒙 NEXT 原生      飞牛 fnOS 套件
+```
 
-镜像已自动托管在 GitHub Container Registry（`ghcr.io/sunriseqis/suenmoney`，多架构 amd64/arm64，每次推送 main 自动重建）。
-**一个镜像、一个容器、一个端口**：服务端自己托管前端产物，页面与 `/api` 同源同端口：
+| 目录 | 内容 | 规模 |
+|---|---|---|
+| `server/` | Fastify 5 + `node:sqlite`（Node ≥ 22.9） | 42 文件 / 10.5k 行 |
+| `web/` | Vue 3 + Vite，记账界面兼管理后台 | 71 文件 / 13.8k 行 |
+| `ios/` | SwiftUI（iOS 26+），原生客户端 | 33 文件 / 12.1k 行 |
+| `hw-native/` | ArkTS / ArkUI（HarmonyOS NEXT），原生客户端 | 37 文件 / 13.3k 行 |
+| `fn/` | 飞牛 fnOS 原生套件（`.fpk`，内置 Node 运行时，免 Docker） | — |
+| `hw/` · `android/` | 历史实现（Capacitor / WebView 时代），**已冻结** | 归档 |
+
+> **只有 5310 一个端口**：页面与接口同源同端口，没有「后端地址」要配。
+> 原生客户端在登录页填 `http://<主机IP>:5310` 即可。
+
+---
+
+## 三种部署方式
+
+### 一、飞牛 fnOS 套件（推荐给有飞牛 NAS 的）
+
+去 [`sunriseqis/suenapp`](https://github.com/sunriseqis/suenapp/releases) 下载 `suenmoney-v*.fpk`，
+在飞牛桌面 → **应用中心** → 右上角**手动安装**。
+
+安装向导里设：**服务端口**（默认 5310）+ **初始管理员账号**（密码 ≥ 8 位）。装完即可用。
+
+- 纯原生进程，内置 Node 运行时，不依赖 Docker
+- 数据落在飞牛独立持久化目录，升级/重装不丢账本
+- 从桌面图标或 `http://<NAS地址>:<端口>` 进入
+
+### 二、Docker Compose
 
 ```bash
-# 拉取镜像并启动（无需本地构建）
-docker compose pull && docker compose up -d
+docker compose pull && docker compose up -d          # 首次 / 升级
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build   # 或本地构建
 
-# 更新版本
-docker compose pull && docker compose up -d
-
-# 或不拉镜像、直接本地构建（需要完整仓库源码）
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-
-# （可选）也可以直接在容器内创建首个管理员（不传 --password 会随机生成并打印）：
+# 容器内创建首个管理员（不传 --password 会随机生成并打印）
 docker compose exec suenmoney node scripts/node-run.mjs src/cli/user-add.ts --username admin --name 管理员 --admin
 ```
 
-在部署机上打开 `http://127.0.0.1:5310`（局域网内其它设备用 `http://<宿主机IP>:5310`）即可开始使用。
+镜像：`ghcr.io/sunriseqis/suenmoney`（多架构 amd64/arm64）。
 
-> **只有一个端口 5310**：它同时是页面地址与接口地址，没有第二个端口、也没有「后端地址」要配。
-> 浏览器里前端永远同源；原生客户端（iOS / 鸿蒙）在登录页填 `http://<宿主机IP>:5310` 即可。
+### 三、本机直接跑（不用 Docker）
 
-> **不想用 Docker？** 合并之后服务端自带静态托管，一个 Node 进程就是全部 ——
-> 见 [部署指南 · 本机直接部署](docs/deploy.md#三补本机直接部署不用-docker)（systemd 托管、开机自启）。
-
-> **时区**：镜像默认 `TZ=Asia/Shanghai`（影响备份调度时刻与容器日志时间戳）。
-> 业务日期不受容器时区影响——客户端按本地时区判定后传入 `YYYY-MM-DD`。
-> 宿主机在其他时区时，在 `docker-compose.yml` 里覆盖 `TZ` 即可。
-> 详细运维与备份请阅读 [部署与运维指南](docs/deploy.md)。
+一个 Node 进程就是全部。systemd 托管、开机自启的做法见
+[部署指南 · 本机直接部署](docs/deploy.md)。
 
 ---
 
-### 方式二：本地开发调试
+## 客户端
 
-需要 **Node ≥ 22.9**。
+| 平台 | 形态 | 获取方式 |
+|---|---|---|
+| **Web** | 浏览器直接访问 `http://<主机IP>:5310` | 无需安装，也是管理后台 |
+| **iOS** | SwiftUI 原生，`.ipa` 未签名 | Release 里的 `SuenMoney-*.ipa`，用 AltStore / SideStore / 爱思助手个人签后安装 |
+| **鸿蒙 NEXT** | ArkTS 原生，`.hap` 未签名 | Release 里的 `SuenMoney-*.hap`，DevEco Studio 或自签工具装入真机 |
 
-```bash
-npm run install:all          # 安装 server 与 web 的依赖
+三端共用同一个发布页：**[`sunriseqis/suenapp`](https://github.com/sunriseqis/suenapp/releases)**
+（tag 为 `suenmoney-vX.Y.Z`，附件含 `.fpk` / `.hap` / `.ipa`）。
 
-npm --prefix server run db:init                      # 建库并写入默认分类
-npm --prefix server run user:add -- --username 你的登录名 --name 显示名
-                                                     # 不传 --password 会随机生成并打印
-
-npm run dev:server           # 后端，默认 127.0.0.1:3310（仅本机，供 vite 代理用）
-npm run dev:web              # 前端，默认 127.0.0.1:5310（开发时由 vite 托管，带 HMR）
-```
-
-打开 `http://127.0.0.1:5310` 即可。第一个账号会自动成为管理员。
-
-> 开发时是「vite 5310 + 后端 3310」两个进程，但**对外只有 5310 一个入口**（vite 把 `/api` 代理到 3310）。
-> 生产镜像里只有一个进程：服务端既供页面也供接口，见 `Dockerfile`。
-
-> 上面的 `127.0.0.1:3310` 是**本地开发**时后端进程的监听地址（仅本机可达，仅供 `dev:web` 开发代理使用）；
-> App / 浏览器填写的访问入口仍然是前端 `127.0.0.1:5310`。
-
-> **关于实验性旗标**：`node:sqlite` 与 TypeScript 类型剥离在不同 Node 小版本上
-> 的状态不一致（22.5 起需要旗标，新版本已默认开启）。`scripts/node-run.mjs`
-> **不猜版本号，直接探测能力**：不用旗标行不行，不行再试加上，两条都不通就
-> 给出可操作的报错。所以 22.x / 23.x / 24.x 与 CI 上都能直接跑，
-> 将来 Node 取消旗标也无需改脚本。
-
-## 测试
-
-```bash
-npm test                          # 两侧全跑
-npm --prefix server test          # 单元 + 端到端集成（服务端）
-npm --prefix web test             # 纯逻辑单元测试（前端）
-npm --prefix server run test:schema   # 只跑 schema 约束回归
-```
-
-服务端的集成测试用 Fastify 的 `app.inject()`，不占端口、不依赖网络、
-不碰真实的 `server/data/suenmoney.sqlite`。
-
-## 用演示数据看界面
-
-```bash
-export SUENMONEY_DB_PATH=/tmp/suenmoney-demo.sqlite
-npm --prefix server run db:init
-npm --prefix server run user:add -- --username demo --name 我 --password demo1234 --admin
-npm --prefix server run user:add -- --username lin  --name 爱人 --password demo1234
-npm --prefix server run seed:demo
-
-# 另起一套栈，完全不碰开发库
-SUENMONEY_DB_PATH=/tmp/suenmoney-demo.sqlite SUENMONEY_PORT=3400 npm --prefix server run start &
-SUENMONEY_API=http://127.0.0.1:3400 SUENMONEY_WEB_PORT=5410 npm --prefix web run dev
-```
-
-为什么要它：空库或者只有一两笔数据时，流水列表、报表饼图、计划进度条全是空壳，
-**判断不出排版、字号、对齐是否成立**。设计评审必须在真实数据密度下做。
-
-种子会写入 49 笔支出（含一笔负数退款）、3 个计划（房贷 / 分期 / 已逾期）、36 期待办。
+> 安卓端在 2.0 未重构，**当前没有安卓计划**；`android/` 目录保留为历史实现。
 
 ---
 
-## 结构
+## 备份与恢复
 
-```
-suenmoney/
-├── server/      后端：Fastify + node:sqlite + 手写 SQL（无构建步骤，直接跑 .ts）；同时托管 web/dist
-├── web/         前端：Vue 3 + Vite + Tailwind v4 —— Web 与移动端共用
-├── android/     安卓原生工程（预留，由 web 的 Capacitor 驱动）
-├── ios/         iOS 原生工程（预留，同上）
-├── scripts/     跨项目共用的开发工具
-└── docs/        文档、计划、设计素材
+Web 端「数据」页 → **下载全量备份**（`suenmoney-backup-*.json`）→ 需要时用**恢复备份**上传。
+
+恢复是**覆盖式**的：文件里的记录以文件为准，本地多出来的记录**不会**被删。
+恢复前服务端会自动存一份当前全量快照（响应里的 `snapshotPath`），恢复错了能找回。
+
+### ⚠️ 从旧实例迁移：备份不能直接导入
+
+备份里每条计划 / 流水 / 期次都用 **ULID 引用成员**（`owner_id` / `confirmed_by`）。
+换库、重装、换 NAS 之后成员 ULID 一定会变，而导入端会逐条校验这些 id 是否存在 ——
+不存在就整包拒绝（备份**不含口令哈希**，导入不能替你建账号）。
+
+用 `scripts/convert-backup.mjs` 把旧 id 换成目标实例里真实的 id：
+
+```bash
+# 1) 先看清备份里有谁
+node scripts/convert-backup.mjs --input old.json --list
+
+# 2) 拿目标实例的成员 id
+curl -s http://<地址>:<端口>/api/users -H "Authorization: Bearer <token>"
+
+# 3) 按「旧=新」映射转换（一个成员一条 --map）
+node scripts/convert-backup.mjs --input old.json --output ready.json \
+  --map 01M3TWW6...=01M5E9YA2... \
+  --map 01M3V08H...=01M5EV489...
+
+# 或：所有成员合并到一个账号（单人使用）
+node scripts/convert-backup.mjs --input old.json --output ready.json --collapse <目标成员id>
 ```
 
-**目录与产物是硬约束**，见 [`docs/conventions.md`](docs/conventions.md)。
-摘要：测试一律进 `tests/`；产物一律不进 `src/`；文档与记忆一律进 `docs/`；
-不创建任何 `.codebuddy` / `.workbuddy` 之类的旁路目录。
+脚本会补齐 2.0 新增的 `payment_methods.icon` 列、重排字段顺序，
+并在写文件前校验「转换后没有任何悬空引用」。
+
+---
+
+## 开发
+
+```bash
+npm run install:all     # 装 server + web 依赖
+npm run dev:server      # 服务端热重载
+npm run dev:web         # 前端 Vite dev server（代理到 5310）
+
+npm run check           # 本地门禁：设计令牌校验 + 双端 typecheck + 双端测试 + web 构建
+npm test                # 只跑测试
+npm run typecheck       # 只跑类型检查
+```
+
+### 出包
+
+```bash
+npm run fn:build        # 飞牛 fnOS 套件 → output/suenmoney-v<ver>.fpk（+ .sha256）
+npm run build:hw        # 鸿蒙 HAP（未签名）
+npm run build:ios       # iOS IPA（未签名，需 macOS + Xcode）
+npm run icons           # 从矢量母版重新生成品牌图标
+```
+
+### CI
+
+**只有三条出包流水线，全部手动派发**：`build-fnos` / `build-hw` / `build-ios`。
+推代码不会触发任何构建。
+
+三端产物统一发到 **[`sunriseqis/suenapp`](https://github.com/sunriseqis/suenapp/releases)**，
+共用 tag `suenmoney-vX.Y.Z`；**本仓库不发行产物**。
+
+细节（含 tag 前缀为什么是硬性要求）见 [docs/ci.md](docs/ci.md)。
+
+---
+
+## 设计约定
+
+- **只记支出**，不做收入、不做预算、不做多币种。范围小是刻意的。
+- **月归属按还款日**：信用卡账单跨月时，这笔钱算在**还款月**，不是消费月。
+- **软删除**：分类与支付方式被流水引用时拒绝删除，只能停用；删除失败会给可执行建议。
+- **单一真相源**：服务端是唯一数据源，客户端离线队列只是暂存，冲突以服务端为准。
+
+视觉与交互的裁决记录见 [docs/decisions.md](docs/decisions.md)。
 
 ---
 
 ## 文档
-- **收尾待办**：`docs/plan/2026-10-23-项目收尾待办.md`（含移除测试服务 systemd 单元）
 
-| 文件 | 内容 |
+| 文档 | 内容 |
 |---|---|
-| [`docs/ci.md`](docs/ci.md) | **CI 与发布构建** —— 自动构建已关闭，只保留手动派发；恢复方式与坑 |
-| [`docs/deploy.md`](docs/deploy.md) | **部署与运维指南** —— Docker Compose 一键部署、环境变量与物理快照容灾 |
-| [`docs/decisions.md`](docs/decisions.md) | **设计决定与理由** —— 改设计前先读这份 |
-| [`docs/plan.md`](docs/plan.md) | 路线图、当前进度、待决事项 |
-| [`docs/plan/`](docs/plan/) | **三大结构性计划的方案文档**（单一服务项合并 / 飞牛 fnOS 套件 / 客户端全原生化） |
-| [`docs/api.md`](docs/api.md) | 接口清单 |
-| [`docs/conventions.md`](docs/conventions.md) | 目录与产物约定 |
-| [`docs/design/flat-design.md`](docs/design/flat-design.md) | 设计系统、令牌推导、与原始设计系统的偏离 |
-| [`docs/design/mockup.html`](docs/design/mockup.html) | **界面设计稿**（可直接在浏览器打开，5 页 + 22 条编号说明） |
-| [`docs/design/ui-review.md`](docs/design/ui-review.md) | 界面评审归档（已完成，保留原始记录） |
-| [`docs/design/ui-rework-2.md`](docs/design/ui-rework-2.md) | **第三轮返工方案**（9 条问题的代码核查、决策、落地顺序） |
-| [`docs/design/ui-rework-3.md`](docs/design/ui-rework-3.md) | **第四轮：信息架构重设**（读 BeeCount 源码 + **实测其部署实例**后重定每页内容；**概况看「多少」、报表=统计看「结构」**；**报表按档位组织块**；**移动端只保留流水一页 + 顶卡**；**卡片不为对齐而撑高**；**提醒展开后要能动手**（确认 / 入账 / 忽略，桌面与移动端都有）；**流水三档三形态**（月＝列表 / 年＝12 个月格日历 / 全部＝一格一年日历，点一下选中、再点才进，**格子底色＝花销深浅四档**）；**没有组头**；**流水行一行一项**（窄屏**账期让位**，**唯一可截断的是计划名**）；**提醒的颜色只落在展开箭头上、不染卡片**；**全局禁用 emoji**；**移动端提醒左右滑**（左滑确认 / 入账、右滑忽略，桌面仍是按钮；动作按「这一期会不会自动入账」分流，会自动入账的只给「确认」＝记一笔 `ack_at`、不改业务状态）；**日历只有深浅、没有图例**（月均已在汇总行，同一页不重复同一个数）；**所有页面禁用「说明式文字」**；计划提醒归属、功能清单） |
-| [`docs/design/ui-rework-3-preview.html`](docs/design/ui-rework-3-preview.html) | **第四轮方案预览（第十版）**（可交互原型：四页新分工 + 三档时间维度 + 热力图 + 累计条 + 报表分类下钻与**按档位换块** + **移动端单页化 / 顶卡可折叠 / 控制行 / 下拉记账** + **提醒压成一行、动作按钮在行尾** + **紧急度的颜色只落在展开箭头上** + **二级页关闭入标题行** + **流水三档三形态（月＝列表 / 年 / 全部＝日历，点一下选中、再点或按「进入」才下钻，底色＝花销深浅四档）** + **流水行一行一项**（并已修掉两个让它「多行」的结构 bug） + **无组头 / 无 emoji / 无图例** + **PC 版式体检**，桌面/手机两种宽度。<br>**这份预览的落地顺序前 3 步已全部落进代码** —— ① `.card-grid` 版式基线（卡片一律按内容高、**不为对齐而撑高**；危险区改通栏放最底）；② 设置页「数据」tab（导出数据包 / 导出对账表 / 导入 / 备份与恢复 / 危险区两个动作，**仅管理员**；导出范围三档，**一律走还款日前缀匹配、与报表同源**）；③ 计划提醒的动作层 —— 含 `003` 迁移（`ack_at`）、`ack` 端点、`ReminderRow` / `ReminderList`（一条一行 + 染色展开箭头 + 折叠 + 窄屏左右滑 + 8 秒撤销）） |
-| [`docs/design/oss-patterns.md`](docs/design/oss-patterns.md) | 同类开源项目调研（Maybe / Actual / Wallos / Cashew / ExpenseOwl） |
+| [docs/api.md](docs/api.md) | HTTP 接口 |
+| [docs/api-native-contract.md](docs/api-native-contract.md) | 原生客户端与服务端的契约（字段口径、错误码） |
+| [docs/deploy.md](docs/deploy.md) | 部署（Docker / 本机 systemd / 飞牛套件） |
+| [docs/ci.md](docs/ci.md) | CI 与发布约定 |
+| [docs/conventions.md](docs/conventions.md) | 目录、产物、命名纪律 |
+| [docs/decisions.md](docs/decisions.md) | 需求裁决记录（U01–U18 等） |
+| [docs/feature-inventory.md](docs/feature-inventory.md) | 功能清单 |
+| [docs/design/](docs/design/) | 设计系统与品牌资产 |
+| [docs/plan/](docs/plan/) | 阶段性计划与收尾待办 |
 
 ---
 
-## 几件最容易被误解的事
+## 许可
 
-- **报表的月份归属以「还款日」为准**，不是消费日。一笔 1 月 11 日的消费，
-  若信用卡账单日 10、还款日 28，就归属 **2 月**。这是现金流出视角。
-- **业务日期是 `YYYY-MM-DD` 字符串，不是时间戳**，所以月/年聚合零时区换算。
-  「今天」由客户端按本地时区判定后传入，服务端不推算。
-- **金额是整数「分」**，浮点会带来「总账差一分钱」的 bug。
-- **分类与支付方式只能停用不能删除**，否则历史报表会出现「未分类」黑洞，
-  并随同步扩散到所有设备。
-- **只能改自己创建的记录**。这不只是权限 —— 它同时是离线冲突的消解机制。
+私有项目，未授权请勿分发。
