@@ -13,7 +13,6 @@ import { expenseRoutes } from './expenses.ts';
 import { paymentMethodRoutes } from './payment-methods.ts';
 import { planRoutes } from './plans.ts';
 import { reportRoutes } from './reports.ts';
-import { snapshotRoutes } from './snapshots.ts';
 import { syncRoutes } from './sync.ts';
 import { updateRoutes } from './update.ts';
 import { userRoutes } from './users.ts';
@@ -68,6 +67,15 @@ export async function buildServer(
     } catch (e) {
       done(e as Error, undefined);
     }
+  });
+
+  /**
+   * text/csv 原样收成字符串。
+   * 流水导入是「用户上传一个 CSV」，不该逼前端先包成 JSON 再传 ——
+   * 那样浏览器里多一层编码，出问题也难对。
+   */
+  app.addContentTypeParser('text/csv', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
   });
 
   await app.register(cors, {
@@ -178,7 +186,6 @@ export async function buildServer(
   await app.register(planRoutes);
   await app.register(userRoutes);
   await app.register(dataRoutes);
-  await app.register(snapshotRoutes);
   await app.register(webdavRoutes);
   await app.register(syncRoutes);
   await app.register(updateRoutes);

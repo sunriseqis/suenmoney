@@ -51,12 +51,37 @@ interface PackageShape {
   data: Record<string, Array<Record<string, unknown>>>;
 }
 
-async function exportPackage(scope: string, period?: string): Promise<PackageShape> {
-  const url =
-    period === undefined ? `/api/export?scope=${scope}` : `/api/export?scope=${scope}&period=${period}`;
-  const res = await app.inject({ method: 'GET', url, headers: auth() });
+/** `changes` 表当前条数 —— 用来断言「写入/清空有没有留下同步变更」 */
+function changeCount(): number {
+  const db = openDatabase();
+  return Number((db.prepare('SELECT COUNT(*) AS n FROM changes').get() as Record<string, unknown>)['n']);
+}
+
+/** 重置演示数据返回的种子条数 */
+interface SeedCounts {
+  categories: number;
+  paymentMethods: number;
+  plans: number;
+  planTodos: number;
+  expenses: number;
+}
+
+/** 数据概览（清空/重置前先看清会动到什么） */
+async function overview(): Promise<Record<string, unknown>> {
+  const res = await app.inject({ method: 'GET', url: '/api/data/overview', headers: auth() });
   assert.equal(res.statusCode, 200, res.body);
-  return res.json() as PackageShape;
+  return res.json().overview as Record<string, unknown>;
+}
+
+/** 库里实际的活账条数（与接口无关的独立口径，用来对账） */
+function liveCounts(): { expenses: number; plans: number; planTodos: number } {
+  const db = openDatabase();
+  const n = (sql: string): number => Number((db.prepare(sql).get() as Record<string, unknown>)['n']);
+  return {
+    expenses: n("SELECT COUNT(*) AS n FROM expenses WHERE deleted_at IS NULL"),
+    plans: n("SELECT COUNT(*) AS n FROM plans WHERE deleted_at IS NULL"),
+    planTodos: n("SELECT COUNT(*) AS n FROM plan_todos WHERE deleted_at IS NULL"),
+  };
 }
 
 async function createExpense(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -162,391 +187,23 @@ after(() => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-describe('导出', () => {
-  test('全量包自包含：配置全带、成员不含口令哈希', async () => {
-    const pkg = await exportPackage('all');
-
-    assert.equal(pkg.format, 'suenmoney-export');
-    assert.deepEqual(pkg.scope, { kind: 'all', period: '' });
-
-    assert.equal(pkg.data['members']!.length, 2, '两个成员都要在包里，记录人名字才还原得出来');
-    assert.equal(pkg.data['categories']!.length, 1);
-    assert.equal(pkg.data['paymentMethods']!.length, 2);
-
-    // 导出文件是会被随手存进网盘的东西，口令哈希不该跟着走
-    for (const member of pkg.data['members']!) {
-      assert.equal('password_hash' in member, false, '导出里绝不能出现口令哈希');
-    }
-  });
-
-  test('按月导出的口径与报表同源：不能被消费日带偏', async () => {
-    const pkg = await exportPackage('month', '2026-10');
-
-    const report = await app.inject({
-      method: 'GET',
-      url: '/api/reports/monthly?month=2026-10',
-      headers: auth(),
-    });
-    assert.equal(report.statusCode, 200, report.body);
-
-    assert.equal(
-      sumCents(pkg),
-      report.json().report.totalCents,
-      '按 9 月消费日筛选会漏掉那笔信用卡账，合计就会和报表对不上',
-    );
-    // 12_345（9月刷卡、10月还款）+ 6_000（10月现金）
-    assert.equal(sumCents(pkg), 18_345);
-
-    // 9 月的范围里不该有这两笔 —— 它们的归属月都是 10 月
-    const september = await exportPackage('month', '2026-09');
-    assert.equal(sumCents(september), 0);
-  });
-
-  test('期间范围非法 → 400（而不是静默当成全部）', async () => {
-    const bad = await app.inject({
-      method: 'GET',
-      url: '/api/export?scope=month&period=2026-13',
-      headers: auth(),
-    });
-    assert.equal(bad.statusCode, 400);
-
-    const year = await app.inject({
-      method: 'GET',
-      url: '/api/export?scope=year&period=2026-09',
-      headers: auth(),
-    });
-    assert.equal(year.statusCode, 400, 'year 的 period 是四位年份，不该接受月份');
-
-    const conflict = await app.inject({
-      method: 'GET',
-      url: '/api/export?scope=all&period=2026',
-      headers: auth(),
-    });
-    assert.equal(conflict.statusCode, 400, 'scope=all 不该悄悄忽略 period');
-  });
-
-  test('对账 CSV：有表头、金额两位小数、墓碑不进表', async () => {
+describe('备份与恢复', () => {
+  test('非管理员不能恢复', async () => {
+    const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
     const res = await app.inject({
-      method: 'GET',
-      url: '/api/export/expenses.csv?scope=month&period=2026-10',
-      headers: auth(),
-    });
-    assert.equal(res.statusCode, 200, res.body);
-    assert.match(String(res.headers['content-type']), /text\/csv/);
-
-    const lines = res.body.split('\r\n').filter((line) => line !== '');
-    assert.match(lines[0]!, /消费日,入账日,还款日,金额/);
-    assert.equal(lines.length, 3, '表头 + 两笔账');
-
-    assert.ok(res.body.startsWith('\uFEFF'), '要带 BOM，否则 Excel 会读成乱码');
-    assert.ok(
-      lines.some((line) => line.includes('123.45')),
-      '金额用元、两位小数，导出的表里不该出现「分」',
-    );
-    assert.ok(
-      lines.some((line) => line.includes('现金') && line.includes('60.00')),
-      '支付方式名与金额都要还原出来',
-    );
-  });
-
-  test('非管理员不能导出：客户端隐藏按钮不算权限控制', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/export?scope=all',
+      method: 'POST',
+      url: '/api/backup/restore',
       headers: auth(memberToken),
+      payload: backup.json(),
     });
     assert.equal(res.statusCode, 403);
   });
-});
 
-describe('导入', () => {
-  test('同一份文件重复导入不产生重复记录（只补缺）', async () => {
-    const pkg = await exportPackage('all');
-
-    const first = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(first.statusCode, 200, first.body);
-    assert.equal(
-      first.json().report.created,
-      0,
-      '数据本来就在库里，不该新建任何东西',
-    );
-    assert.ok(first.json().report.skipped > 0);
-
-    const second = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(second.statusCode, 200, second.body);
-
-    const count = await app.inject({
-      method: 'GET',
-      url: '/api/expenses?limit=200',
-      headers: auth(),
-    });
-    assert.equal(count.json().items.length, 2, '导入两次之后还是两笔');
-  });
-
-  test('本地缺的那一行会被补回来', async () => {
-    const pkg = await exportPackage('all');
-    const target = pkg.data['expenses']!.find((row) => row['note'] === '十月现金')!;
-
-    // 直接从库里抹掉一行来模拟「空系统 / 缺数据」（绕过 API 是为了不受软删限制）
-    openDatabase().prepare('DELETE FROM expenses WHERE id = ?').run(String(target['id']));
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(res.statusCode, 200, res.body);
-    assert.ok(res.json().report.byTable.expenses.created >= 1);
-
-    const restored = await app.inject({
-      method: 'GET',
-      url: `/api/expenses/${String(target['id'])}`,
-      headers: auth(),
-    });
-    assert.equal(restored.statusCode, 200);
-  });
-
-  test('写入会留下同步变更 —— 否则其他设备永远看不到，且不报错', async () => {
-    // 临时建一个**没有被任何支出引用**的分类：下面要物理删掉它来模拟「本地没有」，
-    // 而 `expenses.category_id` 是立即检查的外键，删一个在用的分类会直接撞外键。
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/categories',
-      headers: auth(),
-      payload: { name: '同步检查用' },
-    });
-    assert.equal(created.statusCode, 201, created.body);
-    const targetId = String(created.json().category.id);
-
-    const db = openDatabase();
-    const before = Number(
-      (db.prepare('SELECT COUNT(*) AS n FROM changes').get() as Record<string, unknown>)['n'],
-    );
-
-    const pkg = await exportPackage('all');
-    db.prepare('DELETE FROM categories WHERE id = ?').run(targetId);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(res.statusCode, 200, res.body);
-
-    const after = Number(
-      (db.prepare('SELECT COUNT(*) AS n FROM changes').get() as Record<string, unknown>)['n'],
-    );
-    assert.ok(after > before, '导入必须走 db/sync.ts 落 changes');
-
-    const change = db
-      .prepare(
-        `SELECT op FROM changes WHERE entity_type = 'category' AND entity_id = ? ORDER BY version DESC LIMIT 1`,
-      )
-      .get(targetId) as Record<string, unknown>;
-    assert.equal(change['op'], 'upsert');
-  });
-
-  test('导入包引用不存在的成员 → 归给导入者，不建账号、不报错', async () => {
-    // 「导入导出包」的语义是「一批流水」，没有「原机器的成员」这回事：
-    // 谁导入就归谁。以前这里会 409，导致 A 机器导出的账永远进不了 B 机器。
-    const pkg = await exportPackage('all');
-    pkg.data['expenses']![0]!['owner_id'] = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-
-    const db = openDatabase();
-    const before = Number(
-      (db.prepare('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL').get() as Record<string, unknown>)['n'],
-    );
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(res.statusCode, 200, res.body);
-
-    // 不建账号
-    const after = Number(
-      (db.prepare('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL').get() as Record<string, unknown>)['n'],
-    );
-    assert.equal(after, before, '导入导出包不应该新建成员');
-
-    // 归属改成导入者
-    const row = db
-      .prepare('SELECT owner_id FROM expenses WHERE id = ?')
-      .get(String(pkg.data['expenses']![0]!['id'])) as Record<string, unknown>;
-    assert.notEqual(row['owner_id'], '01JZZZZZZZZZZZZZZZZZZZZZZZ');
-    const adminRow = db
-      .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
-      .get() as Record<string, unknown>;
-    assert.equal(row['owner_id'], adminRow['id']);
-  });
-
-  test('导入已确认的期次不能把 confirmed_by 清成空串 —— 那会撞外键与 CHECK', async () => {
-    // 回归：`confirmed_by TEXT REFERENCES users(id)`，空串不是 NULL，
-    // 会被当成 user id 去查 → FOREIGN KEY constraint failed → 用户只看到 500。
-    // 同时 DDL 有 `CHECK (status <> 'confirmed' OR confirmed_by IS NOT NULL)`。
-    const pkg = await exportPackage('all');
-    const db0 = openDatabase();
-    const cat = db0.prepare('SELECT id FROM categories LIMIT 1').get() as Record<string, unknown>;
-    const pay = db0.prepare('SELECT id FROM payment_methods LIMIT 1').get() as Record<string, unknown>;
-
-    const PLAN_ID = '01JEEEEEEEEEEEEEEEEEEEEEEE';
-    const EXPENSE_ID = '01JFFFFFFFFFFFFFFFFFFFFFFF';
-    const FOREIGN = '01JCCCCCCCCCCCCCCCCCCCCCCC';
-
-    // 一个「来自别的机器」的计划 + 一条已确认期次（确认人是本地不存在的成员）
-    pkg.data['plans'] = [{
-      id: PLAN_ID,
-      owner_id: FOREIGN,
-      name: '跨机导入的分期',
-      category_id: String(cat['id']),
-      payment_method_id: String(pay['id']),
-      amount_cents: 100,
-      total_amount_cents: 300,
-      purchase_date: '2026-09-01',
-      first_due_date: '2026-10-10',
-      remind_days_before: 3,
-      auto_post: 0,
-      source: 'manual',
-      state: 'active',
-      note: '',
-      created_at: '2026-09-01T00:00:00.000Z',
-      updated_at: '2026-09-01T00:00:00.000Z',
-      deleted_at: null,
-      rev: 1,
-      device_id: null,
-    }];
-    pkg.data['expenses'] = [{
-      id: EXPENSE_ID,
-      owner_id: FOREIGN,
-      amount_cents: 100,
-      category_id: String(cat['id']),
-      payment_method_id: String(pay['id']),
-      spend_date: '2026-10-10',
-      posting_date: '2026-10-10',
-      repayment_date: '2026-10-10',
-      note: '',
-      source: 'plan',
-      plan_id: PLAN_ID,
-      plan_period_seq: 1,
-      created_at: '2026-10-10T00:00:00.000Z',
-      updated_at: '2026-10-10T00:00:00.000Z',
-      deleted_at: null,
-      rev: 1,
-      device_id: null,
-    }];
-    pkg.data['planTodos'] = [{
-      id: '01JDDDDDDDDDDDDDDDDDDDDDDD',
-      plan_id: PLAN_ID,
-      period_seq: 1,
-      amount_cents: 100,
-      posting_date: '2026-10-10',
-      repayment_date: '2026-10-10',
-      remind_date: '2026-10-07',
-      status: 'confirmed',
-      posted_date: '2026-10-10',
-      confirmed_by: FOREIGN,
-      confirmed_at: '2026-10-10T00:00:00.000Z',
-      expense_id: EXPENSE_ID,
-      hold_auto_post: 0,
-      ack_at: null,
-      created_at: '2026-10-01T00:00:00.000Z',
-      updated_at: '2026-10-10T00:00:00.000Z',
-      deleted_at: null,
-      rev: 1,
-      device_id: null,
-    }];
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(res.statusCode, 200, res.body);
-
-    // 确认人应被改成导入者（不是空串、不是外部 id）
-    const db = openDatabase();
-    const adminRow = db
-      .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
-      .get() as Record<string, unknown>;
-    const todo = db
-      .prepare('SELECT confirmed_by FROM plan_todos WHERE id = ?')
-      .get('01JDDDDDDDDDDDDDDDDDDDDDDD') as Record<string, unknown>;
-    assert.equal(todo['confirmed_by'], adminRow['id']);
-
-    // 清理，避免影响后续用例
-    db.prepare('DELETE FROM plan_todos WHERE id = ?').run('01JDDDDDDDDDDDDDDDDDDDDDDD');
-    db.prepare('DELETE FROM expenses WHERE id = ?').run(EXPENSE_ID);
-    db.prepare('DELETE FROM plans WHERE id = ?').run(PLAN_ID);
-  });
-
-  test('结构不对的文件在写第一行之前就被拒掉', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: { format: 'something-else', version: 1 },
-    });
-    assert.equal(res.statusCode, 400);
-
-    const pkg = await exportPackage('all');
-    (pkg.data as Record<string, unknown>)['expenses'] = 'not-an-array';
-    const broken = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.equal(broken.statusCode, 400);
-  });
-
-  test('超过全局 512KB 的包仍然能导入（路由单独放宽了上限）', async () => {
-    const pkg = await exportPackage('all');
-    // 一条 600KB 的备注足以越过全局 bodyLimit；不单独放宽的话这里会 413
-    pkg.data['expenses']![0]!['note'] = 'x'.repeat(600 * 1024);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/import',
-      headers: auth(),
-      payload: pkg,
-    });
-    assert.notEqual(res.statusCode, 413, '导入路由必须放宽 bodyLimit');
-    assert.equal(res.statusCode, 200, res.body);
-  });
-});
-
-describe('备份与恢复', () => {
-  test('备份接口给的是 backup 信封；导出包调恢复会被拒', async () => {
+  test('备份接口给的是 backup 信封', async () => {
     const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
     assert.equal(backup.statusCode, 200, backup.body);
     assert.equal(backup.json().format, 'suenmoney-backup');
     assert.deepEqual(backup.json().scope, { kind: 'all', period: '' });
-
-    // 「按月导出被当备份恢复 → 静默丢掉其他月份」这条防线的最后一道
-    const wrong = await exportPackage('month', '2026-10');
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/backup/restore',
-      headers: auth(),
-      payload: wrong,
-    });
-    assert.equal(res.statusCode, 400);
-    assert.match(res.json().error, /导出包/);
   });
 
   test('恢复让文件覆盖本地，并留下恢复前的存档；且不删除本地多出来的记录', async () => {
@@ -654,32 +311,51 @@ describe('备份与恢复', () => {
     const after = openDatabase().prepare('SELECT name FROM categories ORDER BY id').all();
     assert.deepEqual(after, before, '失败必须整体回滚，分类不该被改掉');
   });
+});
 
-  test('恢复：按角色配对 —— 管理员覆盖管理员，多出来的成员新建且需要设密码', async () => {
-    // 场景：备份来自另一台机器（成员 ULID 与本地完全不同），
-    // 本地只有 1 个管理员，备份里有 1 管理员 + 1 成员。
+describe('整库覆盖与流水 CSV', () => {
+  test('JSON 备份含口令哈希；恢复即整库覆盖（账号与口令一起回来）', async () => {
     const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
+    assert.equal(backup.statusCode, 200, backup.body);
     const pkg = backup.json() as PackageShape;
 
-    const db0 = openDatabase();
-    const localAdmin = db0
-      .prepare("SELECT id, display_name FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
-      .get() as Record<string, unknown>;
+    // ① 备份里必须带 password_hash —— 否则恢复出来的机器谁都登不进去
+    const member = pkg.data['members']![0]!;
+    assert.equal(typeof member['password_hash'], 'string');
+    assert.ok(String(member['password_hash']).startsWith('scrypt$'), '口令哈希格式应为 scrypt$…');
 
-    // 伪造一台「另一台机器」：两个成员 id 都换成本地不存在的 ULID
-    const FOREIGN_ADMIN = '01JAAAAAAAAAAAAAAAAAAAAAAA';
-    const FOREIGN_MEMBER1 = '01JBBBBBBBBBBBBBBBBBBBBBBC';
-    const FOREIGN_MEMBER2 = '01JBBBBBBBBBBBBBBBBBBBBBBB';
+    // ② 恢复后仍能用原口令登录
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/backup/restore',
+      headers: auth(),
+      payload: pkg,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.ok(Number(res.json().report.membersRestored) >= 1);
 
-    // 测试库预置了 1 管理员 + 1 成员；备份给 1 管理员 + **2** 成员，
-    // 于是：管理员配对覆盖、成员1配对覆盖、成员2 多出来 → 新建。
-    pkg.data['members'] = [
-      { ...pkg.data['members']![0]!, id: FOREIGN_ADMIN, username: 'suenqi', display_name: '八十九', role: 'admin' },
-      { id: FOREIGN_MEMBER1, username: 'xxn', display_name: '夏天', role: 'member' },
-      { id: FOREIGN_MEMBER2, username: 'xiaohai', display_name: '小孩', role: 'member' },
-    ];
-    for (const row of pkg.data['expenses']!) row['owner_id'] = FOREIGN_ADMIN;
-    for (const row of pkg.data['plans']!) row['owner_id'] = FOREIGN_ADMIN;
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'suen', password: ADMIN_PASSWORD },
+    });
+    assert.equal(login.statusCode, 200, '恢复后原口令应仍可登录');
+  });
+
+  test('恢复会把备份里没有的本地账号软删除', async () => {
+    // 先造一个「本地多出来的人」
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: auth(),
+      payload: { username: 'tempuser', displayName: '临时', password: 'temp-password-123' },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+
+    const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
+    const pkg = backup.json() as PackageShape;
+    // 从备份里摘掉 tempuser —— 等价于「备份来自一台没有这个人的机器」
+    pkg.data['members'] = pkg.data['members']!.filter((m) => m['username'] !== 'tempuser');
 
     const res = await app.inject({
       method: 'POST',
@@ -688,115 +364,60 @@ describe('备份与恢复', () => {
       payload: pkg,
     });
     assert.equal(res.statusCode, 200, res.body);
-    const body = res.json();
+
+    const removed = res.json().report.membersRemoved as Array<{ username: string }>;
+    assert.ok(removed.some((m) => m.username === 'tempuser'), '多出来的账号应被软删除');
 
     const db = openDatabase();
-
-    // ① 管理员数量不变；本地那个管理员被「覆盖」了昵称（密码不动）
-    const admins = db
-      .prepare("SELECT id, display_name FROM users WHERE role = 'admin' AND deleted_at IS NULL")
-      .all() as Array<Record<string, unknown>>;
-    assert.equal(admins.length, 1, '管理员不该因为恢复而变多');
-    assert.equal(admins[0]!['id'], localAdmin['id'], '本地管理员账号应被复用，而不是新建');
-    assert.equal(admins[0]!['display_name'], '八十九', '昵称应被备份资料覆盖');
-
-    // ② 成员：本地原有的被配对覆盖，多出来的那个新建（沿用备份里的原 ULID）
-    const members = db
-      .prepare("SELECT id, display_name FROM users WHERE role = 'member' AND deleted_at IS NULL ORDER BY created_at, id")
-      .all() as Array<Record<string, unknown>>;
-    assert.equal(members.length, 2, '本地 1 个 + 新建 1 个');
-    const ids = members.map((m) => m['id']);
-    assert.ok(ids.includes(FOREIGN_MEMBER2), '多出来的成员应沿用备份里的原 ULID 新建');
-
-    // ③ needsPassword 只点名新建的那个
-    assert.equal(body.needsPassword.length, 1);
-    assert.equal(body.needsPassword[0].id, FOREIGN_MEMBER2);
-    assert.equal(body.needsPassword[0].username, 'xiaohai');
-    assert.equal(body.needsPassword[0].role, 'member');
-
-    // ④ 新建账号没有可用口令 —— 随便什么口令都登不进去
-    const login = await app.inject({
-      method: 'POST',
-      url: '/api/auth/login',
-      payload: { username: 'xiaohai', password: 'anything-at-all-123' },
-    });
-    assert.notEqual(login.statusCode, 200, '新建成员的账号在设密码前不能登录');
-
-    // ⑤ 数据归属已改写：不再指向外部成员 id，而是本地管理员
-    const expense = db
-      .prepare('SELECT owner_id FROM expenses ORDER BY id LIMIT 1')
-      .get() as Record<string, unknown>;
-    assert.notEqual(expense['owner_id'], FOREIGN_ADMIN, '业务数据不该再指向外部成员 id');
-    assert.equal(expense['owner_id'], localAdmin['id']);
-
-    // 测试与后续用例共享同一个库：把这次恢复搬进来的成员与昵称改动还原，
-    // 否则「概览 / 清空」等用例会看到多出来的账号而断言失败。
-    db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(FOREIGN_MEMBER1, FOREIGN_MEMBER2);
-    db.prepare('UPDATE users SET display_name = ? WHERE id = ?')
-      .run(String(localAdmin['display_name']), String(localAdmin['id']));
+    const row = db.prepare('SELECT deleted_at FROM users WHERE username = ?').get('tempuser') as Record<string, unknown>;
+    assert.notEqual(row['deleted_at'], null, '软删除：行还在，但 deleted_at 非空');
   });
 
-  test('非管理员不能恢复', async () => {
-    const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
+  test('流水 CSV：非管理员只导自己的，管理员导全部', async () => {
+    const adminCsv = await app.inject({ method: 'GET', url: '/api/expenses.csv', headers: auth() });
+    assert.equal(adminCsv.statusCode, 200);
+    assert.match(String(adminCsv.headers['content-type']), /text\/csv/);
+
+    const memberCsv = await app.inject({ method: 'GET', url: '/api/expenses.csv', headers: auth(memberToken) });
+    assert.equal(memberCsv.statusCode, 200, '普通成员也要能导出自己的流水');
+
+    const countLines = (t: string): number => t.trim().split('\r\n').length - 1;
+    assert.ok(countLines(adminCsv.body) >= countLines(memberCsv.body), '管理员的 CSV 不应少于成员的');
+  });
+
+  test('流水 CSV 导入：不看归属，谁导入就归谁', async () => {
+    // 用成员的身份导入，归属应记到成员名下
+    const csv = [
+      '消费日期,入账日期,还款日,金额,一级分类,二级分类,支付方式,记录人,备注,来源,计划,期次',
+      '2026-10-05,2026-10-05,2026-10-05,12.34,餐饮,,现金,,CSV导入测试,手动记录,,',
+    ].join('\r\n') + '\r\n';
+
     const res = await app.inject({
       method: 'POST',
-      url: '/api/backup/restore',
-      headers: auth(memberToken),
-      payload: backup.json(),
+      url: '/api/expenses.csv/import',
+      headers: { ...auth(memberToken), 'content-type': 'text/csv' },
+      payload: csv,
     });
-    assert.equal(res.statusCode, 403);
+    assert.equal(res.statusCode, 200, res.body);
+    const report = res.json() as { created: number; skipped: number };
+    assert.equal(report.created, 1, JSON.stringify(res.json()));
+
+    const db = openDatabase();
+    const row = db
+      .prepare("SELECT owner_id, amount_cents FROM expenses WHERE note = 'CSV导入测试'")
+      .get() as Record<string, unknown>;
+    assert.equal(Number(row['amount_cents']), 1234);
+
+    const memberRow = db
+      .prepare("SELECT id FROM users WHERE username = 'member' AND deleted_at IS NULL")
+      .get() as Record<string, unknown> | undefined;
+    if (memberRow !== undefined) {
+      assert.equal(row['owner_id'], memberRow['id'], '归属应记到导入者名下');
+    }
   });
 });
 
-/**
- * 危险区：清空账目 / 重置演示数据。
- *
- * 这一组放在**最后**是有意的：前面的用例都要数据在库里，而清空会把它们抹掉。
- * 这一组内部也有顺序依赖（先清空、再重置）—— 两个动作本来就是一条链。
- */
 describe('危险区', () => {
-  interface SeedCounts {
-    expenses: number;
-    plans: number;
-    planTodos: number;
-  }
-
-  /**
-   * 库里现在活着的账目条数（绕开 API 是因为要的正是「服务端自己怎么看」）。
-   *
-   * 一定要**手工构造一个普通对象**再返回：`node:sqlite` 的行是
-   * `Object.create(null)`，而 `assert` 的严格深比较**会比原型** ——
-   * 拿它直接与字面量比，会得到一串「看起来完全一样」的失败。
-   */
-  function liveCounts(): SeedCounts {
-    const row = openDatabase()
-      .prepare(
-        `SELECT
-           (SELECT COUNT(*) FROM expenses   WHERE deleted_at IS NULL) AS expenses,
-           (SELECT COUNT(*) FROM plans      WHERE deleted_at IS NULL) AS plans,
-           (SELECT COUNT(*) FROM plan_todos WHERE deleted_at IS NULL) AS planTodos`,
-      )
-      .get() as { expenses: number; plans: number; planTodos: number };
-
-    return {
-      expenses: Number(row.expenses),
-      plans: Number(row.plans),
-      planTodos: Number(row.planTodos),
-    };
-  }
-
-  function changeCount(): number {
-    return Number(
-      (openDatabase().prepare('SELECT COUNT(*) AS n FROM changes').get() as { n: number }).n,
-    );
-  }
-
-  async function overview(): Promise<Record<string, unknown>> {
-    const res = await app.inject({ method: 'GET', url: '/api/data/overview', headers: auth() });
-    assert.equal(res.statusCode, 200, res.body);
-    return res.json().overview as Record<string, unknown>;
-  }
-
   test('概览：清空之前就能看出会动到什么，且给出存档目录', async () => {
     const before = await overview();
     const live = before['ledger'] as Record<string, number>;

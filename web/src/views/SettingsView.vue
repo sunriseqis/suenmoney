@@ -23,7 +23,6 @@ import {
   paymentMethods as paymentsApi,
   plans as plansApi,
   planTodos as planTodosApi,
-  snapshots as snapshotsApi,
   users as usersApi,
   webdavBackup,
   type Category,
@@ -420,42 +419,82 @@ const themeChoice = computed({
   set: (v: string) => theme.set(v === 'dark' ? 'dark' : v === 'light' ? 'light' : 'system'),
 });
 
-const importBusy = ref(false);
+const restoreBusy = ref(false);
+const csvImportBusy = ref(false);
+const csvImportReport = ref<{ created: number; skipped: number; problems: Array<{ line: number; reason: string }> } | null>(null);
 
-async function exportPackage(): Promise<void> {
-  try {
-    await dataApi.exportPackage({ scope: 'all' } as never);
-    toast.show('账本已导出');
-  } catch (error) {
-    toast.show(errText(error, '导出失败'));
-  }
-}
-
+/** 导出流水 CSV（服务端按角色决定范围：管理员全部，成员只有自己的） */
 async function exportCsv(): Promise<void> {
   try {
-    await dataApi.exportCsv({ scope: 'all' } as never);
+    await dataApi.exportExpensesCsv();
     toast.show('流水 CSV 已导出');
   } catch (error) {
     toast.show(errText(error, '导出失败'));
   }
 }
 
-async function onImportFile(event: Event): Promise<void> {
+/** 导入流水 CSV —— 不看归属，谁导入归谁 */
+async function onCsvImportFile(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  importBusy.value = true;
+  csvImportBusy.value = true;
+  csvImportReport.value = null;
   try {
     const text = await file.text();
-    const pkg = JSON.parse(text) as unknown;
-    const result = await dataApi.import(pkg);
-    toast.show(`已导入（${result.counts?.expenses ?? 0} 笔支出）`);
+    const report = await dataApi.importExpensesCsv(text);
+    csvImportReport.value = report;
+    toast.show(`已导入 ${report.created} 笔，跳过 ${report.skipped} 笔`);
     await dict.load(true);
     await plansStore.refresh();
   } catch (error) {
-    toast.show(errText(error, '导入失败：文件格式不对？'));
+    toast.show(errText(error, '导入失败：请用「导出流水（CSV）」得到的表头'));
   } finally {
-    importBusy.value = false;
+    csvImportBusy.value = false;
+    input.value = '';
+  }
+}
+
+/**
+ * 恢复数据库备份 —— **整库覆盖，含账号与口令**。
+ *
+ * 二次确认写的不是「确定吗」，而是把后果逐条列出来：管理员账号会被换掉、
+ * 多出来的本机账号会被停用。用户点下去之前应该知道这些。
+ */
+async function onRestoreFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  restoreBusy.value = true;
+  try {
+    const text = await file.text();
+    const pkg = JSON.parse(text) as { format?: string };
+    if (pkg.format !== 'suenmoney-backup') {
+      toast.show('这不是数据库备份文件（format 应为 suenmoney-backup）');
+      return;
+    }
+    const ok = window.confirm(
+      '导入数据库备份会**覆盖整台机器的数据**：\n\n'
+      + '· 账号与登录口令以备份为准（当前口令可能失效）\n'
+      + '· 本机有、备份里没有的账号会被停用\n'
+      + '· 全部账目、分类、支付方式、计划都会被覆盖\n\n'
+      + '继续？',
+    );
+    if (!ok) return;
+
+    const result = await dataApi.restore(pkg);
+    const removed = (result.report?.membersRemoved ?? []) as Array<{ username: string }>;
+    toast.show(
+      removed.length > 0
+        ? `已恢复；${removed.map((m) => m.username).join('、')} 因备份里没有已被停用`
+        : '数据库已恢复',
+    );
+    await dict.load(true);
+    await plansStore.refresh();
+  } catch (error) {
+    toast.show(errText(error, '恢复失败'));
+  } finally {
+    restoreBusy.value = false;
     input.value = '';
   }
 }
@@ -611,10 +650,11 @@ const webdavUser = ref('');
 const webdavPass = ref('');
 const webdavPath = ref('suenmoney');
 const webdavEnabled = ref(false);
+/** 备份口令：推 WebDAV 的 .mn 靠它加密，必填 */
+const webdavPassphrase = ref('');
 const webdavTesting = ref(false);
 const webdavMessage = ref<string | null>(null);
 
-const snapshots = ref<Array<{ filename: string; sizeBytes: number; createdAt: string }>>([]);
 
 async function loadWebdav(): Promise<void> {
   try {
@@ -637,12 +677,19 @@ async function saveWebdav(): Promise<void> {
     return;
   }
   try {
+    // 门禁：启用 WebDAV 就必须设备份口令 —— 推到远端的是整库 JSON，
+    // 没有口令就等于把账号和口令哈希明文放进第三方存储
+    if (webdavEnabled.value && webdavPassphrase.value.trim().length < 8) {
+      toast.show('启用 WebDAV 前请设置至少 8 位的备份口令');
+      return;
+    }
     await webdavBackup.save({
       url: webdavUrl.value.trim(),
       username: webdavUser.value.trim(),
       ...(webdavPass.value !== '' ? { password: webdavPass.value } : {}),
       path: webdavPath.value.trim() || 'suenmoney',
       isEnabled: webdavEnabled.value,
+      ...(webdavPassphrase.value !== '' ? { passphrase: webdavPassphrase.value } : {}),
     });
     webdavPass.value = '';
     toast.show('WebDAV 配置已保存');
@@ -688,46 +735,12 @@ async function downloadBackup(): Promise<void> {
   }
 }
 
-async function loadSnapshots(): Promise<void> {
-  try {
-    snapshots.value = (await snapshotsApi.list()).snapshots;
-  } catch {
-    snapshots.value = [];
-  }
-}
-
-async function createSnapshot(): Promise<void> {
-  try {
-    await snapshotsApi.create();
-    toast.show('快照已创建');
-    await loadSnapshots();
-  } catch (error) {
-    toast.show(errText(error, '创建失败'));
-  }
-}
-
-async function downloadSnapshot(name: string): Promise<void> {
-  try {
-    await snapshotsApi.download(name);
-  } catch (error) {
-    toast.show(errText(error, '下载失败'));
-  }
-}
-
-async function removeSnapshot(name: string): Promise<void> {
-  if (!window.confirm(`删除快照 ${name}？`)) return;
-  try {
-    await snapshotsApi.remove(name);
-    await loadSnapshots();
-    toast.show('快照已删除');
-  } catch (error) {
-    toast.show(errText(error, '删除失败'));
-  }
-}
-
 // ── 我的账号 ────────────────────────────────────────────────────────────────
 const me = ref<User | null>(null);
 const myDisplayName = ref('');
+
+/** 数据库备份 / WebDAV 只对管理员开放 */
+const isAdmin = computed(() => me.value?.role === 'admin');
 const currentPassword = ref('');
 const newPassword = ref('');
 
@@ -788,7 +801,6 @@ onMounted(() => {
   void loadMembers();
   void loadMe();
   void loadWebdav();
-  void loadSnapshots();
   void loadDoneTodos();
   void loadSessions();
   void loadOverview();
@@ -1008,36 +1020,76 @@ onMounted(() => {
         </div>
       </PCard>
 
-      <PCard>
+      <!-- ① 数据库备份（仅管理员）：JSON = 整个数据库，导入即覆盖 -->
+      <PCard v-if="isAdmin">
         <div class="card-h">
-          <span class="card-t">导出</span>
+          <span class="card-t">数据库备份</span>
+          <span class="card-cap">JSON · 仅管理员</span>
         </div>
+        <p class="hint" style="margin: 0 0 10px">
+          包含<strong>整个数据库</strong>：全部账目、分类、支付方式、计划，以及<strong>账号与登录口令</strong>。
+          导入是<strong>覆盖</strong>式的 —— 恢复出来的机器用原来的口令就能直接登录。
+          文件等同于「整库 + 登录凭据」，请妥善保管。
+        </p>
         <div class="split">
-          <PBtn :icon="Database" @click="exportPackage">导出账本（JSON）</PBtn>
-          <PBtn @click="exportCsv">导出流水（CSV）</PBtn>
-        </div>
-      </PCard>
-
-      <PCard>
-        <div class="card-h">
-          <span class="card-t">导入</span>
-        </div>
-        <div class="split">
+          <PBtn :icon="Database" @click="downloadBackup">导出数据库备份</PBtn>
           <label class="btn btn--ghost" style="cursor: pointer">
-            {{ importBusy ? '导入中…' : '选择 JSON 文件' }}
-            <input type="file" accept="application/json,.json" style="display: none" @change="onImportFile" />
+            {{ restoreBusy ? '恢复中…' : '导入数据库备份' }}
+            <input type="file" accept="application/json,.json" style="display: none" @change="onRestoreFile" />
           </label>
-          <PBtn variant="primary" @click="billOpen = true">账单导入（微信 / 支付宝）</PBtn>
         </div>
       </PCard>
 
+      <!-- ② 流水（所有用户）：CSV，导出只给自己的，导入归自己 -->
       <PCard>
         <div class="card-h">
-          <span class="card-t">备份</span>
+          <span class="card-t">流水</span>
+          <span class="card-cap">CSV · 谁导入归谁</span>
         </div>
+        <p class="hint" style="margin: 0 0 10px">
+          只含流水本身。{{ isAdmin ? '你是管理员，导出的包含所有人记的。' : '导出的只有你自己记的。' }}
+          导入时<strong>不看原归属，一律记到导入者名下</strong>；分类与支付方式按名称匹配，对不上的行会跳过并提示原因。
+        </p>
         <div class="split">
-          <PBtn @click="downloadBackup">下载备份文件</PBtn>
-          <PBtn v-if="webdav?.isEnabled" variant="primary" @click="runWebdavBackup">立即上传到 WebDAV</PBtn>
+          <PBtn @click="exportCsv">导出流水（CSV）</PBtn>
+          <label class="btn btn--ghost" style="cursor: pointer">
+            {{ csvImportBusy ? '导入中…' : '导入流水（CSV）' }}
+            <input type="file" accept="text/csv,.csv" style="display: none" @change="onCsvImportFile" />
+          </label>
+        </div>
+        <p v-if="csvImportReport" class="hint" style="margin-top: 8px">
+          已导入 <b>{{ csvImportReport.created }}</b> 笔，跳过 <b>{{ csvImportReport.skipped }}</b> 笔。
+          <template v-if="csvImportReport.problems.length">
+            <br />{{ csvImportReport.problems.map((p) => `第 ${p.line} 行：${p.reason}`).join('；') }}
+          </template>
+        </p>
+      </PCard>
+
+      <!-- ③ 账单导入（微信 / 支付宝）—— 额外的第三方格式解析，与上面的通用 CSV 互不影响 -->
+      <PCard>
+        <div class="card-h">
+          <span class="card-t">账单导入（微信 / 支付宝）</span>
+        </div>
+        <p class="hint" style="margin: 0 0 10px">识别第三方账单导出的原始格式，逐条确认后再入库。</p>
+        <div class="split">
+          <PBtn variant="primary" @click="billOpen = true">选择账单文件</PBtn>
+        </div>
+      </PCard>
+
+      <!-- ④ WebDAV：数据库备份推到远端，必须先用口令加密成 .mn -->
+      <PCard v-if="isAdmin">
+        <div class="card-h">
+          <span class="card-t">WebDAV 备份</span>
+          <span class="card-cap">.mn 口令加密</span>
+        </div>
+        <p class="hint" style="margin: 0 0 10px">
+          推到远端的备份是<strong>口令加密</strong>的 <code>.mn</code> 文件（先压缩再加密）。
+          没有口令无法解开 —— 这是明文 JSON 不进第三方存储的唯一办法。
+        </p>
+        <div class="split">
+          <PBtn v-if="webdav?.isEnabled" variant="primary" @click="runWebdavBackup">
+            立即上传到 WebDAV
+          </PBtn>
         </div>
         <div class="stack--sm" style="margin-top: 12px">
           <PField label="WebDAV 地址" id="wd-url">
@@ -1054,10 +1106,13 @@ onMounted(() => {
           <PField label="远端目录" id="wd-path">
             <PInput id="wd-path" v-model="webdavPath" placeholder="suenmoney" />
           </PField>
+          <PField label="备份口令（必填，用于加密 .mn）" id="wd-mn">
+            <PInput id="wd-mn" v-model="webdavPassphrase" type="password" placeholder="至少 8 位，务必记住" />
+          </PField>
           <div class="set-row" style="padding: 4px 0">
             <span class="set-body">
               <span class="set-t">启用 WebDAV 备份</span>
-              <span class="set-s">启用后可一键把账本上传到你的私有云</span>
+              <span class="set-s">启用后可一键把加密备份推到你的私有云</span>
             </span>
             <PSwitch :checked="webdavEnabled" label="启用" @change="(v) => (webdavEnabled = v)" />
           </div>
@@ -1066,23 +1121,6 @@ onMounted(() => {
             <PBtn variant="primary" @click="saveWebdav">保存配置</PBtn>
             <PTag v-if="webdavMessage" tone="dash">{{ webdavMessage }}</PTag>
           </div>
-        </div>
-      </PCard>
-
-      <PCard>
-        <div class="card-h">
-          <span class="card-t">数据库快照</span>
-          <span class="card-cap">{{ snapshots.length }} 个</span>
-          <PBtn size="sm" :icon="Plus" style="margin-left: auto" @click="createSnapshot">创建快照</PBtn>
-        </div>
-        <PEmpty v-if="snapshots.length === 0" :icon="Database">还没有快照</PEmpty>
-        <div v-for="snap in snapshots" :key="snap.filename" class="set-row">
-          <span class="set-body">
-            <span class="set-t">{{ snap.filename }}</span>
-            <span class="set-s">{{ snap.createdAt }} · {{ Math.round(snap.sizeBytes / 1024) }} KB</span>
-          </span>
-          <PBtn size="sm" variant="ghost" @click="downloadSnapshot(snap.filename)">下载</PBtn>
-          <PIconBtn :icon="Trash2" label="删除" @click="removeSnapshot(snap.filename)" />
         </div>
       </PCard>
 

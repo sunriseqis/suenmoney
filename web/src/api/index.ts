@@ -21,7 +21,6 @@ import type {
   PlanSource,
   PlanTodo,
   PlanTodoStatus,
-  SnapshotInfo,
   TransferResult,
   SummaryReport,
   User,
@@ -403,25 +402,30 @@ export const data = {
   overview: () => request<{ overview: DataOverview }>('/api/data/overview'),
 
   /**
-   * 导出数据包（JSON，**能再导回来**）。
+   * 数据库备份（JSON）—— **整库，含账号与口令哈希**。
    *
-   * 与 `exportCsv` 是同一份数据的两种投影，不是两个功能：
-   * JSON 负责往返，CSV 负责「人能看懂、能核对」。
+   * 导出后能原样恢复：账号、口令、分类、支付方式、计划、流水全在里面。
+   * 因为等同「整库 + 登录凭据」，只允许管理员操作，且**不往任何远端推明文**
+   * （推 WebDAV 走 `.mn` 口令加密，见 lib/backup-crypto.ts）。
    */
-  exportPackage: (query: DataScopeQuery) => downloadFile('/api/export', { ...query }),
-
-  /** 导出对账表（CSV，Excel 直接打开）。 */
-  exportCsv: (query: DataScopeQuery) => downloadFile('/api/export/expenses.csv', { ...query }),
-
-  /** 备份**始终全量**，没有范围参数 —— 它只服务「一键恢复」。 */
   backup: () => downloadFile('/api/backup'),
 
-  /** 导入 = 合并去重，不覆盖。同一份文件按两次也不会多出记录。 */
-  import: (pkg: unknown) => request<TransferResult>('/api/import', { method: 'POST', body: pkg }),
-
-  /** 恢复 = 文件覆盖本地，且**不删除**本地多出来的记录。只接受 backup 信封。 */
+  /** 恢复备份 = **整库覆盖**（连管理员账号与口令一起）。只接受 backup 信封。 */
   restore: (pkg: unknown) =>
     request<TransferResult>('/api/backup/restore', { method: 'POST', body: pkg }),
+
+  /**
+   * 导出流水（CSV）。
+   * 普通成员只拿到自己的；管理员拿到全部 —— 服务端按角色决定，前端不传参数。
+   */
+  exportExpensesCsv: () => downloadFile('/api/expenses.csv'),
+
+  /** 导入流水（CSV）—— **不看归属，谁导入就归谁**。 */
+  importExpensesCsv: (csvText: string) =>
+    request<{ created: number; skipped: number; problems: Array<{ line: number; reason: string }> }>(
+      '/api/expenses.csv/import',
+      { method: 'POST', body: csvText, contentType: 'text/csv' },
+    ),
 
   /**
    * 清空全部**账目**（支出 / 计划 / 待办），保留分类 / 支付方式 / 账号。
@@ -443,22 +447,7 @@ export const data = {
     }),
 };
 
-export const snapshots = {
-  /** 获取运维数据库物理快照列表 */
-  list: () => request<{ snapshots: SnapshotInfo[] }>('/api/snapshots'),
 
-  /** 触发一次即时 VACUUM INTO 物理快照 */
-  create: () => request<{ snapshot: SnapshotInfo }>('/api/snapshots', { method: 'POST' }),
-
-  /** 下载指定快照文件（.sqlite） */
-  download: (filename: string) => downloadFile(`/api/snapshots/${encodeURIComponent(filename)}`),
-
-  /** 删除指定快照文件 */
-  remove: (filename: string) =>
-    request<{ success: boolean }>(`/api/snapshots/${encodeURIComponent(filename)}`, {
-      method: 'DELETE',
-    }),
-};
 
 export const webdavBackup = {
   /** 获取 WebDAV 配置及备份状态 */

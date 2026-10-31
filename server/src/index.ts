@@ -10,7 +10,6 @@
  */
 import { config } from './config.ts';
 import { migrate, openDatabase } from './db/index.ts';
-import { startDailySnapshotScheduler, stopDailySnapshotScheduler } from './db/repo/snapshots.ts';
 import { startDailyWebdavScheduler, stopDailyWebdavScheduler } from './db/repo/webdav.ts';
 import { buildServer, resolveWebRoot } from './http/server.ts';
 
@@ -21,8 +20,7 @@ if (applied.length > 0) {
   console.log(`已应用 ${applied.length} 个迁移：${applied.join(', ')}`);
 }
 
-// 启动每日 SQLite VACUUM INTO 运维快照调度与 WebDAV 安全备份调度
-startDailySnapshotScheduler(db);
+// 启动 WebDAV 安全备份调度（数据库快照功能已移除，见 docs/decisions.md）
 startDailyWebdavScheduler(db);
 
 const app = await buildServer();
@@ -53,7 +51,6 @@ try {
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     app.log.info(`收到 ${signal}，正在关闭`);
-    stopDailySnapshotScheduler();
     stopDailyWebdavScheduler();
 
     const hardExit = setTimeout(() => {

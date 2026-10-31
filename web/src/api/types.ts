@@ -309,6 +309,10 @@ export interface TableReport {
 }
 
 export interface MergeReport {
+  /** 恢复时被停用的本地账号（备份里没有的人） */
+  membersRemoved?: Array<{ id: string; username: string; displayName: string }>;
+  /** 备份里的账号被覆盖写入的数量（含口令） */
+  membersRestored?: number;
   /** `merge` = 只补缺（导入）；`restore` = 文件覆盖本地（恢复） */
   mode: 'merge' | 'restore';
   byTable: Record<string, TableReport>;
@@ -374,7 +378,8 @@ export interface WebdavConfig {
   password?: string;
   hasPassword?: boolean;
   path: string;
-  isEnabled: boolean;
+  isEnabled: boolean;  /** 备份加密口令（.mn 用），必填 */
+  passphrase?: string;
 }
 
 export interface WebdavStatus {
