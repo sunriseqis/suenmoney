@@ -25,9 +25,40 @@
 
 | 工作流 | 产出 | 何时手动跑 |
 |---|---|---|
-| `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk`（发布到 `sunriseqis/suenapp`） | 出飞牛包时 |
+| `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk` | 出飞牛包时 |
 | `build-hw.yml` | 未签名 HAP | 出鸿蒙包时 |
 | `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 出 iOS 包时 |
+
+## 发行仓库约定（2026-10-31 起）
+
+**本仓库不再发行任何产物** —— 三端（fnos / hw / ios）的包统一发到
+**`sunriseqis/suenapp`**，与 suenmusic、suenweb 并列。
+
+三端共用**同一个 Release**：
+
+```
+tag       = suenmoney-vX.Y.Z          ← 硬性要求，必须带 suenmoney- 前缀
+附件       = suenmoney-vX.Y.Z.fpk     （fnOS）
+            SuenMoney-vX.Y.Z-unsigned.hap
+            SuenMoney-vX.Y.Z-release.ipa
+body      = 三节 SECTION（FNOS / HARMONY / IOS），由
+            scripts/prepare-release-notes.mjs 各自替换自己那节
+```
+
+三个 workflow 是**独立运行**的，先后发布靠 `<!-- SECTION:X -->` 标记合并：
+每次只替换/追加自己那节，不会覆盖别人。同一端重跑也只是替换，不会重复堆叠。
+
+### ⚠ tag 前缀是硬性要求
+
+`softprops/action-gh-release` 遇到**已存在的 tag 会更新那个 Release**
+（改 name、覆盖 body、追加附件），不是新建。
+
+2026-10-31 出过一次事故：`build-fnos.yml` 用了裸 `v2.0.0`，直接把 suenmusic
+早已发布的同名发行页改成了「SuenMoney v2.0.0」并混入 suenmoney 附件。
+已手工恢复（name/body 还原、误加附件删除）。
+
+**所以：任何一端都不许用裸 `vX.Y.Z` 作 tag。** suenweb 用 `suenweb-v2.0.0`，
+suenmoney 用 `suenmoney-v2.0.0`。
 
 ### 已归档（不在 CI 里）
 

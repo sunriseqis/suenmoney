@@ -102,10 +102,19 @@ async function fetchExistingReleaseBody(repo, tag) {
   }
 }
 
+/**
+ * 文案里展示的版本号要**去掉 `suenmoney-` 前缀**（tag 是 `suenmoney-v2.0.0`，
+ * 但标题应该是 `### SuenMoney v2.0.0 …`，不能是 `### SuenMoney suenmoney-v2.0.0 …`）。
+ * 查询 Release 仍用带前缀的完整 tag。
+ */
+function displayVersion(tag) {
+  return tag.replace(/^suenmoney-/, '');
+}
+
 export function mergeBody(existing, platform, tag) {
   const conf = PLATFORMS[platform];
   if (!conf) throw new Error('Unsupported platform: ' + platform);
-  const newContent = conf.content(tag).trim();
+  const newContent = conf.content(displayVersion(tag)).trim();
 
   let body = (existing || '').trim();
   const markedRegex = new RegExp(`<!-- SECTION:${conf.id} -->[\\s\\S]*?<!-- /SECTION:${conf.id} -->`, 'gi');
