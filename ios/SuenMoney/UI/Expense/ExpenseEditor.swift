@@ -167,7 +167,7 @@ public struct ExpenseEditor: View {
                         Button { Task { await save() } } label: {
                             Text("保存")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color(css: tokens.accentInk))
+                                .foregroundStyle(Color(css: canSave ? tokens.accentInk : tokens.ink3))
                                 .padding(.horizontal, 14)
                                 .frame(height: 32)
                                 .background(Color(css: canSave ? tokens.accent : tokens.surface2))
@@ -265,6 +265,8 @@ public struct ExpenseEditor: View {
         if findCategory(categoryId) == nil { categoryId = "" }
         if !payments.contains(where: { $0.id == paymentId }) { paymentId = "" }
         // 都没选时给第一个可用项，避免保存键永远是灰的
+        // 停用分类不能预选（否则能直接保存成新账）
+        if let c = findCategory(categoryId), !c.isEnabled { categoryId = "" }
         if categoryId.isEmpty {
             // 默认选**二级**（鸿蒙 `firstRoot.children[0].id`），不是一级
             categoryId = categories.first?.children.first?.id
@@ -847,9 +849,22 @@ public struct ExpenseEditor: View {
         .buttonStyle(.plain)
     }
 
+    /// 键盘左列支付方式缩写（鸿蒙 `shortName`）：
+    /// 先查映射表，未命中时**只有 >3 字**才截 2 字（支付宝/工资卡/云闪付 保留全称）
     private func shortName(_ name: String) -> String {
-        // 与鸿蒙 shortName 同：超长截断到 2 字（左列只有 54vp 宽）
-        name.count <= 2 ? name : String(name.prefix(2))
+        let map: [String: String] = [
+            "招商银行信用卡": "招行",
+            "招行信用卡": "招行",
+            "招商银行": "招行",
+            "建设银行": "建行",
+            "建设银行信用卡": "建行",
+            "工商银行": "工行",
+            "农业银行": "农行",
+            "中国银行": "中行",
+            "交通银行": "交行"
+        ]
+        if let hit = map[name] { return hit }
+        return name.count > 3 ? String(name.prefix(2)) : name
     }
 
     private func keyButton(_ title: String, isAccent: Bool = false, _ action: @escaping () -> Void) -> some View {
@@ -928,7 +943,7 @@ public struct ExpenseEditor: View {
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity)
                                     .padding(6)
-                                    .background(Color(css: on ? tokens.accent : tokens.surface2))
+                                    .background(Color(css: on ? tokens.accent : tokens.surface))
                                     .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 6)))
                             }
                             .buttonStyle(.plain)

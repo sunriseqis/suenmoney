@@ -1129,6 +1129,7 @@ export struct ExpenseEditor {
         Row({ space: 6 }) {
           Text('分期付款').fontSize(11).fontColor(this.tok().ink2).layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.installment })
+                    .selectedColor(this.tok().accent)
             .onChange((on: boolean) => {
               this.installment = on;
             })
@@ -1162,6 +1163,7 @@ export struct ExpenseEditor {
           .fontColor(this.tok().ink2)
         Blank()
         Toggle({ type: ToggleType.Switch, isOn: this.isRefund })
+                    .selectedColor(this.tok().accent)
           .enabled(!this.installment)
           .onChange((on: boolean) => {
             this.isRefund = on;

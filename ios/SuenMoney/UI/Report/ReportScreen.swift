@@ -390,8 +390,8 @@ public struct ReportScreen: View {
                                 .font(.custom(fontMonoOf(), size: 10.5).weight(.bold))
                         }
                         .foregroundStyle(Color(css: ratio > 0 ? tokens.danger : tokens.ok))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
                         .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                         .overlay(
                             RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -751,7 +751,6 @@ public struct ReportScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 10)
                 .overlay(alignment: .top) { dashedRule }
-                .padding(.top, 12)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
