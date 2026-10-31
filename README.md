@@ -91,32 +91,24 @@ Web 端「数据」页 → **下载全量备份**（`suenmoney-backup-*.json`）
 恢复是**覆盖式**的：文件里的记录以文件为准，本地多出来的记录**不会**被删。
 恢复前服务端会自动存一份当前全量快照（响应里的 `snapshotPath`），恢复错了能找回。
 
-### ⚠️ 从旧实例迁移：备份不能直接导入
+### 从旧实例迁移（换库 / 重装 / 换机器）
 
-备份里每条计划 / 流水 / 期次都用 **ULID 引用成员**（`owner_id` / `confirmed_by`）。
-换库、重装、换 NAS 之后成员 ULID 一定会变，而导入端会逐条校验这些 id 是否存在 ——
-不存在就整包拒绝（备份**不含口令哈希**，导入不能替你建账号）。
+**备份可以直接导入，不需要任何转换。**
 
-用 `scripts/convert-backup.mjs` 把旧 id 换成目标实例里真实的 id：
+成员是按**角色**配对的，不按 id：
 
-```bash
-# 1) 先看清备份里有谁
-node scripts/convert-backup.mjs --input old.json --list
+| 备份里 | 目标实例 | 结果 |
+|---|---|---|
+| 1 管理员 | 1 管理员 | 复用目标那个账号，昵称以备份为准 |
+| 2 成员 | 1 成员 | 第 1 个复用，第 2 个**新建** |
 
-# 2) 拿目标实例的成员 id
-curl -s http://<地址>:<端口>/api/users -H "Authorization: Bearer <token>"
+- **密码不覆盖** —— 备份里根本不含口令哈希（刻意不导出）。已有账号继续用原来的口令登录。
+- 备份里**多出来的人**会被新建，但这些账号**还没有可用口令**，
+  恢复接口会在 `needsPassword` 里点名。管理员必须去「家庭与账号」给它们设一个初始密码，
+  否则那人登不进去。
+- 流水里的 `owner_id` / `confirmed_by` 会按上面的配对结果改写，不会出现「找不到记录人」。
 
-# 3) 按「旧=新」映射转换（一个成员一条 --map）
-node scripts/convert-backup.mjs --input old.json --output ready.json \
-  --map 01M3TWW6...=01M5E9YA2... \
-  --map 01M3V08H...=01M5EV489...
-
-# 或：所有成员合并到一个账号（单人使用）
-node scripts/convert-backup.mjs --input old.json --output ready.json --collapse <目标成员id>
-```
-
-脚本会补齐 2.0 新增的 `payment_methods.icon` 列、重排字段顺序，
-并在写文件前校验「转换后没有任何悬空引用」。
+恢复前服务端自动存一份当前全量快照，响应里的 `snapshotPath` 就是它。
 
 ---
 

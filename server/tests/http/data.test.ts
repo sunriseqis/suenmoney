@@ -358,9 +358,16 @@ describe('导入', () => {
     assert.equal(change['op'], 'upsert');
   });
 
-  test('引用了不存在的成员 → 409，并说清是谁', async () => {
+  test('导入包引用不存在的成员 → 归给导入者，不建账号、不报错', async () => {
+    // 「导入导出包」的语义是「一批流水」，没有「原机器的成员」这回事：
+    // 谁导入就归谁。以前这里会 409，导致 A 机器导出的账永远进不了 B 机器。
     const pkg = await exportPackage('all');
     pkg.data['expenses']![0]!['owner_id'] = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
+
+    const db = openDatabase();
+    const before = Number(
+      (db.prepare('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL').get() as Record<string, unknown>)['n'],
+    );
 
     const res = await app.inject({
       method: 'POST',
@@ -368,8 +375,23 @@ describe('导入', () => {
       headers: auth(),
       payload: pkg,
     });
-    assert.equal(res.statusCode, 409);
-    assert.match(res.json().error, /不存在的成员/);
+    assert.equal(res.statusCode, 200, res.body);
+
+    // 不建账号
+    const after = Number(
+      (db.prepare('SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL').get() as Record<string, unknown>)['n'],
+    );
+    assert.equal(after, before, '导入导出包不应该新建成员');
+
+    // 归属改成导入者
+    const row = db
+      .prepare('SELECT owner_id FROM expenses WHERE id = ?')
+      .get(pkg.data['expenses']![0]!['id']) as Record<string, unknown>;
+    assert.notEqual(row['owner_id'], '01JZZZZZZZZZZZZZZZZZZZZZZZ');
+    const adminRow = db
+      .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
+      .get() as Record<string, unknown>;
+    assert.equal(row['owner_id'], adminRow['id']);
   });
 
   test('结构不对的文件在写第一行之前就被拒掉', async () => {
@@ -528,6 +550,87 @@ describe('备份与恢复', () => {
 
     const after = openDatabase().prepare('SELECT name FROM categories ORDER BY id').all();
     assert.deepEqual(after, before, '失败必须整体回滚，分类不该被改掉');
+  });
+
+  test('恢复：按角色配对 —— 管理员覆盖管理员，多出来的成员新建且需要设密码', async () => {
+    // 场景：备份来自另一台机器（成员 ULID 与本地完全不同），
+    // 本地只有 1 个管理员，备份里有 1 管理员 + 1 成员。
+    const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
+    const pkg = backup.json() as PackageShape;
+
+    const db0 = openDatabase();
+    const localAdmin = db0
+      .prepare("SELECT id, display_name FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
+      .get() as Record<string, unknown>;
+
+    // 伪造一台「另一台机器」：两个成员 id 都换成本地不存在的 ULID
+    const FOREIGN_ADMIN = '01JAAAAAAAAAAAAAAAAAAAAAAA';
+    const FOREIGN_MEMBER1 = '01JBBBBBBBBBBBBBBBBBBBBBBC';
+    const FOREIGN_MEMBER2 = '01JBBBBBBBBBBBBBBBBBBBBBBB';
+
+    // 测试库预置了 1 管理员 + 1 成员；备份给 1 管理员 + **2** 成员，
+    // 于是：管理员配对覆盖、成员1配对覆盖、成员2 多出来 → 新建。
+    pkg.data['members'] = [
+      { ...pkg.data['members']![0]!, id: FOREIGN_ADMIN, username: 'suenqi', display_name: '八十九', role: 'admin' },
+      { id: FOREIGN_MEMBER1, username: 'xxn', display_name: '夏天', role: 'member' },
+      { id: FOREIGN_MEMBER2, username: 'xiaohai', display_name: '小孩', role: 'member' },
+    ];
+    for (const row of pkg.data['expenses']!) row['owner_id'] = FOREIGN_ADMIN;
+    for (const row of pkg.data['plans']!) row['owner_id'] = FOREIGN_ADMIN;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/backup/restore',
+      headers: auth(),
+      payload: pkg,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = res.json();
+
+    const db = openDatabase();
+
+    // ① 管理员数量不变；本地那个管理员被「覆盖」了昵称（密码不动）
+    const admins = db
+      .prepare("SELECT id, display_name FROM users WHERE role = 'admin' AND deleted_at IS NULL")
+      .all() as Array<Record<string, unknown>>;
+    assert.equal(admins.length, 1, '管理员不该因为恢复而变多');
+    assert.equal(admins[0]!['id'], localAdmin['id'], '本地管理员账号应被复用，而不是新建');
+    assert.equal(admins[0]!['display_name'], '八十九', '昵称应被备份资料覆盖');
+
+    // ② 成员：本地原有的被配对覆盖，多出来的那个新建（沿用备份里的原 ULID）
+    const members = db
+      .prepare("SELECT id, display_name FROM users WHERE role = 'member' AND deleted_at IS NULL ORDER BY created_at, id")
+      .all() as Array<Record<string, unknown>>;
+    assert.equal(members.length, 2, '本地 1 个 + 新建 1 个');
+    const ids = members.map((m) => m['id']);
+    assert.ok(ids.includes(FOREIGN_MEMBER2), '多出来的成员应沿用备份里的原 ULID 新建');
+
+    // ③ needsPassword 只点名新建的那个
+    assert.equal(body.needsPassword.length, 1);
+    assert.equal(body.needsPassword[0].id, FOREIGN_MEMBER2);
+    assert.equal(body.needsPassword[0].username, 'xiaohai');
+    assert.equal(body.needsPassword[0].role, 'member');
+
+    // ④ 新建账号没有可用口令 —— 随便什么口令都登不进去
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'xiaohai', password: 'anything-at-all-123' },
+    });
+    assert.notEqual(login.statusCode, 200, '新建成员的账号在设密码前不能登录');
+
+    // ⑤ 数据归属已改写：不再指向外部成员 id，而是本地管理员
+    const expense = db
+      .prepare('SELECT owner_id FROM expenses ORDER BY id LIMIT 1')
+      .get() as Record<string, unknown>;
+    assert.notEqual(expense['owner_id'], FOREIGN_ADMIN, '业务数据不该再指向外部成员 id');
+    assert.equal(expense['owner_id'], localAdmin['id']);
+
+    // 测试与后续用例共享同一个库：把这次恢复搬进来的成员与昵称改动还原，
+    // 否则「概览 / 清空」等用例会看到多出来的账号而断言失败。
+    db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(FOREIGN_MEMBER1, FOREIGN_MEMBER2);
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?')
+      .run(String(localAdmin['display_name']), localAdmin['id']);
   });
 
   test('非管理员不能恢复', async () => {
