@@ -580,14 +580,12 @@ public struct SettingsScreen: View {
                                 }
                             }
                             Spacer(minLength: 0)
-                            if payments.count > 1 {
-                                Button { openMerge(from: p) } label: {
-                                    Text("合并")
+                            Button { openMerge(from: p) } label: {
+                                Text("合并")
                                         .font(.system(size: 11.5, weight: .bold))
                                         .foregroundStyle(Color(css: tokens.ink2))
                                 }
                                 .buttonStyle(.plain)
-                            }
                             iconBtn("square.and.pencil") { openPayEdit(p) }
                             iconBtn("trash") {
                                 Task {
