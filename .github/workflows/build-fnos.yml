@@ -141,31 +141,14 @@ jobs:
       - name: Prepare Release Notes
         if: ${{ inputs.publish_release }}
         run: |
-          cat > /tmp/release_body.md <<'EOF'
-          ### SuenMoney ${{ steps.ver.outputs.version }} · 飞牛 fnOS 套件
-
-          #### 📦 安装
-
-          1. 打开飞牛 fnOS 桌面 → **应用中心**
-          2. 右上角 **手动安装** → 选择下载的 `.fpk` 文件
-          3. 按向导设置 **服务端口**（默认 5310）与 **初始管理员账号**（密码至少 8 位）
-          4. 装好后从桌面图标或 `http://<NAS地址>:<端口>` 直接使用
-
-          > 套件为**纯原生进程**，内置 Node 运行时，不依赖 Docker。
-          > 数据存放在飞牛的独立持久化目录，升级/重装不会丢账本。
-
-          #### 🔐 校验
-
-          下载后可核对 `SHA256`（见同名 `.sha256` 文件）。
-
-          ${{ inputs.release_notes }}
-
-          ---
-
-          由 GitHub Actions 自动化流水线构建。
-          EOF
+          node scripts/prepare-release-notes.mjs \
+            --platform fnos \
+            --tag "suenmoney-v${{ steps.ver.outputs.version }}" \
+            --output /tmp/release_body.md
           echo "--- 发布说明 ---"
           cat /tmp/release_body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Publish to sunriseqis/suenapp
         if: ${{ inputs.publish_release }}
@@ -190,6 +173,7 @@ jobs:
           draft: false
           prerelease: false
           make_latest: true
+          append_body: false
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

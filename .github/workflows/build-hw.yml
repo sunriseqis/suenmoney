@@ -251,32 +251,34 @@ jobs:
 
       # 上面的 Upload Build Log / Upload HAP Artifact 均无 main/master 判断，
       # push main 时照常上传 Actions artifact，保持「随时下载最新包测试」的能力。
-      - name: Publish GitHub Release
-        # 只有推送 v* tag 才允许创建/更新 Release。
-        # 原因：若允许 push main 发版，当 VERSION 文件未变时，新产物会覆盖同名已发布
-        # Release 里的旧产物（曾发生 v1.1.5 APK 被静默替换）；若此时另一端构建失败，
-        # 同一个 Release 就会混版。Release 是对外发布物，必须由不可变的 tag 触发。
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Prepare Release Notes
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+        run: |
+          node scripts/prepare-release-notes.mjs \
+            --platform harmony \
+            --tag "suenmoney-v${{ env.VERSION_NAME }}" \
+            --output /tmp/release_body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # 三端（fnos / hw / ios）共用**同一个** Release：tag 都是 suenmoney-vX.Y.Z，
+      # 各自只替换自己那节 SECTION（由 scripts/prepare-release-notes.mjs 负责），
+      # 所以先后发布不会互相覆盖。
+      #
+      # ⚠ tag 必须带 suenmoney- 前缀：suenapp 是 suenmusic / suenweb / suenmoney
+      #   䅆用的发行仓库，裸 vX.Y.Z 会直接改写别的项目的同名发行页（2026-10-31 出过事故）。
+      - name: Publish Release to sunriseqis/suenapp
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          name: SuenMoney ${{ env.VERSION }} 移动端
+          repository: sunriseqis/suenapp
+          token: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
+          tag_name: suenmoney-v${{ env.VERSION_NAME }}
+          name: SuenMoney v${{ env.VERSION }}
+          body_path: /tmp/release_body.md
+          draft: false
           prerelease: false
           make_latest: true
-          generate_release_notes: false
-          body: |
-            ### SuenMoney ${{ env.VERSION }} 移动端发布 🎉
-
-            #### 📱 安装包（统一在 `app/` 目录）：
-            - `SuenMoney-${{ env.VERSION }}-release.apk`：安卓正式安装包，下载后可直接在手机上点击安装。
-            - `SuenMoney-${{ env.VERSION }}-release.ipa`：iOS 未签名安装包，可使用 AltStore / SideStore / TrollStore 等重签工具安装。
-            - `SuenMoney-${{ env.VERSION }}-unsigned.hap`：鸿蒙 NEXT 未签名安装包，可使用 DevEco Studio 或自签工具在纯血鸿蒙设备上安装运行。
-
-            > ⚠️ **请从本 Release 下载附件安装**。Actions 页面里的 Artifact 是 GitHub 额外套的一层 zip，直接改后缀丢给安装工具会报错。
-            >
-            > 由 GitHub Actions 自动化流水线构建。
-            ${{ inputs.release_notes && format('#### 📝 更新说明：\n{0}', inputs.release_notes) || '' }}
+          append_body: false
           files: |
             app/SuenMoney-${{ env.VERSION }}-unsigned.hap
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
