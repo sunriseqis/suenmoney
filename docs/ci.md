@@ -3,6 +3,14 @@
 **当前策略（2026-10-21 起）：自动构建全部关闭，只保留手动派发。**
 推送代码（含推 `main`、推 tag）**不会**启动任何工作流。
 
+**2026-10-31 范围收缩**（用户裁决）：
+
+- **安卓不再有计划** —— 2.0 未重构，后续按情况再说。
+- **镜像 CI 暂时不做**。
+- **不做 CI 门禁** —— 本地推远端前都跑过 `npm run check`，CI 上再跑一遍没有信息增量。
+
+所以 CI 只保留三条**出包**流水线：`build-fnos` / `build-hw` / `build-ios`。
+
 ---
 
 ## 为什么关
@@ -17,12 +25,12 @@
 
 | 工作流 | 产出 | 何时手动跑 |
 |---|---|---|
-| `build-images.yml` | `ghcr.io/<owner>/suenmoney`（amd64 + arm64 单镜像） | 改了 `server/`、`web/`、`Dockerfile`，要更新部署镜像时 |
-| `ci-test.yml` | typecheck + 两侧测试 + web build | 想在 CI 上复核一遍（本地 `npm run check` 等价） |
-| `build-android.yml` | APK（**安卓已冻结**，仅按需出历史包） | 极少 |
-| `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 出 iOS 包时 |
-| `build-hw.yml` | 未签名 HAP | 出鸿蒙包时 |
 | `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk`（发布到 `sunriseqis/suenapp`） | 出飞牛包时 |
+| `build-hw.yml` | 未签名 HAP | 出鸿蒙包时 |
+| `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 出 iOS 包时 |
+
+> 已停用：`build-android.yml`（安卓无计划）、`build-images.yml`（镜像暂不做）、
+> `ci-test.yml`（门禁在本地跑）。三者保留在仓库里仅作历史参考，不再维护。
 
 三种触发方式，任选：
 
