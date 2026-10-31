@@ -29,8 +29,18 @@
 | `build-hw.yml` | 未签名 HAP | 出鸿蒙包时 |
 | `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 出 iOS 包时 |
 
-> 已停用：`build-android.yml`（安卓无计划）、`build-images.yml`（镜像暂不做）、
-> `ci-test.yml`（门禁在本地跑）。三者保留在仓库里仅作历史参考，不再维护。
+### 已归档（不在 CI 里）
+
+这三个工作流已移到 **`docs/archive/ci/`**，不再被 GitHub Actions 加载：
+
+| 归档文件 | 作废原因 |
+|---|---|
+| `docs/archive/ci/build-android.yml` | 安卓端 2.0 未重构，**不再有安卓计划**，后续按情况再说 |
+| `docs/archive/ci/build-images.yml` | **镜像 CI 暂时不做** |
+| `docs/archive/ci/ci-test.yml` | **不做 CI 门禁** —— 本地推远端前都跑过 `npm run check`，CI 上再跑没有信息增量 |
+
+恢复方式：移回 `.github/workflows/` 即可（`on:` 段都是 `workflow_dispatch`）。
+每个归档文件头部都写明了作废原因与归档时间。
 
 三种触发方式，任选：
 
@@ -38,10 +48,10 @@
 # 1) 网页：Actions → 选工作流 → Run workflow（可填 inputs）
 
 # 2) 命令行（需要 gh CLI 且已登录）
-gh workflow run build-images.yml --ref main
+gh workflow run build-fnos.yml --ref main
 
 # 3) 带参数
-gh workflow run build-images.yml --ref main -f custom_tag=v1.2.0
+gh workflow run build-fnos.yml --ref main -f custom_version=2.0.0 -f publish_release=true
 ```
 
 ## 要临时恢复自动构建怎么办
@@ -50,7 +60,7 @@ gh workflow run build-images.yml --ref main -f custom_tag=v1.2.0
 
 1. **从 git 历史取回原触发器**：
    ```bash
-   git show f37aa8c~1:.github/workflows/build-images.yml | sed -n '/^on:/,/^permissions:/p'
+   git show f37aa8c~1:.github/workflows/build-hw.yml | sed -n '/^on:/,/^permissions:/p'
    ```
    （`f37aa8c~1` = 关闭自动构建前的最后一个提交）
 2. **按需手写**，注意一个坑：**任何改动 `.github/workflows/**` 的推送本身**
