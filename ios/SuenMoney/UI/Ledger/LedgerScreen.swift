@@ -263,9 +263,8 @@ public struct LedgerScreen: View {
                 paymentNames = try DictionaryDao.paymentNames()
 
                 // 筛选项：分类只列一级（二级归属一级，列出来会重复）；支付列全部；记录人取 users
-                rootCategories = categoryNames.values
-                    .filter { $0.parentId.isEmpty }
-                    .sorted { $0.name < $1.name }
+                // 鸿蒙直接遍历字典缓存、**不排序**（支付/记录人两组也不排序）→ 保持一致
+                rootCategories = categoryNames.values.filter { $0.parentId.isEmpty }
                 paymentOptions = pays.paymentMethods.filter { $0.isEnabled }.map {
                     CachedCategory(id: $0.id, name: $0.name, icon: $0.icon, color: "", parentId: "")
                 }
@@ -1031,8 +1030,9 @@ public struct LedgerScreen: View {
                     .stroke(Color(css: tokens.line), lineWidth: tokens.borderW)
             )
 
-            // 期间导航
+            // 期间导航：‹↔标签↔› 内层间距 4，标签→筛选 外层间距 8（鸿蒙同）
             HStack(spacing: 8) {
+              HStack(spacing: 4) {
                 chevronButton("‹") { shiftPeriod(-1) }
                 Button {
                     calYear = Int(anchorMonth.prefix(4)) ?? 2026
@@ -1042,14 +1042,14 @@ public struct LedgerScreen: View {
                         .font(.custom(fontDisplayOf(isCyber), size: 14).weight(.bold))
                         .foregroundStyle(Color(css: tokens.ink))
                         // 固定最小宽 76：撑满会让标签随月份长短左右抖动
+                        // 鸿蒙只约束宽度、**不给固定高度**（高度随内容）
                         .frame(minWidth: 76)
-                        .frame(height: 34)
                 }
                 .buttonStyle(.plain)
                 chevronButton("›") { shiftPeriod(1) }
-                // 「筛选」在**期间行尾**（鸿蒙同一个 Row）
-                filterToggle
-                Spacer(minLength: 0)
+              }
+              Spacer(minLength: 0)
+              filterToggle
             }
 
 
@@ -1603,8 +1603,9 @@ public struct LedgerScreen: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        // 锚点落到该年 1 月（鸿蒙 `anchorYear = String(calYearV)`）
-                        applyPeriod("\(calYear)-01", 1)
+                        // 鸿蒙只设 anchorYear + tier，**不动 anchorMonth**
+                        // （否则点「整年」再切回「按月」会停在 1 月而非原月份）
+                        applyPeriod(anchorMonth, 1)
                     } label: {
                         Text("整年")
                             .font(.system(size: 11.5))

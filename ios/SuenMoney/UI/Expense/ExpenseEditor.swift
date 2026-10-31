@@ -849,19 +849,18 @@ public struct ExpenseEditor: View {
         .buttonStyle(.plain)
     }
 
-    /// 键盘左列支付方式缩写（鸿蒙 `shortName`）：
-    /// 先查映射表，未命中时**只有 >3 字**才截 2 字（支付宝/工资卡/云闪付 保留全称）
+    /// 键盘左列支付方式缩写（鸿蒙 `shortName`，R112）
+    /// 映射表**与鸿蒙逐项一致**（8 条），未命中时只有 >3 字才截 2 字
     private func shortName(_ name: String) -> String {
         let map: [String: String] = [
             "招商银行信用卡": "招行",
             "招行信用卡": "招行",
-            "招商银行": "招行",
-            "建设银行": "建行",
-            "建设银行信用卡": "建行",
-            "工商银行": "工行",
-            "农业银行": "农行",
-            "中国银行": "中行",
-            "交通银行": "交行"
+            "支付宝": "支付宝",
+            "微信": "微信",
+            "花呗": "花呗",
+            "现金": "现金",
+            "工资卡": "工资卡",
+            "建设银行": "建行"
         ]
         if let hit = map[name] { return hit }
         return name.count > 3 ? String(name.prefix(2)) : name
