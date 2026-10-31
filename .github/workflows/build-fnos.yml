@@ -173,7 +173,15 @@ jobs:
         with:
           repository: sunriseqis/suenapp
           token: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
-          tag_name: v${{ steps.ver.outputs.version }}
+          # ⚠ tag **必须带 suenmoney- 前缀**。
+          #
+          # 发行仓库 sunriseqis/suenapp 是 suenmusic / suenweb / suenmoney 共用的，
+          # 而 softprops/action-gh-release 遇到**已存在的 tag 会更新那个 Release**
+          # （改 name、覆盖 body、追加附件），不是新建。
+          # 2026-10-31 就用裸 `v2.0.0` 直接把 suenmusic 的同名发行页改成了
+          # 「SuenMoney v2.0.0」并混入 suenmoney 附件 —— 已手工恢复。
+          # 前缀约定与 suenweb 的 `suenweb-v2.0.0` 一致。
+          tag_name: suenmoney-v${{ steps.ver.outputs.version }}
           name: SuenMoney v${{ steps.ver.outputs.version }}
           body_path: /tmp/release_body.md
           files: |
