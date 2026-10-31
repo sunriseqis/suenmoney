@@ -386,7 +386,7 @@ describe('导入', () => {
     // 归属改成导入者
     const row = db
       .prepare('SELECT owner_id FROM expenses WHERE id = ?')
-      .get(pkg.data['expenses']![0]!['id']) as Record<string, unknown>;
+      .get(String(pkg.data['expenses']![0]!['id'])) as Record<string, unknown>;
     assert.notEqual(row['owner_id'], '01JZZZZZZZZZZZZZZZZZZZZZZZ');
     const adminRow = db
       .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
@@ -630,7 +630,7 @@ describe('备份与恢复', () => {
     // 否则「概览 / 清空」等用例会看到多出来的账号而断言失败。
     db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(FOREIGN_MEMBER1, FOREIGN_MEMBER2);
     db.prepare('UPDATE users SET display_name = ? WHERE id = ?')
-      .run(String(localAdmin['display_name']), localAdmin['id']);
+      .run(String(localAdmin['display_name']), String(localAdmin['id']));
   });
 
   test('非管理员不能恢复', async () => {
