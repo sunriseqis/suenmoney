@@ -238,7 +238,8 @@ public struct LedgerScreen: View {
             }
             // 鸿蒙是 SheetSize.FIT_CONTENT（贴合内容高度）。
             // 用 .large 会占满整屏、内容全挤在顶部、下面一大片空白 —— 就是「位置偏移」。
-            .presentationDetents([.fraction(0.72)])
+            // 高度由 ExpenseEditor 按内容自适应（鸿蒙 `SheetSize.FIT_CONTENT`）。
+            // 写死 fraction 会在字段行改成两行竖排后装不下 → 标题行被裁掉。
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(isCyber ? 0 : 22)
             .presentationBackground(Color(css: tokens.bg))

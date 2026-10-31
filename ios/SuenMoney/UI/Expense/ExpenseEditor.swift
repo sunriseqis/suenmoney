@@ -19,6 +19,14 @@
 
 import SwiftUI
 
+/// 抽屉内容高度（用于 presentationDetents）
+private struct SheetHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 public struct ExpenseEditor: View {
     @Environment(ThemeManager.self) private var theme
 
@@ -46,6 +54,8 @@ public struct ExpenseEditor: View {
     @State private var dateCalMonth: Int = 0
     @State private var categoryOpen: Bool = false
     @State private var railRootId: String = ""
+    /// 抽屉目标高度（按内容测量，鸿蒙 FIT_CONTENT 等价物）
+    @State private var sheetHeight: CGFloat = 520
     @State private var paymentOpen: Bool = false
     /// 删除二次确认（鸿蒙有确认弹窗，iOS 之前点了就删）
     @State private var confirmDeleteOpen: Bool = false
@@ -186,8 +196,14 @@ public struct ExpenseEditor: View {
 
             }
             .padding(14)
-            .frame(maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
             .background(Color(css: tokens.bg))
+            // 测量内容真实高度 → 传给 presentationDetents
+            .background(
+                GeometryReader { g in
+                    Color.clear.preference(key: SheetHeightKey.self, value: g.size.height)
+                }
+            )
 
             // 选择器弹层（遮罩 + 居中卡片）
             if categoryOpen { categoryPicker }
@@ -202,6 +218,15 @@ public struct ExpenseEditor: View {
             }
         }
         .onAppear { prefill() }
+        // 抽屉高度 = 内容高度（鸿蒙 SheetSize.FIT_CONTENT）。
+        // 上限用屏高 - 安全区，避免内容超高时无处可滚。
+        .onPreferenceChange(SheetHeightKey.self) { h in
+            if h > 0 { sheetHeight = min(h, UIScreen.main.bounds.height * 0.94) }
+        }
+        .presentationDetents([.height(sheetHeight)])
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(22)
+        .presentationBackground(Color(css: tokens.bg))
         .confirmationDialog("删除这笔记录？", isPresented: $confirmDeleteOpen, titleVisibility: .visible) {
             Button("删除", role: .destructive) { confirmDelete() }
             Button("取消", role: .cancel) {}
