@@ -275,7 +275,7 @@ public struct LedgerScreen: View {
                 }
             }
             offline = false
-            await loadTier()
+            await loadTier(manageLoading: false)
             await loadHeroTodos()
         } catch let err as ApiError {
             if err.kind == .network {
@@ -285,7 +285,7 @@ public struct LedgerScreen: View {
                     categoryNames = (try? DictionaryDao.categoryNames()) ?? [:]
                     paymentNames = (try? DictionaryDao.paymentNames()) ?? [:]
                 }
-                await loadTier()
+                await loadTier(manageLoading: false)
                 await loadHeroTodos()
             } else {
                 errorText = err.message
@@ -295,7 +295,14 @@ public struct LedgerScreen: View {
         }
     }
 
-    private func loadTier() async {
+    /// 按当前档位加载。
+    /// **loading 在这里统一管理**（置位 + defer 复位）—— 各切换入口只调它，
+    /// 自己置位会出现「没有复位点 → 列表永久卡在加载中」的回归。
+    /// `manageLoading: false` 用于 reload() 内部（外层已经管着 loading，
+    /// 这里再 defer 一次会在 reload 还没收尾时就把 loading 提前复位）
+    private func loadTier(manageLoading: Bool = true) async {
+        if manageLoading { loading = true }
+        defer { if manageLoading { loading = false } }
         switch tier {
         case 0: await loadMonth(reset: true)
         case 1: await loadYear()
@@ -620,8 +627,6 @@ public struct LedgerScreen: View {
 
     private func switchTier(_ v: Int) {
         guard tier != v else { return }
-        // 先置 loading：否则标题已换新月份、列表还是上一月的行（网络慢时明显串档）
-        loading = true
         tier = v
         if v == 1 {
             // Web switchTier('year')：锚点落到该年 1 月
@@ -634,7 +639,6 @@ public struct LedgerScreen: View {
     }
 
     private func shiftPeriod(_ delta: Int) {
-        loading = true
         if tier == 0 {
             anchorMonth = shiftMonth(anchorMonth, delta)
             Task { await loadTier() }
@@ -648,7 +652,6 @@ public struct LedgerScreen: View {
     }
 
     private func applyPeriod(_ month: String, _ newTier: Int) {
-        loading = true
         anchorMonth = month
         anchorYear = String(month.prefix(4))
         tier = newTier
@@ -949,6 +952,11 @@ public struct LedgerScreen: View {
                             .fill(Color(css: tokens.accent)).offset(x: 3, y: 3)
                     }
                 }
+                // 鸿蒙整个搜索框容器都有 `.onClick(() => advOpen = true)`，
+                // 不只是 onFocus —— 否则点放大镜图标那侧不会展开
+                .simultaneousGesture(TapGesture().onEnded {
+                    withAnimation(appCurveFast) { advOpen = true }
+                })
 
                 // 只有展开时才出现「收起」，且是纯文字（鸿蒙无边框无底色）。
                 // 之前常驻一个「筛选」按钮，与高级区里真正的筛选按钮语义重复。
