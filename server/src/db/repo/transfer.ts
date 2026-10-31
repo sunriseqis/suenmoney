@@ -885,25 +885,53 @@ export function preRestoreDir(): string {
   return join(config.backupDir, 'pre-restore');
 }
 
-/** 写一份「恢复前」存档，返回文件路径。落在同一个事务里，失败即整体回滚。 */
-export function writePreRestoreSnapshot(db: DatabaseSync): string {
+/**
+ * 写一份「恢复前」存档，返回文件路径。
+ *
+ * 写入失败时**不中断恢复**，而是退到私有目录再试一次；仍然失败就返回 `null`
+ * 并由调用方把警告带给用户。
+ *
+ * 为什么不让它抛：快照是**安全网**，不是恢复的前提条件。飞牛套件里
+ * `SUENMONEY_BACKUP_DIR` 可能指向数据共享目录，而该目录对套件进程未必可写（
+ * 权限/只读卷/路径不存在）。让「安全网写不进去」直接变成「恢复做不了」，
+ * 等于把可恢复的场景变成不可恢复 —— 顺序反了。
+ *
+ * 但也不能静默：`null` 会被冒泡到响应里，界面必须明确告诉用户
+ * 「这次没留下恢复前存档」。
+ */
+export function writePreRestoreSnapshot(db: DatabaseSync): string | null {
   const pkg = buildPackage(db, { kind: 'all', period: '' }, 'suenmoney-backup');
-  const dir = preRestoreDir();
-  mkdirSync(dir, { recursive: true });
 
   // 文件名里的冒号在部分文件系统上不合法，用短横线
   const stamp = pkg.generatedAt.replace(/[:.]/g, '-');
-  const path = join(dir, `pre-restore-${stamp}.json`);
-  writeFileSync(path, JSON.stringify(pkg, null, 2), 'utf8');
+  const name = `pre-restore-${stamp}.json`;
 
-  pruneSnapshots();
-  return path;
+  const candidates = [preRestoreDir(), join(config.dbPath, '..', 'backups', 'pre-restore')];
+
+  for (const dir of candidates) {
+    try {
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, name);
+      writeFileSync(path, JSON.stringify(pkg, null, 2), 'utf8');
+      pruneSnapshotsAt(dir);
+      return path;
+    } catch {
+      // 下一个候选
+    }
+  }
+
+  return null;
 }
 
 /** 只留最近 `backupKeep` 份，按文件名（= 时间戳）排序。 */
-function pruneSnapshots(): void {
-  const dir = preRestoreDir();
-  const files = readdirSync(dir)
+function pruneSnapshotsAt(dir: string): void {
+  let files: string[];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return;
+  }
+  files = files
     .filter((name) => name.startsWith('pre-restore-') && name.endsWith('.json'))
     .sort((a, b) => a.localeCompare(b, 'en'));
 
