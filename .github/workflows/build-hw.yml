@@ -274,7 +274,7 @@ jobs:
           repository: sunriseqis/suenapp
           token: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
           tag_name: suenmoney-v${{ env.VERSION_NAME }}
-          name: SuenMoney v${{ env.VERSION }}
+          name: SuenMoney ${{ env.VERSION }}
           body_path: /tmp/release_body.md
           draft: false
           prerelease: false
