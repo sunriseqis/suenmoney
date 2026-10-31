@@ -43,25 +43,40 @@ jobs:
           # 与 scripts/build-fn.mjs 里内置的 NODE_VERSION 对齐（node:sqlite 要求 ≥22.9）
           node-version: '24'
           cache: 'npm'
+          # 仓库根**没有** package-lock.json（只有 server/ 与 web/ 各自有），
+          # 不指定路径时 setup-node 会在根目录找不到 lockfile 直接失败：
+          #   "Dependencies lock file is not found in .../suenmoney"
+          cache-dependency-path: |
+            web/package-lock.json
+            server/package-lock.json
 
       - name: Determine Version
         id: ver
         run: |
-          RAW="$(cat VERSION | tr -d '[:space:]')"
+          set -euo pipefail
+          RAW="$(tr -d '[:space:]' < VERSION)"
           CUSTOM="${{ github.event.inputs.custom_version }}"
           CUSTOM="${CUSTOM#v}"
-          if [ -n "${CUSTOM}" ]; then
-            VER="${CUSTOM}"
+          if [ -n "${CUSTOM}" ]; then VER="${CUSTOM}"; else VER="${RAW}"; fi
+
+          # fnOS manifest 要求严格 X.Y.Z，缺位补 0
+          # ⚠ 不要写成 `[ cond ] && C=0`：在 set -e 下条件为假会让整个 step 失败
+          A="${VER%%.*}"
+          REST="${VER#*.}"
+          if [ "${REST}" = "${VER}" ]; then
+            B=0; C=0
           else
-            VER="${RAW}"
+            B="${REST%%.*}"
+            C="${REST#*.}"
+            if [ "${C}" = "${REST}" ]; then C=0; fi
+            if [ -z "${C}" ]; then C=0; fi
           fi
-          # fnOS manifest 要求 X.Y.Z，缺位补 0
-          A="${VER%%.*}"; REST="${VER#*.}"
-          B="${REST%%.*}"; C="${REST#*.}"
-          [ "${C}" = "${REST}" ] && C=0
-          [ -z "${C}" ] && C=0
           SEMVER="${A}.${B}.${C}"
-          echo "version=${SEMVER}" >> $GITHUB_OUTPUT
+          if ! printf '%s' "${SEMVER}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "✖ 版本号不合法：'${SEMVER}'（原始输入 '${VER}'）"
+            exit 1
+          fi
+          echo "version=${SEMVER}" >> "$GITHUB_OUTPUT"
           echo "解析版本：${SEMVER}"
 
       - name: Install Dependencies
@@ -81,20 +96,36 @@ jobs:
 
       - name: Verify Artifacts
         run: |
-          set -e
+          set -euo pipefail
           VER="${{ steps.ver.outputs.version }}"
-          FPK="output/suenmoney-v${VER}.fpk"
-          test -f "${FPK}" || { echo "✖ 未找到产物 ${FPK}"; ls -la output/ || true; exit 1; }
+          NAME="suenmoney-v${VER}.fpk"
+          FPK="output/${NAME}"
+          test -f "${FPK}"        || { echo "✖ 未找到产物 ${FPK}"; ls -la output/ || true; exit 1; }
           test -f "${FPK}.sha256" || { echo "✖ 缺少校验文件"; exit 1; }
+
           SIZE="$(stat -c %s "${FPK}")"
-          echo "包体积：${SIZE} 字节 ($(awk "BEGIN{printf \"%.2f\", ${SIZE}/1048576}") MB)"
+          MB="$(awk -v s="${SIZE}" 'BEGIN{printf "%.2f", s/1048576}')"
+          echo "包体积：${SIZE} 字节（${MB} MB）"
+
           # 空包/半截包的直接信号：正常应 >30MB（内含 Node 运行时 + 生产依赖）
           if [ "${SIZE}" -lt 30000000 ]; then
-            echo "✖ 包体积异常偏小（<30MB），多半是 payload 没装配完整"
+            echo "✖ 包体积异常偏小（${MB} MB < 30MB），多半是 payload 没装配完整"
             exit 1
           fi
-          sha256sum -c "${FPK}.sha256" || { echo "✖ sha256 校验失败"; exit 1; }
+
+          # ⚠ .sha256 里写的是**相对 output/ 的文件名**（suenmoney-vX.Y.Z.fpk），
+          # 所以在仓库根跑 `sha256sum -c output/xxx.sha256` 会 FAILED open or read。
+          # 必须进 output/ 再校验。
+          ( cd output && sha256sum -c "${NAME}.sha256" )
+
           echo "✓ 产物校验通过"
+          {
+            echo "### 产物"
+            echo ""
+            echo "| 文件 | 大小 | SHA256 |"
+            echo "|---|---|---|"
+            echo "| \`${NAME}\` | ${MB} MB | \`$(awk '{print $1}' "${FPK}.sha256")\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare Release Notes
         if: ${{ inputs.publish_release }}
