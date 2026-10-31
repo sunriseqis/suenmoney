@@ -1,0 +1,151 @@
+name: Build fnOS FPK
+
+# ⚠ 自动构建已关闭（2026-10-21）：本工作流只保留手动派发（workflow_dispatch）。
+#   存储/额度都是自己掏的，日常推送不该自动烧构建；需要构建时手动派发，
+#   恢复自动触发的做法见 docs/ci.md，原触发器原文可从 git 历史取回。
+on:
+  workflow_dispatch:
+    inputs:
+      custom_version:
+        description: '自定义版本号（可选，例如 2.0.0，留空则按 VERSION 文件）'
+        required: false
+        type: string
+        default: ''
+      publish_release:
+        description: '是否发布到发行仓库 sunriseqis/suenapp 的 Release'
+        required: true
+        type: boolean
+        default: true
+      release_notes:
+        description: '发布说明（可选）'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-fnos:
+    name: Build & Release fnOS FPK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          # 与 scripts/build-fn.mjs 里内置的 NODE_VERSION 对齐（node:sqlite 要求 ≥22.9）
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Determine Version
+        id: ver
+        run: |
+          RAW="$(cat VERSION | tr -d '[:space:]')"
+          CUSTOM="${{ github.event.inputs.custom_version }}"
+          CUSTOM="${CUSTOM#v}"
+          if [ -n "${CUSTOM}" ]; then
+            VER="${CUSTOM}"
+          else
+            VER="${RAW}"
+          fi
+          # fnOS manifest 要求 X.Y.Z，缺位补 0
+          A="${VER%%.*}"; REST="${VER#*.}"
+          B="${REST%%.*}"; C="${REST#*.}"
+          [ "${C}" = "${REST}" ] && C=0
+          [ -z "${C}" ] && C=0
+          SEMVER="${A}.${B}.${C}"
+          echo "version=${SEMVER}" >> $GITHUB_OUTPUT
+          echo "解析版本：${SEMVER}"
+
+      - name: Install Dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix server ci --no-audit --no-fund
+
+      - name: Build fnOS FPK
+        run: |
+          set -e
+          VER="${{ steps.ver.outputs.version }}"
+          # build-fn.mjs 从根 VERSION 读版本并注入 manifest / app VERSION，
+          # 自定义版本时先写回文件，保证三处同源（否则 manifest 与 Release 标签会不一致）
+          echo "${VER}" > VERSION
+          node scripts/build-fn.mjs
+
+      - name: Verify Artifacts
+        run: |
+          set -e
+          VER="${{ steps.ver.outputs.version }}"
+          FPK="output/suenmoney-v${VER}.fpk"
+          test -f "${FPK}" || { echo "✖ 未找到产物 ${FPK}"; ls -la output/ || true; exit 1; }
+          test -f "${FPK}.sha256" || { echo "✖ 缺少校验文件"; exit 1; }
+          SIZE="$(stat -c %s "${FPK}")"
+          echo "包体积：${SIZE} 字节 ($(awk "BEGIN{printf \"%.2f\", ${SIZE}/1048576}") MB)"
+          # 空包/半截包的直接信号：正常应 >30MB（内含 Node 运行时 + 生产依赖）
+          if [ "${SIZE}" -lt 30000000 ]; then
+            echo "✖ 包体积异常偏小（<30MB），多半是 payload 没装配完整"
+            exit 1
+          fi
+          sha256sum -c "${FPK}.sha256" || { echo "✖ sha256 校验失败"; exit 1; }
+          echo "✓ 产物校验通过"
+
+      - name: Prepare Release Notes
+        if: ${{ inputs.publish_release }}
+        run: |
+          cat > /tmp/release_body.md <<'EOF'
+          ### SuenMoney ${{ steps.ver.outputs.version }} · 飞牛 fnOS 套件
+
+          #### 📦 安装
+
+          1. 打开飞牛 fnOS 桌面 → **应用中心**
+          2. 右上角 **手动安装** → 选择下载的 `.fpk` 文件
+          3. 按向导设置 **服务端口**（默认 5310）与 **初始管理员账号**（密码至少 8 位）
+          4. 装好后从桌面图标或 `http://<NAS地址>:<端口>` 直接使用
+
+          > 套件为**纯原生进程**，内置 Node 运行时，不依赖 Docker。
+          > 数据存放在飞牛的独立持久化目录，升级/重装不会丢账本。
+
+          #### 🔐 校验
+
+          下载后可核对 `SHA256`（见同名 `.sha256` 文件）。
+
+          ${{ inputs.release_notes }}
+
+          ---
+
+          由 GitHub Actions 自动化流水线构建。
+          EOF
+          echo "--- 发布说明 ---"
+          cat /tmp/release_body.md
+
+      - name: Publish to sunriseqis/suenapp
+        if: ${{ inputs.publish_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: sunriseqis/suenapp
+          token: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: SuenMoney v${{ steps.ver.outputs.version }}
+          body_path: /tmp/release_body.md
+          files: |
+            output/suenmoney-v${{ steps.ver.outputs.version }}.fpk
+            output/suenmoney-v${{ steps.ver.outputs.version }}.fpk.sha256
+          draft: false
+          prerelease: false
+          make_latest: true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: suenmoney-fnos-${{ steps.ver.outputs.version }}
+          path: |
+            output/*.fpk
+            output/*.sha256
+          retention-days: 14

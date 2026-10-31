@@ -22,6 +22,7 @@
 | `build-android.yml` | APK（**安卓已冻结**，仅按需出历史包） | 极少 |
 | `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 出 iOS 包时 |
 | `build-hw.yml` | 未签名 HAP | 出鸿蒙包时 |
+| `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk`（发布到 `sunriseqis/suenapp`） | 出飞牛包时 |
 
 三种触发方式，任选：
 

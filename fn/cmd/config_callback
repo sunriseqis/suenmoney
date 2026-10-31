@@ -1,11 +1,58 @@
 #!/bin/bash
-# 配置变更后：bash 没法热重载 node 进程，只能停+起。
-# 恒 exit 0 —— 回调非零会让界面显示「设置保存失败」，而设置其实已经存下了。
+#
+# 配置变更后回调。
+# 用户在应用设置页改完（或 wizard/config 提交后）由 fnOS 调用，
+# 此时 wizard/config 收集的变量（wizard_port）已作为环境变量注入。
+#
+# 顺序很重要：**先同步端口配置，再重启**。反过来的话会按旧端口起一遍，
+# 然后才写新端口 —— 表现是「改完端口应用显示运行中但打不开」。
+#
+# 恒 exit 0：回调非零会让界面显示「设置保存失败」，而设置其实已经存下了。
 set -o pipefail
-cd "$(dirname "$0")" || exit 0
-./main stop
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${TRIM_APPDEST:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+PKG_ROOT="$(cd "${APP_DIR}/.." 2>/dev/null && pwd)"
+VAR_DIR="${TRIM_PKGVAR:-${PKG_ROOT}/var}"
+ETC_DIR="${TRIM_PKGETC:-${PKG_ROOT}/etc}"
+
+case "${VAR_DIR}" in
+    ""|"/"|"/var"|"/usr"|"/tmp"|"/opt"|"/root") VAR_DIR="" ;;
+esac
+LOG_FILE="${VAR_DIR:+${VAR_DIR}/info.log}"
+
+log_msg() {
+    [ -n "${LOG_FILE}" ] || return 0
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - [config_callback] $1" >> "${LOG_FILE}" 2>/dev/null
+}
+
+# ── 1. 端口若变了，先落盘并同步元数据（与 install_callback 同一套逻辑）─────
+NEW_PORT="${wizard_port:-}"
+if [ -n "${NEW_PORT}" ] && [ -d "${ETC_DIR}" ]; then
+    ENV_FILE="${ETC_DIR}/.env"
+    touch "${ENV_FILE}" 2>/dev/null || true
+    if grep -q "^SUENMONEY_PORT=" "${ENV_FILE}" 2>/dev/null; then
+        sed -i "s/^SUENMONEY_PORT=.*/SUENMONEY_PORT=${NEW_PORT}/" "${ENV_FILE}" 2>/dev/null || true
+    else
+        echo "SUENMONEY_PORT=${NEW_PORT}" >> "${ENV_FILE}" 2>/dev/null || true
+    fi
+    log_msg "端口变更 SUENMONEY_PORT=${NEW_PORT}"
+
+    for conf in "${APP_DIR}/ui/config" "${PKG_ROOT}/ui/config" "${PKG_ROOT}/target/ui/config"; do
+        [ -f "${conf}" ] || continue
+        sed -i -E "s/\"port\":[[:space:]]*\"[^\"]*\"/\"port\": \"${NEW_PORT}\"/" "${conf}" 2>/dev/null || true
+        log_msg "同步桌面入口端口 -> ${conf}"
+    done
+    for mf in "${APP_DIR}/manifest" "${PKG_ROOT}/manifest" "${PKG_ROOT}/INFO"; do
+        [ -f "${mf}" ] || continue
+        sed -i "s/^service_port[[:space:]]*=.*/service_port          = ${NEW_PORT}/" "${mf}" 2>/dev/null || true
+        log_msg "同步元数据 service_port -> ${mf}"
+    done
+fi
+
+# ── 2. 重启（bash 没法热重载 node 进程）────────────────────────────────────
+"${SCRIPT_DIR}/main" stop
 sleep 1
-./main start
-VAR="${TRIM_PKGVAR:-$(cd .. && pwd)/var}"
-echo "$(date '+%Y-%m-%d %H:%M:%S') [配置变更] 已重启服务" >> "${VAR}/info.log" 2>/dev/null
+"${SCRIPT_DIR}/main" start
+log_msg "已按新配置重启服务"
 exit 0

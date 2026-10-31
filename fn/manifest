@@ -1,5 +1,5 @@
 appname               = suenmoney
-version               = 1.1.6
+version               = 2.0.0
 display_name          = SuenMoney
 desc                  = 家庭共用记账系统：只记支出，看月度/年度总额与构成
 platform              = x86
