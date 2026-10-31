@@ -548,8 +548,13 @@ function remapMembersToActor(pkg: ExportPackage, actorId: string): void {
     if (typeof row['owner_id'] === 'string') row['owner_id'] = actorId;
   }
   for (const row of pkg.data.planTodos) {
+    // ⚠ 不能清成空串：`confirmed_by TEXT REFERENCES users(id)` 是**外键**，
+    //   空串不是 NULL，会被当成一个 user id 去查，直接 FOREIGN KEY 失败。
+    //   而且 DDL 里还有 `CHECK (status <> 'confirmed' OR confirmed_by IS NOT NULL)`，
+    //   清空会让已确认的期次连 CHECK 都过不去。
+    //   语义上也该指向导入者 —— 「谁导入就归谁」。
     if (typeof row['confirmed_by'] === 'string' && row['confirmed_by'] !== '') {
-      row['confirmed_by'] = '';
+      row['confirmed_by'] = actorId;
     }
   }
 }
@@ -752,10 +757,30 @@ function writeRow(
     .map((column) => `${column} = excluded.${column}`)
     .join(', ');
 
-  db.prepare(
-    `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})
-     ON CONFLICT(id) DO UPDATE SET ${assignments}`,
-  ).run(...values);
+  try {
+    db.prepare(
+      `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})
+       ON CONFLICT(id) DO UPDATE SET ${assignments}`,
+    ).run(...values);
+  } catch (err) {
+    /**
+     * 外键失败在 SQLite 里只给一句 `FOREIGN KEY constraint failed`，
+     * 既不说哪张表、也不说缺什么 —— 用户看到的只有「服务器内部错误」。
+     * 这里补上「哪张表、哪一行」，才能查得下去。
+     */
+    const message = err instanceof Error ? err.message : String(err);
+    if (/constraint failed|FOREIGN KEY|NOT NULL|CHECK/i.test(message)) {
+      const refs = columns
+        .filter((c) => c.endsWith('_id') && c !== 'id')
+        .map((c) => `${c}=${String(row[c] ?? '')}`)
+        .join(', ');
+      throw badRequest(
+        `导入 ${table} 的记录 ${id} 失败：${message}。`
+          + `（引用字段：${refs}）`,
+      );
+    }
+    throw err;
+  }
 
   const snapshot: Record<string, unknown> = {};
   columns.forEach((column, index) => {

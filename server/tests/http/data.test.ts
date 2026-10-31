@@ -394,6 +394,106 @@ describe('导入', () => {
     assert.equal(row['owner_id'], adminRow['id']);
   });
 
+  test('导入已确认的期次不能把 confirmed_by 清成空串 —— 那会撞外键与 CHECK', async () => {
+    // 回归：`confirmed_by TEXT REFERENCES users(id)`，空串不是 NULL，
+    // 会被当成 user id 去查 → FOREIGN KEY constraint failed → 用户只看到 500。
+    // 同时 DDL 有 `CHECK (status <> 'confirmed' OR confirmed_by IS NOT NULL)`。
+    const pkg = await exportPackage('all');
+    const db0 = openDatabase();
+    const cat = db0.prepare('SELECT id FROM categories LIMIT 1').get() as Record<string, unknown>;
+    const pay = db0.prepare('SELECT id FROM payment_methods LIMIT 1').get() as Record<string, unknown>;
+
+    const PLAN_ID = '01JEEEEEEEEEEEEEEEEEEEEEEE';
+    const EXPENSE_ID = '01JFFFFFFFFFFFFFFFFFFFFFFF';
+    const FOREIGN = '01JCCCCCCCCCCCCCCCCCCCCCCC';
+
+    // 一个「来自别的机器」的计划 + 一条已确认期次（确认人是本地不存在的成员）
+    pkg.data['plans'] = [{
+      id: PLAN_ID,
+      owner_id: FOREIGN,
+      name: '跨机导入的分期',
+      category_id: String(cat['id']),
+      payment_method_id: String(pay['id']),
+      amount_cents: 100,
+      total_amount_cents: 300,
+      purchase_date: '2026-09-01',
+      first_due_date: '2026-10-10',
+      remind_days_before: 3,
+      auto_post: 0,
+      source: 'manual',
+      state: 'active',
+      note: '',
+      created_at: '2026-09-01T00:00:00.000Z',
+      updated_at: '2026-09-01T00:00:00.000Z',
+      deleted_at: null,
+      rev: 1,
+      device_id: null,
+    }];
+    pkg.data['expenses'] = [{
+      id: EXPENSE_ID,
+      owner_id: FOREIGN,
+      amount_cents: 100,
+      category_id: String(cat['id']),
+      payment_method_id: String(pay['id']),
+      spend_date: '2026-10-10',
+      posting_date: '2026-10-10',
+      repayment_date: '2026-10-10',
+      note: '',
+      source: 'plan',
+      plan_id: PLAN_ID,
+      plan_period_seq: 1,
+      created_at: '2026-10-10T00:00:00.000Z',
+      updated_at: '2026-10-10T00:00:00.000Z',
+      deleted_at: null,
+      rev: 1,
+      device_id: null,
+    }];
+    pkg.data['planTodos'] = [{
+      id: '01JDDDDDDDDDDDDDDDDDDDDDDD',
+      plan_id: PLAN_ID,
+      period_seq: 1,
+      amount_cents: 100,
+      posting_date: '2026-10-10',
+      repayment_date: '2026-10-10',
+      remind_date: '2026-10-07',
+      status: 'confirmed',
+      posted_date: '2026-10-10',
+      confirmed_by: FOREIGN,
+      confirmed_at: '2026-10-10T00:00:00.000Z',
+      expense_id: EXPENSE_ID,
+      hold_auto_post: 0,
+      ack_at: null,
+      created_at: '2026-10-01T00:00:00.000Z',
+      updated_at: '2026-10-10T00:00:00.000Z',
+      deleted_at: null,
+      rev: 1,
+      device_id: null,
+    }];
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/import',
+      headers: auth(),
+      payload: pkg,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+
+    // 确认人应被改成导入者（不是空串、不是外部 id）
+    const db = openDatabase();
+    const adminRow = db
+      .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
+      .get() as Record<string, unknown>;
+    const todo = db
+      .prepare('SELECT confirmed_by FROM plan_todos WHERE id = ?')
+      .get('01JDDDDDDDDDDDDDDDDDDDDDDD') as Record<string, unknown>;
+    assert.equal(todo['confirmed_by'], adminRow['id']);
+
+    // 清理，避免影响后续用例
+    db.prepare('DELETE FROM plan_todos WHERE id = ?').run('01JDDDDDDDDDDDDDDDDDDDDDDD');
+    db.prepare('DELETE FROM expenses WHERE id = ?').run(EXPENSE_ID);
+    db.prepare('DELETE FROM plans WHERE id = ?').run(PLAN_ID);
+  });
+
   test('结构不对的文件在写第一行之前就被拒掉', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -538,7 +638,7 @@ describe('备份与恢复', () => {
       },
     ];
     // 同一次恢复里先把分类改掉，再炸 —— 分类的改动必须一起回滚
-    pkg.data['categories'] = pkg.data['categories']!.map((row) => ({ ...row, name: '不该留下' }));
+    pkg.data['categories'] = pkg.data['categories']!.map((row, i) => ({ ...row, name: `不该留下-${i}` }));
 
     const res = await app.inject({
       method: 'POST',
@@ -546,7 +646,10 @@ describe('备份与恢复', () => {
       headers: auth(),
       payload: pkg,
     });
-    assert.equal(res.statusCode, 500, '外键失败应被统一错误处理兜住');
+    // 约束失败现在会被翻译成 400 + 具体是哪张表哪一行（原来是笼统的 500），
+    // 但**回滚语义不变**：同一次恢复里先写的分类必须一起撤掉。
+    assert.equal(res.statusCode, 400, res.body);
+    assert.match(res.json().error, /plan_todos/);
 
     const after = openDatabase().prepare('SELECT name FROM categories ORDER BY id').all();
     assert.deepEqual(after, before, '失败必须整体回滚，分类不该被改掉');
