@@ -37,18 +37,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      # ⚠ 这里**故意不用** setup-node 的 `cache: 'npm'`。
+      #
+      # 本仓库根目录**没有** package-lock.json（.gitignore 第 9 行 `/package-lock.json`
+      # 特意排除，前后端各自在 server/ 与 web/ 下），而 setup-node 的 npm 缓存
+      # 只认 working directory 下的 lockfile；即便给了 `cache-dependency-path`，
+      # 实测在 runner 上仍会先按默认 patterns 探测仓库根并抛：
+      #   "Dependencies lock file is not found in /home/runner/work/.../suenmoney"
+      #
+      # 缓存省下的那点安装时间，不值得换来一个「每次派发都可能挂」的失败点。
+      # 真要缓存，等根目录有 lockfile 之后再加（见 docs/ci.md）。
       - name: Setup Node.js 24
         uses: actions/setup-node@v5
         with:
           # 与 scripts/build-fn.mjs 里内置的 NODE_VERSION 对齐（node:sqlite 要求 ≥22.9）
           node-version: '24'
-          cache: 'npm'
-          # 仓库根**没有** package-lock.json（只有 server/ 与 web/ 各自有），
-          # 不指定路径时 setup-node 会在根目录找不到 lockfile 直接失败：
-          #   "Dependencies lock file is not found in .../suenmoney"
-          cache-dependency-path: |
-            web/package-lock.json
-            server/package-lock.json
 
       - name: Determine Version
         id: ver
@@ -84,6 +87,14 @@ jobs:
           npm install --no-audit --no-fund
           npm --prefix web ci --no-audit --no-fund
           npm --prefix server ci --no-audit --no-fund
+
+      # CI 里 git checkout 出来的文件 mtime 几乎相同，build-fn.mjs 的
+      # `isStale(web/dist, src|public|…)` 用 mtime 比大小判断是否陈旧 —— 在这种
+      # 场景下会误判「dist 是最新的」而直接复用提交里的 dist。
+      # 若某次改了 web/src 却忘了重新 build 就提交，包里就会带旧前端，而且
+      # 包体积、sha256 全都正常，极难发现。所以这里先显式重建一次。
+      - name: Build Web Assets
+        run: npm --prefix web run build
 
       - name: Build fnOS FPK
         run: |
