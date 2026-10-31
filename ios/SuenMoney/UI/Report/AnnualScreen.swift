@@ -234,6 +234,8 @@ public struct AnnualScreen: View {
                     .tracking(1.52)
                     .foregroundStyle(Color(css: tokens.ink3))
             }
+            // 卡头 → 大金额 21（鸿蒙 header margin-bottom 13 + hero margin-top 8）
+            .padding(.bottom, 13)
 
             // 大金额：¥ 独立成段（0.5 倍字号 + ink2），数字按长度自适应 34/28/22
             // 鸿蒙 hero 有 margin top 8 / bottom 4
@@ -277,18 +279,27 @@ public struct AnnualScreen: View {
                 statCell("单笔均值", formatYuan(count() > 0 ? Int((Double(total()) / Double(count())).rounded()) : 0))
                 statCell("空月", "\(quietMonths()) 个月")
             }
+            // 虚线距「去年 ¥…」14pt（鸿蒙 margin-top 14 + padding-top 14）
             .padding(.top, 14)
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    .foregroundStyle(Color(css: tokens.line))
-                    .frame(height: 1)
-            }
+            .overlay(alignment: .top) { annualDashedRule }
+            .padding(.top, 14)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         // candy 顶卡是 2px 深墨描边（line2），不是普通卡片的浅灰 line
         .card(tokens, isCyber, radius: 16, border: isCyber ? tokens.line : tokens.line2)
+    }
+
+    /// 真虚线（用 Path 在 y=0.5 画一条 1pt 线）。
+    /// 不能用 `Rectangle().stroke(dash:)`：那会描 1pt 高矩形的四条边，
+    /// 上下两条相距 1pt 各 1pt 宽，叠成约 2pt 粗、相位还错开。
+    private var annualDashedRule: some View {
+        Path { p in
+            p.move(to: CGPoint(x: 0, y: 0.5))
+            p.addLine(to: CGPoint(x: 10_000, y: 0.5))
+        }
+        .stroke(Color(css: tokens.line), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        .frame(height: 1)
     }
 
     private func heroSize() -> CGFloat {

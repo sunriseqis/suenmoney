@@ -384,7 +384,7 @@ public struct DashboardScreen: View {
                         .font(.system(size: heroSize() * 0.5, weight: .bold))
                         .foregroundStyle(Color(css: tokens.ink2))
                     Text(formatYuan(totalCents()).replacingOccurrences(of: "¥", with: ""))
-                        .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.black))
+                        .font(.custom(fontDisplayOf(isCyber), size: heroSize()).weight(.heavy))
                         .tracking(isCyber ? 1.14 : -1.33)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -518,7 +518,7 @@ public struct DashboardScreen: View {
                         Task { await todoAction(t, t.willAutoPost ? "ack" : "confirm") }
                     } label: {
                         Text(t.willAutoPost ? "确认" : "入账")
-                            .font(.system(size: 11.5, weight: .bold))
+                            .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: 11.5).weight(.bold))
                             .foregroundStyle(Color(css: tokens.ink2))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 4)

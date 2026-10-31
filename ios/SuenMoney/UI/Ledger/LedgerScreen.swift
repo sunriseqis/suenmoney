@@ -596,7 +596,8 @@ public struct LedgerScreen: View {
     private func todoDotColor() -> String {
         if overdueCount() > 0 { return tokens.danger }
         if heroTodos.contains(where: { !$0.willAutoPost }) { return tokens.warn }
-        return tokens.accent
+        // 无逾期且全自动 → ink3（鸿蒙同，不是主色）
+        return tokens.ink3
     }
 
     private func activeFilterCount() -> Int {
@@ -619,6 +620,8 @@ public struct LedgerScreen: View {
 
     private func switchTier(_ v: Int) {
         guard tier != v else { return }
+        // 先置 loading：否则标题已换新月份、列表还是上一月的行（网络慢时明显串档）
+        loading = true
         tier = v
         if v == 1 {
             // Web switchTier('year')：锚点落到该年 1 月
@@ -631,9 +634,10 @@ public struct LedgerScreen: View {
     }
 
     private func shiftPeriod(_ delta: Int) {
+        loading = true
         if tier == 0 {
             anchorMonth = shiftMonth(anchorMonth, delta)
-            Task { await loadMonth(reset: true) }
+            Task { await loadTier() }
             return
         }
         if tier == 1 {
@@ -644,6 +648,7 @@ public struct LedgerScreen: View {
     }
 
     private func applyPeriod(_ month: String, _ newTier: Int) {
+        loading = true
         anchorMonth = month
         anchorYear = String(month.prefix(4))
         tier = newTier
@@ -656,7 +661,7 @@ public struct LedgerScreen: View {
         filterPayment = ""
         filterOwner = ""
         keyword = ""            // 关键词也要清（鸿蒙 clearFilters 同）
-        Task { await loadMonth(reset: true) }
+        Task { await loadTier() }
     }
 
     // MARK: - 下拉手势
@@ -969,15 +974,15 @@ public struct LedgerScreen: View {
                 VStack(spacing: 10) {
                 filterGroup("分类", rootCategories, filterCategory, showAll: true) { id in
                     filterCategory = filterCategory == id ? "" : id
-                    Task { await loadMonth(reset: true) }
+                    Task { await loadTier() }
                 }
                 filterGroup("支付", paymentOptions, filterPayment) { id in
                     filterPayment = filterPayment == id ? "" : id
-                    Task { await loadMonth(reset: true) }
+                    Task { await loadTier() }
                 }
                 filterGroup("记录人", ownerOptions, filterOwner) { id in
                     filterOwner = filterOwner == id ? "" : id
-                    Task { await loadMonth(reset: true) }
+                    Task { await loadTier() }
                 }
                 // 「清除」放在记录人组尾部（鸿蒙同），且关键词也能清
                 if activeFilterCount() > 0 || !keyword.isEmpty {
@@ -1150,7 +1155,7 @@ public struct LedgerScreen: View {
                 .padding(.vertical, 5)
                 .background(active
                             ? (isCyber ? Color(css: tokens.accent).opacity(0.1) : Color(css: tokens.amber))
-                            : Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+                            : (isCyber ? Color.clear : Color(css: tokens.surface)))
                 .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                 .overlay(
                     RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
@@ -1417,9 +1422,11 @@ public struct LedgerScreen: View {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color(css: tokens.surface3))
+                            .overlay(Capsule().stroke(Color(css: tokens.line), lineWidth: 1))
                         Capsule()
                             .fill(Color(css: tokens.accent))
                             .frame(width: geo.size.width * pct)
+                            .padding(.leading, 1)
                     }
                 }
                 .frame(height: 5)

@@ -193,8 +193,8 @@ public struct SettingsScreen: View {
         }
         // 用 `.sheet(item:)`：内容直接拿 kind 参数，不依赖 body 时序
         .sheet(item: $sheetKind) { kind in formSheet(kind) }
-        .alert("撤销跨月入账？", isPresented: $revertWarnOpen) {
-            Button("仍要撤销", role: .destructive) {
+        .alert("撤销跨月入账", isPresented: $revertWarnOpen) {
+            Button("仍然撤销", role: .destructive) {
                 let id = pendingRevertId
                 Task {
                     do {
@@ -204,7 +204,7 @@ public struct SettingsScreen: View {
                     } catch let err as ApiError { reportError(err.message) } catch { reportError("撤销失败") }
                 }
             }
-            Button("取消", role: .cancel) {}
+            Button("再想想", role: .cancel) {}
         } message: {
             Text(revertWarnText)
         }
@@ -716,10 +716,10 @@ public struct SettingsScreen: View {
                         .font(.custom(fontDisplayOf(isCyber), size: isCyber ? 12.5 : 15).weight(.bold))
                         .tracking(isCyber ? 1.25 : 0)
                         .foregroundStyle(Color(css: tokens.ink))
+                    Spacer(minLength: 0)
                     Text("进行中 \(activePlans.count) · 已结束 \(endedPlans.count)")
                         .font(.custom(fontMonoOf(), size: 9.5))
                         .foregroundStyle(Color(css: tokens.ink3))
-                    Spacer(minLength: 0)
                     smBtn("新建计划") { openPlanCreate() }
                 }
 
@@ -967,7 +967,7 @@ public struct SettingsScreen: View {
         switch urgencyOf(date, today: todayKey()) {
         case .overdue: return tokens.danger
         case .due: return tokens.warn
-        case .later: return tokens.ink3
+        case .later: return tokens.ok
         }
     }
 
@@ -1014,7 +1014,7 @@ public struct SettingsScreen: View {
             do {
                 if t.status == "skipped" {
                     try await Api.restoreTodo(id: t.id)
-                    showToast("已恢复本期")
+                    showToast("已恢复为待处理")
                 } else {
                     // 跨月撤销：先弹确认（鸿蒙 R126），说明「哪个月的报表会变」
                     if let month = t.expenseMonth, !month.isEmpty,
@@ -1109,7 +1109,11 @@ public struct SettingsScreen: View {
                 plainCardTitle("服务器")
 
                 if srvList.isEmpty {
-                    emptyState("server.rack", "还没有服务器，点下面「添加服务器」")
+                    // 鸿蒙是左对齐小字提示，无图标
+                    Text("还没有服务器，点下面「添加服务器」")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     ForEach(Array(srvList.enumerated()), id: \.offset) { idx, url in
                         HStack(spacing: 8) {
@@ -1141,11 +1145,6 @@ public struct SettingsScreen: View {
                                 Text("生效")
                                     .font(.system(size: 9))
                                     .foregroundStyle(Color(css: tokens.accent))
-                            }
-                            if srvProbe.indices.contains(idx), !srvProbe[idx].isEmpty {
-                                Text(srvProbe[idx])
-                                    .font(.custom(fontMonoOf(), size: 9))
-                                    .foregroundStyle(Color(css: tokens.ink3))
                             }
                             Button {
                                 srvList.remove(at: idx)
@@ -1179,7 +1178,14 @@ public struct SettingsScreen: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    Spacer(minLength: 0)
+                }
+
+                // 测试/保存独占一行，srvMsg 在该行左侧（鸿蒙同）
+                HStack(spacing: 8) {
+                    Text(srvMsg)
+                        .font(.custom(fontMonoOf(), size: 10))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
                         Task { await testServers() }
                     } label: {
@@ -1206,11 +1212,6 @@ public struct SettingsScreen: View {
                     .buttonStyle(.plain)
                 }
 
-                if !srvMsg.isEmpty {
-                    Text(srvMsg)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color(css: tokens.ink3))
-                }
             }
         }
     }
@@ -1227,11 +1228,17 @@ public struct SettingsScreen: View {
     /// 逐条探活（鸿蒙 testServers）
     private func testServers() async {
         var results = [String](repeating: "", count: srvList.count)
+        var okCount = 0
         for (i, url) in srvList.enumerated() {
-            let r = await ServerRouter.probe(url)
+            let trimmed = url.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let r = await ServerRouter.probe(trimmed)
             results[i] = r.ok ? "可用 \(r.latencyMs)ms" : "连不上"
+            if r.ok { okCount += 1 }
         }
         srvProbe = results
+        // 鸿蒙在**汇总行**给结论，不在行内逐条写延迟
+        srvMsg = okCount > 0 ? "\(okCount) 个地址可用" : "所有地址都连不上"
     }
 
     /// 显式保存（鸿蒙 saveServers）：至少一个地址，按顺序探活选第一个可用的生效
@@ -1425,7 +1432,7 @@ public struct SettingsScreen: View {
             // 自绘头
             Text(sheetTitle(kind))
                 .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 13 : 15).weight(.bold))
-                .foregroundStyle(Color(css: tokens.ink))
+                .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 16)
                 .padding(.trailing, 16)
@@ -1461,17 +1468,6 @@ public struct SettingsScreen: View {
                 .buttonStyle(.plain)
                 .disabled(busy)
 
-                if !editingId.isEmpty && kind != .plan {
-                    Button(role: .destructive) {
-                        Task { await deleteForm() }
-                    } label: {
-                        Text("删除")
-                            .font(.system(size: 11.5, weight: .bold))
-                            .foregroundStyle(Color(css: tokens.danger))
-                    }
-                    .buttonStyle(.plain)
-                }
-
                 Spacer(minLength: 0)
                 Button { sheetKind = nil } label: {
                     Text("取消")
@@ -1505,6 +1501,28 @@ public struct SettingsScreen: View {
         }
 
         if kind == .category {
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("图标")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                    iconOption("", "自动", "wand.and.stars")
+                    ForEach(Array(catIconOptions.enumerated()), id: \.offset) { _, opt in
+                        iconOption(opt.name, opt.label, opt.symbol)
+                    }
+                }
+            }
+
+            if formParent.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("颜色")
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                        colorOption("")
+                        ForEach(Array(categoryColors.enumerated()), id: \.offset) { i, hex in
+                            colorOption("\(i + 1)", hex: hex)
+                        }
+                    }
+                }
+            }
+
             // 归属类别：**只在编辑二级时出现**（鸿蒙 `!editingRoot() && editingId != ''`）
             if !editingId.isEmpty && !formParent.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -1527,28 +1545,6 @@ public struct SettingsScreen: View {
                                     )
                             }
                             .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                fieldLabel("图标")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
-                    iconOption("", "自动", "wand.and.stars")
-                    ForEach(Array(catIconOptions.enumerated()), id: \.offset) { _, opt in
-                        iconOption(opt.name, opt.label, opt.symbol)
-                    }
-                }
-            }
-
-            if formParent.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    fieldLabel("颜色")
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
-                        colorOption("")
-                        ForEach(Array(categoryColors.enumerated()), id: \.offset) { i, hex in
-                            colorOption("\(i + 1)", hex: hex)
                         }
                     }
                 }
@@ -1870,10 +1866,11 @@ public struct SettingsScreen: View {
         formError = ""
         editingId = ""
         formName = ""
-        formType = "cash"
+        // 鸿蒙默认「信用卡 + 1 日账单 / 20 日还款」
+        formType = "credit"
         formIcon = ""
-        formBillingDay = 0
-        formRepayDay = 0
+        formBillingDay = 1
+        formRepayDay = 20
         formSortOrder = 0
         formEnabled = true
         sheetKind = .payment
@@ -1962,7 +1959,7 @@ public struct SettingsScreen: View {
                     busy = false
                     return
                 }
-                try await Api.mergePayment(id: editingId, into: mergeTarget)
+                try await Api.mergePayment(id: editingId, intoId: mergeTarget)
                 showToast("已合并")
                 sheetKind = nil
                 await reload()
@@ -2004,13 +2001,18 @@ public struct SettingsScreen: View {
             } else {
                 if editingId.isEmpty {
                     try await Api.createPayment(PaymentCreateRequest(
-                        name: name, type: formType, icon: formIcon, billingDay: formBillingDay,
-                        repaymentDay: formRepayDay, sortOrder: formSortOrder))
+                        name: name, type: formType, icon: formIcon,
+                        billingDay: formType == "credit" ? formBillingDay : 0,
+                        repaymentDay: formType == "credit" ? formRepayDay : 0,
+                        sortOrder: formSortOrder))
                     showToast("支付方式已新增")
                 } else {
                     try await Api.patchPayment(id: editingId, PaymentPatchRequest(
-                        name: name, icon: formIcon, billingDay: formBillingDay,
-                        repaymentDay: formRepayDay, sortOrder: formSortOrder, isEnabled: formEnabled))
+                        name: name, icon: formIcon,
+                        // 鸿蒙口径：非信用卡一律提交 0 / 0
+                        billingDay: formType == "credit" ? formBillingDay : 0,
+                        repaymentDay: formType == "credit" ? formRepayDay : 0,
+                        sortOrder: formSortOrder, isEnabled: formEnabled))
                     showToast("支付方式已更新")
                 }
             }
