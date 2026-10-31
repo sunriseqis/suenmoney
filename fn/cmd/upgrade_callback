@@ -2,21 +2,27 @@
 # 升级后：起服务 + 探 /api/health，把返回体（含 version）写进日志，
 # 这样「升级到底有没有生效」一眼可查。恒 exit 0。
 set -o pipefail
+
+# 端口从 etc/.env 读（wizard 里用户可改），读不到回落 5310
+APP_DIR="${TRIM_APPDEST:-$(cd "$(dirname "$0")/.." && pwd)}"
+PKG_ROOT="$(cd "${APP_DIR}/.." 2>/dev/null && pwd)"
+ETC_DIR="${TRIM_PKGETC:-${PKG_ROOT}/etc}"
+[ -f "${ETC_DIR}/.env" ] && set -a && . "${ETC_DIR}/.env" && set +a
+PORT="${SUENMONEY_PORT:-5310}"
 cd "$(dirname "$0")" || exit 0
 ./main start
-VAR="${TRIM_PKGVAR:-$(cd .. && pwd)/var}"
 i=0
 while [ "${i}" -lt 30 ]; do
     if command -v curl >/dev/null 2>&1; then
-        body="$(curl -s -m 2 "http://127.0.0.1:5310/api/health" 2>/dev/null)"
+        body="$(curl -s -m 2 "http://127.0.0.1:${PORT}/api/health" 2>/dev/null)"
     else
-        body="$(node -e "fetch('http://127.0.0.1:5310/api/health').then(r=>r.text()).then(t=>console.log(t)).catch(()=>{})" 2>/dev/null)"
+        body="$(node -e "fetch('http://127.0.0.1:${PORT}/api/health').then(r=>r.text()).then(t=>console.log(t)).catch(()=>{})" 2>/dev/null)"
     fi
     if [ -n "${body}" ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [升级后自检] ${body}" >> "${VAR}/info.log" 2>/dev/null
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [升级后自检] ${body}" >> "${VAR_DIR:-${PKG_ROOT}/var}/info.log" 2>/dev/null
         exit 0
     fi
     sleep 1; i=$((i + 1))
 done
-echo "$(date '+%Y-%m-%d %H:%M:%S') [WARN] 升级后 30 秒内健康检查未通过" >> "${VAR}/info.log" 2>/dev/null
+echo "$(date '+%Y-%m-%d %H:%M:%S') [WARN] 升级后 30 秒内健康检查未通过" >> "${VAR_DIR:-${PKG_ROOT}/var}/info.log" 2>/dev/null
 exit 0

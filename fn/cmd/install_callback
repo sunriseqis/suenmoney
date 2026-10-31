@@ -1,4 +1,131 @@
 #!/bin/bash
-# 安装前/后钩子：无需额外动作（数据落在 TRIM_PKGVAR，安装器自己会建目录）
-# 保持显式 exit 0 —— 钩子非零会让应用中心把安装判成失败。
+#
+# 安装后回调。
+# 飞牛 fnOS 在套件解压和文件布局完成后调用本脚本。
+# 此时 wizard/install 收集到的向导变量已作为环境变量注入：
+#   wizard_port               服务端口（默认 5310）
+#   wizard_admin_user         初始管理员登录名（默认 admin）
+#   wizard_admin_password     初始管理员密码
+#   wizard_admin_display_name 管理员显示昵称（默认 管理员）
+#
+# 三件事，都不能省：
+#   1. 端口写进 etc/.env —— main 启动时从这里读 SUENMONEY_PORT。
+#      不写的话用户在向导里改的端口等于没改（服务还按 5310 起）。
+#   2. 端口同步进 ui/config 与 manifest —— 桌面快捷方式和应用中心
+#      各自从这两处读端口，漏一个就会出现「图标打不开 / 状态显示异常」。
+#   3. 建初始管理员 —— 否则装完是个空库，谁都进不去。
+#
+# 恒 exit 0：回调非零会让应用中心把「安装成功」判成失败。
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${TRIM_APPDEST:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+PKG_ROOT="$(cd "${APP_DIR}/.." 2>/dev/null && pwd)"
+VAR_DIR="${TRIM_PKGVAR:-${PKG_ROOT}/var}"
+ETC_DIR="${TRIM_PKGETC:-${PKG_ROOT}/etc}"
+
+# 硬闸：TRIM_PKGVAR 落在危险值上时不许写（否则日志/库会写到根分区）
+case "${VAR_DIR}" in
+    ""|"/"|"/var"|"/usr"|"/tmp"|"/opt"|"/root")
+        echo "[install_callback] TRIM_PKGVAR 不可用：'${VAR_DIR}'，中止" >&2
+        exit 0
+        ;;
+esac
+
+LOG_FILE="${VAR_DIR}/info.log"
+mkdir -p "${VAR_DIR}/data" "${ETC_DIR}" 2>/dev/null || true
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - [install_callback] $1" >> "${LOG_FILE}" 2>/dev/null
+}
+
+log_msg "开始执行安装后初始化..."
+
+# ── 1. 端口：写 etc/.env + 同步 ui/config 与 manifest ──────────────────────
+PORT="${wizard_port:-${SUENMONEY_PORT:-5310}}"
+ENV_FILE="${ETC_DIR}/.env"
+
+touch "${ENV_FILE}" 2>/dev/null || true
+if grep -q "^SUENMONEY_PORT=" "${ENV_FILE}" 2>/dev/null; then
+    sed -i "s/^SUENMONEY_PORT=.*/SUENMONEY_PORT=${PORT}/" "${ENV_FILE}" 2>/dev/null || true
+else
+    echo "SUENMONEY_PORT=${PORT}" >> "${ENV_FILE}" 2>/dev/null || true
+fi
+log_msg "已写入端口 SUENMONEY_PORT=${PORT} -> ${ENV_FILE}"
+
+# 桌面快捷方式：包内一份 + 若干可能的安装布局（不同 fnOS 版本路径不同，全都试）
+for conf in \
+    "${APP_DIR}/ui/config" \
+    "${APP_DIR}/app/ui/config" \
+    "${PKG_ROOT}/ui/config" \
+    "${PKG_ROOT}/target/ui/config"
+do
+    [ -f "${conf}" ] || continue
+    sed -i -E "s/\"port\":[[:space:]]*\"[^\"]*\"/\"port\": \"${PORT}\"/" "${conf}" 2>/dev/null || true
+    log_msg "已同步桌面入口端口 (${PORT}) -> ${conf}"
+done
+
+# 应用中心元数据：service_port 必须跟着改，否则应用中心探的是旧端口
+for mf in \
+    "${APP_DIR}/manifest" \
+    "${APP_DIR}/../manifest" \
+    "${PKG_ROOT}/manifest" \
+    "${PKG_ROOT}/INFO"
+do
+    [ -f "${mf}" ] || continue
+    sed -i "s/^service_port[[:space:]]*=.*/service_port          = ${PORT}/" "${mf}" 2>/dev/null || true
+    log_msg "已同步元数据 service_port (${PORT}) -> ${mf}"
+done
+
+# ── 2. 初始管理员账号 ───────────────────────────────────────────────────────
+NODE_BIN=""
+if [ -x "${APP_DIR}/bin/node" ]; then
+    NODE_BIN="${APP_DIR}/bin/node"
+elif command -v node >/dev/null 2>&1; then
+    NODE_BIN="$(command -v node)"
+fi
+
+ADMIN_USER="${wizard_admin_user:-admin}"
+ADMIN_PASS="${wizard_admin_password:-}"
+ADMIN_NAME="${wizard_admin_display_name:-管理员}"
+
+if [ -z "${ADMIN_PASS}" ]; then
+    log_msg "未提供管理员密码，跳过建号（可在网页端注册首个账号）"
+elif [ "${#ADMIN_PASS}" -lt 8 ]; then
+    # 服务端密码策略是 8 位，这里提前挡住并明确记日志，别让它静默失败
+    log_msg "[ERROR] 密码长度 ${#ADMIN_PASS} 位 < 8，服务端会拒绝；未创建账号"
+elif [ -z "${NODE_BIN}" ] || [ ! -d "${APP_DIR}/server" ]; then
+    log_msg "[ERROR] 找不到 node 运行时或 server 目录，未创建账号"
+else
+    log_msg "正在创建初始管理员: ${ADMIN_USER}"
+    export SUENMONEY_DB_PATH="${VAR_DIR}/data/suenmoney.sqlite"
+    (
+        cd "${APP_DIR}/server" || exit 0
+        # Node ≥22.18 起类型剥离默认开启，可以直接跑 .ts
+        major="$("${NODE_BIN}" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+        minor="$("${NODE_BIN}" -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
+        if [ "${major}" -gt 22 ] || { [ "${major}" -eq 22 ] && [ "${minor}" -ge 18 ]; }; then
+            "${NODE_BIN}" --disable-warning=ExperimentalWarning \
+                src/cli/user-add.ts --username "${ADMIN_USER}" \
+                --password "${ADMIN_PASS}" --name "${ADMIN_NAME}" --admin
+        else
+            "${NODE_BIN}" --experimental-strip-types --experimental-sqlite \
+                --disable-warning=ExperimentalWarning \
+                src/cli/user-add.ts --username "${ADMIN_USER}" \
+                --password "${ADMIN_PASS}" --name "${ADMIN_NAME}" --admin
+        fi
+    ) >> "${LOG_FILE}" 2>&1
+    rc=$?
+    if [ "${rc}" = "0" ]; then
+        log_msg "初始管理员已创建: ${ADMIN_USER}"
+    else
+        log_msg "[ERROR] 创建初始管理员失败 (rc=${rc})，详见上方日志"
+    fi
+fi
+
+# ── 3. 起服务 ──────────────────────────────────────────────────────────────
+log_msg "启动服务..."
+"${SCRIPT_DIR}/main" start >> "${LOG_FILE}" 2>&1
+log_msg "install_callback 完成（端口 ${PORT}）"
+
 exit 0

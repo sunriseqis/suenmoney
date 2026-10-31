@@ -1,4 +1,20 @@
 #!/bin/bash
-# 安装前/后钩子：无需额外动作（数据落在 TRIM_PKGVAR，安装器自己会建目录）
-# 保持显式 exit 0 —— 钩子非零会让应用中心把安装判成失败。
+#
+# 安装前初始化。
+# 飞牛 fnOS 在套件解压后、install_callback 之前调用。
+#
+# 只做一件事：把持久化目录建好（TRIM_PKGVAR 是升级时保留的那块）。
+# 恒 exit 0 —— 钩子非零会让应用中心把安装判成失败，而这里失败通常都能补救。
+set -o pipefail
+
+APP_DIR="${TRIM_APPDEST:-$(cd "$(dirname "$0")/.." && pwd)}"
+VAR_DIR="${TRIM_PKGVAR:-$(cd "${APP_DIR}/.." && pwd)/var}"
+ETC_DIR="${TRIM_PKGETC:-$(cd "${APP_DIR}/.." && pwd)/etc}"
+
+# 硬闸：这几个值一旦落进来，后面所有写操作都会写到系统盘上
+case "${VAR_DIR}" in
+    ""|"/"|"/var"|"/usr"|"/tmp"|"/opt"|"/root") exit 0 ;;
+esac
+
+mkdir -p "${VAR_DIR}/data" "${ETC_DIR}" 2>/dev/null || true
 exit 0

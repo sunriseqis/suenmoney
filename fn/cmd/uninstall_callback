@@ -1,10 +1,17 @@
 #!/bin/bash
 # 卸载后：再停一次（幂等兜底），端口还被占就写日志警告；恒 exit 0。
 set -o pipefail
+
+# 端口从 etc/.env 读（wizard 里用户可改），读不到回落 5310
+APP_DIR="${TRIM_APPDEST:-$(cd "$(dirname "$0")/.." && pwd)}"
+PKG_ROOT="$(cd "${APP_DIR}/.." 2>/dev/null && pwd)"
+ETC_DIR="${TRIM_PKGETC:-${PKG_ROOT}/etc}"
+[ -f "${ETC_DIR}/.env" ] && set -a && . "${ETC_DIR}/.env" && set +a
+PORT="${SUENMONEY_PORT:-5310}"
 cd "$(dirname "$0")" || exit 0
 ./main stop
-if timeout 2 bash -c "exec 3<>/dev/tcp/127.0.0.1/5310" 2>/dev/null; then
+if timeout 2 bash -c "exec 3<>/dev/tcp/127.0.0.1/${PORT}" 2>/dev/null; then
     VAR="${TRIM_PKGVAR:-$(cd .. && pwd)/var}"
-    echo "[WARN] 卸载后端口 5310 仍被占用" >> "${VAR}/info.log" 2>/dev/null
+    echo "[WARN] 卸载后端口 ${PORT} 仍被占用" >> "${VAR_DIR:-${PKG_ROOT}/var}/info.log" 2>/dev/null
 fi
 exit 0
