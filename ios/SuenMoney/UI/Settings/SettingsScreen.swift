@@ -1394,12 +1394,17 @@ public struct SettingsScreen: View {
                     } label: {
                         Text(updateMsg == "检查中…" ? "检查中…" : "检查更新")
                             .font(.custom(isCyber ? fontMonoOf() : fontBodyOf(false), size: isCyber ? 10 : 11.5).weight(.bold))
-                            .foregroundStyle(Color(css: tokens.ink))
+                            .foregroundStyle(Color(css: isCyber ? tokens.accent : tokens.ink))
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
+                            // ⚠ candy 必须有底色：只画硬阴影不给底时，
+                            // 深色阴影会从透明区域透上来当按钮底 → ink 字压 line2 底完全看不见
+                            .background(Color(css: isCyber ? "transparent" : tokens.surface))
+                            .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill)))
                             .overlay(
                                 RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
-                                    .stroke(Color(css: tokens.line2), lineWidth: tokens.borderW)
+                                    .stroke(Color(css: isCyber ? "rgba(0,255,136,0.55)" : tokens.line2),
+                                            lineWidth: tokens.borderW)
                             )
                             .background {
                                 if !isCyber {
