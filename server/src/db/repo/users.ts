@@ -151,6 +151,60 @@ export interface CreateUserInput {
  * 用户名统一转小写存储 —— 否则「Suen」和「suen」会被当成两个账号，
  * 而登录时大小写不一致又会让人以为密码错了。
  */
+/**
+ * 恢复备份专用：用**备份里记录的 id**（原 ULID）建账号。
+ *
+ * 为什么必须指定 id：备份里每条计划/流水/期次都用 `owner_id` / `confirmed_by`
+ * 引用成员的 ULID。如果恢复时另生成新 id，那些引用就全成了悬空指针 ——
+ * 数据能进来但「谁记的」全部丢失。
+ *
+ * 口令由调用方生成（备份不含 password_hash），调用方负责把明文回给管理员。
+ */
+export function createUserWithId(
+  db: DatabaseSync,
+  input: CreateUserInput & { id: string; username: string },
+): PublicUser {
+  const username = input.username.trim().toLowerCase();
+  if (username === '') throw conflict('用户名不能为空');
+  if (findUserByUsername(db, username) !== null) {
+    throw conflict(`用户名已被占用：${username}`);
+  }
+  const timestamp = nowIso();
+  const row: UserRow = {
+    id: input.id,
+    username,
+    display_name: input.displayName.trim() || username,
+    password_hash: hashPassword(input.password),
+    role: input.role ?? 'member',
+    created_at: timestamp,
+    updated_at: timestamp,
+    deleted_at: null,
+    rev: 1,
+    device_id: input.deviceId ?? null,
+  };
+
+  inTransaction(db, () => {
+    db.prepare(
+      `INSERT INTO users (id, username, display_name, password_hash, role,
+                          created_at, updated_at, deleted_at, rev, device_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, ?)`,
+    ).run(
+      row.id, row.username, row.display_name, row.password_hash, row.role,
+      row.created_at, row.updated_at, row.device_id,
+    );
+    recordChange(db, {
+      entityType: 'user',
+      entityId: row.id,
+      op: 'upsert',
+      actorId: row.id,
+      payload: toSyncUser(row),
+      deviceId: row.device_id,
+    });
+  });
+
+  return toPublicUser(row);
+}
+
 export function createUser(db: DatabaseSync, input: CreateUserInput): PublicUser {
   const username = input.username.trim().toLowerCase();
 

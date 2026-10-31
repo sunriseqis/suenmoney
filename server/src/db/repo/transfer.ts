@@ -20,6 +20,7 @@
  *    「删掉本地有、备份里没有的记录」比「写回旧数据」危险得多，
  *    不该藏在一个叫「恢复」的按钮后面。
  */
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
@@ -27,6 +28,7 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { config } from '../../config.ts';
 import { badRequest, conflict } from '../../lib/http-error.ts';
 import { inTransaction, recordChange, type EntityType } from '../sync.ts';
+import { createUserWithId } from './users.ts';
 
 // ---------------------------------------------------------------------------
 // 列清单
@@ -501,6 +503,13 @@ export interface MergeReport {
   overwritten: number;
   /** 恢复前自动存档的快照路径（仅 restore） */
   snapshotPath: string | null;
+  /**
+   * 恢复时新建出来的成员 —— 这些账号**还没有可用的登录密码**，
+   * 管理员必须去「家庭与账号」给它们设一个，否则那人登不进去。
+   */
+  createdMembers: RecoveredMember[];
+  /** 恢复时被备份资料覆盖了昵称的已有成员 */
+  updatedMembers: Array<{ id: string; username: string; displayName: string }>;
 }
 
 interface MergeOptions {
@@ -521,6 +530,155 @@ interface MergeOptions {
  * 按 id 查而不是按 username：id 是 ULID，改过用户名的人也认得出来。
  * **包含软删的成员**：历史记录必须继续引用那个已经不用的账号。
  */
+/**
+ * 导入导出包时，把所有成员引用改成**当前操作者**（「谁导入就归谁」）。
+ *
+ * 导出包不含「原机器的成员」这层语义 —— 它只是某个期间的流水。
+ * 如果这里也要求目标库认识那些 ULID，用户就永远没法把 A 机器导出的账
+ * 导进 B 机器的自己名下。
+ *
+ * `confirmed_by` 清空而不是指向操作者：它是「谁确认入账」的历史事实，
+ * 换个账号导入后不该被冒认成自己确认的。
+ */
+function remapMembersToActor(pkg: ExportPackage, actorId: string): void {
+  for (const row of pkg.data.plans) {
+    if (typeof row['owner_id'] === 'string') row['owner_id'] = actorId;
+  }
+  for (const row of pkg.data.expenses) {
+    if (typeof row['owner_id'] === 'string') row['owner_id'] = actorId;
+  }
+  for (const row of pkg.data.planTodos) {
+    if (typeof row['confirmed_by'] === 'string' && row['confirmed_by'] !== '') {
+      row['confirmed_by'] = '';
+    }
+  }
+}
+
+/** 恢复备份时新建出来的成员（需要管理员去设初始登录密码） */
+export interface RecoveredMember {
+  id: string;
+  username: string;
+  displayName: string;
+  role: string;
+}
+
+/** 恢复备份时的成员处理结果 */
+export interface MemberMergeResult {
+  /** 旧 id → 目标库里对应的 id（用于改写 owner_id / confirmed_by） */
+  mapping: Map<string, string>;
+  /** 目标库原本没有、这次新建出来的成员 */
+  created: RecoveredMember[];
+  /** 被备份资料覆盖了昵称/角色的已有成员 */
+  overwritten: Array<{ id: string; username: string; displayName: string }>;
+}
+
+/**
+ * 恢复备份时的成员处理：**按角色配对覆盖，多出来的新建**。
+ *
+ * 规则（用户定的，别自作聪明改成按 ULID 精确匹配）：
+ *
+ *   1. **不按 id 对比**。备份是另一台机器的快照，ULID 天然不同，按 id 比必然全不匹配。
+ *   2. **管理员覆盖管理员、用户覆盖用户**：同角色按创建顺序一一配对，
+ *      备份那一方的人覆盖目标那一方的人（昵称、角色以备份为准）。
+ *   3. **密码不覆盖** —— 备份里根本没有 `password_hash`（刻意不导出）。
+ *      已有账号的登录密码保持目标库原样，用户照常用原来的口令登录。
+ *   4. 备份里人数**多于**目标库的，多出来的**新建账号**。
+ *      新建的账号没有可用口令（占位随机串），必须由执行导入的管理员
+ *      去「家庭与账号」里设一个初始密码，否则那人登不进去 —— 结果里会列出来。
+ *   5. 数据里的 `owner_id` / `confirmed_by` 按上面的配对结果改写。
+ *
+ * 导入动作本身必然是管理员在操作（`requireAdmin` 已保证）。
+ */
+export function mergeMembersByRole(db: DatabaseSync, pkg: ExportPackage): MemberMergeResult {
+  const mapping = new Map<string, string>();
+  const created: RecoveredMember[] = [];
+  const overwritten: Array<{ id: string; username: string; displayName: string }> = [];
+
+  type UserLite = { id: string; username: string; display_name: string; role: string };
+  const loadTargets = (role: string): UserLite[] => {
+    const rows = db
+      .prepare(
+        `SELECT id, username, display_name, role FROM users
+         WHERE deleted_at IS NULL AND role = ? ORDER BY created_at ASC, id ASC`,
+      )
+      .all(role);
+    return rows as unknown as UserLite[];
+  };
+
+  const backupMembers = pkg.data.members as readonly Row[];
+
+  for (const role of ['admin', 'member'] as const) {
+    const backups = backupMembers.filter((m) => String(m['role'] ?? 'member') === role);
+    const targets = loadTargets(role);
+
+    for (let i = 0; i < backups.length; i++) {
+      const bm = backups[i]!;
+      const oldId = String(bm['id'] ?? '');
+      if (oldId === '') continue;
+
+      const tgt = targets[i];
+      if (tgt !== undefined) {
+        // ── 已有账号：只覆盖资料，**不碰密码、不碰登录名** ──
+        const displayName = String(bm['display_name'] ?? tgt.display_name).trim() || tgt.display_name;
+        if (displayName !== tgt.display_name) {
+          db.prepare('UPDATE users SET display_name = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
+            .run(displayName, new Date().toISOString(), tgt.id);
+        }
+        mapping.set(oldId, tgt.id);
+        if (displayName !== tgt.display_name) {
+          overwritten.push({ id: tgt.id, username: tgt.username, displayName });
+        }
+        continue;
+      }
+
+      // ── 目标库没有这一号人：新建 ──
+      // 用备份里的原 ULID 建，这样它自己的引用不用改写；
+      // 口令是**无人知道的随机串** → 该账号在管理员设密码前登不进去。
+      const baseName = String(bm['username'] ?? '').trim().toLowerCase() || `user-${oldId.slice(-6).toLowerCase()}`;
+      let username = baseName;
+      let n = 2;
+      while (db.prepare('SELECT 1 AS x FROM users WHERE username = ?').get(username) !== undefined) {
+        username = `${baseName}-${n}`;
+        n += 1;
+        if (n > 100) break;
+      }
+
+      const displayName = String(bm['display_name'] ?? username).trim() || username;
+      const unusable = randomBytes(32).toString('hex'); // 谁都不知道，等于无口令
+
+      createUserWithId(db, { id: oldId, username, displayName, role, password: unusable });
+
+      mapping.set(oldId, oldId);
+      created.push({ id: oldId, username, displayName, role });
+      targets.push({ id: oldId, username, display_name: displayName, role });
+    }
+  }
+
+  // 改写业务数据里的成员引用
+  const remap = (v: unknown): unknown => {
+    if (typeof v !== 'string' || v === '') return v;
+    return mapping.get(v) ?? v;
+  };
+  for (const row of pkg.data.plans) {
+    if (typeof row['owner_id'] === 'string') row['owner_id'] = remap(row['owner_id']);
+  }
+  for (const row of pkg.data.expenses) {
+    if (typeof row['owner_id'] === 'string') row['owner_id'] = remap(row['owner_id']);
+  }
+  for (const row of pkg.data.planTodos) {
+    if (typeof row['confirmed_by'] === 'string' && row['confirmed_by'] !== '') {
+      // 配对后仍找不到对应的人（备份里没列出来的历史操作者）→ 清空，
+      // 而不是硬指到某人头上：那是「谁确认入账」的事实，不该被冒认
+      const mapped = remap(row['confirmed_by']);
+      row['confirmed_by'] = typeof mapped === 'string' && mapping.has(row['confirmed_by'] as string)
+        ? mapped
+        : '';
+    }
+  }
+
+  return { mapping, created, overwritten };
+}
+
 function requireMembers(db: DatabaseSync, pkg: ExportPackage): void {
   const referenced = new Set<string>();
 
@@ -641,7 +799,26 @@ export function mergePackage(
     expenses: { created: 0, skipped: 0, overwritten: 0 },
   };
 
-  requireMembers(db, pkg);
+  /**
+   * 两种模式对「成员」的处理**刻意不同**：
+   *
+   * · 恢复备份（overwrite=true）—— 备份就是那台机器的全量快照，成员引用必须
+   *   **原样保留**。备份里有、目标库里没有的成员，按备份里的原 ULID 补建出来
+   *   （口令随机，返回给管理员）。不补建就必然整包拒绝，换个库/重装/换机器都会撞上。
+   *
+   * · 导入导出包（overwrite=false）—— 导出包只是「一批流水」，没有「原机器的成员」
+   *   这回事。这里的语义是**谁导入就归谁**：把 owner_id / confirmed_by 一律指向
+   *   当前操作者，不建账号、也不要求目标库认识那些 id。
+   */
+  let memberMerge: MemberMergeResult = { mapping: new Map(), created: [], overwritten: [] };
+
+  if (overwrite) {
+    // 恢复备份：按角色配对覆盖，多出来的新建（见 mergeMembersByRole 的规则说明）
+    memberMerge = mergeMembersByRole(db, pkg);
+  } else {
+    // 导入导出包：谁导入就归谁，不建账号
+    remapMembersToActor(pkg, actorId);
+  }
 
   let snapshotPath: string | null = null;
 
@@ -680,6 +857,8 @@ export function mergePackage(
     byTable,
     ...totals,
     snapshotPath,
+    createdMembers: memberMerge.created,
+    updatedMembers: memberMerge.overwritten,
   };
 }
 

@@ -154,7 +154,26 @@ export async function dataRoutes(app: FastifyInstance): Promise<void> {
         snapshot: () => writePreRestoreSnapshot(db),
       });
 
-      return { report, counts: pkg.counts, scope: pkg.scope, generatedAt: pkg.generatedAt };
+      /**
+       * 恢复时新建出来的成员**没有可用口令**（备份不含 password_hash）。
+       * 必须显式告诉操作者去设初始密码，否则那些人登不进去，
+       * 而且界面上只会表现为「多了个从来没登录过的账号」。
+       */
+      const needsPassword = report.createdMembers.map((m) => ({
+        id: m.id,
+        username: m.username,
+        displayName: m.displayName,
+        role: m.role,
+      }));
+
+      return {
+        report,
+        counts: pkg.counts,
+        scope: pkg.scope,
+        generatedAt: pkg.generatedAt,
+        /** 新建成员：需要管理员去「家庭与账号」设初始登录密码 */
+        needsPassword,
+      };
     },
   );
 
