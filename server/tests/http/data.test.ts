@@ -416,6 +416,37 @@ describe('整库覆盖与流水 CSV', () => {
     }
   });
 
+  test('本机已有同名但不同 id 的账号时，恢复不该撞 username 唯一索引', async () => {
+    // 飞牛套件装完向导里建的管理员，用户名很可能与将来要恢复的备份同名，
+    // 但 id 不同。若先 upsert 再软删多出来的账号，INSERT 会直接撞
+    // `ux_users_username`（UNIQUE(username) WHERE deleted_at IS NULL）→ 500。
+    const db = openDatabase();
+    const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
+    const pkg = backup.json() as PackageShape;
+
+    // 造一个「本机账号」：用户名与备份里某个账号相同，但 id 是新的
+    const victim = pkg.data['members']!.find((m) => m['username'] === 'suen');
+    assert.ok(victim !== undefined, '前置：备份里应有 suen');
+    const localAdmin = db
+      .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
+      .get() as Record<string, unknown>;
+    // 把备份里那个账号的 id 改成「另一个」，等于「同名不同 id」
+    victim!['id'] = '01JGGGGGGGGGGGGGGGGGGGGGGG';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/backup/restore',
+      headers: auth(),
+      payload: pkg,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.ok(Array.isArray(res.json().report.needsPassword));
+
+    // 收尾：把被顶掉/新增的账号还原，避免影响后续用例
+    db.prepare('DELETE FROM users WHERE id = ?').run('01JGGGGGGGGGGGGGGGGGGGGGGG');
+    db.prepare('UPDATE users SET deleted_at = NULL WHERE id = ?').run(String(localAdmin['id']));
+  });
+
   test('1.0 备份（不含口令哈希）恢复后仍能登录 —— 补发随机口令并回给操作者', async () => {
     // 1.0 时代导出的成员没有 password_hash。若照空串写库，
     // 结果是「数据恢复成功、但全家人一个都登不进去」—— 比失败更糟。
