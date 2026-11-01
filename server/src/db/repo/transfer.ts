@@ -27,6 +27,7 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 
 import { config } from '../../config.ts';
 import { badRequest, conflict } from '../../lib/http-error.ts';
+import { hashPassword } from '../../lib/password.ts';
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange, type EntityType } from '../sync.ts';
 import { createUserWithId } from './users.ts';
@@ -484,6 +485,11 @@ export interface MergeReport {
   membersRestored: number;
   /** 本地有、备份里没有的账号：恢复后被软删除 */
   membersRemoved: Array<{ id: string; username: string; displayName: string }>;
+  /**
+   * 备份里没有口令哈希、恢复时补了随机口令的账号。
+   * **必须显示给操作者**，否则他恢复完就再也登不进去了（1.0 备份就是这种）。
+   */
+  needsPassword: Array<{ id: string; username: string; displayName: string; role: string; password: string }>;
 }
 
 interface MergeOptions {
@@ -535,10 +541,18 @@ function remapMembersToActor(pkg: ExportPackage, actorId: string): void {
 
 /** 恢复备份后的成员变化（供响应里回给管理员） */
 export interface MemberRestoreResult {
-  /** 备份里的账号被写入（覆盖）的数量，**含口令** */
+  /** 备份里的账号被写入（覆盖）的数量 */
   restored: number;
   /** 本地有、但备份里没有的账号：软删除（净效果 = 只剩备份里的账号） */
   removed: Array<{ id: string; username: string; displayName: string }>;
+  /**
+   * 备份里**没有口令哈希**、恢复时必须补一个随机口令的账号。
+   *
+   * 1.0 时代的备份导出的成员不含 `password_hash`（当时刻意不导出）。
+   * 直接按空串写进去，结果是「数据恢复成功、但全家人一个都登不进去」——
+   * 比恢复失败更糟，因为界面显示成功。所以要当场生成口令并**明明白白回给操作者**。
+   */
+  needsPassword: Array<{ id: string; username: string; displayName: string; role: string; password: string }>;
 }
 
 /**
@@ -561,11 +575,17 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
   const now = new Date().toISOString();
 
   let restored = 0;
+  const needsPassword: MemberRestoreResult['needsPassword'] = [];
   for (const row of pkg.data.members) {
     const id = String(row['id'] ?? '');
     if (id === '') continue;
     const username = String(row['username'] ?? '').trim().toLowerCase();
     if (username === '') continue;
+
+    const backupHash = String(row['password_hash'] ?? '').trim();
+    const needsNewPassword = backupHash === '';
+    const plainPassword = needsNewPassword ? randomBytes(9).toString('base64url') : '';
+    const hashOrRandom = needsNewPassword ? hashPassword(plainPassword) : backupHash;
 
     db.prepare(
       `INSERT INTO users (id, username, display_name, password_hash, role,
@@ -584,7 +604,8 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
       id,
       username,
       String(row['display_name'] ?? username),
-      String(row['password_hash'] ?? ''),
+      // 备份没带口令（1.0 时代的备份）→ 现场生成一个，并记进 needsPassword
+      hashOrRandom,
       String(row['role'] ?? 'member') === 'admin' ? 'admin' : 'member',
       String(row['created_at'] ?? now),
       String(row['updated_at'] ?? now),
@@ -593,6 +614,15 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
       row['device_id'] === undefined ? null : (row['device_id'] as string | null),
     );
     restored += 1;
+    if (needsNewPassword) {
+      needsPassword.push({
+        id,
+        username,
+        displayName: String(row['display_name'] ?? username),
+        role: String(row['role'] ?? 'member') === 'admin' ? 'admin' : 'member',
+        password: plainPassword,
+      });
+    }
   }
 
   // 备份里没有的本地账号 → 软删除
@@ -608,7 +638,7 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
     removed.push({ id, username: String(u['username']), displayName: String(u['display_name']) });
   }
 
-  return { restored, removed };
+  return { restored, removed, needsPassword };
 }
 
 function requireMembers(db: DatabaseSync, pkg: ExportPackage): void {
@@ -756,7 +786,7 @@ export function mergePackage(
    * 备份里的账号连同 `password_hash` 一起写回；本地多出来的账号软删除。
    * 见 `restoreUsers`。
    */
-  let memberRestore: MemberRestoreResult = { restored: 0, removed: [] };
+  let memberRestore: MemberRestoreResult = { restored: 0, removed: [], needsPassword: [] };
 
   if (overwrite) {
     // 恢复备份 = 整库覆盖（含账号与口令），见 restoreUsers
@@ -802,6 +832,7 @@ export function mergePackage(
     snapshotPath,
     membersRestored: memberRestore.restored,
     membersRemoved: memberRestore.removed,
+    needsPassword: memberRestore.needsPassword,
   };
 }
 

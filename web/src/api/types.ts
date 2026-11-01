@@ -313,6 +313,11 @@ export interface MergeReport {
   membersRemoved?: Array<{ id: string; username: string; displayName: string }>;
   /** 备份里的账号被覆盖写入的数量（含口令） */
   membersRestored?: number;
+  /**
+   * 备份里没有口令哈希、恢复时补发随机口令的账号。
+   * 1.0 时代的备份都是这种 —— 界面必须把口令显示出来。
+   */
+  needsPassword?: Array<{ id: string; username: string; displayName: string; role: string; password: string }>;
   /** `merge` = 只补缺（导入）；`restore` = 文件覆盖本地（恢复） */
   mode: 'merge' | 'restore';
   byTable: Record<string, TableReport>;
