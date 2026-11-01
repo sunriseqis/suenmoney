@@ -2171,7 +2171,12 @@ export struct SettingsScreen {
       } else {
         ForEach(this.srvList, (url: string, i: number) => {
           this.serverSlot({ index: i, value: url, state: i < this.srvProbe.length ? this.srvProbe[i] : '' })
-        }, (url: string, i: number) => `srv-${i}-${url}`)
+          // ⚠ key 里**不能带 url 本身**。
+          //    带上的话每敲一个字符 key 就变，ArkUI 认为换了一个元素 →
+          //    销毁重建整行 → TextInput 失去焦点，光标跳到别的行。
+          //    表现就是「第 2 行输 1，光标跳回第 1 行输 2，再跳回第 2 行输 3」。
+          //    行位置（index）在「只改内容、不增删」时是稳定的，用它做 key 即可。
+        }, (_url: string, i: number) => `srv-${i}`)
       }
 
       Row({ space: 8 }) {
