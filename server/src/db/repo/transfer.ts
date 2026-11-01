@@ -572,10 +572,32 @@ export interface MemberRestoreResult {
  */
 function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult {
   const backupIds = new Set(pkg.data.members.map((m) => String(m['id'] ?? '')).filter((x) => x !== ''));
+
+  /**
+   * ⚠ 顺序：**先软删本地多出来的账号，再写备份里的账号**。
+   *
+   * `ux_users_username` 是 `UNIQUE(username) WHERE deleted_at IS NULL` 的部分索引 ——
+   * 软删会释放用户名。反过来做（先 upsert 后软删）就会撞：
+   * 飞牛套件装完向导里建的管理员，用户名很可能与备份里的同名但 id 不同，
+   * INSERT 直接 `UNIQUE constraint failed: users.username` → 500。
+   */
+  const removed: Array<{ id: string; username: string; displayName: string }> = [];
   const now = new Date().toISOString();
+
+  const localsBefore = db
+    .prepare('SELECT id, username, display_name FROM users WHERE deleted_at IS NULL')
+    .all() as Array<Record<string, unknown>>;
+  for (const u of localsBefore) {
+    const id = String(u['id']);
+    if (backupIds.has(id)) continue;
+    db.prepare('UPDATE users SET deleted_at = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
+      .run(now, now, id);
+    removed.push({ id, username: String(u['username']), displayName: String(u['display_name']) });
+  }
 
   let restored = 0;
   const needsPassword: MemberRestoreResult['needsPassword'] = [];
+
   for (const row of pkg.data.members) {
     const id = String(row['id'] ?? '');
     if (id === '') continue;
@@ -604,7 +626,6 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
       id,
       username,
       String(row['display_name'] ?? username),
-      // 备份没带口令（1.0 时代的备份）→ 现场生成一个，并记进 needsPassword
       hashOrRandom,
       String(row['role'] ?? 'member') === 'admin' ? 'admin' : 'member',
       String(row['created_at'] ?? now),
@@ -623,19 +644,6 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
         password: plainPassword,
       });
     }
-  }
-
-  // 备份里没有的本地账号 → 软删除
-  const locals = db
-    .prepare('SELECT id, username, display_name FROM users WHERE deleted_at IS NULL')
-    .all() as Array<Record<string, unknown>>;
-  const removed: Array<{ id: string; username: string; displayName: string }> = [];
-  for (const u of locals) {
-    const id = String(u['id']);
-    if (backupIds.has(id)) continue;
-    db.prepare('UPDATE users SET deleted_at = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
-      .run(now, now, id);
-    removed.push({ id, username: String(u['username']), displayName: String(u['display_name']) });
   }
 
   return { restored, removed, needsPassword };
