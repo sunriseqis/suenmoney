@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 /**
- * iOS 构建脚本：Web 编译 → cap sync ios → xcodebuild → 导出未签名 IPA。
+ * iOS 构建脚本：直接 xcodebuild 构建 **SwiftUI 原生工程** → 导出未签名 IPA。
+ *
+ * ⚠ 曾经这里构建的是 `ios/App/App.xcodeproj` —— Capacitor 时代的 WKWebView 壳。
+ *   而 2.0 的原生客户端是 `ios/SuenMoney.xcodeproj`（SwiftUI，33 个 .swift）。
+ *   混淆过一次代价很大：CI 一直产出 WebView 壳，真机上图标是 Capacitor 默认图、
+ *   点输入框还会被 WKWebView 放大 —— 而本地模拟器里验的是原生工程，两边不是同一个东西。
+ *   现在**只构建原生工程**；`ios/App/` 与 `android/` 一样是冻结资产，不参与构建。
  *
  * 用法：
  *   node scripts/build-ios.mjs --sync-only      # 仅执行 web build + cap sync ios
@@ -16,11 +22,12 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIR = join(ROOT, 'web');
-const IOS_PROJECT = join(ROOT, 'ios/App/App.xcodeproj');
+const IOS_PROJECT = join(ROOT, 'ios/SuenMoney.xcodeproj');
 const PBXPROJ = join(IOS_PROJECT, 'project.pbxproj');
 const OUTPUT_DIR = join(ROOT, 'app');
 
-const TARGET = process.env.IOS_APP_TARGET || 'App';
+const TARGET = process.env.IOS_APP_TARGET || 'SuenMoney';
+const SCHEME = process.env.IOS_SCHEME || 'SuenMoney';
 const ALLOW_PROVISIONING_UPDATES = process.env.IOS_ALLOW_PROVISIONING_UPDATES !== '0';
 const SYNC_ONLY = process.argv.includes('--sync-only');
 const UNSIGNED = process.argv.includes('--unsigned');
@@ -76,12 +83,14 @@ async function readTeamId() {
   return /DEVELOPMENT_TEAM = ([A-Za-z0-9]+);/.exec(pbx)?.[1] ?? null;
 }
 
+/**
+ * 原生工程不消费 web/dist —— 它自己就是 UI。
+ *
+ * 保留这个函数只是为了 `--sync-only` 的历史入口不报错；实际只做一次
+ * Web 构建用于产物一致性检查（CI 里已经单独建过，本地跑也无副作用）。
+ */
 async function syncWeb() {
-  console.log('\n── 1/2 编译 Web 静态资源 ──');
-  run('npm', ['run', 'build'], { cwd: WEB_DIR });
-
-  console.log('\n── 2/2 同步至 iOS 原生工程 (cap sync ios) ──');
-  run('npx', ['cap', 'sync', 'ios'], { cwd: WEB_DIR });
+  console.log('\n── 原生工程无需同步 Web 产物（SwiftUI 自带 UI）──');
 }
 
 async function buildIpa(versionName, versionCode) {
@@ -89,7 +98,7 @@ async function buildIpa(versionName, versionCode) {
 
   const args = [
     '-project', IOS_PROJECT,
-    '-target', TARGET,
+    '-scheme', SCHEME,
     '-configuration', 'Release',
     '-sdk', 'iphoneos',
     `SYMROOT=${SYMROOT}`,
@@ -107,7 +116,7 @@ async function buildIpa(versionName, versionCode) {
   console.log(
     `\n── 编译 Release（版本 ${versionName} / code ${versionCode}，${UNSIGNED ? '未签名' : '开发签名'}）──`
   );
-  run('xcodebuild', args, { cwd: join(ROOT, 'ios/App') });
+  run('xcodebuild', args, { cwd: join(ROOT, 'ios') });
 
   const appPath = join(SYMROOT, 'Release-iphoneos', `${TARGET}.app`);
   if (!existsSync(appPath)) fail(`找不到编译产物：${appPath}`);
