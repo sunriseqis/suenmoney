@@ -76,17 +76,14 @@ jobs:
 
           echo "✔ 目标版本: ${VERSION} (VersionCode: ${VERSION_CODE})"
 
-      - name: Build Web Assets and Sync to HarmonyOS
+      # 原生工程（hw-native）自己就是 ArkTS 页面，不消费 web/dist。
+      # `hw/` 是 Capacitor 时代的 WKWebView 壳，与 android/ 一样已冻结。
+      - name: Inject Version into HarmonyOS App
         run: |
-          cd web
-          npm ci
-          npm run build
-          cd ..
-          node scripts/sync-hw.mjs
           # 注入版本号至 AppScope/app.json5
           node -e '
             const fs = require("fs");
-            const p = "hw/AppScope/app.json5";
+            const p = "hw-native/AppScope/app.json5";
             let c = fs.readFileSync(p, "utf8");
             c = c.replace(/"versionName":\s*"[^"]*"/, `"versionName": "${process.env.VERSION_NAME}"`);
             c = c.replace(/"versionCode":\s*\d+/, `"versionCode": ${process.env.VERSION_CODE}`);
@@ -98,7 +95,7 @@ jobs:
           echo "=== 启动 HarmonyOS 云端构建容器 (API 26r / command-line-tools) ==="
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace/hw \
+            -w /workspace/hw-native \
             ghcr.io/dalongzhuazi/harmonyos-ci:api26r \
             bash -c '
               set -eo pipefail
@@ -115,18 +112,18 @@ jobs:
 
               echo "--- 查找构建产物 ---"
               mkdir -p /workspace/app
-              FOUND_HAP=$(find /workspace/hw -type f -name "*.hap" | head -n 1)
+              FOUND_HAP=$(find /workspace/hw-native -type f -name "*.hap" | head -n 1)
               if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
                 echo "找到产物: $FOUND_HAP"
                 cp -v "$FOUND_HAP" "/workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
               else
-                echo "未在 /workspace/hw 找到 .hap，检索工作区:"
+                echo "未在 /workspace/hw-native 找到 .hap，检索工作区:"
                 find /workspace -type f -name "*.hap" || true
                 echo "=== 输出构建日志末尾 120 行 ==="
                 tail -n 120 /workspace/build.log 2>/dev/null || true
                 exit 1
               fi
-              chmod -R 777 /workspace/app /workspace/hw/build /workspace/hw/entry/build /workspace/build.log 2>/dev/null || true
+              chmod -R 777 /workspace/app /workspace/hw-native/build /workspace/hw-native/entry/build /workspace/build.log 2>/dev/null || true
             '
 
       # 把构建日志尾部写进 Job Summary，作为「匿名可读」的失败诊断通道。
