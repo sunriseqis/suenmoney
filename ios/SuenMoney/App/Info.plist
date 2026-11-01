@@ -63,11 +63,13 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<!-- ⚠ 必须是**空 dict**。
+	     原来写了 `UIColorName = ""` —— 指向一个不存在的颜色资源，
+	     iOS 找不到就退回**兼容缩放模式**（按 4" 逻辑尺寸渲染再整体放大），
+	     表现就是「点任何输入框弹出键盘后整个界面被放大且回不去」。
+	     空 dict 表示「用默认启动屏」，系统按真机分辨率渲染。 -->
 	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string></string>
-	</dict>
+	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
