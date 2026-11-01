@@ -14,7 +14,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const HW_DIR = join(ROOT, 'hw');
+/**
+ * ⚠ 构建的是 **hw-native/**（2.0 的 ArkTS 原生端，38 个 .ets）。
+ *
+ * `hw/` 是 Capacitor 时代的 WKWebView 壳（只有 2 个 .ets + 一堆 web 资源），
+ * 与 `android/` 一样属于冻结资产。曾经这里写成 `hw`，导致 CI 产出的 HAP
+ * 一直是 WebView 壳 —— 和 iOS 那边同一次事故、同一个原因。
+ */
+const HW_DIR = join(ROOT, 'hw-native');
 const OUTPUT_DIR = join(ROOT, 'app');
 const SYNC_ONLY = process.argv.includes('--sync-only');
 
@@ -65,8 +72,8 @@ function readVersionCode(versionName) {
 }
 
 async function syncWeb() {
-  log('1/3 同步 Web 静态资源至鸿蒙 rawfile 目录...');
-  run('node', [join(ROOT, 'scripts/sync-hw.mjs')]);
+  // 原生工程自己就是 UI，不消费 web/dist（`hw/` 旧壳才需要）
+  log('1/3 原生工程无需同步 Web 资源（ArkTS 自带页面）');
 }
 
 async function injectVersion(versionName, versionCode) {
