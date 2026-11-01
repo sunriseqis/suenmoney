@@ -420,6 +420,22 @@ const themeChoice = computed({
 });
 
 const restoreBusy = ref(false);
+/**
+ * 恢复后「补发了随机口令」的账号。
+ *
+ * 1.0 时代的备份不含 `password_hash`，恢复时服务端会现场生成口令 ——
+ * 这一块必须显示出来，否则用户恢复完就再也登不进去了。
+ */
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.show('已复制');
+  } catch {
+    toast.show('复制失败，请手动选中');
+  }
+}
+
+const restoredAccounts = ref<Array<{ username: string; displayName: string; role: string; password: string }>>([]);
 const csvImportBusy = ref(false);
 const csvImportReport = ref<{ created: number; skipped: number; problems: Array<{ line: number; reason: string }> } | null>(null);
 
@@ -483,11 +499,15 @@ async function onRestoreFile(event: Event): Promise<void> {
     if (!ok) return;
 
     const result = await dataApi.restore(pkg);
+    const missing = (result.report?.needsPassword ?? []) as typeof restoredAccounts.value;
+    restoredAccounts.value = missing;
     const removed = (result.report?.membersRemoved ?? []) as Array<{ username: string }>;
     toast.show(
-      removed.length > 0
-        ? `已恢复；${removed.map((m) => m.username).join('、')} 因备份里没有已被停用`
-        : '数据库已恢复',
+      missing.length > 0
+        ? `已恢复。备份不含口令，已为 ${missing.length} 个账号生成新口令（见上方，请立刻记下）`
+        : removed.length > 0
+          ? `已恢复；${removed.map((m) => m.username).join('、')} 因备份里没有已被停用`
+          : '数据库已恢复',
     );
     await dict.load(true);
     await plansStore.refresh();
@@ -1038,6 +1058,19 @@ onMounted(() => {
             <input type="file" accept="application/json,.json" style="display: none" @change="onRestoreFile" />
           </label>
         </div>
+
+        <div v-if="restoredAccounts.length" class="restored-box">
+          <p class="restored-title">⚠️ 备份里没有口令，已为下列账号生成新口令</p>
+          <p class="hint" style="margin: 0 0 8px">
+            这些账号原本的口令不在备份里，现在用下面的口令登录，登进去后<strong>请立即修改</strong>。
+            关掉这张卡就找不回来了。
+          </p>
+          <div v-for="acc in restoredAccounts" :key="acc.username" class="restored-row">
+            <span class="restored-user">{{ acc.username }}<span class="tiny muted">（{{ acc.displayName }} · {{ acc.role === 'admin' ? '管理员' : '成员' }}）</span></span>
+            <code class="restored-pwd" @click="copyText(acc.password)">{{ acc.password }}</code>
+          </div>
+          <PBtn size="sm" variant="ghost" @click="restoredAccounts = []">我已记下，关闭</PBtn>
+        </div>
       </PCard>
 
       <!-- ② 流水（所有用户）：CSV，导出只给自己的，导入归自己 -->
@@ -1387,5 +1420,40 @@ onMounted(() => {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px dashed var(--line);
+}
+
+/* 恢复后补发的口令：必须一眼看到、能一键复制 */
+.restored-box {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  border: 2px solid var(--danger);
+}
+.restored-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--danger);
+}
+.restored-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.restored-row:last-of-type { border-bottom: 0; }
+.restored-user { font-size: 12px; font-weight: 600; }
+.restored-pwd {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  user-select: all;
 }
 </style>

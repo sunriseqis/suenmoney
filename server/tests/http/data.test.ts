@@ -415,6 +415,70 @@ describe('整库覆盖与流水 CSV', () => {
       assert.equal(row['owner_id'], memberRow['id'], '归属应记到导入者名下');
     }
   });
+
+  test('1.0 备份（不含口令哈希）恢复后仍能登录 —— 补发随机口令并回给操作者', async () => {
+    // 1.0 时代导出的成员没有 password_hash。若照空串写库，
+    // 结果是「数据恢复成功、但全家人一个都登不进去」—— 比失败更糟。
+    const db0 = openDatabase();
+    const snapshot = db0
+      .prepare('SELECT id, username, display_name, password_hash, role, created_at, updated_at, deleted_at, rev, device_id FROM users')
+      .all() as Array<Record<string, unknown>>;
+
+    const backup = await app.inject({ method: 'GET', url: '/api/backup', headers: auth() });
+    const pkg = backup.json() as PackageShape;
+    // 模拟 1.0：把口令哈希全部摘掉
+    pkg.data['members'] = pkg.data['members']!.map((m) => {
+      const copy = { ...m };
+      delete copy['password_hash'];
+      return copy;
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/backup/restore',
+      headers: auth(),
+      payload: pkg,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+
+    const needs = res.json().report.needsPassword as Array<{ username: string; password: string }>;
+    assert.ok(Array.isArray(needs) && needs.length > 0, '应回补发口令的账号清单');
+
+    // 用补发的口令真的能登进去
+    const first = needs[0]!;
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: first.username, password: first.password },
+    });
+    assert.equal(login.statusCode, 200, `补发的口令应能登录 ${first.username}`);
+
+    // 还原库状态，避免影响后续用例。
+    // ⚠ 不能 `DELETE FROM users`：users 被 sessions / plans.owner_id /
+    //   plan_todos.confirmed_by 外键引用，物理删直接撞外键。
+    const db = openDatabase();
+    const keepIds = new Set(snapshot.map((r) => String(r['id'])));
+    // ① 原有账号按原样还原（主要是把 deleted_at 复原）
+    for (const row of snapshot) {
+      db.prepare(
+        `UPDATE users SET username = ?, display_name = ?, password_hash = ?, role = ?,
+                          updated_at = ?, deleted_at = ?, rev = ?, device_id = ?
+         WHERE id = ?`,
+      ).run(
+        String(row['username']), String(row['display_name']), String(row['password_hash']),
+        String(row['role']), String(row['updated_at']),
+        row['deleted_at'] === null ? null : String(row['deleted_at']),
+        Number(row['rev']), row['device_id'] === null ? null : String(row['device_id']),
+        String(row['id']),
+      );
+    }
+    // ② 恢复时新建的账号：软删（物理删会撞外键）
+    const now = new Date().toISOString();
+    for (const u of db.prepare('SELECT id FROM users WHERE deleted_at IS NULL').all() as Array<Record<string, unknown>>) {
+      if (keepIds.has(String(u['id']))) continue;
+      db.prepare('UPDATE users SET deleted_at = ? WHERE id = ?').run(now, String(u['id']));
+    }
+  });
 });
 
 describe('危险区', () => {
