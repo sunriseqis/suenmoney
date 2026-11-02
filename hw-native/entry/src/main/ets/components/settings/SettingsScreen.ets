@@ -157,6 +157,15 @@ export struct SettingsScreen {
   // ── 多服务器（R98 的三槽，登录后要能改，否则换了地址就永远进不去）──
   /** 用户自己维护的候选服务器列表（不是几个空框） */
   @State srvList: string[] = [];
+  /**
+   * 输入中的实时值（**普通成员，不是 @State**）。
+   *
+   * 为什么不直接写 `srvList`：`TextInput({ text })` 是**受控**的 ——
+   * 一旦 onChange 里改了 @State，组件树重渲染，`text` 又被旧值覆盖，
+   * 光标就跳到别的行（表现为「第 2 行输 1，光标跳回第 1 行输 2…」）。
+   * 草稿不进状态，输入过程零重渲染；只在测试/保存时合并回 srvList。
+   */
+  private srvDraft: string[] = [];
   /** 每项的连通状态：'' 未测 / 'ok' / 'bad' */
   @State srvProbe: string[] = [];
   @State srvMsg: string = '';
@@ -744,19 +753,38 @@ export struct SettingsScreen {
     this.srvMsg = '';
   }
 
-  /** 三个槽派生出的有效地址 */
+  /** 第 i 行当前的真实值（草稿优先，没编辑过就用状态里的值） */
+  private srvValueAt(i: number): string {
+    const draft = i < this.srvDraft.length ? this.srvDraft[i] : undefined;
+    if (draft !== undefined) {
+      return draft;
+    }
+    return i < this.srvList.length ? this.srvList[i] : '';
+  }
+
+  /** 三个槽派生出的有效地址（草稿优先） */
   private srvFilled(): string[] {
     const out: string[] = [];
-    for (const v of this.srvList) {
-      if (v.trim() !== '') {
-        out.push(v.trim());
+    for (let i = 0; i < this.srvList.length; i++) {
+      const v = this.srvValueAt(i).trim();
+      if (v !== '') {
+        out.push(v);
       }
     }
     return out;
   }
 
+  /** 把草稿合并回状态（测试 / 保存 / 增删之前调用） */
+  private commitSrvDraft(): void {
+    for (let i = 0; i < this.srvList.length; i++) {
+      this.srvList[i] = this.srvValueAt(i);
+    }
+    this.srvDraft = [];
+  }
+
   /** 追加一条空候选（用户点「添加服务器」） */
   private addServer(): void {
+    this.commitSrvDraft();
     this.srvList.push('');
     this.srvProbe.push('');
     this.srvMsg = '';
@@ -764,6 +792,7 @@ export struct SettingsScreen {
 
   /** 删除第 i 条候选 */
   private removeServer(i: number): void {
+    this.commitSrvDraft();
     if (i < this.srvList.length) {
       this.srvList.splice(i, 1);
       this.srvProbe.splice(i, 1);
@@ -775,6 +804,7 @@ export struct SettingsScreen {
   private async testServers(): Promise<void> {
     const states: string[] = [];
     let okCount = 0;
+    this.commitSrvDraft();
     for (let i = 0; i < this.srvList.length; i++) {
       const url = this.srvList[i].trim();
       if (url === '') {
@@ -797,6 +827,7 @@ export struct SettingsScreen {
 
   /** 保存三个槽（去空，第一个作为生效地址） */
   private async saveServers(): Promise<void> {
+    this.commitSrvDraft();
     const next = this.srvFilled();
     if (next.length === 0) {
       this.srvMsg = '至少填一个地址';
@@ -832,7 +863,8 @@ export struct SettingsScreen {
         .border({ width: fieldBorderWOf(1, this.isCyber()), color: this.tok().line })
         .fontColor(this.tok().ink)
         .onChange((v: string) => {
-          this.srvList[$$.index] = v;
+          // 只写草稿：写 @State 会让 TextInput 被重置、光标跳走
+          this.srvDraft[$$.index] = v;
         })
       if ($$.value.trim() !== '' && $$.value.trim() === this.srvActive) {
         Text('生效')
