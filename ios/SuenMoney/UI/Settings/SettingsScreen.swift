@@ -20,6 +20,7 @@
 //
 
 import SwiftUI
+import UIKit   // 检查更新要把下载直链交给系统（UIApplication.open）
 
 /// 分类图标选项（鸿蒙 `CAT_ICON_OPTIONS` 24 项 + 「自动」）—— SF Symbols 等价映射
 let catIconOptions: [(name: String, label: String, symbol: String)] = [
@@ -1379,12 +1380,27 @@ public struct SettingsScreen: View {
                 HStack(spacing: 10) {
                     Button {
                         Task {
-                            // 之前这里直接写「已是最新版本」，根本没发请求 —— 谎报。
-                            // 与鸿蒙一致：探 /api/health，显示服务端版本与连通性。
+                            // 之前这里只探 /api/health（显示服务端版本），不是真的检查更新。
+                            // 现在对齐 suenmusic：服务端把产物拉到本地缓存，客户端问「有没有更新的」，
+                            // 有就把**带文件名后缀的下载直链**交给系统（AltStore 等靠 URL 后缀认类型）。
                             updateMsg = "检查中…"
                             do {
-                                let h = try await Api.health()
-                                updateMsg = "服务端 v\(h.version) · 连接正常"
+                                let info = Bundle.main.infoDictionary
+                                let vName = info?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                                let vCode = Int(info?["CFBundleVersion"] as? String ?? "0") ?? 0
+                                let r = try await Api.checkUpdate(platform: "ios", versionName: vName,
+                                                                  versionCode: vCode, force: true)
+                                if !r.available || r.latest == nil {
+                                    updateMsg = "已是最新版本（v\(vName)）"
+                                } else if let latest = r.latest {
+                                    let url = ServerConfig.shared.baseUrl
+                                        + r.downloadPath + "/" + (latest.fileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? latest.fileName)
+                                        + "?platform=ios&token=" + (r.downloadToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? r.downloadToken)
+                                    if let u = URL(string: url) {
+                                        await UIApplication.shared.open(u)
+                                    }
+                                    updateMsg = "新版本 \(latest.versionName)：已交给系统下载"
+                                }
                             } catch let err as ApiError {
                                 updateMsg = err.message
                             } catch {

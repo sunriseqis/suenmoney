@@ -11,11 +11,8 @@
  * 产物命名与 CI 一致：`suenmoney-<版本>.<ext>`（见 `update-types.artifactName`）。
  */
 
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import { createHash } from 'node:crypto';
 
 import { config } from '../config.ts';
 import {
@@ -29,6 +26,7 @@ import {
   type UpdatePlatform,
 } from './update-types.ts';
 import { getDeployMode } from './deploy-mode.ts';
+import { downloadWithMirrors } from './update-mirrors.ts';
 import { createLogger } from '../lib/logger.ts';
 
 const log = createLogger('update');
@@ -246,57 +244,6 @@ export function cachedFilePath(
 }
 
 /**
- * 把远端产物下到本地。
- *
- * 先写 `<name>.part`，**校验通过后才 rename** —— `latest.json` 只在 rename 之后写，
- * 所以「没下完」天然不会被 readCachedArtifact 认成可用包。
- */
-async function downloadTo(
-  url: string,
-  target: string,
-  expected: { size?: number | undefined; sha256?: string | null },
-): Promise<void> {
-  const part = `${target}.part`;
-  rmSync(part, { force: true });
-
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'suenmoney-server' },
-    signal: AbortSignal.timeout(30 * 60_000),
-  } as never);
-  if (!res.ok || res.body === null) {
-    throw new Error(`产物下载失败：HTTP ${String(res.status)}`);
-  }
-
-  const hash = createHash('sha256');
-  let bytes = 0;
-  await pipeline(
-    Readable.fromWeb(res.body as never),
-    async function* (source: AsyncIterable<Uint8Array>) {
-      for await (const chunk of source) {
-        hash.update(chunk);
-        bytes += chunk.length;
-        yield chunk;
-      }
-    },
-    createWriteStream(part),
-  );
-
-  if (expected.size !== undefined && bytes !== expected.size) {
-    rmSync(part, { force: true });
-    throw new Error(`产物大小不符：期望 ${String(expected.size)}，实际 ${String(bytes)}`);
-  }
-  if (typeof expected.sha256 === 'string' && expected.sha256 !== '') {
-    const actual = hash.digest('hex');
-    if (actual !== expected.sha256.toLowerCase()) {
-      rmSync(part, { force: true });
-      throw new Error(`产物 sha256 不符：期望 ${expected.sha256}，实际 ${actual}`);
-    }
-  }
-
-  renameSync(part, target);
-}
-
-/**
  * 检查并把最新产物拉到本地。
  *
  * @param force true = 忽略「已是最新」的短路，强制重新核对
@@ -324,8 +271,15 @@ export async function refreshPlatform(
   const target = join(dir, fileName);
 
   const digestRaw = typeof picked.asset.digest === 'string' ? picked.asset.digest : '';
-  await downloadTo(picked.asset.browser_download_url!, target, {
-    size: typeof picked.asset.size === 'number' ? picked.asset.size : undefined,
+  /**
+   * 产物下载走**多镜像自动择优**（services/update-mirrors.ts）。
+   *
+   * 为什么不能直连：54 MB 的 .fpk 直连实测只有 20~50 KB/s，半小时级、中途必断，
+   * 缓存永远建不起来 —— 表现就是「检查更新永远说已是最新」。
+   * 镜像只用于下载：先并发探活测速取最快，失败自动换下一条，并做 sha256 校验防投毒。
+   */
+  await downloadWithMirrors(picked.asset.browser_download_url!, target, {
+    expectedSize: typeof picked.asset.size === 'number' ? picked.asset.size : undefined,
     sha256: digestRaw.startsWith('sha256:') ? digestRaw.slice(7) : null,
   });
 

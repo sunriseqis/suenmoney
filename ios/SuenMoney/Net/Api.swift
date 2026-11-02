@@ -113,6 +113,17 @@ public enum Api {
         try await http.post("/api/expenses", req)
     }
 
+    // MARK: - 更新通道（对齐 suenmusic：服务端从 GitHub Releases 拉产物到本地，客户端从本地下载）
+
+    /// 检查更新。**只读服务端本地缓存** —— 服务端不会为了这次请求去上游下载。
+    /// `force=true` 只让服务端在后台刷一次，然后立即返回当前结论。
+    public static func checkUpdate(platform: String, versionName: String,
+                                   versionCode: Int, force: Bool) async throws -> UpdateCheckReply {
+        var q = "?platform=\(platform)&version_name=\(versionName)&version_code=\(versionCode)"
+        if force { q += "&force=1" }
+        return try await http.get("/api/update/check\(q)")
+    }
+
     public static func updateExpense(id: String, _ req: ExpensePatchRequest) async throws -> ExpenseCreateBody {
         try await http.patch("/api/expenses/\(id)", req)
     }

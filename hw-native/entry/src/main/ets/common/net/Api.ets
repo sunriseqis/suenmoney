@@ -129,6 +129,24 @@ export interface ExpenseCreateRequest {
   note: string;
 }
 
+/** `GET /api/update/check` 里 latest 字段（服务端缓存好的产物） */
+export interface UpdateArtifact {
+  fileName: string;
+  versionName: string;
+  versionCode: number;
+  size: number;
+  sha256: string | null;
+}
+
+/** `GET /api/update/check` 的返回 */
+export interface UpdateCheckReply {
+  available: boolean;
+  current: { versionName: string; versionCode: number };
+  latest: UpdateArtifact | null;
+  downloadPath: string;
+  downloadToken: string;
+}
+
 export interface ExpenseCreateBody {
   expense: ExpenseItem;
 }
@@ -579,6 +597,19 @@ export class Api {
     const o = Api.http().options('POST');
     o.body = JSON.stringify(req);
     return Api.http().request<ExpenseCreateBody>('/api/expenses', o);
+  }
+
+  // ── 更新通道（对齐 suenmusic：服务端从 GitHub Releases 拉产物到本地，客户端从本地下载）──
+
+  /**
+   * 检查更新。**只读服务端本地缓存** —— 服务端不会为了这次请求去上游下载。
+   * `force=true` 只让服务端在后台刷一次，然后立即返回当前结论。
+   */
+  static checkUpdate(platform: string, versionName: string, versionCode: number,
+                     force: boolean): Promise<UpdateCheckReply> {
+    const q = `?platform=${platform}&version_name=${encodeURIComponent(versionName)}`
+      + `&version_code=${versionCode}${force ? '&force=1' : ''}`;
+    return Api.http().get<UpdateCheckReply>(`/api/update/check${q}`);
   }
 
   static updateExpense(id: string, req: ExpensePatchRequest): Promise<ExpenseCreateBody> {
