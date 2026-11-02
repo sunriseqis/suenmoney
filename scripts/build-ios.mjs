@@ -10,7 +10,7 @@
  *
  * 用法：
  *   node scripts/build-ios.mjs --sync-only      # 仅执行 web build + cap sync ios
- *   node scripts/build-ios.mjs --unsigned       # 构建未签名 IPA，产出 app/SuenMoney-v<版本>-release.ipa
+ *   node scripts/build-ios.mjs --unsigned       # 构建未签名 IPA，产出 app/suenmoney-<版本>.ipa
  *   node scripts/build-ios.mjs                  # 开发签名构建（需要 Xcode 配置 Team）
  */
 
@@ -127,7 +127,7 @@ async function buildIpa(versionName, versionCode) {
   await mkdir(payloadDir, { recursive: true });
   run('cp', ['-R', appPath, payloadDir]);
 
-  const ipaName = `SuenMoney-v${versionName}-release.ipa`;
+  const ipaName = `suenmoney-${versionName}.ipa`;
   const ipaPath = join(IPA_DIR, ipaName);
   await rm(ipaPath, { force: true });
   run('zip', ['-qry', ipaName, 'Payload'], { cwd: IPA_DIR });

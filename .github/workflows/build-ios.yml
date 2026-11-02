@@ -103,19 +103,19 @@ jobs:
       - name: Collect Artifact
         run: |
           mkdir -p app
-          SRC="app/unsigned/SuenMoney-v${VERSION_NAME}-release.ipa"
+          SRC="app/unsigned/suenmoney-${VERSION_NAME}.ipa"
           if [ ! -f "$SRC" ]; then
-            SRC="app/SuenMoney-v${VERSION_NAME}-release.ipa"
+            SRC="app/suenmoney-${VERSION_NAME}.ipa"
           fi
           if [ ! -f "$SRC" ]; then
             echo "找不到 IPA：$SRC" >&2
             ls -R app >&2 || true
             exit 1
           fi
-          cp "$SRC" "app/SuenMoney-${VERSION}-release.ipa"
+          cp "$SRC" "app/suenmoney-${VERSION_NAME}.ipa"
 
           # 校验 IPA 文件格式与内容完整性
-          IPA="app/SuenMoney-${VERSION}-release.ipa"
+          IPA="app/suenmoney-${VERSION_NAME}.ipa"
           unzip -t "$IPA" > /dev/null || { echo "✖ IPA 完整性校验失败"; exit 1; }
           # ⚠ 可执行文件名随工程走：原生工程是 SuenMoney.app/SuenMoney
           #   （以前是 Capacitor 壳的 App.app/App，写死过一次，构建成功却卡在这条校验）
@@ -136,7 +136,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SuenMoney-${{ env.VERSION }}-ipa
-          path: app/SuenMoney-${{ env.VERSION }}-release.ipa
+          path: app/suenmoney-${{ env.VERSION_NAME }}.ipa
           retention-days: 30
 
       - name: Prepare Release Notes
@@ -169,4 +169,4 @@ jobs:
           make_latest: true
           append_body: false
           files: |
-            app/SuenMoney-${{ env.VERSION }}-release.ipa
+            app/suenmoney-${{ env.VERSION_NAME }}.ipa

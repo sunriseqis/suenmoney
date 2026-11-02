@@ -2,7 +2,10 @@
 /**
  * 飞牛 fnOS 套件打包流水线 —— `npm run fn:build`
  *
- * 产物：`output/suenmoney-v<version>.fpk` + 同名 `.sha256`
+ * 产物：`output/suenmoney-<version>.fpk` + 同名 `.sha256`
+ *
+ * 命名与 iOS / 鸿蒙端**完全一致**：`suenmoney-<版本>.<ext>`（全小写、不带 v 前缀、
+ * 不带 -release/-unsigned 后缀）。三端统一后，服务端的更新检查只需一条匹配规则。
  *
  * 七步，每步失败即中止：
  *   1. 版本注入（VERSION → fn/manifest）
@@ -283,7 +286,7 @@ function assemble(semver) {
   if (!built) die('fnpack 没有产出 .fpk（看上面的输出）');
 
   mkdirSync(OUT, { recursive: true });
-  const finalName = `suenmoney-v${semver}.fpk`;
+  const finalName = `suenmoney-${semver}.fpk`;
   const finalPath = join(OUT, finalName);
   renameSync(join(FN, built), finalPath);
   const buf = readFileSync(finalPath);
@@ -328,7 +331,7 @@ function assemble(semver) {
   step(7, '出包');
   assemble(semver);
 
-  console.log(`\n✅ 产物：output/suenmoney-v${semver}.fpk（+ .sha256）`);
+  console.log(`\n✅ 产物：output/suenmoney-${semver}.fpk（+ .sha256）`);
 })().catch((e) => {
   console.error('\n打包失败：', e.message);
   process.exit(1);

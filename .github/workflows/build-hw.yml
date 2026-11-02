@@ -115,7 +115,7 @@ jobs:
               FOUND_HAP=$(find /workspace/hw-native -type f -name "*.hap" | head -n 1)
               if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
                 echo "找到产物: $FOUND_HAP"
-                cp -v "$FOUND_HAP" "/workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
+                cp -v "$FOUND_HAP" "/workspace/app/suenmoney-${{ env.VERSION_NAME }}.hap"
               else
                 echo "未在 /workspace/hw-native 找到 .hap，检索工作区:"
                 find /workspace -type f -name "*.hap" || true

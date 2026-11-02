@@ -14,6 +14,7 @@
  */
 
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { Configuration } from '@ohos.app.ability.Configuration';
 import { Db } from '../common/store/Db';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ThemeManager } from '../common/theme/ThemeManager';
@@ -83,6 +84,8 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // 回到前台补一次同步：离线期间记的账在这里补推（与 Web 的 onAppResume 同义）
     SyncEngine.syncNow();
+    // 校准系统深浅：后台期间系统可能已经切过，而 environment 回调未必送达
+    ThemeManager.get().refreshFromContext(this.context);
     // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
@@ -90,5 +93,15 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+  }
+
+  /**
+   * 系统配置变化（深浅切换、字体缩放、语言…）。
+   *
+   * 这里只处理深浅，且只是**双保险** —— 主路径是 ThemeManager 里订阅的
+   * `ApplicationContext.on('environment')`（本回调在后台时经常收不到）。
+   */
+  onConfigurationUpdate(config: Configuration): void {
+    ThemeManager.get().onConfigurationUpdate(config);
   }
 }
