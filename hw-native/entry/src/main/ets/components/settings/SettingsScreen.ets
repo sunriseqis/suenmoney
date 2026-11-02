@@ -10,6 +10,8 @@
 
 import { cardShadow, fontBodyOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { LengthMetrics } from '@kit.ArkUI';
+import { bundleManager } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { ApiError } from '../../common/net/ApiError';
 import { router } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -715,15 +717,57 @@ export struct SettingsScreen {
     }
   }
 
+  /**
+   * 检查更新（对齐 suenmusic）。
+   *
+   * 服务端从 GitHub Releases 把产物拉到本地缓存，客户端只问「有没有比我新的」，
+   * 有新版本就把**带文件名后缀的下载直链**交给系统浏览器 —— 应用内不做静默安装
+   *（HAP 是未签名产物，得用户自己侧载）。
+   */
   private async checkUpdate(): Promise<void> {
+    if (this.updateChecking) {
+      return;
+    }
     this.updateChecking = true;
     try {
-      const health = await Api.health();
-      this.updateMessage = `服务端 v${health.version} · 连接正常`;
+      const r = await Api.checkUpdate('harmony', this.selfVersionName(), this.selfVersionCode(), true);
+      if (!r.available || r.latest === null) {
+        this.updateMessage = '已是最新版本';
+        return;
+      }
+      const ver = r.latest.versionName;
+      this.updateMessage = `发现新版本 ${ver}，正在打开下载…`;
+      // 必须把 fileName 拼进路径：浏览器/侧签工具靠 URL 后缀认安装包类型
+      const url = `${ServerConfig.get().baseUrl}${r.downloadPath}/${encodeURIComponent(r.latest.fileName)}`
+        + `?platform=harmony&token=${encodeURIComponent(r.downloadToken)}`;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await ctx.startAbility({ action: 'ohos.want.action.viewData', uri: url });
+      this.updateMessage = `新版本 ${ver}：已交给浏览器下载，装好后自行侧载安装`;
     } catch (e) {
       this.updateMessage = (e as ApiError).message;
     } finally {
       this.updateChecking = false;
+    }
+  }
+
+  /** 当前 App 的版本名（来自打包时注入的 app.json5） */
+  private selfVersionName(): string {
+    try {
+      const info = bundleManager.getBundleInfoForSelfSync(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      return info.versionName;
+    } catch (e) {
+      return '1.0.0';
+    }
+  }
+
+  private selfVersionCode(): number {
+    try {
+      const info = bundleManager.getBundleInfoForSelfSync(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      return info.versionCode;
+    } catch (e) {
+      return 0;
     }
   }
 

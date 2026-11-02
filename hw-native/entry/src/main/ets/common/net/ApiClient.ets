@@ -162,8 +162,14 @@ export class ApiClient {
     }
 
     let kind: ApiErrorKind = 'client';
-    if (status === 401 || status === 403) {
+    // ⚠ 401 与 403 必须分开：
+    //   401 = 令牌失效 → 清令牌回登录页；
+    //   403 = 权限不足（成员点管理员功能）→ **登录仍然有效**，只提示无权限。
+    //   曾经两者都归到 unauthorized，导致成员点一下管理员入口就被踢下线。
+    if (status === 401) {
       kind = 'unauthorized';
+    } else if (status === 403) {
+      kind = 'forbidden';
     } else if (status >= 500) {
       kind = 'server';
     }

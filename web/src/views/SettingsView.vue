@@ -25,12 +25,14 @@ import {
   planTodos as planTodosApi,
   users as usersApi,
   webdavBackup,
+  updateApi,
   type Category,
   type PaymentMethod,
   type Plan,
   type PlanSource,
   type User,
 } from '@/api';
+import type { ServerUpdateResult } from '@/api/update';
 import BillImportModal from '@/components/BillImportModal.vue';
 import BrandMark from '@/components/BrandMark.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
@@ -42,7 +44,6 @@ import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { useDictionariesStore } from '@/stores/dictionaries';
 import { usePlansStore } from '@/stores/plans';
-import { useUpdateStore } from '@/stores/update';
 import { PBtn, PCard, PEmpty, PField, PIconBtn, PInput, PSheet, PSwitch, PTag } from '@/ui';
 import { formatMonthDay, todayLocal } from '@/utils/dates';
 import { formatYuan, parseYuanToCents } from '@/utils/money';
@@ -804,13 +805,46 @@ async function changePassword(): Promise<void> {
   }
 }
 
-// ── 检查更新（仅原生壳）─────────────────────────────────────────────────────
-const updateStore = useUpdateStore();
-const canCheckUpdate = computed(() => updateStore.isSupported);
+// ── 检查更新（服务端 / 套件）───────────────────────────────────────────────
+// Web 端只跑在 Docker 或 fnOS 里，没有「App 更新」这回事：
+//   Docker → 提示去拉新镜像（容器里没有覆盖安装）；
+//   fnOS   → 服务端把 .fpk 拉到本地缓存，这里给下载链接让用户手动覆盖安装。
+const serverUpdate = ref<ServerUpdateResult | null>(null);
+const updateBusy = ref(false);
 
 async function checkUpdate(): Promise<void> {
-  await updateStore.check(false);
-  toast.show(updateStore.message ?? (updateStore.available ? '发现新版本' : '已是最新版本'));
+  updateBusy.value = true;
+  try {
+    const r = await updateApi.checkServerUpdate(true);
+    serverUpdate.value = r;
+    if (!r.available) {
+      toast.show(`已是最新版本（v${r.currentVersion}）`);
+      return;
+    }
+    if (r.deployMode === 'docker') {
+      toast.show(`发现新版本 v${r.latestVersion}：请拉取最新镜像后重启容器`);
+    } else if (r.artifact) {
+      toast.show(`发现新版本 v${r.latestVersion}：点「下载套件」手动覆盖安装`);
+    } else {
+      toast.show(`发现新版本 v${r.latestVersion}：产物正在后台拉取，稍后再点一次`);
+    }
+  } catch (error) {
+    toast.show(errText(error, '检查更新失败'));
+  } finally {
+    updateBusy.value = false;
+  }
+}
+
+/** fnOS 部署：下载套件包（Docker 部署没有这一步） */
+async function downloadSuite(): Promise<void> {
+  const r = serverUpdate.value;
+  if (!r?.artifact) return;
+  const url = updateApi.serverDownloadUrl(r);
+  if (url === '') {
+    toast.show('下载地址不可用，请稍后重试');
+    return;
+  }
+  window.open(url, '_blank');
 }
 
 void [toggleCat];
@@ -1157,15 +1191,33 @@ onMounted(() => {
         </div>
       </PCard>
 
-      <PCard v-if="canCheckUpdate">
+      <!-- 服务端 / 套件更新（仅管理员）：Docker 只提示拉镜像，fnOS 给套件下载 -->
+      <PCard v-if="isAdmin">
         <div class="card-h">
           <span class="card-t">检查更新</span>
+          <span class="card-cap">{{ serverUpdate?.deployMode === 'fnos' ? 'fnOS 套件' : 'Docker 镜像' }}</span>
         </div>
+        <p class="hint" style="margin: 0 0 10px">
+          {{ serverUpdate?.deployMode === 'docker'
+            ? 'Docker 部署：有新版本时拉取最新镜像并重启容器即可。'
+            : 'fnOS 套件：有新版本时可下载 .fpk 后在应用中心手动覆盖安装，数据不动。' }}
+        </p>
         <div class="split">
-          <PBtn :disabled="updateStore.checking" @click="checkUpdate">
-            {{ updateStore.checking ? '检查中…' : '检查更新' }}
+          <PBtn :disabled="updateBusy" @click="checkUpdate">
+            {{ updateBusy ? '检查中…' : '检查更新' }}
           </PBtn>
-          <span class="tiny muted">{{ updateStore.message ?? '' }}</span>
+          <PBtn
+            v-if="serverUpdate?.available && serverUpdate?.artifact"
+            variant="primary"
+            @click="downloadSuite"
+          >
+            下载套件（{{ Math.round((serverUpdate.artifact.size ?? 0) / 1024 / 1024) }} MB）
+          </PBtn>
+          <span v-if="serverUpdate" class="tiny muted">
+            当前 v{{ serverUpdate.currentVersion }}
+            <template v-if="serverUpdate.available"> → 最新 v{{ serverUpdate.latestVersion }}</template>
+            <template v-else>（已是最新）</template>
+          </span>
         </div>
       </PCard>
 

@@ -175,8 +175,13 @@ public final class ApiClient: Sendable {
         }
 
         let kind: ApiErrorKind
-        if status == 401 || status == 403 {
+        // ⚠ 401 与 403 必须分开：
+        //   401 = 令牌失效 → 清令牌回登录页；
+        //   403 = 权限不足（成员点管理员功能）→ **登录仍然有效**，只提示无权限。
+        if status == 401 {
             kind = .unauthorized
+        } else if status == 403 {
+            kind = .forbidden
         } else if status >= 500 {
             kind = .server
         } else {

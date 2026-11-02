@@ -2,13 +2,15 @@
  * 接口错误分类。
  *
  * 为什么要分类而不是统一抛「网络错误」：
- *   - unauthorized（401）→ 跳登录，而不是提示「网络不好」
+ *   - unauthorized（**仅 401**）→ 令牌真的失效，跳登录
+ *   - forbidden（403）→ **权限不足，但登录仍然有效**，绝不能清令牌
+ *     （曾经把 403 也归到 unauthorized：成员点一下管理员功能就被踢下线）
  *   - network（连不上/超时）→ 进入离线模式、写入走 Outbox
  *   - server（5xx）→ 可重试，提示「稍后再试」
  *   - client（4xx）→ 是请求写错了，重试也没用，直接把服务端的 message 显示出来
  * 四类混成一句「请求失败」会让用户和我们都无法判断下一步该做什么。
  */
-export type ApiErrorKind = 'network' | 'unauthorized' | 'client' | 'server' | 'parse';
+export type ApiErrorKind = 'network' | 'unauthorized' | 'forbidden' | 'client' | 'server' | 'parse';
 
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;

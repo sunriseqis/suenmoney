@@ -607,3 +607,28 @@ public struct PlanCreateRequest: Encodable {
     /// 服务端要按它推算各期账单/还款日；鸿蒙端曾因漏传此字段导致建分期必然失败。
     public let purchaseDate: String?
 }
+
+// MARK: - 更新通道
+
+/// `GET /api/update/check` 里 latest 字段（服务端缓存好的产物）
+public struct UpdateArtifact: Decodable {
+    public let fileName: String
+    public let versionName: String
+    public let versionCode: Int
+    public let size: Int
+    public let sha256: String?
+}
+
+public struct UpdateVersionRef: Decodable {
+    public let versionName: String
+    public let versionCode: Int
+}
+
+/// `GET /api/update/check` 的返回
+public struct UpdateCheckReply: Decodable {
+    public let available: Bool
+    public let current: UpdateVersionRef
+    public let latest: UpdateArtifact?
+    public let downloadPath: String
+    public let downloadToken: String
+}
