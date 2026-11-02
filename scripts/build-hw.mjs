@@ -4,7 +4,7 @@
  *
  * 用法：
  *   node scripts/build-hw.mjs --sync-only      # 仅执行 web build 并同步到 hw rawfile
- *   node scripts/build-hw.mjs                  # 编译未签名 HAP，产出 app/SuenMoney-v<版本>-unsigned.hap
+ *   node scripts/build-hw.mjs                  # 编译未签名 HAP，产出 app/suenmoney-<版本>.hap
  */
 
 import { execFileSync } from 'node:child_process';
@@ -126,7 +126,7 @@ async function assembleHap(versionName, versionCode) {
   }
 
   await mkdir(OUTPUT_DIR, { recursive: true });
-  const targetHap = join(OUTPUT_DIR, `SuenMoney-v${versionName}-unsigned.hap`);
+  const targetHap = join(OUTPUT_DIR, `suenmoney-${versionName}.hap`);
 
   await copyFile(foundHap, targetHap);
 

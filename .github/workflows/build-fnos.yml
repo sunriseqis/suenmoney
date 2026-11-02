@@ -109,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           VER="${{ steps.ver.outputs.version }}"
-          NAME="suenmoney-v${VER}.fpk"
+          NAME="suenmoney-${VER}.fpk"
           FPK="output/${NAME}"
           test -f "${FPK}"        || { echo "✖ 未找到产物 ${FPK}"; ls -la output/ || true; exit 1; }
           test -f "${FPK}.sha256" || { echo "✖ 缺少校验文件"; exit 1; }
@@ -124,7 +124,7 @@ jobs:
             exit 1
           fi
 
-          # ⚠ .sha256 里写的是**相对 output/ 的文件名**（suenmoney-vX.Y.Z.fpk），
+          # ⚠ .sha256 里写的是**相对 output/ 的文件名**（suenmoney-X.Y.Z.fpk），
           # 所以在仓库根跑 `sha256sum -c output/xxx.sha256` 会 FAILED open or read。
           # 必须进 output/ 再校验。
           ( cd output && sha256sum -c "${NAME}.sha256" )
@@ -168,8 +168,8 @@ jobs:
           name: SuenMoney v${{ steps.ver.outputs.version }}
           body_path: /tmp/release_body.md
           files: |
-            output/suenmoney-v${{ steps.ver.outputs.version }}.fpk
-            output/suenmoney-v${{ steps.ver.outputs.version }}.fpk.sha256
+            output/suenmoney-${{ steps.ver.outputs.version }}.fpk
+            output/suenmoney-${{ steps.ver.outputs.version }}.fpk.sha256
           draft: false
           prerelease: false
           make_latest: true
