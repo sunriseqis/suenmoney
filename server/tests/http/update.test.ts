@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { signUpdateToken, verifyUpdateToken } from '../../src/lib/update-token.ts';
-import { compareVersionName } from '../../src/http/update.ts';
+import { compareVersionName, isOurTag, versionFromTag, versionCodeOf, artifactName } from '../../src/services/update-types.ts';
 
 describe('Update Token (短期下载令牌)', () => {
   it('正确签发并验证令牌', () => {
@@ -105,3 +105,31 @@ describe('Update API Routes (Fastify 路由级测试)', () => {
   });
 });
 
+
+describe('发行仓库是多项目共用，必须按 tag 前缀过滤', () => {
+  // sunriseqis/suenapp 同时承载 suenmusic / suenweb / suenmoney。
+  // 不过滤会把 suenmusic 的 v2.1.3 当成 suenmoney 的新版本（实测踩到过）。
+  it('只认 suenmoney- 前缀的 tag', () => {
+    assert.equal(isOurTag('suenmoney-v2.0.0'), true);
+    assert.equal(isOurTag('suenmoney-2.0.0'), true);
+    assert.equal(isOurTag('v2.1.3'), false, 'suenmusic 的 tag 不能被认成我们的');
+    assert.equal(isOurTag('suenweb-v2.0.0'), false, 'suenweb 的 tag 也不能');
+  });
+
+  it('版本号能从两种 tag 写法里取出来', () => {
+    assert.equal(versionFromTag('suenmoney-v2.0.0'), '2.0.0');
+    assert.equal(versionFromTag('suenmoney-2.0.0'), '2.0.0');
+  });
+
+  it('三端产物名统一为 suenmoney-<版本>.<ext>', () => {
+    assert.equal(artifactName('2.0.0', 'fnos'), 'suenmoney-2.0.0.fpk');
+    assert.equal(artifactName('2.0.0', 'ios'), 'suenmoney-2.0.0.ipa');
+    assert.equal(artifactName('2.0.0', 'harmony'), 'suenmoney-2.0.0.hap');
+  });
+
+  it('versionCode 公式与客户端/CI 同源', () => {
+    assert.equal(versionCodeOf('2.0.0'), 2_000_000);
+    assert.equal(versionCodeOf('2.1.3'), 2_010_300);
+    assert.equal(versionCodeOf('1.0.0'), 1_000_000);
+  });
+});

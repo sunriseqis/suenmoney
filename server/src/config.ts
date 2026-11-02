@@ -95,21 +95,28 @@ export const config = {
   backupDir: resolve(str('SUENMONEY_BACKUP_DIR', './data/backups')),
   backupKeep: num('SUENMONEY_BACKUP_KEEP', 14),
 
-  /** Android / iOS 客户端自动更新（对接 UGREEN 私有云分享源） */
-  updateUgreenBaseUrl: str(
-    'SUENMONEY_UPDATE_UGREEN_BASE_URL',
-    'https://suenqi.cn35.ug.link/ugreen/v1',
-  ),
-  updateShareId: str(
-    'SUENMONEY_UPDATE_SHARE_ID',
-    '87870bfaf0cf4e078326b43c063afa1e',
-  ),
-  updateSharePath: str(
-    'SUENMONEY_UPDATE_SHARE_PATH',
-    '/home/suenqi/应用/SuenApp/SuenMoney',
-  ),
-  updateVersionCode: num('SUENMONEY_UPDATE_VERSION_CODE', 0),
-  updateSha256: str('SUENMONEY_UPDATE_SHA256', '').toLowerCase(),
+  /**
+   * 更新通道。来源只有两种：`github`（Releases）与 `off`。
+   *
+   * 三端产物都在 `sunriseqis/suenapp`，命名统一为 `suenmoney-<版本>.<ext>`。
+   * 服务端把产物拉到本地缓存，客户端从本地下载 —— 不直连 GitHub（国内极不稳定，
+   * 且系统浏览器/侧签工具发不出鉴权头）。
+   */
+  updateSource: (str('SUENMONEY_UPDATE_SOURCE', 'github').trim().toLowerCase() === 'off'
+    ? 'off'
+    : 'github') as 'github' | 'off',
+  /** GitHub 仓库（`owner/repo`） */
+  updateGithubRepo: str('SUENMONEY_UPDATE_GITHUB_REPO', 'sunriseqis/suenapp').trim(),
+  /** 私有仓库才需要；公开仓库留空即可（未配时走匿名，限额 60 次/小时） */
+  updateGithubToken: str('SUENMONEY_UPDATE_GITHUB_TOKEN', '').trim(),
+  /** API 基地址（国内反代用）；默认官方地址 */
+  updateGithubApiBase: str('SUENMONEY_UPDATE_GITHUB_API_BASE', '').trim(),
+  /** 产物缓存目录（每个平台一个子目录） */
+  updateCacheDir: resolve(str('SUENMONEY_UPDATE_CACHE_DIR', './data/updates')),
+  /**
+   * 下载令牌签名密钥。留空则每次启动随机生成（进程重启后旧令牌失效，
+   * 但令牌只有 30 分钟寿命，影响可忽略）。多副本部署时应显式配置。
+   */
   updateSecret: str('SUENMONEY_UPDATE_SECRET', ''),
 } as const;
 
