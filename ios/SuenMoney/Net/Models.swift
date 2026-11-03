@@ -545,6 +545,18 @@ public enum AnyJSON: Decodable {
     }
 }
 
+/// 冷启动全量快照（`GET /api/sync/snapshot`）
+public struct SyncSnapshotBody: Decodable {
+    public let version: Int
+    /// 用户（id + 显示名）：流水行显示「记录人」用
+    public let users: [UserSummary]
+    public let categories: [CategoryNode]
+    public let paymentMethods: [PaymentMethodItem]
+    public let expenses: [ExpenseItem]
+    public let plans: [PlanItem]
+    public let planTodos: [PlanTodoItem]
+}
+
 public struct SyncPullBody: Decodable {
     public let changes: [SyncChange]
     public let latestVersion: Int
