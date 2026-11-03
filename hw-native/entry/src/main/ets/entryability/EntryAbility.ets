@@ -35,8 +35,28 @@ const DOMAIN = 0x0000;
  */
 const CLIENT_BUILD = '2026-10-29.2';
 
+/**
+ * 冷启动的异步初始化。
+ *
+ * ⚠️ **`onWindowStageCreate` 必须等它完成**，否则会出现「令牌明明存在却进登录页」。
+ *
+ * 病根：ArkTS 的 `onCreate` 即使声明成 `async`，框架也**不会 await 返回的 Promise** ——
+ * 它只把回调当同步函数调用一次就继续走 `onWindowStageCreate`。
+ * 于是 `loadContent(AuthStore.isAuthenticated ? ...)` 可能在 `ServerConfig.init()`
+ * 读完令牌之前就求值：此时 `authToken === ''` → 判定未登录 → 进登录页。
+ * 这是个**竞态**（取决于 prefs 读盘快慢），表现为「偶尔掉登录」。
+ *
+ * 所以这里把初始化收进一个 Promise，`onWindowStageCreate` 显式 await 它。
+ */
+let initPromise: Promise<void> = Promise.resolve();
+
 export default class EntryAbility extends UIAbility {
-  async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
+  onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // 同步把初始化挂起成 Promise（不能 await —— 那等于回到原来的竞态）
+    initPromise = this.bootstrap();
+  }
+
+  private async bootstrap(): Promise<void> {
     hilog.info(DOMAIN, 'SuenMoneyBuild', 'client build %{public}s', CLIENT_BUILD);
     // 底座三件套：主题、服务端与令牌、本地库。
     // 顺序无关，但都必须在这里完成 —— 页面 aboutToAppear 时就要能拿到。
@@ -67,6 +87,22 @@ export default class EntryAbility extends UIAbility {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    /**
+     * 等初始化完成再决定进哪个页面。
+     *
+     * 不等的话就是竞态：`AuthStore.isAuthenticated` 读的是 `ServerConfig.authToken`，
+     * 而它要等 `ServerConfig.init()` 从 preferences 读出来 —— 谁先跑不确定。
+     * 令牌在、却进登录页，就是这么来的（实测可复现）。
+     */
+    void initPromise.then(() => {
+      this.loadRoot(windowStage);
+    }).catch((e: Object) => {
+      hilog.error(DOMAIN, 'testTag', '初始化失败，仍尝试进入: %{public}s', JSON.stringify(e));
+      this.loadRoot(windowStage);
+    });
+  }
+
+  private loadRoot(windowStage: window.WindowStage): void {
     windowStage.loadContent(AuthStore.isAuthenticated ? 'pages/MainPage' : 'pages/LoginPage', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));

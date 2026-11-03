@@ -28,7 +28,7 @@ import { display, window } from '@kit.ArkUI';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { FOCUS_RING, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { FOCUS_RING, fontBodyOf, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { categoryColorOf } from '../../common/ui/CategoryIcon';
@@ -585,35 +585,29 @@ export struct ExpenseEditor {
     return i < list.length ? list[i] : null;
   }
 
-  /** 快捷分类单元格：宽高由外面的网格决定，样式跟键盘按键同一套 */
+  /** 快捷分类胶囊：**按内容自适应宽度**（Web `.quick-cat { flex: 0 0 auto }`） */
   @Builder
   quickCell(c: CategoryNode) {
-    Row({ space: 4 }) {
+    Row({ space: 5 }) {
       // 分类图标（和流水行/设置页同一套内置 Symbol；二级色跟随一级）
       CatIconView({
         catName: c.name,
-        iconSize: 13,
-        color: this.categoryId === c.id ? this.tok().accentInk : this.catColorOf(c)
+        iconSize: 16,
+        color: this.categoryId === c.id ? this.tok().ink : this.catColorOf(c)
       })
       Text(c.name)
-        .fontSize(10.5)
+        .fontSize(11.5)
         .fontWeight(FontWeight.Bold)
-        .fontFamily(fontDisplayOf(this.isCyber()))
+        .fontFamily(fontBodyOf(false))
         .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-        .textAlign(TextAlign.Center)
-        .fontColor(this.categoryId === c.id ? this.tok().accentInk : this.tok().ink2)
+        // Web: white-space: nowrap —— 不折行、不省略，靠胶囊自身变宽
+        .fontColor(this.categoryId === c.id ? this.tok().ink : this.tok().ink2)
     }
-    .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .width('100%')
-    .height('100%')
-    .padding({ left: 4, right: 4 })
-    .backgroundColor(this.categoryId === c.id ? this.tok().accent : this.tok().surface)
-    .borderRadius(radiusOf(this.tok(), this.isCyber(), 11))
+    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+    .backgroundColor(this.tok().surface)
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
     .border({ width: 1, color: this.categoryId === c.id ? this.tok().accent : this.tok().line })
-    .shadow(parseShadow(this.isCyber() ? '0px 0px 0px rgba(0,0,0,0)' : '2px 2px 0 ' + this.tok().line))
     .onClick(() => {
       this.categoryId = c.id;
       this.categoryOpen = false;
@@ -734,37 +728,36 @@ export struct ExpenseEditor {
     .height('100%')
   }
 
+  /**
+   * 键盘上方的常用分类快捷条。
+   *
+   * 对齐 Web `ExpenseSheet.vue` 的 `.quick-cats` / `.quick-cat`：
+   *     容器  display:flex; gap:6px; overflow-x:auto; padding:6px 2px;
+   *           border-radius: var(--r-sm); background: surface-3 @60%
+   *     胶囊  flex:0 0 auto; padding:5px 10px; border:1px solid var(--line);
+   *           border-radius:999px; font-size:11.5px; white-space:nowrap
+   *
+   * ⚠ 曾经这里是「左 54vp + 竖线 + 4 等分网格」，刻意让列结构与键盘对齐。
+   *   那是错的：**Web 根本不按键盘分列**，每个胶囊按内容自适应、横向滚动。
+   *   固定 54vp 那一格只够两个字（外卖），真机窄屏上第一个分类被压扁，
+   *   其余 4 个却能完整显示 —— 用户看到的「最左只剩 2 个字」就是这么来的。
+   */
   @Builder
   quickBar() {
-    // 列结构跟键盘完全一致：左 62vp（对齐支付列）+ 1vp 竖线 + 4 等分（对齐 7/8/9/←）
-    Row() {
-      Column() {
-        if (this.quickAt(0) !== null) {
-          this.quickCell(this.quickAt(0)!)
+    List({ space: 6 }) {
+      ForEach(this.quickCats(), (c: CategoryNode) => {
+        ListItem() {
+          this.quickCell(c)
         }
-      }
-      .width(54)
-      .height(40)
-
-      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(40)
-
-      Grid() {
-        ForEach([1, 2, 3, 4], (i: number) => {
-          GridItem() {
-            if (this.quickAt(i) !== null) {
-              this.quickCell(this.quickAt(i)!)
-            }
-          }
-        }, (i: number) => `quick-${i}`)
-      }
-      .columnsTemplate('repeat(4, 1fr)')
-      .columnsGap(5)
-      .layoutWeight(1)
-      .height(40)
-      .padding({ left: 6 })
+      }, (c: CategoryNode) => `quick-${c.id}`)
     }
+    .listDirection(Axis.Horizontal)
+    .scrollBar(BarState.Off)
     .width('100%')
-    .height(40)
+    .padding({ left: 2, right: 2, top: 6, bottom: 6 })
+    .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+    // Web: color-mix(in srgb, var(--surface-3) 60%, transparent)
+    .backgroundColor(withAlpha(this.tok().surface3, 0.6))
   }
 
   /** 常用分类：二级里本月笔数最多的前 6 个（不足则补最近使用的） */
@@ -778,8 +771,8 @@ export struct ExpenseEditor {
       }
     }
     out.sort((a: CategoryNode, b: CategoryNode) => b.expenseCount - a.expenseCount);
-    // 5 个正好铺满键盘的列宽：1 个对齐左侧支付列，4 个对齐 7/8/9/←
-    return out.slice(0, 5);
+    // Web 是横向滚动、胶囊按内容自适应，不再受键盘列宽限制 → 取前 6
+    return out.slice(0, 6);
   }
 
   @Builder
@@ -1317,6 +1310,16 @@ export struct ExpenseEditor {
     }
     return [];
   }
+}
+
+/** `#RRGGBB` → 带透明度的 `#AARRGGBB`（对齐 CSS color-mix 的 60% 混透明） */
+function withAlpha(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) {
+    return hex;
+  }
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+  return `#${a.toString(16).padStart(2, '0').toUpperCase()}${h.toUpperCase()}`;
 }
 
 const WEEKDAYS: string[] = ['日', '一', '二', '三', '四', '五', '六'];
