@@ -22,7 +22,7 @@ import { formatYuan } from '../../common/contract/Contract';
 import { fieldBgOf, fieldBorderWOf } from '../../common/ui/UiStyle';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { PayIconView } from '../../common/ui/PayIconView';
-import { CATEGORY_COLORS, categoryColorOf } from '../../common/ui/CategoryIcon';
+import { categoryColorOf, categoryPalette } from '../../common/ui/CategoryIcon';
 import { ServerConfig } from '../../common/net/ServerConfig';
 import { SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
@@ -2524,7 +2524,7 @@ export struct SettingsScreen {
               .onClick(() => {
                 this.formColor = '';
               })
-            ForEach(CATEGORY_COLORS, (hex: string, cIdx: number) => {
+            ForEach(categoryPalette(), (hex: string, cIdx: number) => {
               Row()
                 .width(26)
                 .height(26)
