@@ -65,7 +65,10 @@ export class DictionaryDao {
     const all: CategoryNode[] = [];
     while (rs.goToNextRow()) {
       const parentIdx = rs.getColumnIndex('parent_id');
-      const parentId = rs.isColumnNull(parentIdx) ? null : rs.getString(parentIdx);
+      // 根节点的 parent_id 可能是 NULL 也可能是空串（快照写入用的是空串），
+      // 两种都必须当成「没有父级」，否则整棵树会被过滤成空。
+      const rawParent = rs.isColumnNull(parentIdx) ? '' : rs.getString(parentIdx);
+      const parentId: string | null = rawParent === '' ? null : rawParent;
       all.push({
         id: rs.getString(rs.getColumnIndex('id')),
         parentId: parentId,
