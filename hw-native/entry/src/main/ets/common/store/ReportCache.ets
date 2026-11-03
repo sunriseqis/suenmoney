@@ -56,3 +56,28 @@ export class ReportCache {
     );
   }
 }
+
+/**
+ * 报表取数：**先用缓存，再后台刷新**。
+ *
+ * `fetch` 是拿服务端新值的函数；成功就写缓存并回调 `onFresh`。
+ * 缓存为空且请求失败时返回 null（调用方显示空态），不会抛错打断页面。
+ */
+export async function reportWithCache<T>(
+  key: string,
+  fetch: () => Promise<T>,
+  onFresh: (data: T) => void
+): Promise<T | null> {
+  const cached = await ReportCache.get<T>(key);
+  if (cached === null || Date.now() - new Date(cached.fetchedAt).getTime() > 5 * 60 * 1000) {
+    try {
+      const fresh = await fetch();
+      await ReportCache.put(key, fresh as Object);
+      onFresh(fresh);
+      return fresh;
+    } catch (e) {
+      // 失败就用旧缓存
+    }
+  }
+  return cached === null ? null : cached.data;
+}

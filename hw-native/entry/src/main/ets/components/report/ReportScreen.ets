@@ -9,7 +9,7 @@
  *
  * 四个接口并发拉（月 / 上月 / 年 / 汇总），失败置 null 不清屏。
  */
-import { Api, CategoryBucket, DailyPoint, MemberBucket, MonthlyReport, PaymentBucket, RollingMonth, SummaryReport, YearlyReport } from '../../common/net/Api';
+import { Api, CategoryBucket, DailyPoint, MemberBucket, MonthlyReport, MonthlyReportBody, PaymentBucket, RollingMonth, SummaryReport, SummaryReportBody, YearlyReport, YearlyReportBody } from '../../common/net/Api';
 import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
@@ -18,6 +18,7 @@ import { formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { categoryColorOf } from '../../common/ui/CategoryIcon';
 import { CatIconView } from '../../common/ui/CatIconView';
+import { reportWithCache } from '../../common/store/ReportCache';
 import { DonutChart, DonutSliceView } from './DonutChart';
 
 /** 四维行（分类/支付/记录人/节奏共用） */
@@ -187,34 +188,32 @@ export struct ReportScreen {
 
   private async load(): Promise<void> {
     this.loading = true;
-    let m: MonthlyReport | null = null;
-    let p: MonthlyReport | null = null;
-    let y: YearlyReport | null = null;
-    let s: SummaryReport | null = null;
-    try {
-      m = (await Api.monthlyReport(this.anchorMonth)).report;
-    } catch (e) {
-      m = null;
-    }
-    try {
-      p = (await Api.monthlyReport(shiftMonth(this.anchorMonth, -1))).report;
-    } catch (e) {
-      p = null;
-    }
-    try {
-      y = (await Api.yearlyReport(this.anchorYear())).report;
-    } catch (e) {
-      y = null;
-    }
-    try {
-      s = (await Api.summaryReport()).report;
-    } catch (e) {
-      s = null;
-    }
-    this.monthReport = m;
-    this.prevMonthReport = p;
-    this.yearReport = y;
-    this.summary = s;
+    /*
+     * 报表一律「缓存优先 + 后台刷新」：
+     * 口径由服务端唯一提供（不在客户端重写 800+ 行 SQL，避免三端跑偏），
+     * 本地只缓存它最后一次的响应。离线时显示缓存，联网时后台更新。
+     */
+    const m = await reportWithCache<MonthlyReportBody>(`monthly:${this.anchorMonth}`,
+      async (): Promise<MonthlyReportBody> => Api.monthlyReport(this.anchorMonth),
+      (d: MonthlyReportBody): void => { this.monthReport = d.report; });
+    const prevMonth = shiftMonth(this.anchorMonth, -1);
+    const p = await reportWithCache<MonthlyReportBody>(`monthly:${prevMonth}`,
+      async (): Promise<MonthlyReportBody> => Api.monthlyReport(prevMonth),
+      (d: MonthlyReportBody): void => { this.prevMonthReport = d.report; });
+    const y = await reportWithCache<YearlyReportBody>(`yearly:${this.anchorYear()}`,
+      async (): Promise<YearlyReportBody> => Api.yearlyReport(this.anchorYear()),
+      (d: YearlyReportBody): void => { this.yearReport = d.report; });
+    const s = await reportWithCache<SummaryReportBody>('summary:all',
+      async (): Promise<SummaryReportBody> => Api.summaryReport(),
+      (d: SummaryReportBody): void => { this.summary = d.report; });
+    const mReport: MonthlyReport | null = m === null ? null : m.report;
+    const pReport: MonthlyReport | null = p === null ? null : p.report;
+    const yReport: YearlyReport | null = y === null ? null : y.report;
+    const sReport: SummaryReport | null = s === null ? null : s.report;
+    this.monthReport = mReport;
+    this.prevMonthReport = pReport;
+    this.yearReport = yReport;
+    this.summary = sReport;
     this.loading = false;
   }
 
