@@ -14,9 +14,13 @@ import { relationalStore } from '@kit.ArkData';
 import { Api, SyncPullBody, SyncPushRequest, SyncUpdateExpense } from '../net/Api';
 import { ApiError } from '../net/ApiError';
 import { Db } from '../store/Db';
+import { SyncStore } from '../store/SyncStore';
+import { ExpenseDao } from '../store/ExpenseDao';
 import { Outbox, OutboxEntry, OUTBOX_MAX_RETRY } from './Outbox';
 
 const CURSOR_KEY = 'sync_cursor';
+/** 本地数据版本：同步写完 +1，各屏订阅它重新读本地库 */
+export const DATA_VERSION_KEY = 'localDataVersion';
 /** 本地变更后 300ms 防抖再推（连续记账不会每次打一次网络） */
 const DEBOUNCE_MS = 300;
 
@@ -43,6 +47,27 @@ export class SyncEngine {
     }, DEBOUNCE_MS);
   }
 
+  /**
+   * **拉取一次更新**（冷启动 / 热启动各调一次）。
+   *
+   * - 本地是空的（首装 / 换账号 / 清过库）→ 拉全量快照，游标记成快照点；
+   * - 否则 → 增量 pull，翻页直到 `hasMore=false`。
+   *
+   * 只负责「拉」。推送由 `syncNow()` 负责（它先推后拉）。
+   */
+  static async refresh(): Promise<number> {
+    // 增量可能有多页：一直翻到 hasMore=false，否则一次启动只同步 200 条
+    let last = await SyncEngine.readCursor();
+    for (let i = 0; i < 50; i++) {
+      const result = await SyncEngine.pull();
+      last = result.cursor;
+      if (!result.hasMore) {
+        break;
+      }
+    }
+    return last;
+  }
+
   /** 完整一轮：先推后拉（推成功后本地才有正确游标语义） */
   static async syncNow(): Promise<SyncReport> {
     const report: SyncReport = { pushed: 0, deadLettered: 0, pulled: 0, cursor: 0, error: '' };
@@ -62,6 +87,15 @@ export class SyncEngine {
       report.error = err.kind === 'network' ? '离线：稍后自动重试' : err.message;
     } finally {
       SyncEngine.running = false;
+      /*
+       * 广播「本地数据版本」。
+       *
+       * 本地优先之后，屏幕不再等接口返回，而是读本地库 —— 所以同步写完之后
+       * 必须有个信号让它们重读，否则界面停留在旧数据直到用户手动切页。
+       * 各屏用 `@StorageLink(DATA_VERSION_KEY)` 订阅并 reload。
+       */
+      const prev: number = AppStorage.get<number>(DATA_VERSION_KEY) ?? 0;
+      AppStorage.setOrCreate<number>(DATA_VERSION_KEY, prev + 1);
     }
     return report;
   }
@@ -147,6 +181,15 @@ export class SyncEngine {
   /** 拉：增量应用到本地 */
   static async pull(): Promise<PullResult> {
     const cursor = await SyncEngine.readCursor();
+    /*
+     * 本地是空的（首装 / 换账号 / 清过库）→ 拉全量快照，而不是从 0 重放变更历史。
+     * 放在 pull 里而不是调用方，是为了让 syncNow / refresh 两条路径都自动覆盖。
+     */
+    if (cursor === 0 && (await ExpenseDao.count()) === 0) {
+      const version = await SyncStore.bootstrap();
+      await SyncEngine.writeCursor(version);
+      return { applied: 0, cursor: version, hasMore: false };
+    }
     const body: SyncPullBody = await Api.syncPull(cursor, 200);
     let applied = 0;
     for (const change of body.changes) {
@@ -155,7 +198,7 @@ export class SyncEngine {
     }
     const next = body.latestVersion;
     await SyncEngine.writeCursor(next);
-    return { applied: applied, cursor: next };
+    return { applied: applied, cursor: next, hasMore: body.hasMore };
   }
 
   static async readCursor(): Promise<number> {
@@ -206,6 +249,7 @@ interface PushResult {
 interface PullResult {
   applied: number;
   cursor: number;
+  hasMore: boolean;
 }
 
 function parsePayload(raw: string): Record<string, Object> {
@@ -217,6 +261,9 @@ function parsePayload(raw: string): Record<string, Object> {
 }
 
 function tableOf(entityType: string): string {
+  if (entityType === 'user') {
+    return 'users';
+  }
   if (entityType === 'expense') {
     return 'expenses';
   }
@@ -235,81 +282,127 @@ function tableOf(entityType: string): string {
   return '';
 }
 
-/** 服务端 payload（camelCase）→ 本地列（snake_case） */
+/**
+ * 服务端 payload → 本地列。
+ *
+ * ⚠ **两种命名风格并存**，必须都认：
+ *   · `category` / `payment_method` 的 payload 是 camelCase（`parentId` / `sortOrder`）；
+ *   · `expense` / `plan` / `plan_todo` 的 payload 是 **snake_case**（`owner_id` / `amount_cents`）。
+ *
+ * 旧实现一律按 camelCase 读，于是每次增量拉取都把本地支出写成
+ * `owner_id=''`、`amount_cents=0` —— 数据被静默冲成空值。这里统一用 `pick()`
+ * 双键兼容，服务端以后改风格也不会再炸。
+ */
+function pick(p: Record<string, Object>, snake: string, camel: string, fallback: Object): Object {
+  const a = p[snake];
+  if (a !== undefined && a !== null) {
+    return a;
+  }
+  const b = p[camel];
+  if (b !== undefined && b !== null) {
+    return b;
+  }
+  return fallback;
+}
+
+function str(p: Record<string, Object>, snake: string, camel: string, fallback: string = ''): string {
+  return String(pick(p, snake, camel, fallback));
+}
+
+function num(p: Record<string, Object>, snake: string, camel: string, fallback: number = 0): number {
+  return Number(pick(p, snake, camel, fallback));
+}
+
+function bool(p: Record<string, Object>, snake: string, camel: string, fallback: boolean = false): boolean {
+  return pick(p, snake, camel, fallback) === true;
+}
+
 function toBucket(entityType: string, payload: object): relationalStore.ValuesBucket | null {
   const p = payload as Record<string, Object>;
+  if (entityType === 'user') {
+    const bucket: relationalStore.ValuesBucket = {
+      'id': str(p, 'id', 'id'),
+      'display_name': str(p, 'display_name', 'displayName'),
+      'role': str(p, 'role', 'role', 'member'),
+      'updated_at': str(p, 'updated_at', 'updatedAt')
+    };
+    return String(bucket['id']) === '' ? null : bucket;
+  }
   if (entityType === 'expense') {
     const bucket: relationalStore.ValuesBucket = {
-      'id': String(p['id'] ?? ''),
-      'owner_id': String(p['ownerId'] ?? ''),
-      'amount_cents': Number(p['amountCents'] ?? 0),
-      'category_id': String(p['categoryId'] ?? ''),
-      'payment_method_id': String(p['paymentMethodId'] ?? ''),
-      'spend_date': String(p['spendDate'] ?? ''),
-      'posting_date': String(p['postingDate'] ?? ''),
-      'repayment_date': String(p['repaymentDate'] ?? ''),
-      'note': String(p['note'] ?? ''),
-      'source': String(p['source'] ?? 'manual'),
-      'updated_at': String(p['updatedAt'] ?? new Date().toISOString())
+      'id': str(p, 'id', 'id'),
+      'owner_id': str(p, 'owner_id', 'ownerId'),
+      'amount_cents': num(p, 'amount_cents', 'amountCents'),
+      'category_id': str(p, 'category_id', 'categoryId'),
+      'payment_method_id': str(p, 'payment_method_id', 'paymentMethodId'),
+      'spend_date': str(p, 'spend_date', 'spendDate'),
+      'posting_date': str(p, 'posting_date', 'postingDate'),
+      'repayment_date': str(p, 'repayment_date', 'repaymentDate'),
+      'note': str(p, 'note', 'note'),
+      'source': str(p, 'source', 'source', 'manual'),
+      'updated_at': str(p, 'updated_at', 'updatedAt', new Date().toISOString())
     };
     return String(bucket['id']) === '' ? null : bucket;
   }
   if (entityType === 'category') {
     const bucket: relationalStore.ValuesBucket = {
-      'id': String(p['id'] ?? ''),
-      'parent_id': p['parentId'] === null || p['parentId'] === undefined ? '' : String(p['parentId']),
-      'name': String(p['name'] ?? ''),
-      'depth': Number(p['depth'] ?? 1),
-      'icon': String(p['icon'] ?? ''),
-      'color': String(p['color'] ?? ''),
-      'sort_order': Number(p['sortOrder'] ?? 0),
-      'is_enabled': p['isEnabled'] === false ? 0 : 1
+      'id': str(p, 'id', 'id'),
+      'parent_id': str(p, 'parent_id', 'parentId'),
+      'name': str(p, 'name', 'name'),
+      'depth': num(p, 'depth', 'depth', 1),
+      'icon': str(p, 'icon', 'icon'),
+      'color': str(p, 'color', 'color'),
+      'sort_order': num(p, 'sort_order', 'sortOrder'),
+      'is_enabled': bool(p, 'is_enabled', 'isEnabled', true) ? 1 : 0
     };
     return String(bucket['id']) === '' ? null : bucket;
   }
   if (entityType === 'payment_method') {
     const bucket: relationalStore.ValuesBucket = {
-      'id': String(p['id'] ?? ''),
-      'name': String(p['name'] ?? ''),
-      'type': String(p['type'] ?? 'cash'),
-      'icon': String(p['icon'] ?? ''),
-      'billing_day': Number(p['billingDay'] ?? 0),
-      'repayment_day': Number(p['repaymentDay'] ?? 0),
-      'is_enabled': p['isEnabled'] === false ? 0 : 1,
-      'sort_order': Number(p['sortOrder'] ?? 0)
+      'id': str(p, 'id', 'id'),
+      'name': str(p, 'name', 'name'),
+      'type': str(p, 'type', 'type', 'cash'),
+      'icon': str(p, 'icon', 'icon'),
+      'billing_day': num(p, 'billing_day', 'billingDay'),
+      'repayment_day': num(p, 'repayment_day', 'repaymentDay'),
+      'is_enabled': bool(p, 'is_enabled', 'isEnabled', true) ? 1 : 0,
+      'sort_order': num(p, 'sort_order', 'sortOrder')
     };
     return String(bucket['id']) === '' ? null : bucket;
   }
   if (entityType === 'plan') {
     const bucket: relationalStore.ValuesBucket = {
-      'id': String(p['id'] ?? ''),
-      'name': String(p['name'] ?? ''),
-      'category_id': String(p['categoryId'] ?? ''),
-      'payment_method_id': String(p['paymentMethodId'] ?? ''),
-      'amount_cents': Number(p['amountCents'] ?? 0),
-      'total_amount_cents': Number(p['totalAmountCents'] ?? 0),
-      'purchase_date': String(p['purchaseDate'] ?? ''),
-      'first_due_date': String(p['firstDueDate'] ?? ''),
-      'remind_days_before': Number(p['remindDaysBefore'] ?? 3),
-      'auto_post': p['autoPost'] === true ? 1 : 0,
-      'source': String(p['source'] ?? 'manual'),
-      'state': String(p['state'] ?? 'active'),
-      'note': String(p['note'] ?? ''),
-      'updated_at': String(p['updatedAt'] ?? new Date().toISOString())
+      'id': str(p, 'id', 'id'),
+      'name': str(p, 'name', 'name'),
+      'category_id': str(p, 'category_id', 'categoryId'),
+      'payment_method_id': str(p, 'payment_method_id', 'paymentMethodId'),
+      'amount_cents': num(p, 'amount_cents', 'amountCents'),
+      'total_amount_cents': num(p, 'total_amount_cents', 'totalAmountCents'),
+      'purchase_date': str(p, 'purchase_date', 'purchaseDate'),
+      'first_due_date': str(p, 'first_due_date', 'firstDueDate'),
+      'remind_days_before': num(p, 'remind_days_before', 'remindDaysBefore', 3),
+      'auto_post': bool(p, 'auto_post', 'autoPost') ? 1 : 0,
+      'source': str(p, 'source', 'source', 'manual'),
+      'state': str(p, 'state', 'state', 'active'),
+      'note': str(p, 'note', 'note'),
+      'updated_at': str(p, 'updated_at', 'updatedAt', new Date().toISOString())
     };
     return String(bucket['id']) === '' ? null : bucket;
   }
   if (entityType === 'plan_todo') {
     const bucket: relationalStore.ValuesBucket = {
-      'id': String(p['id'] ?? ''),
-      'plan_id': String(p['planId'] ?? ''),
-      'plan_name': String(p['planName'] ?? ''),
-      'period_seq': Number(p['periodSeq'] ?? 0),
-      'amount_cents': Number(p['amountCents'] ?? 0),
-      'repayment_date': String(p['repaymentDate'] ?? ''),
-      'status': String(p['status'] ?? 'pending'),
-      'will_auto_post': p['willAutoPost'] === true ? 1 : 0,
-      'updated_at': String(p['updatedAt'] ?? new Date().toISOString())
+      'id': str(p, 'id', 'id'),
+      'plan_id': str(p, 'plan_id', 'planId'),
+      // plan_name 是冗余列：服务端 payload 不带它，读取时一律 JOIN plans 取真名
+      'plan_name': str(p, 'plan_name', 'planName'),
+      'period_seq': num(p, 'period_seq', 'periodSeq'),
+      'amount_cents': num(p, 'amount_cents', 'amountCents'),
+      'repayment_date': str(p, 'repayment_date', 'repaymentDate'),
+      'status': str(p, 'status', 'status', 'pending'),
+      'will_auto_post': bool(p, 'will_auto_post', 'willAutoPost') ? 1 : 0,
+      'expense_id': str(p, 'expense_id', 'expenseId'),
+      'posted_date': str(p, 'posted_date', 'postedDate'),
+      'updated_at': str(p, 'updated_at', 'updatedAt', new Date().toISOString())
     };
     return String(bucket['id']) === '' ? null : bucket;
   }

@@ -20,7 +20,7 @@ const DOMAIN = 0x0001;
 const TAG = 'Db';
 const DB_NAME = 'suenmoney.db';
 /** 表结构版本，改表时 +1 并在 migrate 里补分支 */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const CONFIG: relationalStore.StoreConfig = {
   name: DB_NAME,
@@ -96,7 +96,25 @@ const CREATE_TABLES: string[] = [
      repayment_date TEXT NOT NULL,
      status TEXT NOT NULL DEFAULT 'pending',
      will_auto_post INTEGER NOT NULL DEFAULT 0,
+     -- 「我知道了」摘除时间（提醒列表要排除它）
+     ack_at TEXT,
+     -- 该期入账后生成的支出（撤销确认要删它）
+     expense_id TEXT,
+     -- 实际入账日（设置页「已处理」按它显示，不是还款日）
+     posted_date TEXT,
      updated_at TEXT NOT NULL
+   )`,
+  /**
+   * 用户缓存（id → 显示名）。
+   *
+   * 流水行要显示「记录人」，而 `expenses` 表只存 owner_id。
+   * 不缓存的话离线时整列会变成一串 ULID。
+   */
+  `CREATE TABLE IF NOT EXISTS users (
+     id TEXT PRIMARY KEY,
+     display_name TEXT NOT NULL,
+     role TEXT NOT NULL DEFAULT 'member',
+     updated_at TEXT NOT NULL DEFAULT ''
    )`,
   `CREATE TABLE IF NOT EXISTS outbox (
      id TEXT PRIMARY KEY,
@@ -115,6 +133,21 @@ const CREATE_INDEXES: string[] = [
   'CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at)'
 ];
 
+/**
+ * 老库补列。
+ *
+ * 每个版本追加一批；`ALTER TABLE ... ADD COLUMN` 在列已存在时会报错，
+ * 所以逐条 try/catch —— 幂等比「精确判断当前版本」更省事，也不会漏。
+ */
+const MIGRATIONS: string[][] = [
+  // v2：plan_todos 补 ack/expense/posted；users 表在 CREATE_TABLES 里
+  [
+    'ALTER TABLE plan_todos ADD COLUMN ack_at TEXT',
+    'ALTER TABLE plan_todos ADD COLUMN expense_id TEXT',
+    'ALTER TABLE plan_todos ADD COLUMN posted_date TEXT'
+  ]
+];
+
 export class Db {
   private static store: relationalStore.RdbStore | null = null;
 
@@ -129,6 +162,15 @@ export class Db {
     }
     for (const sql of CREATE_INDEXES) {
       await opened.executeSql(sql);
+    }
+    for (const batch of MIGRATIONS) {
+      for (const sql of batch) {
+        try {
+          await opened.executeSql(sql);
+        } catch (e) {
+          // 列已存在 —— 正常，继续下一条
+        }
+      }
     }
     await opened.executeSql(
       'INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)',
@@ -175,6 +217,6 @@ export const TABLES: TableSpec[] = [
   { name: 'payment_methods', columns: ['id', 'name', 'type', 'icon', 'billing_day', 'repayment_day', 'is_enabled', 'sort_order'] },
   { name: 'expenses', columns: ['id', 'owner_id', 'amount_cents', 'category_id', 'payment_method_id', 'spend_date', 'posting_date', 'repayment_date', 'note', 'source', 'updated_at'] },
   { name: 'plans', columns: ['id', 'name', 'category_id', 'payment_method_id', 'amount_cents', 'total_amount_cents', 'purchase_date', 'first_due_date', 'remind_days_before', 'auto_post', 'source', 'state', 'note', 'updated_at'] },
-  { name: 'plan_todos', columns: ['id', 'plan_id', 'plan_name', 'period_seq', 'amount_cents', 'repayment_date', 'status', 'will_auto_post', 'updated_at'] },
+  { name: 'plan_todos', columns: ['id', 'plan_id', 'plan_name', 'period_seq', 'amount_cents', 'repayment_date', 'status', 'will_auto_post', 'ack_at', 'expense_id', 'posted_date', 'updated_at'] },
   { name: 'outbox', columns: ['id', 'action', 'entity_id', 'payload', 'created_at', 'retry_count', 'last_error'] }
 ];

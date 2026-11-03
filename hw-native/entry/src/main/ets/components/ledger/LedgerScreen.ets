@@ -12,12 +12,14 @@
  * 金额一律来自服务端/本地的整数分，展示时才格式化。
  */
 
-import { Api, ExpenseItem, MonthPoint, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
+import { Api, ExpenseItem, MonthPoint, MonthlyReportBody, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
+import { PlanDao } from '../../common/store/PlanDao';
+import { ReportCache } from '../../common/store/ReportCache';
 import { Outbox } from '../../common/sync/Outbox';
-import { SyncEngine, SyncReport } from '../../common/sync/SyncEngine';
+import { DATA_VERSION_KEY, SyncEngine, SyncReport } from '../../common/sync/SyncEngine';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
@@ -165,8 +167,19 @@ export struct LedgerScreen {
     });
   }
 
+  /** 本地数据版本：同步写完后 +1，本屏据此重读 */
+  @StorageLink(DATA_VERSION_KEY) @Watch('onDataVersion') dataVersion: number = 0;
+
+  /** 同步写完了：重读本地库 */
+  private onDataVersion(): void {
+    this.reload();
+  }
+
   aboutToAppear(): void {
     this.reload();
+    // 首屏先出本地数据，再让同步引擎去拉更新（不阻塞渲染）
+    void SyncEngine.refresh().catch(() => {
+    });
     Outbox.pendingCount().then((n: number) => {
       this.pendingSync = n;
       this.sharedPending = n;
@@ -182,70 +195,50 @@ export struct LedgerScreen {
     }
   }
 
-  /** 首次进入：先缓存字典（离线时要靠它显示分类名），再拉当月 */
+  /**
+   * 首次进入 / 数据版本变化时重读。
+   *
+   * **全部从本地库读** —— 本地优先之后，这里不再调任何读接口。
+   * 数据的新鲜度由 `SyncEngine`（启动/回前台/写后）负责，它写完后广播
+   * `DATA_VERSION_KEY`，本屏通过 `@StorageLink` 收到并再次 reload。
+   */
   private async reload(): Promise<void> {
     this.errorText = '';
     this.loading = true;
     try {
-      if (this.categoryNames.size === 0) {
-        const cats = await Api.categories();
-        await DictionaryDao.cacheCategories(cats.categories);
-        this.categoryNames = await DictionaryDao.categoryNames();
-        const pays = await Api.paymentMethods();
-        await DictionaryDao.cachePayments(pays.paymentMethods);
-        this.paymentNames = await DictionaryDao.paymentNames();
-
-        // 筛选项：分类只列一级（二级归属一级，列出来会重复）；支付列全部；记录人取 users
-        const roots: CachedCategory[] = [];
-        this.categoryNames.forEach((cat: CachedCategory) => {
-          if (cat.parentId === '' || cat.parentId === null) {
-            roots.push(cat);
-          }
-        });
-        this.rootCategories = roots;
-        const payOpts: CachedCategory[] = [];
-        pays.paymentMethods.forEach((p: PaymentMethodItem) => {
-          if (p.isEnabled) {
-            payOpts.push({ id: p.id, name: p.name, icon: p.icon, color: '', parentId: '' });
-          }
-        });
-        this.paymentOptions = payOpts;
-        const users = await Api.users();
-        const owners: CachedCategory[] = [];
-        users.users.forEach((u: UserSummary) => {
-          owners.push({ id: u.id, name: u.displayName, icon: '', color: '', parentId: '' });
-        });
-        this.ownerOptions = owners;
-      }
-      this.offline = false;
+      await this.loadDictLocal();
       await this.loadTier();
     } catch (e) {
-      const err = e as ApiError;
-      /**
-       * **本地数据永远优先可读**。
-       *
-       * 不只有 network 才回退本地：
-       *   · `network`      → 服务器连不上；
-       *   · `unauthorized` → 令牌失效（服务端重置 / 过期）。
-       * 两种都不该让用户看不到自己的账 —— 账在本地库里，读它不需要服务端同意。
-       * 令牌失效时额外打个标记，界面提示「重新登录后可同步」。
-       */
-      if (err.kind === 'network' || err.kind === 'unauthorized') {
-        this.offline = true;
-        if (err.kind === 'unauthorized') {
-          AuthStore.sessionExpired = true;
-        }
-        if (this.categoryNames.size === 0) {
-          this.categoryNames = await DictionaryDao.categoryNames();
-          this.paymentNames = await DictionaryDao.paymentNames();
-        }
-        await this.loadTier();
-      } else {
-        this.errorText = err.message;
-      }
+      this.errorText = (e as ApiError).message;
     } finally {
       this.loading = false;
     }
+  }
+
+  /** 字典一律来自本地（同步负责更新）；颜色/图标是本地个性化值 */
+  private async loadDictLocal(): Promise<void> {
+    this.categoryNames = await DictionaryDao.categoryNames();
+    this.paymentNames = await DictionaryDao.paymentNames();
+
+    // 筛选项：分类只列一级（二级归属一级，列出来会重复）；支付列全部；记录人取本地 users
+    const roots: CachedCategory[] = [];
+    this.categoryNames.forEach((cat: CachedCategory) => {
+      if (cat.parentId === '' || cat.parentId === null) {
+        roots.push(cat);
+      }
+    });
+    this.rootCategories = roots;
+
+    // 支付方式筛选项：从本地表取，只列启用的（与服务端 GET 的 isEnabled 过滤一致）
+    const payOpts: CachedCategory[] = [];
+    const payments = await DictionaryDao.paymentsList();
+    for (const p of payments) {
+      if (p.isEnabled) {
+        payOpts.push({ id: p.id, name: p.name, icon: p.icon, color: '', parentId: '' });
+      }
+    }
+    this.paymentOptions = payOpts;
+    this.ownerOptions = await DictionaryDao.owners();
   }
 
   private async loadTier(): Promise<void> {
@@ -258,59 +251,83 @@ export struct LedgerScreen {
     }
   }
 
-  /** 月档：第一页或翻页 */
+  /** 月档：本地分页查询 */
   private async loadMonth(reset: boolean): Promise<void> {
-    if (this.offline) {
-      const local = await ExpenseDao.byMonth(this.anchorMonth);
-      const total = await ExpenseDao.monthTotal(this.anchorMonth);
-      this.rows = this.applyLocalFilters(local);
-      this.monthTotalCents = total.totalCents;
-      this.monthCount = total.count;
-      this.hasMore = false;
-      return;
-    }
-    const page = await Api.expenses(
-      this.anchorMonth,
-      PAGE_SIZE,
-      reset ? null : this.cursor,
-      this.keyword.trim(),
-      this.filterCategory,
-      this.filterPayment,
-      this.filterOwner
-    );
+    const page = await ExpenseDao.query({
+      month: this.anchorMonth,
+      cursor: reset ? null : this.cursor,
+      limit: PAGE_SIZE,
+      q: this.keyword.trim(),
+      categoryId: this.filterCategory,
+      paymentMethodId: this.filterPayment,
+      ownerId: this.filterOwner
+    });
     this.rows = reset ? page.items : this.rows.concat(page.items);
-    this.cursor = page.nextCursor ?? '';
+    this.cursor = page.nextCursor === null ? '' : page.nextCursor;
     this.hasMore = page.hasMore;
-    // 顺手缓存，供断网时用
-    await ExpenseDao.cache(page.items);
-    const report = await Api.monthlyReport(this.anchorMonth);
-    this.monthTotalCents = report.report.totalCents;
-    this.monthCount = report.report.count;
-    this.prevTotalCents = report.report.previous.totalCents;
-    let credit = 0;
-    for (const p of report.report.paymentMethods) {
-      if (p.type === 'credit') {
-        credit += p.cents;
-      }
-    }
-    this.creditDueCents = credit;
+    await this.loadHeroNumbers();
     await this.loadHeroTodos();
   }
 
-  /** hero 的待办条目（有则显示、无则整条不渲染） */
+  /**
+   * hero 三个数字。
+   *
+   * 口径由服务端唯一提供（报表 SQL 不在客户端重写，避免三端跑偏），
+   * 本地只缓存它最后一次的响应；没有缓存时用本地数据兜底算。
+   */
+  private async loadHeroNumbers(): Promise<void> {
+    const key = `monthly:${this.anchorMonth}`;
+    const cached = await ReportCache.get<MonthlyReportBody>(key);
+    // 缓存缺失或超过 5 分钟 → 后台问一次服务端并刷新缓存（失败就用旧值，不打扰用户）
+    if (cached === null || Date.now() - new Date(cached.fetchedAt).getTime() > 5 * 60 * 1000) {
+      void this.refreshMonthlyCache(key);
+    }
+    if (cached !== null) {
+      const r = cached.data.report;
+      this.monthTotalCents = r.totalCents;
+      this.monthCount = r.count;
+      this.prevTotalCents = r.previous.totalCents;
+      let credit = 0;
+      for (const p of r.paymentMethods) {
+        if (p.type === 'credit') {
+          credit += p.cents;
+        }
+      }
+      this.creditDueCents = credit;
+      return;
+    }
+    // 无缓存（首装且还没同步到报表）：本地兜底
+    const total = await ExpenseDao.monthTotal(this.anchorMonth);
+    this.monthTotalCents = total.totalCents;
+    this.monthCount = total.count;
+    this.prevTotalCents = -1;
+    this.creditDueCents = 0;
+  }
+
+  /** 向服务端要一次月报并写缓存；成功后重读 hero 数字 */
+  private async refreshMonthlyCache(key: string): Promise<void> {
+    try {
+      const body = await Api.monthlyReport(this.anchorMonth);
+      await ReportCache.put(key, body);
+      await this.loadHeroNumbers();
+    } catch (e) {
+      // 离线/失败：保留旧缓存，界面继续用旧值
+    }
+  }
+
+  /** hero 的待办条目（本地提醒窗口口径，与服务端 reminderToday 一致） */
   private async loadHeroTodos(): Promise<void> {
     try {
-      const body = await Api.planTodos(todayKey());
+      const todos = await PlanDao.reminderTodos(todayKey());
       const list: HeroTodo[] = [];
-      for (const t of body.todos) {
-        const days = daysUntil(t.repaymentDate, todayKey());
+      for (const t of todos) {
         list.push({
           id: t.id,
           planName: t.planName,
           periodSeq: t.periodSeq,
           amountCents: t.amountCents,
           willAutoPost: t.willAutoPost,
-          daysUntil: days,
+          daysUntil: daysUntil(t.repaymentDate, todayKey()),
           status: t.status
         });
       }
