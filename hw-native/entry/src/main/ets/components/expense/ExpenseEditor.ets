@@ -395,9 +395,15 @@ export struct ExpenseEditor {
       this.props.onSaved(savedId);
     } catch (e) {
       const err = e as ApiError;
-      if (err.kind === 'network' && this.props.editing === null) {
-        // 离线写：入队（队列落库，关掉 App 也不会丢），联网后自动补推
-        await this.enqueueOffline(cents);
+      /**
+       * 离线写：`network`（连不上）与 `unauthorized`（令牌失效）都算「暂时不能同步」。
+       *
+       * 两者对用户是同一件事：**账先记下，之后补推**。只认 network 的话，
+       * 令牌一失效就记不了账 —— 而账目本来就不依赖服务端，这说不过去。
+       * 归属不用额外逻辑：队列补推时由令牌决定「谁记归谁」，与在线记账完全一致。
+       */
+      if ((err.kind === 'network' || err.kind === 'unauthorized') && this.props.editing === null) {
+        await this.enqueueOffline(cents, err.kind);
         this.props.onSaved('');
         return;
       }
@@ -414,7 +420,7 @@ export struct ExpenseEditor {
    * 硬造一行会让「这个月的合计」先对后错。所以只入队 + 明确告知，
    * 联网后同步进账，用户看到的是「已排队」而不是「已入账」。
    */
-  private async enqueueOffline(cents: number): Promise<void> {
+  private async enqueueOffline(cents: number, kind: string): Promise<void> {
     const id = ulid();
     const payload = JSON.stringify({
       amountCents: this.isRefund ? -cents : cents,
@@ -425,7 +431,11 @@ export struct ExpenseEditor {
     } as OfflineExpensePayload);
     await Outbox.enqueue('create_expense', id, payload);
     SyncEngine.schedulePush();
-    this.errorText = '网络不可用：已存本机，联网后自动记入';
+    // 文案不区分原因：用户不需要知道是「网断了」还是「令牌过期」，
+    // 他只需要确认这一笔已经安全存下来了。
+    this.errorText = kind === 'unauthorized'
+      ? '已存本机，重新登录后自动记入'
+      : '网络不可用：已存本机，联网后自动记入';
   }
 
   /** 日期选择（系统 DatePickerDialog，不自己画日历） */
