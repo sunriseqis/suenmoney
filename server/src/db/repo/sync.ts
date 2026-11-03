@@ -25,6 +25,7 @@ import {
 } from './plans.ts';
 import { listCategoryTree } from './categories.ts';
 import { listPaymentMethods } from './payment-methods.ts';
+import { listUsers } from './users.ts';
 
 export interface ChangeItem {
   version: number;
@@ -56,6 +57,8 @@ export interface PullChangesResult {
  */
 export interface SnapshotResult {
   version: number;
+  /** 用户（id + 显示名）：流水行要显示「记录人」，而 expenses 只存 owner_id */
+  users: ReturnType<typeof listUsers>;
   categories: ReturnType<typeof listCategoryTree>;
   paymentMethods: ReturnType<typeof listPaymentMethods>;
   expenses: ReturnType<typeof listAllExpenses>;
@@ -69,6 +72,7 @@ export function snapshotState(db: DatabaseSync): SnapshotResult {
   const version = currentSyncVersion(db);
   return {
     version,
+    users: listUsers(db),
     categories: listCategoryTree(db),
     paymentMethods: listPaymentMethods(db),
     expenses: listAllExpenses(db),

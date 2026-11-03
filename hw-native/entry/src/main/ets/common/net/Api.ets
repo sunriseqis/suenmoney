@@ -441,6 +441,18 @@ export interface SyncChange {
   createdAt: string;
 }
 
+/** 冷启动全量快照（`GET /api/sync/snapshot`） */
+export interface SyncSnapshotBody {
+  version: number;
+  /** 用户（id + 显示名）：流水行显示「记录人」用 */
+  users: UserSummary[];
+  categories: CategoryNode[];
+  paymentMethods: PaymentMethodItem[];
+  expenses: ExpenseItem[];
+  plans: PlanItem[];
+  planTodos: PlanTodoItem[];
+}
+
 export interface SyncPullBody {
   changes: SyncChange[];
   latestVersion: number;
@@ -766,6 +778,11 @@ export class Api {
     o.readTimeoutMs = 20000;
     o.body = JSON.stringify(req);
     return Api.http().request<SyncPushBody>('/api/sync/push', o);
+  }
+
+  /** 冷启动全量快照：一次拿齐当前状态，之后只走增量 */
+  static syncSnapshot(): Promise<SyncSnapshotBody> {
+    return Api.http().get<SyncSnapshotBody>('/api/sync/snapshot');
   }
 
   static syncPull(since: number, limit: number): Promise<SyncPullBody> {

@@ -122,6 +122,37 @@ export class DictionaryDao {
     return out;
   }
 
+  /** 记录人列表（本地缓存；流水筛选与归属显示用） */
+  static async owners(): Promise<CachedCategory[]> {
+    const rs = await Db.get().querySql('SELECT id, display_name FROM users ORDER BY display_name, id');
+    const out: CachedCategory[] = [];
+    while (rs.goToNextRow()) {
+      out.push({
+        id: rs.getString(rs.getColumnIndex('id')),
+        name: rs.getString(rs.getColumnIndex('display_name')),
+        icon: '',
+        color: '',
+        parentId: ''
+      });
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 写用户缓存（快照用） */
+  static async cacheUsers(items: CachedCategory[]): Promise<void> {
+    const store = Db.get();
+    for (const u of items) {
+      const bucket: relationalStore.ValuesBucket = {
+        'id': u.id,
+        'display_name': u.name,
+        'role': 'member',
+        'updated_at': new Date().toISOString()
+      };
+      await store.insert('users', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+    }
+  }
+
   /** 分类名映射（离线行显示用） */
   static async categoryNames(): Promise<Map<string, CachedCategory>> {
     const store = Db.get();
