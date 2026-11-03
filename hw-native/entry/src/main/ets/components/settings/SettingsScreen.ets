@@ -25,6 +25,7 @@ import { PayIconView } from '../../common/ui/PayIconView';
 import { CATEGORY_COLORS, categoryColorOf } from '../../common/ui/CategoryIcon';
 import { ServerConfig } from '../../common/net/ServerConfig';
 import { SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
+import { Db } from '../../common/store/Db';
 import { ProbeResult, ServerRouter } from '../../common/net/ServerRouter';
 import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
@@ -337,65 +338,40 @@ export struct SettingsScreen {
     this.sheetOpen = true;
   }
 
+  /**
+   * 保存分类的**个性化**（颜色 / 图标）。
+   *
+   * ⚠ 名称与增删改都是**服务端管理员的权限**（2026-11-03 裁定）：
+   *   两个客户端只读名称，只有颜色和图标属于本地个性化 ——
+   *   写进本地 `categories` 表，**不回推服务端**。
+   *   所以这里不发任何网络请求。
+   */
   private async saveCat(): Promise<void> {
     this.formError = '';
-    if (this.formName.trim() === '') {
-      this.formError = '请填写分类名称';
+    if (this.editingCategoryId === '') {
+      this.formError = '分类只能由管理员在服务端添加';
       return;
     }
     this.busy = true;
     try {
-      if (this.editingCategoryId === '') {
-        const req: CategoryCreateRequest = {
-          name: this.formName.trim(),
-          parentId: this.formParent,
-          icon: this.formIcon,
-          color: this.formColor,
-          sortOrder: 0
-        };
-        await Api.createCategory(req);
-        this.showToast('分类已新增');
-      } else {
-        const isRoot = this.editingRoot();
-        let enabled = true;
-        for (const r of this.categories) {
-          if (r.id === this.editingCategoryId) {
-            enabled = r.isEnabled;
-          }
-          for (const kid of r.children) {
-            if (kid.id === this.editingCategoryId) {
-              enabled = kid.isEnabled;
-            }
-          }
-        }
-        const req: CategoryPatchRequest = {
-          name: this.formName.trim(),
-          icon: this.formIcon,
-          // 二级分类不写颜色（跟随一级）；一级才写
-          color: isRoot ? this.formColor : '',
-          parentId: isRoot ? null : this.formParent,
-          isEnabled: enabled
-        };
-        await Api.patchCategory(this.editingCategoryId, req);
-        this.showToast('分类已更新');
-      }
+      const isRoot = this.editingRoot();
+      await Db.get().executeSql(
+        'UPDATE categories SET icon = ?, color = ? WHERE id = ?',
+        [this.formIcon, isRoot ? this.formColor : '', this.editingCategoryId]
+      );
+      this.showToast('外观已更新（仅本机）');
       this.sheetOpen = false;
       await this.reload();
     } catch (e) {
-      this.formError = (e as ApiError).message;
+      this.formError = (e as Error).message;
     } finally {
       this.busy = false;
     }
   }
 
-  private async removeCat(cat: CategoryNode): Promise<void> {
-    try {
-      await Api.deleteCategory(cat.id);
-      this.showToast('分类已删除');
-      await this.reload();
-    } catch (e) {
-      this.showToast('该分类已有流水引用，请改为停用');
-    }
+  /** 客户端不允许删除分类（管理权限在服务端） */
+  private removeCat(cat: CategoryNode): void {
+    this.showToast('分类只能由管理员在服务端删除');
   }
 
   // ── 支付方式 ────────────────────────────────────────────────────────────
@@ -423,48 +399,29 @@ export struct SettingsScreen {
     this.sheetOpen = true;
   }
 
+  /**
+   * 保存支付方式的**个性化图标**。
+   *
+   * 与分类同理：名称、账单日、还款日、增删合并都是**服务端管理员权限**，
+   * 客户端只读；只有图标属于本地个性化，写本地、不回推。
+   */
   private async savePay(): Promise<void> {
     this.formError = '';
-    if (this.formName.trim() === '') {
-      this.formError = '请填写支付方式名称';
+    if (this.editingPaymentId === '') {
+      this.formError = '支付方式只能由管理员在服务端添加';
       return;
     }
     this.busy = true;
-    const isCredit = this.formType === 'credit';
     try {
-      if (this.editingPaymentId === '') {
-        const req: PaymentCreateRequest = {
-          name: this.formName.trim(),
-          type: this.formType,
-          icon: this.formPayIcon,
-          billingDay: isCredit ? Number(this.formBillingDay) : 0,
-          repaymentDay: isCredit ? Number(this.formRepaymentDay) : 0,
-          sortOrder: 0
-        };
-        await Api.createPayment(req);
-        this.showToast('支付方式已新增');
-      } else {
-        let enabled = true;
-        for (const p of this.payments) {
-          if (p.id === this.editingPaymentId) {
-            enabled = p.isEnabled;
-          }
-        }
-        const req: PaymentPatchRequest = {
-          name: this.formName.trim(),
-          icon: this.formPayIcon,
-          billingDay: isCredit ? Number(this.formBillingDay) : 0,
-          repaymentDay: isCredit ? Number(this.formRepaymentDay) : 0,
-          sortOrder: 0,
-          isEnabled: enabled
-        };
-        await Api.patchPayment(this.editingPaymentId, req);
-        this.showToast('支付方式已更新');
-      }
+      await Db.get().executeSql(
+        'UPDATE payment_methods SET icon = ? WHERE id = ?',
+        [this.formPayIcon, this.editingPaymentId]
+      );
+      this.showToast('图标已更新（仅本机）');
       this.sheetOpen = false;
       await this.reload();
     } catch (e) {
-      this.formError = (e as ApiError).message;
+      this.formError = (e as Error).message;
     } finally {
       this.busy = false;
     }
@@ -499,7 +456,9 @@ export struct SettingsScreen {
     }
     this.busy = true;
     try {
-      await Api.mergePayment(this.mergeFromId, this.mergeIntoId);
+      this.showToast('合并只能由管理员在服务端操作');
+      this.busy = false;
+      return;
       this.showToast('已合并');
       this.sheetOpen = false;
       await this.reload();
@@ -512,7 +471,9 @@ export struct SettingsScreen {
 
   private async removePay(p: PaymentMethodItem): Promise<void> {
     try {
-      await Api.deletePayment(p.id);
+      this.showToast('支付方式只能由管理员在服务端删除');
+      this.busy = false;
+      return;
       this.showToast('支付方式已删除');
       await this.reload();
     } catch (e) {
@@ -739,10 +700,11 @@ export struct SettingsScreen {
         this.updateMessage = '已是最新版本';
         return;
       }
-      const ver = r.latest.versionName;
+      const latest = r.latest;
+      const ver = latest.versionName;
       this.updateMessage = `发现新版本 ${ver}，正在打开下载…`;
       // 必须把 fileName 拼进路径：浏览器/侧签工具靠 URL 后缀认安装包类型
-      const url = `${ServerConfig.get().baseUrl}${r.downloadPath}/${encodeURIComponent(r.latest.fileName)}`
+      const url = `${ServerConfig.get().baseUrl}${r.downloadPath}/${encodeURIComponent(latest.fileName)}`
         + `?platform=harmony&token=${encodeURIComponent(r.downloadToken)}`;
       const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await ctx.startAbility({ action: 'ohos.want.action.viewData', uri: url });
@@ -1254,7 +1216,8 @@ export struct SettingsScreen {
             color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
           })
           .onClick(() => {
-            this.openCatCreate();
+            // 客户端不承载分类新增（服务端管理员权限）
+            this.showToast('分类只能由管理员在服务端添加');
           })
       }
       .width('100%')
@@ -1306,9 +1269,9 @@ export struct SettingsScreen {
           Text('新增分类')
             .fontSize(11.5)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.tok().ink2)
+            .fontColor(this.tok().ink3)
             .onClick(() => {
-              this.openCatCreateChild();
+              this.showToast('分类只能由管理员在服务端添加');
             })
           Text('编辑类别')
             .fontSize(11.5)
@@ -1454,7 +1417,8 @@ export struct SettingsScreen {
             color: this.isCyber() ? 'rgba(0,255,136,0.55)' : this.tok().line2
           })
           .onClick(() => {
-            this.openPayCreate();
+            // 客户端不承载支付方式新增（服务端管理员权限）
+            this.showToast('支付方式只能由管理员在服务端添加');
           })
       }
       .width('100%')

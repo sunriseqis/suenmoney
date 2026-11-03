@@ -103,6 +103,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   private loadRoot(windowStage: window.WindowStage): void {
+    // 冷启动：先让界面用本地数据渲染出来，再拉一次更新（不阻塞首屏）
+    setTimeout(() => {
+      void SyncEngine.syncNow().catch(() => {
+      });
+    }, 0);
     windowStage.loadContent(AuthStore.isAuthenticated ? 'pages/MainPage' : 'pages/LoginPage', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
@@ -118,8 +123,15 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
-    // 回到前台补一次同步：离线期间记的账在这里补推（与 Web 的 onAppResume 同义）
-    SyncEngine.syncNow();
+    /*
+     * 热启动（后台回前台）：**先推后拉**。
+     *
+     * 推 = 离线期间记的账补传；拉 = 别的设备/服务端的变更同步下来。
+     * 冷启动在 `loadRoot` 里也做同样一次，两者合起来覆盖
+     * 「无进程启动 / 挂起后唤醒 / 后台回前台」三种情况。
+     */
+    void SyncEngine.syncNow().catch(() => {
+    });
     // 校准系统深浅：后台期间系统可能已经切过，而 environment 回调未必送达
     ThemeManager.get().refreshFromContext(this.context);
     // Ability has brought to foreground

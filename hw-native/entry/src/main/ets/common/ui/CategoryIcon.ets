@@ -10,14 +10,34 @@
  */
 
 /** 兜底符号：名字不在表里时用它（永不为空，保证徽位不出现空洞） */
+import { ThemeManager } from '../theme/ThemeManager';
+
 const FALLBACK_SYMBOL: Resource = $r('sys.symbol.doc_text');
 
-/** 分类色 16 色槽（与 web `--chart-1..16` 一一对应，v3 账本色，深底对比度 ≥3.69:1） */
+/**
+ * 深色（cyber）分类色 16 色槽。
+ *
+ * 与 Web `.app[data-theme="cyber"]` 的 `--chart-1..` 对应（Web 只定义到 8，
+ * 其余 8 个是原生扩展的补充色，保证 16 槽不重复）。
+ */
 export const CATEGORY_COLORS: string[] = [
   '#00ff88', '#ff00ff', '#00d4ff', '#FBBF24',
   '#5FD6A8', '#66C4CC', '#E07060', '#93A5F0',
   '#C8D656', '#5AD4C4', '#E37FB2', '#A8C056',
   '#E0A878', '#9D8FF5', '#74A8D6', '#8C8C8C'
+];
+
+/**
+ * 浅色（candy）分类色 8 槽。
+ *
+ * 与 Web `.app`（默认 candy）的 `--chart-1..8` 完全一致。
+ *
+ * ⚠ 旧实现**不分主题**，candy 下也照用 cyber 那套荧光色 —— 于是同一分类
+ * 在 Web 浅色主题和原生端是两个颜色。这是「分类颜色各端不一致」的根因之一。
+ */
+export const CANDY_CATEGORY_COLORS: string[] = [
+  '#8B5CF6', '#F472B6', '#FBBF24', '#34D399',
+  '#38BDF8', '#A78BFA', '#FB7185', '#22D3EE'
 ];
 
 /** 把任意色号解析成 1-16；脏数据/未设时返回 null（按名字推导，不要让脏数据毁整行） */
@@ -39,10 +59,19 @@ export function deriveColorIndex(name: string): number {
   return (h % 16) + 1;
 }
 
-/** 分类色：显式设置 > 按名字推导 */
+/**
+ * 分类色：显式设置 > 按名字推导。
+ *
+ * **按当前主题取调色板**（candy 用 Web 那套 8 色，cyber 用荧光 16 色）。
+ * 主题从 `ThemeManager` 直接读 —— 调用点太多，逐个传参会到处漏。
+ */
 export function categoryColorOf(name: string, explicit: string | undefined): string {
+  const palette = ThemeManager.get().name === 'candy' ? CANDY_CATEGORY_COLORS : CATEGORY_COLORS;
   const idx = parseCategoryColorIndex(explicit);
-  return idx === null ? CATEGORY_COLORS[deriveColorIndex(name) - 1] : CATEGORY_COLORS[idx - 1];
+  if (idx === null) {
+    return palette[(deriveColorIndex(name) - 1) % palette.length];
+  }
+  return palette[(idx - 1) % palette.length];
 }
 
 /**
