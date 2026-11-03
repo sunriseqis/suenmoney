@@ -8,6 +8,7 @@ import {
   deriveCategoryColor,
   parseCategoryColor,
 } from '@/utils/category-colors';
+import { categoryPrefs, prefOf } from '@/utils/category-prefs';
 import {
   getCachedCategories,
   getCachedPaymentMethods,
@@ -98,9 +99,25 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
 
   /**
    * 获取某个分类的最终解析颜色（1..16）。
-   * 优先顺序：显式设置值 > 分类 ID 全局映射 > 分类名称全局映射 > 可用池空闲色 > 散列兜底。
+   *
+   * 优先顺序：**本地个性化偏好** > 显式设置值 > ID 映射 > 名称映射 > 空闲色 > 散列兜底。
+   *
+   * 本地偏好排最前，是因为服务端已不再接受 `color` 写入（各端渲染细节），
+   * 用户在 Web 上选的颜色只存浏览器本地 —— 不读它的话，选完就看不到效果。
    */
+  /** 本地个性化颜色（无则 null） */
+  function idPrefColor(categoryId?: string | null): number | null {
+    if (!categoryId) return null;
+    const raw = prefOf(categoryId).color ?? '';
+    return parseCategoryColor(raw);
+  }
+
   function colorOf(categoryId?: string | null, name?: string | null, explicitColor?: string | null): number {
+    // 依赖 categoryPrefs 让使用方在偏好变化时重算
+    void categoryPrefs.value;
+    const local = idPrefColor(categoryId);
+    if (local !== null) return local;
+
     const explicit = parseCategoryColor(explicitColor);
     if (explicit !== null) return explicit;
 
@@ -169,9 +186,11 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
 
     const source = self.parentId === null ? self : (findCategory(self.parentId) ?? self);
     const colorIndex = colorOf(source.id, source.name, source.color);
+    // 图标：本地偏好 > 自身 > 一级（各端渲染细节，服务端已不再写入）
+    const localIcon = prefOf(self.id).icon ?? '';
     return {
       name: self.name,
-      icon: self.icon || source.icon,
+      icon: localIcon !== '' ? localIcon : (self.icon || source.icon),
       color: source.color,
       colorName: source.name,
       colorIndex,

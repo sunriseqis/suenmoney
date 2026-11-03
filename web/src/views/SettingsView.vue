@@ -33,6 +33,7 @@ import {
   type User,
 } from '@/api';
 import type { ServerUpdateResult } from '@/api/update';
+import { prefOf, setPref } from '@/utils/category-prefs';
 import BillImportModal from '@/components/BillImportModal.vue';
 import BrandMark from '@/components/BrandMark.vue';
 import ColorPicker from '@/components/ColorPicker.vue';
@@ -94,8 +95,10 @@ function openCatEdit(cat: Category): void {
   catName.value = cat.name;
   catParent.value = cat.parentId ?? '';
   catEnabled.value = cat.isEnabled;
-  catIcon.value = cat.icon;
-  catColor.value = cat.color;
+  // 本地偏好优先（用户在本机选过的颜色/图标），没有才回落到服务端存量值
+  const pref = prefOf(cat.id);
+  catIcon.value = pref.icon ?? cat.icon;
+  catColor.value = pref.color ?? cat.color;
   catSheet.value = true;
 }
 
@@ -142,6 +145,8 @@ async function saveCat(): Promise<void> {
       });
       toast.show('分类已新增');
     } else {
+      // 颜色 / 图标属于**本地个性化**：写浏览器本地，不发请求
+      setPref(catEditing.value.id, { color: catColor.value, icon: catIcon.value });
       const editing = catEditing.value;
       await categoriesApi.update(editing.id, {
         name,
@@ -213,7 +218,7 @@ function openPayEdit(p: PaymentMethod): void {
   payType.value = p.type;
   payBilling.value = String(p.billingDay ?? 1);
   payRepay.value = String(p.repaymentDay ?? 20);
-  payIcon.value = p.icon;
+  payIcon.value = prefOf(p.id).icon ?? p.icon;
   paySheet.value = true;
 }
 
@@ -237,6 +242,8 @@ async function savePay(): Promise<void> {
       });
       toast.show('支付方式已新增');
     } else {
+      // 图标属于本地个性化（与分类共用同一份偏好存储）
+      setPref(payEditing.value.id, { icon: payIcon.value });
       await paymentsApi.update(payEditing.value.id, {
         name,
         ...(isCredit
