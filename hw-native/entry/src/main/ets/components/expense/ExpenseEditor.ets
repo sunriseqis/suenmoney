@@ -26,6 +26,7 @@ import {
 } from '../../common/net/Api';
 import { display, window } from '@kit.ArkUI';
 import { DictionaryDao } from '../../common/store/DictionaryDao';
+import { ExpenseActions, LocalExpenseInput, LocalExpensePatch } from '../../common/store/ExpenseActions';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -379,14 +380,16 @@ export struct ExpenseEditor {
     try {
       const editing = this.props.editing;
       if (editing !== null) {
-        const patch: ExpensePatchRequest = {
+        // 本地优先：先改本地再入队，界面立刻反映（账单日期按支付方式本地重算）
+        const cycle = await ExpenseActions.cycleOf(this.paymentId);
+        const localPatch: LocalExpensePatch = {
           amountCents: this.isRefund ? -cents : cents,
           categoryId: this.categoryId,
           paymentMethodId: this.paymentId,
           spendDate: this.spendDate,
           note: this.note
         };
-        await Api.updateExpense(editing.id, patch);
+        await ExpenseActions.update(editing.id, localPatch, cycle);
       } else if (this.installment) {
         // 分期走计划接口（不是支出接口）：总额 + 期数，服务端生成各期待办
         const total = cents;
@@ -409,16 +412,19 @@ export struct ExpenseEditor {
         await Api.createPlan(planReq);
         savedId = '';
       } else {
-        const req: ExpenseCreateRequest = {
+        // 本地优先：算账单日期 → 写本地 → 入队 → 触发同步。
+        // 断网也照记，联网后自动回推（用户不再需要「先联网才能记账」）。
+        const cycle = await ExpenseActions.cycleOf(this.paymentId);
+        const localInput: LocalExpenseInput = {
           amountCents: this.isRefund ? -cents : cents,
           categoryId: this.categoryId,
           paymentMethodId: this.paymentId,
           spendDate: this.spendDate,
-          note: this.note
+          note: this.note,
+          cycle: cycle
         };
-        const created = await Api.createExpense(req);
-        savedId = created.expense.id;
-        // 成功后才记住这次选择（失败的记账不该影响下次默认值）
+        savedId = await ExpenseActions.create(localInput);
+        // 记住这次选择（本地记账成功后即可记住，不再依赖网络成功）
         const pick: LastPickValue = { categoryId: this.categoryId, paymentMethodId: this.paymentId };
         await LastPick.write(pick);
       }
@@ -544,7 +550,8 @@ export struct ExpenseEditor {
         fontColor: this.tok().danger,
         action: () => {
           this.saving = true;
-          Api.deleteExpense(editing.id)
+          // 本地优先：先删本地再入队
+          ExpenseActions.remove(editing.id)
             .then(() => {
               this.saving = false;
               this.props.onSaved('');

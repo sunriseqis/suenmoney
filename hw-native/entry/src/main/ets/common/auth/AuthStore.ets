@@ -6,10 +6,13 @@
  */
 import { Api, LoginBody, UserSummary } from '../net/Api';
 import { ApiError } from '../net/ApiError';
+import { Db } from '../store/Db';
 import { ServerConfig } from '../net/ServerConfig';
 
 /** AppStorage 键：会话是否已失效（令牌被服务端拒了，但本地数据照常可用） */
 export const SESSION_EXPIRED_KEY = 'sessionExpired';
+/** meta 键：当前登录用户 id（离线记账判归属用） */
+export const CURRENT_USER_KEY = 'current_user_id';
 
 export class AuthStore {
   private static current: UserSummary | null = null;
@@ -43,6 +46,16 @@ export class AuthStore {
     const body: LoginBody = await Api.login(username, password);
     await ServerConfig.get().saveToken(body.token);
     AuthStore.current = body.user;
+    // 把用户 id 落到 meta：离线启动时 AuthStore.current 是 null，
+    // 记账要拿 owner_id（谁记归谁），没有它归属就是空。
+    try {
+      await Db.get().executeSql(
+        'INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)',
+        [CURRENT_USER_KEY, body.user.id]
+      );
+    } catch (e) {
+      // 落库失败不影响登录
+    }
     AuthStore.clearSessionExpired();
     return body.user;
   }
