@@ -8,8 +8,21 @@ import { Api, LoginBody, UserSummary } from '../net/Api';
 import { ApiError } from '../net/ApiError';
 import { ServerConfig } from '../net/ServerConfig';
 
+/** AppStorage 键：会话是否已失效（令牌被服务端拒了，但本地数据照常可用） */
+export const SESSION_EXPIRED_KEY = 'sessionExpired';
+
 export class AuthStore {
   private static current: UserSummary | null = null;
+
+  /**
+   * 会话是否已失效（服务端不认这个令牌了）。
+   *
+   * ⚠ 失效**不等于**要把人踢去登录页 —— 记账软件的核心数据在本地，
+   *   令牌失效只意味着「暂时不能同步」。本地照常看、照常记，
+   *   界面上给一条「登录已失效，重新登录后可同步」的提示就够了。
+   *   真正回登录页只有两种：用户主动登出，或本地从来没登录过。
+   */
+  static sessionExpired: boolean = false;
 
   static get isAuthenticated(): boolean {
     return ServerConfig.get().authToken !== '';
@@ -19,11 +32,18 @@ export class AuthStore {
     return AuthStore.current;
   }
 
+  /** 登录成功：清掉「会话失效」标记（本地数据与同步都恢复正常） */
+  static clearSessionExpired(): void {
+    AuthStore.sessionExpired = false;
+    AppStorage.setOrCreate(SESSION_EXPIRED_KEY, false);
+  }
+
   /** 登录：成功后持久化令牌 */
   static async login(username: string, password: string): Promise<UserSummary> {
     const body: LoginBody = await Api.login(username, password);
     await ServerConfig.get().saveToken(body.token);
     AuthStore.current = body.user;
+    AuthStore.clearSessionExpired();
     return body.user;
   }
 
@@ -55,9 +75,15 @@ export class AuthStore {
         const err = e as ApiError;
         lastKind = err.kind;
         if (err.kind === 'unauthorized') {
-          // 令牌真的失效了 —— 只有这一条路清令牌
-          await ServerConfig.get().clearToken();
-          AuthStore.current = null;
+          /**
+           * 令牌失效：**保留令牌与本地数据**，只打一个标记。
+           *
+           * 清掉令牌 = 把人踢回登录页 = 看不到自己的账 —— 对一个记账软件
+           * 这是最糟的失败方式（服务器一挂，历史全「消失」）。
+           * 保留令牌后 App 仍然进主界面、照常用本地库，只是同步暂停。
+           */
+          AuthStore.sessionExpired = true;
+          AppStorage.setOrCreate(SESSION_EXPIRED_KEY, true);
           return null;
         }
         // 403 / 4xx / 解析错误：登录状态没问题，直接返回，不重试也不清令牌

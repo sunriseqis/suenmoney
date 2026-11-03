@@ -13,6 +13,7 @@
  */
 
 import { Api, ExpenseItem, MonthPoint, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
+import { AuthStore } from '../../common/auth/AuthStore';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { Outbox } from '../../common/sync/Outbox';
@@ -184,9 +185,20 @@ export struct LedgerScreen {
       await this.loadTier();
     } catch (e) {
       const err = e as ApiError;
-      if (err.kind === 'network') {
-        // 离线 A 档：本地现算
+      /**
+       * **本地数据永远优先可读**。
+       *
+       * 不只有 network 才回退本地：
+       *   · `network`      → 服务器连不上；
+       *   · `unauthorized` → 令牌失效（服务端重置 / 过期）。
+       * 两种都不该让用户看不到自己的账 —— 账在本地库里，读它不需要服务端同意。
+       * 令牌失效时额外打个标记，界面提示「重新登录后可同步」。
+       */
+      if (err.kind === 'network' || err.kind === 'unauthorized') {
         this.offline = true;
+        if (err.kind === 'unauthorized') {
+          AuthStore.sessionExpired = true;
+        }
         if (this.categoryNames.size === 0) {
           this.categoryNames = await DictionaryDao.categoryNames();
           this.paymentNames = await DictionaryDao.paymentNames();
