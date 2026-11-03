@@ -17,6 +17,7 @@ import { AuthStore } from '../../common/auth/AuthStore';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { Outbox } from '../../common/sync/Outbox';
+import { SyncEngine, SyncReport } from '../../common/sync/SyncEngine';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
@@ -78,6 +79,8 @@ export struct LedgerScreen {
   @State todoOpen: boolean = false;
   /** R114：刚保存的记录高亮 1.5s */
   @State highlightId: string = '';
+  /** 手动同步进行中（按钮禁用，避免连点） */
+  @State syncing: boolean = false;
   /** 待同步条目数（离线提示只由它驱动） */
   @State pendingSync: number = 0;
   /** 同步到 AppStorage，供 build-stamp 订阅 */
@@ -119,6 +122,39 @@ export struct LedgerScreen {
   @State pullMax: number = 0;
   private scroller: Scroller = new Scroller();
   private keywordTimer: number = -1;
+
+  /**
+   * 手动同步（离线通知里的「同步」按钮）。
+   *
+   * 只在用户点按时跑 —— 不做后台轮询（用户裁定 C 方案）。
+   * 失败时明确告诉用户「服务器连不上」，而不是静默留个数字在那儿。
+   */
+  private async manualSync(): Promise<void> {
+    if (this.syncing) {
+      return;
+    }
+    this.syncing = true;
+    try {
+      const report = await SyncEngine.syncNow();
+      this.refreshPending();
+      if (report.error !== '') {
+        this.showToast('当前服务器无法连接');
+        return;
+      }
+      if (report.pushed > 0) {
+        this.showToast(`已同步 ${report.pushed} 条`);
+      } else if (this.pendingSync === 0) {
+        this.showToast('已是最新');
+      } else {
+        // 队列没推出去，多半还是连不上（network 类错误被 push 静默吞掉）
+        this.showToast('当前服务器无法连接');
+      }
+    } catch (e) {
+      this.showToast('当前服务器无法连接');
+    } finally {
+      this.syncing = false;
+    }
+  }
 
   /** 抽屉保存后立即刷新待同步条数 */
   refreshPending(): void {
@@ -721,34 +757,72 @@ export struct LedgerScreen {
       }
       .width('100%')
 
-      // hero-todo：待办提醒条（无待办整条不渲染）
-      if (this.heroTodos.length > 0) {
-        Row({ space: 8 }) {
-          Row()
-            .width(6)
-            .height(6)
-            .borderRadius(3)
-            .backgroundColor(this.todoDotColor())
-          // 收起态只给条数 + 箭头（用户 2026-10-29 裁决：金额/逾期数都去掉，
-          // 展开后每条的金额和逾期天数已经写清楚了，汇总条不用重复）
-          Text(`${this.heroTodos.length} 笔待处理`)
-            .fontSize(11.5)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.tok().ink)
-            .layoutWeight(1)
-          Text(this.todoOpen ? '⌃' : '⌄')
-            .fontSize(11)
-            .fontColor(this.tok().ink3)
+      // hero-todo：待办提醒 + 本地待同步，**共用一个容器**
+      // （用户裁定：离线通知放在提醒条的同一个容器内，文案「有 N 条本地记录待同步」+「同步」）
+      if (this.heroTodos.length > 0 || this.pendingSync > 0) {
+        Column({ space: 0 }) {
+          // 第一行：待办（无待办时这一行不渲染，容器只显示同步提醒）
+          if (this.heroTodos.length > 0) {
+            Row({ space: 8 }) {
+              Row()
+                .width(6)
+                .height(6)
+                .borderRadius(3)
+                .backgroundColor(this.todoDotColor())
+              // 收起态只给条数 + 箭头（用户 2026-10-29 裁决：金额/逾期数都去掉，
+              // 展开后每条的金额和逾期天数已经写清楚了，汇总条不用重复）
+              Text(`${this.heroTodos.length} 笔待处理`)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+                .layoutWeight(1)
+              Text(this.todoOpen ? '⌃' : '⌄')
+                .fontSize(11)
+                .fontColor(this.tok().ink3)
+            }
+            .width('100%')
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .onClick(() => {
+              this.todoOpen = !this.todoOpen;
+            })
+          }
+
+          // 第二行：本地待同步（有队列才出现）。离线时这里是唯一的手动触发入口。
+          if (this.pendingSync > 0) {
+            Row({ space: 8 }) {
+              Row()
+                .width(6)
+                .height(6)
+                .borderRadius(3)
+                .backgroundColor(this.tok().warn)
+              Text(`有 ${this.pendingSync} 条本地记录待同步`)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+                .layoutWeight(1)
+              Text(this.syncing ? '同步中…' : '同步')
+                .fontSize(11)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.syncing ? this.tok().ink3 : this.tok().accent)
+                .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                .border({ width: 1, color: this.syncing ? this.tok().line : this.tok().accent })
+                .onClick(() => {
+                  if (!this.syncing) {
+                    void this.manualSync();
+                  }
+                })
+            }
+            .width('100%')
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .border({ width: { top: this.heroTodos.length > 0 ? 1 : 0 }, color: this.tok().line })
+          }
         }
         .width('100%')
         .margin({ top: 10 })
-        .padding({ left: 10, right: 10, top: 7, bottom: 7 })
         .backgroundColor(this.tok().surface2)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
         .border({ width: 1, color: this.tok().line })
-        .onClick(() => {
-          this.todoOpen = !this.todoOpen;
-        })
       }
 
       // mh-todos：展开后的待办（一行一条，仅展示；动作在概况页，与 Web 一致）
@@ -1872,6 +1946,9 @@ export struct LedgerScreen {
           this.showToast(savedId === '' ? '已保存' : '已记账');
           this.sheetOpen = false;
           this.editingRow = null;
+          // 离线记账会入队（savedId === ''）：立刻刷新待同步条数，
+          // 否则「有 N 条本地记录待同步」要等下次进页面才出现
+          this.refreshPending();
           // 保存后新记录滚到列表顶并高亮 1.5 秒
           this.reload().then(() => {
             this.highlightId = savedId;

@@ -68,6 +68,10 @@ public struct LedgerScreen: View {
     @State private var prevTotalCents: Int = -1
     @State private var creditDueCents: Int = 0
     @State private var heroTodos: [HeroTodo] = []
+    /// 本地待同步记录数（离线时这里是唯一的手动触发入口）
+    @State private var pendingSync: Int = 0
+    /// 手动同步进行中（按钮禁用，避免连点）
+    @State private var syncing: Bool = false
     @State private var todoOpen: Bool = false
     @State private var highlightId: String = ""
 
@@ -114,7 +118,6 @@ public struct LedgerScreen: View {
     // 提示
     @State private var toastText: String = ""
     @State private var errorText: String = ""
-    @State private var pendingSync: Int = 0
 
     @FocusState private var searchFocused: Bool
 
@@ -212,7 +215,11 @@ public struct LedgerScreen: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await reload() }
+        .task {
+            await reload()
+            // 进流水页时校准待同步条数
+            pendingSync = (try? Outbox.pendingCount()) ?? 0
+        }
         .onChange(of: app.createRequest) { _, _ in
             editingRow = nil
             sheetOpen = true
@@ -752,8 +759,8 @@ public struct LedgerScreen: View {
                 navButton("设置") { app.screen = .settings }
             }
 
-            // hero-todo：待办提醒条（无待办整条不渲染）
-            if !heroTodos.isEmpty {
+            // hero-todo：待办提醒 + 本地待同步（两者都没有时整条不渲染）
+            if !heroTodos.isEmpty || pendingSync > 0 {
                 todoSection
             }
         }
@@ -806,48 +813,110 @@ public struct LedgerScreen: View {
 
     // MARK: 待办区
 
+    /// 待办提醒 + **本地待同步**，共用一个容器。
+    ///
+    /// 用户裁定：离线通知放在提醒条的同一个容器内，文案「有 N 条本地记录待同步」+
+    /// 「同步」按钮，点了连不上就提示服务器无法连接。不做后台轮询 —— 手动触发。
     private var todoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 收起态只给条数 + 箭头（用户 2026-10-29 裁决：金额/逾期数都去掉）
-            Button {
-                withAnimation(appCurveFast) { todoOpen.toggle() }
-            } label: {
+            // 第一行：待办（无待办时这一行不渲染，容器只显示同步提醒）
+            if !heroTodos.isEmpty {
+                // 收起态只给条数 + 箭头（用户 2026-10-29 裁决：金额/逾期数都去掉）
+                Button {
+                    withAnimation(appCurveFast) { todoOpen.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Color(css: todoDotColor()))
+                            .frame(width: 6, height: 6)
+                        Text("\(heroTodos.count) 笔待处理")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Color(css: tokens.ink))
+                        Spacer(minLength: 0)
+                        Text(todoOpen ? "⌃" : "⌄")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                // 展开后的待办（每行：上行信息 / 下行金额 + 按钮）
+                if todoOpen {
+                    VStack(spacing: 0) {
+                        ForEach(Array(heroTodos.enumerated()), id: \.element.id) { idx, t in
+                            todoRow(t, isLast: idx == heroTodos.count - 1)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.top, 2)
+                }
+            }
+
+            // 第二行：本地待同步（有队列才出现）
+            if pendingSync > 0 {
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(Color(css: todoDotColor()))
-                        .frame(width: 6, height: 6)
-                    Text("\(heroTodos.count) 笔待处理")
+                    Circle().fill(Color(css: tokens.warn)).frame(width: 6, height: 6)
+                    Text("有 \(pendingSync) 条本地记录待同步")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Color(css: tokens.ink))
                     Spacer(minLength: 0)
-                    Text(todoOpen ? "⌃" : "⌄")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(css: tokens.ink3))
+                    Button {
+                        Task { await manualSync() }
+                    } label: {
+                        Text(syncing ? "同步中…" : "同步")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color(css: syncing ? tokens.ink3 : tokens.accent))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                    .stroke(Color(css: syncing ? tokens.line : tokens.accent), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(syncing)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color(css: tokens.surface2))
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                        .stroke(Color(css: tokens.line), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-
-            // 展开后的待办（每行：上行信息 / 下行金额 + 按钮）
-            if todoOpen {
-                VStack(spacing: 0) {
-                    ForEach(Array(heroTodos.enumerated()), id: \.element.id) { idx, t in
-                        todoRow(t, isLast: idx == heroTodos.count - 1)
+                .overlay(alignment: .top) {
+                    if !heroTodos.isEmpty {
+                        Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.top, 2)
             }
         }
+        .background(Color(css: tokens.surface2))
+        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+        .overlay(
+            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
+                .stroke(Color(css: tokens.line), lineWidth: 1)
+        )
         .padding(.top, 10)
     }
+
+    /// 手动同步：只在用户点按时跑，失败明确提示「服务器无法连接」
+    private func manualSync() async {
+        if syncing { return }
+        syncing = true
+        defer { syncing = false }
+        let report = await SyncEngine.shared.syncNow()
+        pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
+        if !report.error.isEmpty {
+            showToast("当前服务器无法连接")
+            return
+        }
+        if report.pushed > 0 {
+            showToast("已同步 \(report.pushed) 条")
+        } else if pendingSync == 0 {
+            showToast("已是最新")
+        } else {
+            showToast("当前服务器无法连接")
+        }
+    }
+
 
     private func todoRow(_ t: HeroTodo, isLast: Bool) -> some View {
         VStack(alignment: .leading, spacing: 5) {

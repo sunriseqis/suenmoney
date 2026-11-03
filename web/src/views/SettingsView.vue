@@ -138,17 +138,13 @@ async function saveCat(): Promise<void> {
       await categoriesApi.create({
         name,
         parentId: catParent.value === '' ? null : catParent.value,
-        ...(catIcon.value !== '' ? { icon: catIcon.value } : {}),
-        ...(catColor.value !== '' ? { color: catColor.value } : {}),
+        // color/icon 不再发送：服务端只存名称，两端各自渲染（2026-11-03 裁定）
       });
       toast.show('分类已新增');
     } else {
       const editing = catEditing.value;
       await categoriesApi.update(editing.id, {
         name,
-        icon: catIcon.value,
-        // 二级分类不写颜色（跟随一级）；一级才写
-        ...(isRootCategory.value ? { color: catColor.value } : {}),
         // 二级分类支持移动到别的类别下
         ...(!isRootCategory.value && catParent.value !== (editing.parentId ?? '')
           ? { parentId: catParent.value }
@@ -234,7 +230,7 @@ async function savePay(): Promise<void> {
       await paymentsApi.create({
         name,
         type: payType.value,
-        ...(payIcon.value !== '' ? { icon: payIcon.value } : {}),
+        // icon 不再发送：各端渲染细节，存本地不回推
         ...(isCredit
           ? { billingDay: Number(payBilling.value), repaymentDay: Number(payRepay.value) }
           : {}),
@@ -243,7 +239,6 @@ async function savePay(): Promise<void> {
     } else {
       await paymentsApi.update(payEditing.value.id, {
         name,
-        icon: payIcon.value,
         ...(isCredit
           ? { billingDay: Number(payBilling.value), repaymentDay: Number(payRepay.value) }
           : {}),
@@ -882,7 +877,8 @@ onMounted(() => {
 
     <!-- ════════ 账目：分类 + 支付方式 ════════ -->
     <template v-if="tab === 'ledger'">
-      <PCard>
+      <!-- 分类管理：**仅管理员**。移动端只读，增删改一律在服务端做（2026-11-03 裁定） -->
+      <PCard v-if="isAdmin">
         <div class="card-h">
           <POrb :icon="Tag" tone="var(--accent)" ink="var(--accent-ink)" />
           <span class="card-t">分类管理</span>
@@ -941,7 +937,8 @@ onMounted(() => {
         </div>
       </PCard>
 
-      <PCard>
+      <!-- 支付方式：**仅管理员**（同分类管理） -->
+      <PCard v-if="isAdmin">
         <div class="card-h">
           <POrb :icon="CreditCard" tone="var(--sky)" ink="#1E293B" />
           <span class="card-t">支付方式</span>

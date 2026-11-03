@@ -142,16 +142,68 @@ describe('分类', () => {
     assert.equal((food['children'] as unknown[]).length, 2, '其下应有 2 个二级分类');
   });
 
-  test('改名', async () => {
+  test('改名：只改名称，icon/color 被忽略', async () => {
+    // 2026-11-03 起：color/icon 是**各端渲染细节**，服务端不再保存。
+    // 若允许写入，Web（lucide + --chart-N）和原生（sys.symbol + 本地调色板）
+    // 会互相覆盖对方的配色。客户端要个性化就存本地、不回推。
     const res = await app.inject({
       method: 'PATCH',
       url: `/api/categories/${childId}`,
       headers: auth(),
-      payload: { name: '外卖点餐', icon: '🍜' },
+      payload: { name: '外卖点餐', icon: '🍜', color: '7' },
     });
     assert.equal(res.statusCode, 200);
     assert.equal(res.json().category.name, '外卖点餐');
-    assert.equal(res.json().category.icon, '🍜');
+    assert.equal(res.json().category.icon, '', 'icon 不该被写入');
+    assert.equal(res.json().category.color, '', 'color 不该被写入');
+  });
+
+  test('普通用户不能改分类与支付方式（只有管理员可以）', async () => {
+    // 造一个 member 账号
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      headers: auth(),
+      payload: { username: 'member1', displayName: '成员', password: 'member-pass-123', role: 'member' },
+    });
+    assert.equal(created.statusCode, 201);
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'member1', password: 'member-pass-123' },
+    });
+    assert.equal(login.statusCode, 200);
+    const memberAuth = { authorization: `Bearer ${login.json().token as string}` };
+
+    // 读：允许（移动端要靠它渲染）
+    const read = await app.inject({ method: 'GET', url: '/api/categories', headers: memberAuth });
+    assert.equal(read.statusCode, 200);
+
+    // 写：一律 403
+    const patchCat = await app.inject({
+      method: 'PATCH',
+      url: `/api/categories/${childId}`,
+      headers: memberAuth,
+      payload: { name: '偷偷改名' },
+    });
+    assert.equal(patchCat.statusCode, 403);
+
+    const postCat = await app.inject({
+      method: 'POST',
+      url: '/api/categories',
+      headers: memberAuth,
+      payload: { name: '偷偷加分类' },
+    });
+    assert.equal(postCat.statusCode, 403);
+
+    const postPay = await app.inject({
+      method: 'POST',
+      url: '/api/payment-methods',
+      headers: memberAuth,
+      payload: { name: '偷偷加支付', type: 'cash' },
+    });
+    assert.equal(postPay.statusCode, 403);
   });
 
   test('有子分类的一级分类不能停用', async () => {

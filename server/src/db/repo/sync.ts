@@ -4,11 +4,27 @@ import type { EntityType } from '../sync.ts';
 import { inTransaction } from '../sync.ts';
 import {
   batchCreateExpenses,
+  listAllExpenses,
   softDeleteExpense,
   updateExpense,
   type BatchExpenseItem,
 } from './expenses.ts';
-import { ackTodo, confirmTodo, restoreSkippedTodo, revertTodoConfirm, skipTodo } from './plans.ts';
+import {
+  ackTodo,
+  confirmTodo,
+  createPlan,
+  deletePlan,
+  listPlans,
+  listTodos,
+  restoreSkippedTodo,
+  revertTodoConfirm,
+  skipTodo,
+  updatePlan,
+  type CreatePlanInput,
+  type UpdatePlanInput,
+} from './plans.ts';
+import { listCategoryTree } from './categories.ts';
+import { listPaymentMethods } from './payment-methods.ts';
 
 export interface ChangeItem {
   version: number;
@@ -25,6 +41,40 @@ export interface PullChangesResult {
   changes: ChangeItem[];
   latestVersion: number;
   hasMore: boolean;
+}
+
+/**
+ * 冷启动全量快照。
+ *
+ * 用途：客户端首装 / 清库后一次性把「当前状态」灌进本地库，之后只走增量 pull。
+ *
+ * 为什么不直接 `pull?cursor=0`：那是在**重放变更历史**，会随使用时间无限增长，
+ * 而且中间若有数据清理就对不上了。快照直接读当前表，规模只与数据量有关。
+ *
+ * 返回的 `version` 就是快照点的游标：客户端把本地游标记成它，
+ * 下次 pull 从这里往后取增量，不会漏也不会重。
+ */
+export interface SnapshotResult {
+  version: number;
+  categories: ReturnType<typeof listCategoryTree>;
+  paymentMethods: ReturnType<typeof listPaymentMethods>;
+  expenses: ReturnType<typeof listAllExpenses>;
+  plans: ReturnType<typeof listPlans>;
+  planTodos: ReturnType<typeof listTodos>;
+}
+
+export function snapshotState(db: DatabaseSync): SnapshotResult {
+  // 先取版本再读数据：宁可版本略早（下次 pull 会重放几条），也不能让
+  // 「读数据期间产生的变更」被错误地标记为已同步（那才是丢数据）。
+  const version = currentSyncVersion(db);
+  return {
+    version,
+    categories: listCategoryTree(db),
+    paymentMethods: listPaymentMethods(db),
+    expenses: listAllExpenses(db),
+    plans: listPlans(db),
+    planTodos: listTodos(db, {}),
+  };
 }
 
 /**
@@ -111,6 +161,37 @@ export interface BatchConfirmTodoItem {
   spendDate?: string | undefined;
 }
 
+/** 离线新建的计划（字段与 POST /api/plans 一致） */
+export interface BatchPlanItem {
+  id?: string | undefined;
+  name: string;
+  categoryId: string;
+  paymentMethodId: string;
+  source: string;
+  amountCents?: number | undefined;
+  totalAmountCents?: number | undefined;
+  purchaseDate?: string | undefined;
+  periods: number;
+  firstDueDate: string;
+  remindDaysBefore?: number | undefined;
+  autoPost?: boolean | undefined;
+  note?: string | undefined;
+}
+
+/** 离线修改的计划（字段与 PATCH /api/plans/:id 一致） */
+export interface BatchUpdatePlanItem {
+  id: string;
+  name?: string | undefined;
+  categoryId?: string | undefined;
+  paymentMethodId?: string | undefined;
+  amountCents?: number | undefined;
+  firstDueDate?: string | undefined;
+  remindDaysBefore?: number | undefined;
+  autoPost?: boolean | undefined;
+  note?: string | undefined;
+  remainingPeriods?: number | undefined;
+}
+
 export interface SyncPushInput {
   expenses?: BatchExpenseItem[] | undefined;
   updatedExpenses?: BatchUpdateExpenseItem[] | undefined;
@@ -122,6 +203,12 @@ export interface SyncPushInput {
   revertedTodoIds?: string[] | undefined;
   /** 恢复跳过（skipped → pending） */
   restoredTodoIds?: string[] | undefined;
+  /** 离线新建的计划 */
+  plans?: BatchPlanItem[] | undefined;
+  /** 离线修改的计划 */
+  updatedPlans?: BatchUpdatePlanItem[] | undefined;
+  /** 离线删除的计划 */
+  deletedPlanIds?: string[] | undefined;
 }
 
 export interface SyncPushResult {
@@ -133,6 +220,9 @@ export interface SyncPushResult {
   ackedTodosCount: number;
   revertedTodosCount: number;
   restoredTodosCount: number;
+  createdPlansCount: number;
+  updatedPlansCount: number;
+  deletedPlansCount: number;
   expenseIds: string[];
   /** 新增支出中被服务端拒绝的条目在 input.expenses 里的下标（0 起），客户端据此做重试/死信隔离 */
   failedExpenseIndexes: number[];
@@ -157,6 +247,9 @@ export function pushChanges(
   let ackedTodosCount = 0;
   let revertedTodosCount = 0;
   let restoredTodosCount = 0;
+  let createdPlansCount = 0;
+  let updatedPlansCount = 0;
+  let deletedPlansCount = 0;
   let expenseIds: string[] = [];
   const failedExpenseIndexes: number[] = [];
 
@@ -268,6 +361,75 @@ export function pushChanges(
         }
       }
     }
+
+    /*
+     * 8~10. 计划：新建 / 修改 / 删除。
+     *
+     * 计划与支出同一条归属规则（`owner_id` = 记录人），`createPlan` / `updatePlan` /
+     * `deletePlan` 内部都走 `requireOwnPlan`，所以「只能改自己创建的」在数据层就被保证 ——
+     * 这也是离线冲突在结构上不存在的原因。
+     *
+     * 与支出一样逐条 try：单条坏数据（分类/支付方式已被停用）不该把整批回滚，
+     * 否则队列会永久卡在队头。
+     */
+    if (input.plans && input.plans.length > 0) {
+      for (const item of input.plans) {
+        try {
+          createPlan(db, {
+            name: item.name,
+            categoryId: item.categoryId,
+            paymentMethodId: item.paymentMethodId,
+            source: item.source as CreatePlanInput['source'],
+            amountCents: item.amountCents,
+            totalAmountCents: item.totalAmountCents,
+            purchaseDate: item.purchaseDate,
+            periods: item.periods,
+            firstDueDate: item.firstDueDate,
+            remindDaysBefore: item.remindDaysBefore,
+            autoPost: item.autoPost,
+            note: item.note,
+            ownerId: actorId,
+          });
+          createdPlansCount++;
+        } catch {
+          // 忽略：分类/支付方式可能已被停用，或期数非法
+        }
+      }
+    }
+
+    if (input.updatedPlans && input.updatedPlans.length > 0) {
+      for (const item of input.updatedPlans) {
+        try {
+          const patch: UpdatePlanInput = {
+            actorId,
+            name: item.name,
+            categoryId: item.categoryId,
+            paymentMethodId: item.paymentMethodId,
+            amountCents: item.amountCents,
+            firstDueDate: item.firstDueDate,
+            remindDaysBefore: item.remindDaysBefore,
+            autoPost: item.autoPost,
+            note: item.note,
+            remainingPeriods: item.remainingPeriods,
+          };
+          updatePlan(db, item.id, patch);
+          updatedPlansCount++;
+        } catch {
+          // 忽略：可能已被删除，或不是自己创建的
+        }
+      }
+    }
+
+    if (input.deletedPlanIds && input.deletedPlanIds.length > 0) {
+      for (const id of input.deletedPlanIds) {
+        try {
+          deletePlan(db, id, actorId);
+          deletedPlansCount++;
+        } catch {
+          // 忽略：已删除或不属于自己
+        }
+      }
+    }
   });
 
   return {
@@ -279,6 +441,9 @@ export function pushChanges(
     ackedTodosCount,
     revertedTodosCount,
     restoredTodosCount,
+    createdPlansCount,
+    updatedPlansCount,
+    deletedPlansCount,
     expenseIds,
     failedExpenseIndexes,
     latestVersion: currentSyncVersion(db),
