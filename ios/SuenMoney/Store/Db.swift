@@ -44,7 +44,7 @@ public final class Db: @unchecked Sendable {
     public static let shared = Db()
 
     /// 表结构版本，改表时 +1 并在 migrate 里补分支
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
 
     private var handle: OpaquePointer?
 
@@ -86,6 +86,10 @@ public final class Db: @unchecked Sendable {
 
         for sql in Db.createTables {
             try execute(sql)
+        }
+        // 老库补列：ALTER 在列已存在时会失败，逐条忽略（幂等比判断版本更省事）
+        for sql in Db.migrations {
+            _ = try? execute(sql)
         }
         for sql in Db.createIndexes {
             try execute(sql)
@@ -280,7 +284,21 @@ public final class Db: @unchecked Sendable {
           repayment_date TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'pending',
           will_auto_post INTEGER NOT NULL DEFAULT 0,
+          -- 「我知道了」摘除时间（提醒列表要排除它）
+          ack_at TEXT,
+          -- 该期入账后生成的支出（撤销确认要删它）
+          expense_id TEXT,
+          -- 实际入账日（设置页「已处理」按它显示，不是还款日）
+          posted_date TEXT,
           updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'member',
+          updated_at TEXT NOT NULL DEFAULT ''
         )
         """,
         """
@@ -294,6 +312,13 @@ public final class Db: @unchecked Sendable {
           last_error TEXT
         )
         """
+    ]
+
+    /// 版本升级补列（v2：plan_todos 补 ack/expense/posted）
+    private static let migrations: [String] = [
+        "ALTER TABLE plan_todos ADD COLUMN ack_at TEXT",
+        "ALTER TABLE plan_todos ADD COLUMN expense_id TEXT",
+        "ALTER TABLE plan_todos ADD COLUMN posted_date TEXT",
     ]
 
     private static let createIndexes: [String] = [
