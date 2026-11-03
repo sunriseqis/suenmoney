@@ -75,9 +75,19 @@ public struct ExpenseEditor: View {
     private let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
     /// 鸿蒙 KEYPAD_KEYS：789B / 456C / 123OK / 00.（OK 跨第 3–4 行）
     private let keypadKeys: [String] = ["7", "8", "9", "B", "4", "5", "6", "C", "1", "2", "3", "OK", "0", "00", "."]
-    /// 键盘行距与行高（总高 210、4 行 → 每行 48.75）
+    /// 键盘行距
     private let keyGap: CGFloat = 5
-    private let keyRowHeight: CGFloat = 48.75
+    /// 键盘行高。
+    ///
+    /// 对齐 Web `ExpenseSheet.vue`：`.keys .key { min-height: clamp(38px, 6.1dvh, 54px) }`。
+    /// 原来写死 48.75（总高 210）是按 ~800pt 屏调的 —— 大屏上键盘不跟着长，
+    /// 底部就空出一片。改成随屏高后，任何机型都与 Web 一致。
+    private var keyRowHeight: CGFloat {
+        let h = UIScreen.main.bounds.height
+        return min(54, max(38, h * 0.061))
+    }
+    /// 键盘总高 = 4 行 + 3 个行距
+    private var keypadHeight: CGFloat { keyRowHeight * 4 + keyGap * 3 }
 
     // MARK: - 生命周期
 
@@ -825,14 +835,14 @@ public struct ExpenseEditor: View {
             .padding(.trailing, 6)
 
             // 支付列与数字区之间的物理分割线（鸿蒙 `Divider().vertical`）
-            Rectangle().fill(Color(css: tokens.line)).frame(width: 1, height: 210)
+            Rectangle().fill(Color(css: tokens.line)).frame(width: 1, height: keypadHeight)
 
             // 右：4×4，顺序 789B / 456C / 123+OK / 00.+OK
             //
             // SwiftUI 的 Grid 不支持跨行，所以后两行手工拼。
             // ⚠ 每行**必须给固定高度**：只写 maxHeight:.infinity 时 HStack 内没有
             // 高度参照，keyCell 会塌到最小 —— 表现就是「保存键把下面两行挤扁了」。
-            // 总高 210、4 行、行距 5 → 每行 (210 - 5*3) / 4 = 48.75
+            // 行高由 keyRowHeight 按屏高算（Web: clamp(38px, 6.1dvh, 54px)）
             VStack(spacing: keyGap) {
                 HStack(spacing: keyGap) { keyCell("7"); keyCell("8"); keyCell("9"); keyCell("B") }
                     .frame(height: keyRowHeight)
@@ -849,10 +859,10 @@ public struct ExpenseEditor: View {
                 }
                 .frame(height: keyRowHeight * 2 + keyGap)
             }
-            .frame(height: 210)
+            .frame(height: keypadHeight)
             .padding(.leading, 6)
         }
-        .frame(height: 210)
+        .frame(height: keypadHeight)
     }
 
     /// 键帽（鸿蒙 `keypad` 里的 Button）

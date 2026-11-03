@@ -24,6 +24,7 @@ import {
   PaymentMethodItem,
   PlanCreateRequest
 } from '../../common/net/Api';
+import { display, window } from '@kit.ArkUI';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -101,6 +102,7 @@ export struct ExpenseEditor {
   @State railRootId: string = '';
 
   aboutToAppear(): void {
+    this.measureBottomInset();
     this.loadDict();
     // R107：本月已支出是背景信息，**不 await**，拿不到就显示占位
     const month = todayKey().substring(0, 7);
@@ -823,10 +825,10 @@ export struct ExpenseEditor {
       }
       // Web 移动端键盘左列是 54px（views.css:899；桌面才是 62px）
       .width(54)
-      .height(210)
+      .height(this.keypadHeight())
       .padding({ right: 6 })
 
-      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(210)
+      Divider().vertical(true).strokeWidth(1).color(this.tok().line).height(this.keypadHeight())
 
       // 右：4×4（完成键跨两行）
       Grid() {
@@ -862,11 +864,11 @@ export struct ExpenseEditor {
       .columnsGap(5)
       .rowsGap(5)
       .layoutWeight(1)
-      .height(210)
+      .height(this.keypadHeight())
       .padding({ left: 6 })
     }
     .width('100%')
-    .height(210)
+    .height(this.keypadHeight())
   }
 
   /** 当前主题令牌（每次 build 都重新取，跟随 themeName 变化） */
@@ -1229,7 +1231,8 @@ export struct ExpenseEditor {
 
     }
     .width('100%')
-    .padding(14)
+    // 底部 = 12 + 手势区，对齐 Web `.sheet-foot{ padding-bottom: calc(12px + env(safe-area-inset-bottom)) }`
+    .padding({ left: 14, right: 14, top: 14, bottom: 12 + this.bottomInsetVp })
     .backgroundColor(this.tok().bg)
 
     // 分类 / 支付方式：**弹窗**（遮罩 + 居中卡片），不再在底部内联展开把键盘顶走
@@ -1244,7 +1247,65 @@ export struct ExpenseEditor {
     }
     }
     .width('100%')
-    .height('100%')
+    // ⚠ 这里**不能**写 height('100%')：外层是 bindSheet(FIT_CONTENT)，
+    //   撑满 100% 会让抽屉取到「最大可用高度」，内容却是自然高度 →
+    //   底部留一大片空白（屏越高留得越多，模拟器屏矮所以当初没发现）。
+    //   让 Stack 跟随内容高度，抽屉才会真正贴住内容。
+  }
+
+  /**
+   * 键盘区高度（vp）。
+   *
+   * 对齐 Web `ExpenseSheet.vue`：
+   *     .keys .key { min-height: clamp(38px, 6.1dvh, 54px) }
+   *     .keypad    { gap: clamp(4px, 1.1vw, 7px) }
+   *
+   * ⚠ 不能写死。原来固定 210vp 是按 ~800vp 高的屏调的：
+   *   屏再高，键盘不跟着长 → 键盘底边离手势保护区越来越远，真机上留一大片空白
+   *  （模拟器屏矮，所以看起来「还行」，这就是当初没发现的原因）。
+   */
+  /**
+   * 底部手势区高度（vp）。`aboutToAppear` 里算一次。
+   *
+   * 对齐 Web `.sheet-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)) }`。
+   *
+   * ⚠ 不能省：抽屉贴底之后，最后一行按键会压在手势条下面，点不准。
+   *   Web 用 `env(safe-area-inset-bottom)` 拿到这个值，原生端从 window 的
+   *   AvoidArea 拿 —— 两者语义相同。
+   */
+  @State private bottomInsetVp: number = 0;
+
+  private measureBottomInset(): void {
+    try {
+      const ctx = this.getUIContext().getHostContext();
+      if (ctx === null) {
+        return;
+      }
+      window.getLastWindow(ctx).then((win: window.Window) => {
+        const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+        const density = display.getDefaultDisplaySync().densityPixels;
+        this.bottomInsetVp = avoid.bottomRect.height / density;
+      }).catch(() => {
+        this.bottomInsetVp = 0;
+      });
+    } catch (e) {
+      this.bottomInsetVp = 0;
+    }
+  }
+
+  private keypadHeight(): number {
+    const KEY_GAP = 5;
+    const MIN_KEY = 38;
+    const MAX_KEY = 54;
+    let screenVp = 800;
+    try {
+      const d = display.getDefaultDisplaySync();
+      screenVp = d.height / d.densityPixels;
+    } catch (e) {
+      screenVp = 800;
+    }
+    const key = Math.min(MAX_KEY, Math.max(MIN_KEY, screenVp * 0.061));
+    return Math.round(key * 4 + KEY_GAP * 3);
   }
 
   /** 当前一级下的二级（没有二级就用一级自己） */
