@@ -40,6 +40,10 @@ public struct DashboardScreen: View {
     @State private var tier: Int = 0
     @State private var anchorMonth: String = currentMonthKey()
     @State private var todoOpen: Bool = false
+    /// 本地待同步记录数（离线时这里是用户唯一的手动触发入口）
+    @State private var pendingSync: Int = 0
+    /// 手动同步进行中（按钮禁用，避免连点）
+    @State private var syncing: Bool = false
 
     @State private var monthReport: MonthlyReport?
     @State private var yearReport: YearlyReport?
@@ -103,7 +107,11 @@ public struct DashboardScreen: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await load() }
+        .task {
+            await load()
+            // 进概况页时校准一次待同步条数（流水页可能已经推空）
+            await refreshPending()
+        }
     }
 
     // MARK: - 加载
@@ -375,7 +383,7 @@ public struct DashboardScreen: View {
             }
 
             // hero-todo：待办条在**大金额之上**（鸿蒙「最紧急的先说」）
-            if !todos.isEmpty { todoBar }
+            if !todos.isEmpty || pendingSync > 0 { todoBar }
 
             // 大金额 + 环比（鸿蒙 amount top 8 / bottom 4）
             VStack(alignment: .leading, spacing: 3) {
@@ -560,42 +568,106 @@ public struct DashboardScreen: View {
         .padding(.top, 4)
     }
 
-    /// hero-todo 提醒条：圆点 + 「N 笔待办」+ 合计金额 + 「N 笔逾期」+ 展开箭头
+    /// hero-todo 提醒条：待办 + **本地待同步**，共用一个容器。
+    ///
+    /// 用户裁定：离线通知放在「N 笔待办」这条提醒条的同一个容器内，
+    /// 文案「有 N 条本地记录待同步」+「同步」按钮，点了连不上就提示服务器无法连接。
+    /// 不做后台轮询 —— 手动触发。
     private var todoBar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(appCurveFast) { todoOpen.toggle() } } label: {
+            if !todos.isEmpty {
+                Button { withAnimation(appCurveFast) { todoOpen.toggle() } } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(Color(css: todoDotColor())).frame(width: 6, height: 6)
+                        Text("\(todos.count) 笔待办")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Color(css: tokens.ink))
+                        Text(formatYuan(dueTotalCents()))
+                            .font(.custom(fontMonoOf(), size: 10.5))
+                            .monospacedDigit()
+                            .foregroundStyle(Color(css: tokens.ink2))
+                        if overdueCount() > 0 {
+                            Text("\(overdueCount()) 笔逾期")
+                                .font(.custom(fontMonoOf(), size: 10).weight(.bold))
+                                .foregroundStyle(Color(css: tokens.danger))
+                        }
+                        Spacer(minLength: 0)
+                        Text(todoOpen ? "⌃" : "⌄")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(css: tokens.ink2))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 第二行：本地待同步（有队列才出现）
+            if pendingSync > 0 {
                 HStack(spacing: 8) {
-                    Circle().fill(Color(css: todoDotColor())).frame(width: 6, height: 6)
-                    Text("\(todos.count) 笔待办")
+                    Circle().fill(Color(css: tokens.warn)).frame(width: 6, height: 6)
+                    Text("有 \(pendingSync) 条本地记录待同步")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Color(css: tokens.ink))
-                    Text(formatYuan(dueTotalCents()))
-                        .font(.custom(fontMonoOf(), size: 10.5))
-                        .monospacedDigit()
-                        .foregroundStyle(Color(css: tokens.ink2))
-                    if overdueCount() > 0 {
-                        Text("\(overdueCount()) 笔逾期")
-                            .font(.custom(fontMonoOf(), size: 10).weight(.bold))
-                            .foregroundStyle(Color(css: tokens.danger))
-                    }
                     Spacer(minLength: 0)
-                    Text(todoOpen ? "⌃" : "⌄")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(css: tokens.ink2))
+                    Button {
+                        Task { await manualSync() }
+                    } label: {
+                        Text(syncing ? "同步中…" : "同步")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color(css: syncing ? tokens.ink3 : tokens.accent))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rPill))
+                                    .stroke(Color(css: syncing ? tokens.line : tokens.accent), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(syncing)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color(css: tokens.surface2))
-                .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                        .stroke(Color(css: tokens.line), lineWidth: 1)
-                )
+                .overlay(alignment: .top) {
+                    if !todos.isEmpty {
+                        Rectangle().fill(Color(css: tokens.line)).frame(height: 1)
+                    }
+                }
             }
-            .buttonStyle(.plain)
-
         }
+        .background(Color(css: tokens.surface2))
+        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
+        .overlay(
+            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
+                .stroke(Color(css: tokens.line), lineWidth: 1)
+        )
         .padding(.top, 10)
+    }
+
+    /// 手动同步：只在用户点按时跑，失败明确提示「服务器无法连接」
+    private func manualSync() async {
+        if syncing { return }
+        syncing = true
+        defer { syncing = false }
+        let report = await SyncEngine.shared.syncNow()
+        await refreshPending()
+        if !report.error.isEmpty {
+            showToast("当前服务器无法连接")
+            return
+        }
+        if report.pushed > 0 {
+            showToast("已同步 \(report.pushed) 条")
+        } else if pendingSync == 0 {
+            showToast("已是最新")
+        } else {
+            showToast("当前服务器无法连接")
+        }
+    }
+
+    /// 刷新待同步条数
+    private func refreshPending() async {
+        pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
     }
 
     /// 长度判定**去掉 ¥**（鸿蒙 `formatYuan(x).replace('¥','')`）：

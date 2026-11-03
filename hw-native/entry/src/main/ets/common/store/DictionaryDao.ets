@@ -50,6 +50,78 @@ export class DictionaryDao {
     }
   }
 
+  /**
+   * 从本地缓存**还原分类树**（离线记账用）。
+   *
+   * 记账抽屉需要完整的 `CategoryNode[]`（一级 + 二级）才能选分类。
+   * 原来 `loadDict()` 只走接口，离线时整棵树是空的 → 选不了分类 → 记不了账，
+   * 尽管缓存表里明明有全部数据。这个方法是那条回退路径。
+   */
+  static async categoriesTree(): Promise<CategoryNode[]> {
+    const store = Db.get();
+    const rs = await store.querySql(
+      'SELECT id, parent_id, name, depth, icon, color, sort_order, is_enabled FROM categories ORDER BY sort_order, id'
+    );
+    const all: CategoryNode[] = [];
+    while (rs.goToNextRow()) {
+      const parentIdx = rs.getColumnIndex('parent_id');
+      const parentId = rs.isColumnNull(parentIdx) ? null : rs.getString(parentIdx);
+      all.push({
+        id: rs.getString(rs.getColumnIndex('id')),
+        parentId: parentId,
+        name: rs.getString(rs.getColumnIndex('name')),
+        depth: rs.getLong(rs.getColumnIndex('depth')),
+        icon: rs.getString(rs.getColumnIndex('icon')),
+        color: rs.getString(rs.getColumnIndex('color')),
+        sortOrder: rs.getLong(rs.getColumnIndex('sort_order')),
+        isEnabled: rs.getLong(rs.getColumnIndex('is_enabled')) === 1,
+        expenseCount: 0,
+        children: []
+      });
+    }
+    rs.close();
+    const roots: CategoryNode[] = [];
+    for (const node of all) {
+      if (node.parentId === null) {
+        roots.push(node);
+      }
+    }
+    for (const root of roots) {
+      for (const node of all) {
+        if (node.parentId === root.id) {
+          root.children.push(node);
+        }
+      }
+    }
+    return roots;
+  }
+
+  /** 从本地缓存还原支付方式列表（离线记账用） */
+  static async paymentsList(): Promise<PaymentMethodItem[]> {
+    const store = Db.get();
+    const rs = await store.querySql(
+      'SELECT id, name, type, icon, billing_day, repayment_day, is_enabled, sort_order FROM payment_methods ORDER BY sort_order, id'
+    );
+    const out: PaymentMethodItem[] = [];
+    while (rs.goToNextRow()) {
+      const billing = rs.getLong(rs.getColumnIndex('billing_day'));
+      const repayment = rs.getLong(rs.getColumnIndex('repayment_day'));
+      out.push({
+        id: rs.getString(rs.getColumnIndex('id')),
+        name: rs.getString(rs.getColumnIndex('name')),
+        type: rs.getString(rs.getColumnIndex('type')),
+        icon: rs.getString(rs.getColumnIndex('icon')),
+        billingDay: billing > 0 ? billing : null,
+        repaymentDay: repayment > 0 ? repayment : null,
+        isEnabled: rs.getLong(rs.getColumnIndex('is_enabled')) === 1,
+        sortOrder: rs.getLong(rs.getColumnIndex('sort_order')),
+        expenseCount: 0
+      });
+    }
+    rs.close();
+    return out;
+  }
+
   /** 分类名映射（离线行显示用） */
   static async categoryNames(): Promise<Map<string, CachedCategory>> {
     const store = Db.get();

@@ -330,6 +330,25 @@ export function listExpenses(
 }
 
 /**
+ * **全部**未删除的支出（无分页），供冷启动快照使用。
+ *
+ * 与 `listExpenses` 的区别：不分页、不排序分页游标，一次给全。
+ * 快照只在首装/清库后拉一次，生产规模（数千笔）一次几百 KB 到 1 MB，可接受；
+ * 日常增量走 `/api/sync/pull` 的游标，不重复拉全量。
+ */
+export function listAllExpenses(db: DatabaseSync): Expense[] {
+  const rows = db
+    .prepare(
+      `SELECT ${DISPLAY_COLUMNS}
+         FROM expenses e ${JOINS}
+        WHERE e.deleted_at IS NULL
+        ORDER BY e.spend_date DESC, e.id DESC`,
+    )
+    .all() as unknown as ExpenseRowJoined[];
+  return rows.map(toApi);
+}
+
+/**
  * 只算日期、不落库。
  *
  * 存在的意义：记账抽屉要在用户选完支付方式与日期后立刻告诉他

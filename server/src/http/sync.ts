@@ -6,8 +6,11 @@ import {
   currentSyncVersion,
   pullChanges,
   pushChanges,
+  snapshotState,
   type BatchConfirmTodoItem,
+  type BatchPlanItem,
   type BatchUpdateExpenseItem,
+  type BatchUpdatePlanItem,
 } from '../db/repo/sync.ts';
 import { badRequest } from '../lib/http-error.ts';
 import {
@@ -20,6 +23,16 @@ import {
 import { currentAuth, requireAuth } from './guard.ts';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * 冷启动全量快照：`GET /api/sync/snapshot`
+   *
+   * 客户端首装 / 清库后调一次，把当前状态整块灌进本地库；之后只走增量 pull。
+   * 返回的 `version` 就是快照点的游标 —— 客户端直接记成它，下次 pull 从这里往后取。
+   */
+  app.get('/api/sync/snapshot', { preHandler: requireAuth }, async () => {
+    return snapshotState(getDatabase());
+  });
+
   /**
    * 增量拉取变更：
    * GET /api/sync/pull?since=:version&limit=:limit
@@ -177,6 +190,78 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    /*
+     * 计划：新建 / 修改 / 删除。
+     *
+     * 逐字段 optional —— 与 PATCH /api/plans/:id 一致：只传要改的字段。
+     * 归属由 `createPlan` / `updatePlan` / `deletePlan` 内部的 `requireOwnPlan` 保证。
+     */
+    const plansRaw = body['plans'];
+    const plans: BatchPlanItem[] = [];
+    if (plansRaw !== undefined) {
+      if (!Array.isArray(plansRaw)) {
+        throw badRequest('plans 必须是数组');
+      }
+      for (let i = 0; i < plansRaw.length; i++) {
+        const item = asRecord(plansRaw[i]);
+        plans.push({
+          id: optionalString(item, 'id', '') || undefined,
+          name: requireString(item, 'name'),
+          categoryId: requireString(item, 'categoryId'),
+          paymentMethodId: requireString(item, 'paymentMethodId'),
+          source: optionalString(item, 'source', 'manual') || 'manual',
+          amountCents: item['amountCents'] !== undefined ? requireInt(item, 'amountCents') : undefined,
+          totalAmountCents:
+            item['totalAmountCents'] !== undefined ? requireInt(item, 'totalAmountCents') : undefined,
+          purchaseDate: optionalString(item, 'purchaseDate', '') || undefined,
+          periods: requireInt(item, 'periods'),
+          firstDueDate: requireString(item, 'firstDueDate'),
+          remindDaysBefore:
+            item['remindDaysBefore'] !== undefined ? requireInt(item, 'remindDaysBefore') : undefined,
+          autoPost: item['autoPost'] !== undefined ? item['autoPost'] === true : undefined,
+          note: optionalString(item, 'note', '') || undefined,
+        });
+      }
+    }
+
+    const updatedPlansRaw = body['updatedPlans'];
+    const updatedPlans: BatchUpdatePlanItem[] = [];
+    if (updatedPlansRaw !== undefined) {
+      if (!Array.isArray(updatedPlansRaw)) {
+        throw badRequest('updatedPlans 必须是数组');
+      }
+      for (let i = 0; i < updatedPlansRaw.length; i++) {
+        const item = asRecord(updatedPlansRaw[i]);
+        updatedPlans.push({
+          id: requireString(item, 'id'),
+          name: optionalString(item, 'name', '') || undefined,
+          categoryId: optionalString(item, 'categoryId', '') || undefined,
+          paymentMethodId: optionalString(item, 'paymentMethodId', '') || undefined,
+          amountCents: item['amountCents'] !== undefined ? requireInt(item, 'amountCents') : undefined,
+          firstDueDate: optionalString(item, 'firstDueDate', '') || undefined,
+          remindDaysBefore:
+            item['remindDaysBefore'] !== undefined ? requireInt(item, 'remindDaysBefore') : undefined,
+          autoPost: item['autoPost'] !== undefined ? item['autoPost'] === true : undefined,
+          note: item['note'] !== undefined ? optionalString(item, 'note', '') : undefined,
+          remainingPeriods:
+            item['remainingPeriods'] !== undefined ? requireInt(item, 'remainingPeriods') : undefined,
+        });
+      }
+    }
+
+    const deletedPlansRaw = body['deletedPlanIds'];
+    const deletedPlanIds: string[] = [];
+    if (deletedPlansRaw !== undefined) {
+      if (!Array.isArray(deletedPlansRaw)) {
+        throw badRequest('deletedPlanIds 必须是数组');
+      }
+      for (const id of deletedPlansRaw) {
+        if (typeof id === 'string' && id) {
+          deletedPlanIds.push(id);
+        }
+      }
+    }
+
     const deviceId = optionalString(body, 'deviceId', '') || undefined;
 
     const result = pushChanges(
@@ -190,6 +275,9 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
         ackedTodoIds,
         revertedTodoIds,
         restoredTodoIds,
+        plans,
+        updatedPlans,
+        deletedPlanIds,
       },
       auth.user.id,
       deviceId,

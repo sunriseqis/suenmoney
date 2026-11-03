@@ -25,6 +25,7 @@ import {
   PlanCreateRequest
 } from '../../common/net/Api';
 import { display, window } from '@kit.ArkUI';
+import { DictionaryDao } from '../../common/store/DictionaryDao';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -113,13 +114,43 @@ export struct ExpenseEditor {
     });
   }
 
+  /**
+   * 载入分类 / 支付方式。
+   *
+   * ⚠ **离线必须能记账**：接口拿不到时回退到本地缓存（`DictionaryDao`）。
+   *   原来这里只有接口一条路，断网时整棵树是空的 → 抽屉里选不了分类 →
+   *   保存直接卡在「请选择分类与支付方式」，记账根本走不到入队那一步。
+   *   缓存表里本来就有全部数据，没理由不用。
+   */
   private async loadDict(): Promise<void> {
+    let cats: CategoryNode[] = [];
+    let pays: PaymentMethodItem[] = [];
     try {
-      const cats = await Api.categories();
-      this.categories = cats.categories;
-      const pays = await Api.paymentMethods();
+      const body = await Api.categories();
+      cats = body.categories;
+      const payBody = await Api.paymentMethods();
+      pays = payBody.paymentMethods;
+      // 接口成功时顺手刷新缓存，供下次离线用
+      try {
+        await DictionaryDao.cacheCategories(cats);
+        await DictionaryDao.cachePayments(pays);
+      } catch (e) {
+        // 缓存失败不影响本次记账
+      }
+    } catch (e) {
+      const err = e as ApiError;
+      // 连不上 / 令牌失效：都退回本地缓存（账目本身不依赖服务端）
+      if (err.kind === 'network' || err.kind === 'unauthorized') {
+        cats = await DictionaryDao.categoriesTree();
+        pays = await DictionaryDao.paymentsList();
+      } else {
+        throw e as Error;
+      }
+    }
+    {
+      this.categories = cats;
       const usable: PaymentMethodItem[] = [];
-      for (const p of pays.paymentMethods) {
+      for (const p of pays) {
         if (p.isEnabled) {
           usable.push(p);
         }
@@ -175,9 +206,6 @@ export struct ExpenseEditor {
           : (this.payments.length > 0 ? this.payments[0].id : '');
       }
       this.refreshPreview();
-    } catch (e) {
-      const err = e as ApiError;
-      this.errorText = err.message;
     }
   }
 

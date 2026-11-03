@@ -18,6 +18,9 @@ import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow,
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { chartColor, slotOf } from '../../common/theme/Palette';
 import { formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
+import { Outbox } from '../../common/sync/Outbox';
+import { SyncEngine } from '../../common/sync/SyncEngine';
+import { ApiError } from '../../common/net/ApiError';
 
 /** 构成条/图例的一行（web composeRows） */
 export interface ComposeRow {
@@ -51,6 +54,11 @@ export struct DashboardScreen {
   /** 0=本月 1=本年 2=全部 */
   @State tier: number = 0;
   @State anchorMonth: string = currentMonthKey();
+  /** 本地待同步记录数（与流水页共用 pendingSync 键） */
+  @StorageLink('pendingSync') pendingSync: number = 0;
+  /** 手动同步进行中（按钮禁用，避免连点） */
+  @State syncing: boolean = false;
+
   /** 展开后的待办（web alertOpen） */
   @State todoOpen: boolean = false;
 
@@ -65,6 +73,8 @@ export struct DashboardScreen {
 
   aboutToAppear(): void {
     this.reload();
+    // 进概况页时校准一次待同步条数（流水页可能已经推空）
+    void this.refreshPending();
   }
 
   private reload(): void {
@@ -478,6 +488,50 @@ export struct DashboardScreen {
   }
 
   /** 提醒条圆点（web todoTone）：逾期→late；有需手动→soon；否则 calm */
+  /**
+   * 手动同步（离线通知里的「同步」按钮）。
+   *
+   * 只在用户点按时跑 —— 不做后台轮询（用户裁定 C 方案）。
+   * 失败时明确告诉用户「服务器连不上」，而不是静默留个数字在那儿。
+   */
+  private async manualSync(): Promise<void> {
+    if (this.syncing) {
+      return;
+    }
+    this.syncing = true;
+    try {
+      const report = await SyncEngine.syncNow();
+      await this.refreshPending();
+      if (report.error !== '') {
+        this.showToast('当前服务器无法连接');
+        return;
+      }
+      if (report.pushed > 0) {
+        this.showToast(`已同步 ${report.pushed} 条`);
+      } else if (this.pendingSync === 0) {
+        this.showToast('已是最新');
+      } else {
+        // 队列没推出去，多半还是连不上（network 类错误被 push 静默吞掉）
+        this.showToast('当前服务器无法连接');
+      }
+    } catch (e) {
+      this.showToast('当前服务器无法连接');
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  /** 刷新待同步条数（与流水页同一份状态） */
+  private async refreshPending(): Promise<void> {
+    try {
+      const n: number = await Outbox.pendingCount();
+      this.pendingSync = n;
+      AppStorage.setOrCreate('pendingSync', n);
+    } catch (e) {
+      // 本地库读不到就不更新，不影响主流程
+    }
+  }
+
   private todoDotColor(): string {
     if (this.overdueCount() > 0) {
       return this.tok().danger;
@@ -600,44 +654,82 @@ export struct DashboardScreen {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // hero-todo：待办提醒条（没有待办时整条不渲染）
-      if (this.todos.length > 0) {
-        Row({ space: 8 }) {
-          Row()
-            .width(6)
-            .height(6)
-            .borderRadius(3)
-            .backgroundColor(this.todoDotColor())
-          Text(`${this.todos.length} 笔待办`)
-            .fontSize(11.5)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.tok().ink)
-          Text(formatYuan(this.dueTotalCents()))
-            .fontSize(10.5)
-            .fontFamily(fontMonoOf())
-            .fontFeature('"tnum" on')
-            .fontColor(this.tok().ink2)
-          if (this.overdueCount() > 0) {
-            Text(`${this.overdueCount()} 笔逾期`)
-              .fontSize(10)
-              .fontWeight(FontWeight.Bold)
-              .fontFamily(fontMonoOf())
-              .fontColor(this.tok().danger)
+      // hero-todo：待办提醒 + 本地待同步提醒，**共用一个容器**
+      // （用户裁定：离线通知放在「N 笔待办」这条提醒条的同一个容器内）
+      if (this.todos.length > 0 || this.pendingSync > 0) {
+        Column({ space: 0 }) {
+          // 第一行：待办（没有待办时这一行不渲染，容器只显示同步提醒）
+          if (this.todos.length > 0) {
+            Row({ space: 8 }) {
+              Row()
+                .width(6)
+                .height(6)
+                .borderRadius(3)
+                .backgroundColor(this.todoDotColor())
+              Text(`${this.todos.length} 笔待办`)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+              Text(formatYuan(this.dueTotalCents()))
+                .fontSize(10.5)
+                .fontFamily(fontMonoOf())
+                .fontFeature('"tnum" on')
+                .fontColor(this.tok().ink2)
+              if (this.overdueCount() > 0) {
+                Text(`${this.overdueCount()} 笔逾期`)
+                  .fontSize(10)
+                  .fontWeight(FontWeight.Bold)
+                  .fontFamily(fontMonoOf())
+                  .fontColor(this.tok().danger)
+              }
+              Blank()
+              Text(this.todoOpen ? '⌃' : '⌄')
+                .fontSize(13)
+                .fontColor(this.tok().ink2)
+            }
+            .width('100%')
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .onClick(() => {
+              this.todoOpen = !this.todoOpen;
+            })
           }
-          Blank()
-          Text(this.todoOpen ? '⌃' : '⌄')
-            .fontSize(13)
-            .fontColor(this.tok().ink2)
+
+          // 第二行：本地待同步（有队列才出现）。离线时这里是用户唯一的手动触发入口。
+          if (this.pendingSync > 0) {
+            Row({ space: 8 }) {
+              Row()
+                .width(6)
+                .height(6)
+                .borderRadius(3)
+                .backgroundColor(this.tok().warn)
+              Text(`有 ${this.pendingSync} 条本地记录待同步`)
+                .fontSize(11.5)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tok().ink)
+                .layoutWeight(1)
+              Text(this.syncing ? '同步中…' : '同步')
+                .fontSize(11)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.syncing ? this.tok().ink3 : this.tok().accent)
+                .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+                .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
+                .border({ width: 1, color: this.syncing ? this.tok().line : this.tok().accent })
+                .onClick(() => {
+                  if (!this.syncing) {
+                    void this.manualSync();
+                  }
+                })
+            }
+            .width('100%')
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .border({ width: { top: this.todos.length > 0 ? 1 : 0 }, color: this.tok().line })
+          }
         }
         .width('100%')
         .margin({ top: 10 })
-        .padding({ left: 10, right: 10, top: 7, bottom: 7 })
         .backgroundColor(this.tok().surface2)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
         .border({ width: 1, color: this.tok().line })
-        .onClick(() => {
-          this.todoOpen = !this.todoOpen;
-        })
       }
 
       // hero-amt：大金额（¥ 0.5em，基线对齐）
