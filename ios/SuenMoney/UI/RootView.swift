@@ -81,38 +81,7 @@ public struct RootView: View {
     public var body: some View {
         Group {
             if auth.isAuthenticated {
-                VStack(spacing: 0) {
-                    // 会话失效提示：一条细横条，不挡内容、不弹窗、不踢回登录页。
-                    // 记账软件的核心数据在本地，登录只影响「能不能同步」。
-                    if auth.sessionExpired {
-                        HStack(spacing: 6) {
-                            Text("登录已失效")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Color(css: tokens.warn))
-                            Text("本地账照常可用，重新登录后可同步")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color(css: tokens.ink3))
-                            Spacer(minLength: 0)
-                            Button("去登录") {
-                                auth.sessionExpired = false
-                                auth.logout()
-                            }
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color(css: tokens.accent))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color(css: tokens.surface2))
-                        .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rSm))
-                                .stroke(Color(css: tokens.warn), lineWidth: 1)
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.top, 6)
-                    }
-                    content
-                }
+                content
             } else {
                 LoginView()
             }
