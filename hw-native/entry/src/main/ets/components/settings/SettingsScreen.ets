@@ -23,6 +23,7 @@ import { CatIconView } from '../../common/ui/CatIconView';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { CATEGORY_COLORS, categoryColorOf } from '../../common/ui/CategoryIcon';
 import { ServerConfig } from '../../common/net/ServerConfig';
+import { SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
 import { ProbeResult, ServerRouter } from '../../common/net/ServerRouter';
 import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
@@ -172,6 +173,8 @@ export struct SettingsScreen {
   @State srvProbe: string[] = [];
   @State srvMsg: string = '';
   @State srvActive: string = '';
+  /** 会话失效（令牌被服务端拒了）：只在设置页显示一行小字 */
+  @StorageLink(SESSION_EXPIRED_KEY) sessionExpired: boolean = false;
   @State editingCategoryId: string = '';
   @State formName: string = '';
   @State formIcon: string = '';
@@ -2149,6 +2152,15 @@ export struct SettingsScreen {
           .layoutWeight(1)
       }
       .width('100%')
+
+      // 登录失效只在设置里以一行小字体现 —— 主界面绝不打扰。
+      // 记账用户关心的是账目，服务器在不在与他无关。
+      if (this.sessionExpired) {
+        Text('登录已失效，重新登录后可同步（本地账目不受影响）')
+          .fontSize(10)
+          .fontColor(this.tok().ink3)
+          .width('100%')
+      }
 
       Column({ space: 6 }) {
         Text('当前口令')

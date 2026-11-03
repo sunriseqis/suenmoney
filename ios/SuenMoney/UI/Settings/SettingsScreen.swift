@@ -61,6 +61,7 @@ enum SheetKind: String, Identifiable {
 
 public struct SettingsScreen: View {
     @Environment(ThemeManager.self) private var theme
+    @Environment(AuthStore.self) private var auth
     @Environment(AppState.self) private var app
 
     @State private var section: Int = 0
@@ -1273,6 +1274,14 @@ public struct SettingsScreen: View {
         cardShell {
             VStack(alignment: .leading, spacing: 10) {
                 plainCardTitle("修改密码")
+
+                // 登录失效只在设置里以一行小字体现 —— 主界面绝不打扰。
+                // 记账用户关心的是账目，服务器在不在与他无关。
+                if auth.sessionExpired {
+                    Text("登录已失效，重新登录后可同步（本地账目不受影响）")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color(css: tokens.ink3))
+                }
 
                 VStack(alignment: .leading, spacing: 6) {
                     fieldLabel("当前口令")
