@@ -9,6 +9,7 @@
  */
 
 import { cardShadow, fontBodyOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { PlanActions } from '../../common/store/PlanActions';
 import { LengthMetrics } from '@kit.ArkUI';
 import { bundleManager } from '@kit.AbilityKit';
 import { common } from '@kit.AbilityKit';
@@ -635,10 +636,10 @@ export struct SettingsScreen {
   private async actTodo(t: PlanTodoItem): Promise<void> {
     try {
       if (t.willAutoPost) {
-        await Api.ackTodo(t.id);
+        await PlanActions.ack(t.id);
         this.showToast('已确认并自动入账');
       } else {
-        await Api.confirmTodo(t.id, '');
+        await PlanActions.confirm(t.id, '');
         this.showToast('已手动入账');
       }
       await this.reload();
@@ -655,10 +656,10 @@ export struct SettingsScreen {
   private async skipTodo(t: PlanTodoItem): Promise<void> {
     try {
       if (t.willAutoPost) {
-        await Api.ackTodo(t.id);
+        await PlanActions.ack(t.id);
         this.showToast('已忽略提醒，到期自动入账');
       } else {
-        await Api.skipTodo(t.id);
+        await PlanActions.skip(t.id);
         this.showToast('已忽略本期，不会入账');
       }
       await this.reload();
@@ -686,7 +687,7 @@ export struct SettingsScreen {
 
   private async doRevert(id: string): Promise<void> {
     try {
-      await Api.revertTodo(id);
+      await PlanActions.revert(id);
       this.showToast('已撤销入账');
       await this.reload();
     } catch (e) {
@@ -696,7 +697,7 @@ export struct SettingsScreen {
 
   private async doRestore(id: string): Promise<void> {
     try {
-      await Api.restoreTodo(id);
+      await PlanActions.restore(id);
       this.showToast('已恢复为待处理');
       await this.reload();
     } catch (e) {
