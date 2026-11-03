@@ -260,6 +260,11 @@ public enum Api {
         )
     }
 
+    /// 冷启动全量快照：一次拿齐当前状态，之后只走增量
+    public static func syncSnapshot() async throws -> SyncSnapshotBody {
+        try await http.get("/api/sync/snapshot")
+    }
+
     public static func syncPull(since: Int, limit: Int) async throws -> SyncPullBody {
         try await http.get("/api/sync/pull?since=\(since)&limit=\(limit)")
     }
