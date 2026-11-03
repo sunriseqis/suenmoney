@@ -28,6 +28,7 @@ import { CatIconView } from '../../common/ui/CatIconView';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { daysUntil, formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
 import { LengthMetrics } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { vibrator } from '@kit.SensorServiceKit';
 import { ExpenseEditor } from '../expense/ExpenseEditor';
 import { BrandMark } from '../BrandMark';
