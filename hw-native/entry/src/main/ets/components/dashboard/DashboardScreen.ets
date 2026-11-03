@@ -12,6 +12,7 @@
  */
 
 import { Api, CategoryBucket, MonthlyReport, SummaryReport, YearlyReport } from '../../common/net/Api';
+import { PlanActions } from '../../common/store/PlanActions';
 import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
@@ -251,13 +252,13 @@ export struct DashboardScreen {
   private async todoAction(todo: DashTodo, kind: string): Promise<void> {
     try {
       if (kind === 'skip') {
-        await Api.skipTodo(todo.id);
+        await PlanActions.skip(todo.id);
         this.showToast('已忽略这笔待办');
       } else if (todo.willAutoPost) {
-        await Api.ackTodo(todo.id);
+        await PlanActions.ack(todo.id);
         this.showToast('已确认并自动入账');
       } else {
-        await Api.confirmTodo(todo.id);
+        await PlanActions.confirm(todo.id);
         this.showToast('已手动入账');
       }
       await this.load();

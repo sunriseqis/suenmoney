@@ -13,6 +13,7 @@
  */
 
 import { Api, ExpenseItem, MonthPoint, MonthlyReportBody, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
+import { PlanActions } from '../../common/store/PlanActions';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
@@ -364,7 +365,7 @@ export struct LedgerScreen {
    */
   private async processTodo(t: HeroTodo): Promise<void> {
     try {
-      await Api.confirmTodo(t.id, '');
+      await PlanActions.confirm(t.id, '');
       this.showToast('已入账');
       await this.loadHeroTodos();
       await this.reload();
@@ -382,10 +383,10 @@ export struct LedgerScreen {
   private async ignoreTodo(t: HeroTodo): Promise<void> {
     try {
       if (t.willAutoPost) {
-        await Api.ackTodo(t.id);
+        await PlanActions.ack(t.id);
         this.showToast('已忽略提醒，到期自动入账');
       } else {
-        await Api.skipTodo(t.id);
+        await PlanActions.skip(t.id);
         this.showToast('已忽略本期，不会入账');
       }
       await this.loadHeroTodos();
