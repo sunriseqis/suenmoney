@@ -65,6 +65,11 @@ export function deriveColorIndex(name: string): number {
  * **按当前主题取调色板**（candy 用 Web 那套 8 色，cyber 用荧光 16 色）。
  * 主题从 `ThemeManager` 直接读 —— 调用点太多，逐个传参会到处漏。
  */
+/** 当前主题的分类调色板（颜色选择器也要用它，否则 candy 下会显示 16 个荧光色） */
+export function categoryPalette(): string[] {
+  return ThemeManager.get().name === 'candy' ? CANDY_CATEGORY_COLORS : CATEGORY_COLORS;
+}
+
 export function categoryColorOf(name: string, explicit: string | undefined): string {
   const palette = ThemeManager.get().name === 'candy' ? CANDY_CATEGORY_COLORS : CATEGORY_COLORS;
   const idx = parseCategoryColorIndex(explicit);
