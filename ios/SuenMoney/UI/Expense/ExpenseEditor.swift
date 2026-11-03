@@ -489,10 +489,16 @@ public struct ExpenseEditor: View {
                 onSaved(body.expense.id)
             }
         } catch let err as ApiError {
-            if err.kind == .network && editing == nil && !installment {
+            /// 离线写：`.network`（连不上）与 `.unauthorized`（令牌失效）都算「暂时不能同步」。
+            ///
+            /// 两者对用户是同一件事：**账先记下，之后补推**。只认 network 的话，
+            /// 令牌一失效就记不了账 —— 而账目本来就不依赖服务端，这说不过去。
+            /// 归属不用额外逻辑：队列补推时由令牌决定「谁记归谁」，与在线记账完全一致。
+            let offlineable = err.kind == .network || err.kind == .unauthorized
+            if offlineable && editing == nil && !installment {
                 // 离线普通记账：进 Outbox，等联网补传
                 await enqueueOffline(cents: value)
-            } else if err.kind == .network {
+            } else if offlineable {
                 // ⚠ 与鸿蒙的一处**有意差异**：鸿蒙在分期离线时也会入队，
                 //    但队列里只有 createExpense 的字段（没有 periods/purchaseDate），
                 //    补传后变成一笔**普通支出** —— 用户以为记了分期，实际没记。
