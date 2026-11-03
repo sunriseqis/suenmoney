@@ -31,6 +31,13 @@ public final class AuthStore {
     /// （服务端日志显示登录成功、界面却不动，就是这个原因。）
     public private(set) var isAuthenticated: Bool
 
+    /// 会话是否已失效（服务端不认这个令牌了）。
+    ///
+    /// ⚠ 失效**不等于**要把人踢去登录页 —— 记账软件的核心数据在本地，
+    ///   令牌失效只意味着「暂时不能同步」。真正回登录页只有两种：
+    ///   用户主动登出，或本地从来没登录过。
+    public var sessionExpired: Bool = false
+
     private init() {
         // 冷启动：Keychain 里已有令牌就认为已登录（随后 refreshMe 校验有效性）
         isAuthenticated = !ServerConfig.shared.authToken.isEmpty
@@ -49,6 +56,11 @@ public final class AuthStore {
     }
 
     /// 登出：清本机令牌（不强制注销服务端会话，与 Web 一致：本机先干净）
+    /// 登录成功后清掉「会话失效」标记
+    public func clearSessionExpired() {
+        sessionExpired = false
+    }
+
     public func logout() {
         ServerConfig.shared.clearToken()
         current = nil
@@ -74,9 +86,12 @@ public final class AuthStore {
             } catch let err as ApiError {
                 // 令牌真的失效了 —— 只有这一条路清令牌
                 if err.kind == .unauthorized {
-                    ServerConfig.shared.clearToken()
-                    current = nil
-                    isAuthenticated = false
+                    /// 令牌失效：**保留令牌与本地数据**，只打一个标记。
+                    ///
+                    /// 清掉令牌 = 把人踢回登录页 = 看不到自己的账 —— 对一个记账软件
+                    /// 这是最糟的失败方式（服务器一挂，历史全「消失」）。
+                    /// 保留令牌后 App 仍然进主界面、照常用本地库，只是同步暂停。
+                    sessionExpired = true
                     return nil
                 }
                 // 403 / 其它 4xx：登录状态没问题，直接返回，不重试也不清令牌

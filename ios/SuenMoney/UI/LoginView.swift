@@ -297,6 +297,7 @@ public struct LoginView: View {
         focus = nil
         do {
             try await auth.login(username: username, password: password)
+            auth.clearSessionExpired()
             // 登录成功后立刻补一次同步（离线账在别的设备上要先落本地）
             Task { _ = await SyncEngine.shared.syncNow() }
         } catch let err as ApiError {

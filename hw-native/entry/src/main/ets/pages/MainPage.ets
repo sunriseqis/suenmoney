@@ -12,6 +12,8 @@
  * 跨屏「记一笔」管线：先切回流水屏，再延迟写 createRequest，流水屏 @Watch 打开抽屉。
  */
 import { display, window } from '@kit.ArkUI';
+import { AuthStore, SESSION_EXPIRED_KEY } from '../common/auth/AuthStore';
+import { router } from '@kit.ArkUI';
 
 import { LedgerScreen } from '../components/ledger/LedgerScreen';
 import { DashboardScreen } from '../components/dashboard/DashboardScreen';
@@ -35,6 +37,12 @@ struct MainPage {
   @StorageLink(SCREEN_STORAGE_KEY) screen: string = 'ledger';
   /** 沉浸式后状态栏高度（vp），顶部自己补；底部不再为手势条留白 */
   @StorageLink('statusBarVp') statusBarVp: number = 0;
+  /**
+   * 会话失效提示（令牌被服务端拒了，但本地账照常可读可写）。
+   *
+   * 不踢去登录页 —— 记账软件的核心数据在本地，登录只影响「能不能同步」。
+   */
+  @StorageLink(SESSION_EXPIRED_KEY) sessionExpired: boolean = false;
 
   private tok(): ThemeTokens {
     return this.themeName === 'candy' ? CANDY : CYBER;
@@ -105,6 +113,34 @@ struct MainPage {
       // 二级页的返回改由**系统返回手势**承担，见 onBackPress()。
       // content：padding 6/12/64（views.css:1121）、gap 12（app.css:757）
       Column({ space: 12 }) {
+        // 会话失效提示：一条细横条，不挡内容、不弹窗
+        if (this.sessionExpired) {
+          Row({ space: 6 }) {
+            Text('登录已失效')
+              .fontSize(11)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.tok().warn)
+            Text('本地账照常可用，重新登录后可同步')
+              .fontSize(11)
+              .fontColor(this.tok().ink3)
+              .layoutWeight(1)
+            Text('去登录')
+              .fontSize(11)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.tok().accent)
+              .onClick(() => {
+                AuthStore.sessionExpired = false;
+                AppStorage.setOrCreate(SESSION_EXPIRED_KEY, false);
+                router.replaceUrl({ url: 'pages/LoginPage' });
+              })
+          }
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor(this.tok().surface2)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+          .border({ width: 1, color: this.tok().warn })
+        }
+
         Column() {
           if (this.screen === 'ledger') {
             LedgerScreen()

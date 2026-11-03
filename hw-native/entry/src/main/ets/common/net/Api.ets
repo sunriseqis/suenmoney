@@ -138,10 +138,16 @@ export interface UpdateArtifact {
   sha256: string | null;
 }
 
+/** 当前版本（ArkTS 禁止内联对象字面量作类型，必须单独声明） */
+export interface UpdateVersionRef {
+  versionName: string;
+  versionCode: number;
+}
+
 /** `GET /api/update/check` 的返回 */
 export interface UpdateCheckReply {
   available: boolean;
-  current: { versionName: string; versionCode: number };
+  current: UpdateVersionRef;
   latest: UpdateArtifact | null;
   downloadPath: string;
   downloadToken: string;
