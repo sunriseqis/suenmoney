@@ -172,8 +172,9 @@ export struct LedgerScreen {
   /** 本地数据版本：同步写完后 +1，本屏据此重读 */
   @StorageLink(DATA_VERSION_KEY) @Watch('onDataVersion') dataVersion: number = 0;
 
-  /** 同步写完了：重读本地库 */
+  /** 同步写完了：重读本地库 + 刷新待同步条数（推成功了它就该归零） */
   private onDataVersion(): void {
+    this.refreshPending();
     this.reload();
   }
 

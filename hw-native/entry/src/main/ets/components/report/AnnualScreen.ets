@@ -7,7 +7,8 @@
  * 入口：报表屏的「{年} 年度报告」按钮 / 渐变大横幅（写 annualYear + 切屏）。
  * 返回：顶栏 ‹ 回报表（web history.back 落报表）；卡内「返回报表」按钮同效。
  */
-import { Api, MonthPoint, YearlyReport } from '../../common/net/Api';
+import { Api, MonthPoint, SummaryReportBody, YearlyReport, YearlyReportBody } from '../../common/net/Api';
+import { reportWithCache } from '../../common/store/ReportCache';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { formatMonthLabel, formatYuan } from '../../common/contract/Contract';
@@ -42,11 +43,13 @@ export struct AnnualScreen {
 
   private async load(): Promise<void> {
     this.loading = true;
-    try {
-      this.report = (await Api.yearlyReport(this.year)).report;
-    } catch (e) {
-      this.report = null;
-    }
+    // 缓存优先 + 后台刷新（与 ReportScreen 同一套）：离线时显示上次结果
+    const body = await reportWithCache<YearlyReportBody>(`yearly:${this.year}`,
+      async (): Promise<YearlyReportBody> => Api.yearlyReport(this.year),
+      (d: YearlyReportBody): void => {
+        this.report = d.report;
+      });
+    this.report = body === null ? null : body.report;
     this.loading = false;
   }
 
@@ -166,9 +169,15 @@ export struct AnnualScreen {
     this.yearCalOpen = true;
     const out: YearOption[] = [];
     try {
-      const s = (await Api.summaryReport()).report;
-      for (const y of s.years) {
-        out.push({ year: y.year, totalCents: y.totalCents, count: y.count });
+      const body = await reportWithCache<SummaryReportBody>('summary:all',
+        async (): Promise<SummaryReportBody> => Api.summaryReport(),
+        (d: SummaryReportBody): void => {
+        });
+      const s = body === null ? null : body.report;
+      if (s !== null) {
+        for (const y of s.years) {
+          out.push({ year: y.year, totalCents: y.totalCents, count: y.count });
+        }
       }
     } catch (e) {
       // 拉不到也至少给出当前年份，避免空弹层
