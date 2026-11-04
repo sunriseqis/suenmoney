@@ -63,6 +63,9 @@ public let categoryColors: [String] = [
 ///
 /// ⚠ 旧实现**不分主题**，candy 下也照用 cyber 的荧光色 ——
 ///   同一分类在 Web 浅色主题和原生端是两个颜色。
+/// 调用点全在 SwiftUI 视图里（本来就在主 actor），标 `@MainActor` 与 `ThemeManager` 对齐；
+/// 不标的话读 `ThemeManager.shared.tokens` 直接是 actor 隔离错误。
+@MainActor
 public func categoryColorOf(_ name: String, _ explicit: String) -> String {
     let tokens = ThemeManager.shared.tokens
     if !explicit.isEmpty {

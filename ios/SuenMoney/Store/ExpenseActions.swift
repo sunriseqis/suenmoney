@@ -51,7 +51,8 @@ public enum ExpenseActions {
            let text = String(data: data, encoding: .utf8) {
             try Outbox.enqueue(.createExpense, entityId: id, payload: text)
         }
-        SyncEngine.shared.schedulePush()
+        // SyncEngine 是 actor：这里同步上下文只能包一层 Task（防抖推送本来也不需要等）
+        Task { await SyncEngine.shared.schedulePush() }
         return id
     }
 
@@ -84,7 +85,8 @@ public enum ExpenseActions {
            let text = String(data: data, encoding: .utf8) {
             try Outbox.enqueue(.updateExpense, entityId: id, payload: text)
         }
-        SyncEngine.shared.schedulePush()
+        // SyncEngine 是 actor：这里同步上下文只能包一层 Task（防抖推送本来也不需要等）
+        Task { await SyncEngine.shared.schedulePush() }
     }
 
     /// 本地删除：先删本地再入队
@@ -92,7 +94,8 @@ public enum ExpenseActions {
         try Db.shared.run("DELETE FROM expenses WHERE id = ?", [id])
         try Outbox.enqueue(.deleteExpense, entityId: id,
                            payload: "{\"id\":\"\(id)\"}")
-        SyncEngine.shared.schedulePush()
+        // SyncEngine 是 actor：这里同步上下文只能包一层 Task（防抖推送本来也不需要等）
+        Task { await SyncEngine.shared.schedulePush() }
     }
 
     /// 从本地支付方式表取账单周期；查不到按现金处理
@@ -110,11 +113,13 @@ public enum ExpenseActions {
         )
     }
 
-    /// 当前用户 id：内存优先，离线启动时回落 meta
+    /// 当前用户 id（谁记归谁）。
+    ///
+    /// 只读 meta：`AuthStore` 是 `@MainActor`，本函数在同步上下文里被调用，
+    /// 直接访问 `AuthStore.shared.user` 是 actor 隔离错误。
+    /// 而登录成功时已经把 id 写进 meta（见 `AuthStore.login`），
+    /// 所以「内存优先」这一层本来就是多余的 —— 与鸿蒙 `owner_id` 取法一致。
     private static func currentOwnerId() -> String {
-        if let id = AuthStore.shared.user?.id, !id.isEmpty {
-            return id
-        }
         let rows = (try? Db.shared.query(
             "SELECT value FROM meta WHERE key = ?", ["current_user_id"])) ?? []
         return rows.first?["value"] as? String ?? ""

@@ -25,34 +25,34 @@ public enum PlanActions {
         try PlanDao.setStatus(id: id, status: "confirmed", postedDate: posted)
         try Outbox.enqueue(.confirmTodo, entityId: id,
                            payload: "{\"id\":\"\(id)\",\"spendDate\":\"\(spendDate)\"}")
-        SyncEngine.shared.schedulePush()
+        await SyncEngine.shared.schedulePush()
     }
 
     /// 跳过本期（「这次别提醒我」；逾期后非自动入账的还会重现）
     public static func skip(id: String) async throws {
         try PlanDao.setStatus(id: id, status: "skipped")
         try Outbox.enqueue(.skipTodo, entityId: id, payload: "{\"id\":\"\(id)\"}")
-        SyncEngine.shared.schedulePush()
+        await SyncEngine.shared.schedulePush()
     }
 
     /// 我知道了（摘掉提醒，不改期次状态）
     public static func ack(id: String) async throws {
         try PlanDao.setAck(id: id)
         try Outbox.enqueue(.ackTodo, entityId: id, payload: "{\"id\":\"\(id)\"}")
-        SyncEngine.shared.schedulePush()
+        await SyncEngine.shared.schedulePush()
     }
 
     /// 撤销确认（confirmed → pending，服务端会顺带软删生成的支出）
     public static func revert(id: String) async throws {
         try PlanDao.setStatus(id: id, status: "pending", clearPosting: true)
         try Outbox.enqueue(.revertTodo, entityId: id, payload: "{\"id\":\"\(id)\"}")
-        SyncEngine.shared.schedulePush()
+        await SyncEngine.shared.schedulePush()
     }
 
     /// 恢复跳过（skipped → pending）
     public static func restore(id: String) async throws {
         try PlanDao.setStatus(id: id, status: "pending")
         try Outbox.enqueue(.restoreTodo, entityId: id, payload: "{\"id\":\"\(id)\"}")
-        SyncEngine.shared.schedulePush()
+        await SyncEngine.shared.schedulePush()
     }
 }

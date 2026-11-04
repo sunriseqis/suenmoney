@@ -118,6 +118,8 @@ public enum DictionaryDao {
             let billing = r["billing_day"] as? Int ?? 0
             let repay = r["repayment_day"] as? Int ?? 0
             return PaymentMethodItem(
+                // 本地表没有「本月笔数」（那是服务端按当前月份算的），设置页要显示就走接口
+                monthExpenseCount: nil,
                 id: r["id"] as? String ?? "",
                 name: r["name"] as? String ?? "",
                 type: r["type"] as? String ?? "cash",

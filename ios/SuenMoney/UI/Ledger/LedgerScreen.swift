@@ -292,7 +292,9 @@ public struct LedgerScreen: View {
         // 分类只列一级（二级归属一级，列出来会重复）；支付列启用项；记录人取本地 users
         // 鸿蒙直接遍历字典缓存、**不排序** → 保持一致
         rootCategories = categoryNames.values.filter { $0.parentId.isEmpty }
-        paymentOptions = paymentNames.values.map {
+        // ⚠ `paymentNames` 是 `[id: name]`（String），拿它 `.values` 当对象用是错的。
+        // 选项列表要走 paymentsList()：要带上 icon，且按 sort_order 排（鸿蒙同）。
+        paymentOptions = ((try? DictionaryDao.paymentsList()) ?? []).map {
             CachedCategory(id: $0.id, name: $0.name, icon: $0.icon, color: "", parentId: "")
         }
         ownerOptions = (try? DictionaryDao.owners()) ?? []
