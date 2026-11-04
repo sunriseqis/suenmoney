@@ -11,9 +11,9 @@ tar czf /tmp/hw-ets.tgz entry/src/main/ets entry/src/main/resources AppScope || 
 LOCAL_HASH=$(tar xzOf /tmp/hw-ets.tgz entry/src/main/ets/pages/MainPage.ets | sha256sum | cut -d' ' -f1)
 echo "[1] 本地 MainPage.ets sha=$LOCAL_HASH"
 wscp -q /tmp/hw-ets.tgz "$WIN:C:/work/hw-ets.tgz" || { echo "SCP_FAIL"; exit 1; }
-wssh "cd /d C:\work\suenmoney\hw-native && tar xzf C:\work\hw-ets.tgz" || { echo "EXTRACT_FAIL"; exit 1; }
-WIN_HASH=$(wssh "certutil -hashfile C:\work\suenmoney\hw-native\entry\src\main\ets\pages\MainPage.ets SHA256" | sed -n '2p' | tr -d ' \r')
-ICON_WIN=$(wssh "certutil -hashfile C:\work\suenmoney\hw-native\entry\src\main\resources\base\media\foreground.png SHA256" | sed -n '2p' | tr -d ' \r')
+wssh "cd /d C:\work\hw-native && tar xzf C:\work\hw-ets.tgz" || { echo "EXTRACT_FAIL"; exit 1; }
+WIN_HASH=$(wssh "certutil -hashfile C:\work\hw-native\entry\src\main\ets\pages\MainPage.ets SHA256" | sed -n '2p' | tr -d ' \r')
+ICON_WIN=$(wssh "certutil -hashfile C:\work\hw-native\entry\src\main\resources\base\media\foreground.png SHA256" | sed -n '2p' | tr -d ' \r')
 ICON_LOCAL=$(tar xzOf /tmp/hw-ets.tgz entry/src/main/resources/base/media/foreground.png | sha256sum | cut -d' ' -f1)
 echo "[2] Windows MainPage=$WIN_HASH"
 echo "[2b] 图标 本地=$ICON_LOCAL"
@@ -22,7 +22,7 @@ echo "[2c] 图标 远端=$ICON_WIN"
 [ "$ICON_LOCAL" = "$ICON_WIN" ] || { echo "ICON_MISMATCH 图标没传上去"; exit 1; }
 
 # 2) 构建
-wssh "cd /d C:\work\suenmoney\hw-native && set DEVECO_SDK_HOME=C:\Program Files\Huawei\DevEco Studio\sdk& set PATH=C:\Program Files\Huawei\DevEco Studio\jbr\bin;C:\Program Files\Huawei\DevEco Studio\tools\node;%PATH%& \"C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat\" assembleHap --mode module -p product=default --no-daemon > C:\work\build.log 2>&1" >/dev/null 2>&1
+wssh "cd /d C:\work\hw-native && set DEVECO_SDK_HOME=C:\Program Files\Huawei\DevEco Studio\sdk& set PATH=C:\Program Files\Huawei\DevEco Studio\jbr\bin;C:\Program Files\Huawei\DevEco Studio\tools\node;%PATH%& \"C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat\" assembleHap --mode module -p product=default --no-daemon > C:\work\build.log 2>&1" >/dev/null 2>&1
 BUILD=$(wssh "type C:\work\build.log" 2>&1)
 if ! echo "$BUILD" | grep -q "BUILD SUCCESSFUL"; then
   echo "[3] BUILD FAILED"; echo "$BUILD" | grep -iE "Error Message|ERROR:" | head -12; exit 1
@@ -31,7 +31,7 @@ echo "[3] BUILD OK"
 
 # 3) 卸载重装 + 启动
 hdc "uninstall com.suenmoney.app" >/dev/null 2>&1
-hdc "install C:\work\suenmoney\hw-native\entry\build\default\outputs\default\entry-default-unsigned.hap" 2>&1 | grep -qi "successfully" || { echo "[4] INSTALL FAIL"; exit 1; }
+hdc "install C:\work\hw-native\entry\build\default\outputs\default\entry-default-unsigned.hap" 2>&1 | grep -qi "successfully" || { echo "[4] INSTALL FAIL"; exit 1; }
 echo "[4] INSTALL OK"
 hdc "shell aa force-stop com.suenmoney.app" >/dev/null 2>&1
 hdc "shell aa start -a EntryAbility -b com.suenmoney.app" 2>&1 | grep -q "successfully" || { echo "[5] START FAIL"; exit 1; }

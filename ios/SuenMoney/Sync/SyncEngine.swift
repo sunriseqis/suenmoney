@@ -107,10 +107,14 @@ public actor SyncEngine {
         var reverted: [String] = []
         var restored: [String] = []
 
+        /// 与 `expenses` 同序，用来把服务端回传的下标映射回队列条目
+        var createEntries: [OutboxEntry] = []
+
         for entry in entries {
             let p = parsePayload(entry.payload)
             switch entry.action {
             case .createExpense:
+                createEntries.append(entry)
                 expenses.append(SyncCreateExpense(
                     id: entry.entityId,
                     amountCents: intOf(p["amountCents"]),
@@ -155,9 +159,32 @@ public actor SyncEngine {
         )
 
         do {
-            _ = try await Api.syncPush(req)
-            try Outbox.remove(entries.map { $0.id })
-            result.pushed = entries.count
+            let body = try await Api.syncPush(req)
+            /*
+             服务端对新增支出是**逐条容错**的：坏数据不会 4xx，而是跳过并在
+             `failedExpenseIndexes` 里回传下标。只看 HTTP 200 就整批清队列，
+             等于把「服务端拒收的那一笔」当成功删掉 —— 本地还在、服务器没有，
+             用户以为同步完了。这里按 Web 的语义分流：
+             成功项出队，被拒项留在队列里累计重试，超限自然进死信。
+             */
+            let failed = Set(body.failedExpenseIndexes ?? [])
+            var okIds: [String] = []
+            // 修改/删除/待办：服务端已逐条容错接收（与 Web 一致，视为已处理）
+            for entry in entries where entry.action != .createExpense {
+                okIds.append(entry.id)
+            }
+            for (i, entry) in createEntries.enumerated() {
+                if failed.contains(i) {
+                    try? Outbox.markFailed(entry.id, error: "服务端拒绝该笔新增")
+                    if entry.retryCount + 1 >= outboxMaxRetry {
+                        result.dead += 1
+                    }
+                } else {
+                    okIds.append(entry.id)
+                }
+            }
+            try Outbox.remove(okIds)
+            result.pushed = okIds.count
             return result
         } catch let err as ApiError {
             // 网络错误：整批不计数（下次一起重发，保证原子性语义）

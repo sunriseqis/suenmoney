@@ -476,6 +476,12 @@ public struct SyncPushBody: Decodable {
     public let updatedExpensesCount: Int
     public let deletedExpensesCount: Int
     public let latestVersion: Int
+    /// 被服务端逐条拒绝的**新增**支出下标（对应请求 `expenses` 数组的位置）。
+    ///
+    /// 服务端对新增是容错的：坏数据（关联了已失效分类/支付方式）不会让整批 4xx，
+    /// 而是跳过并回传下标。客户端必须按它分流，否则那一笔服务端没入库、
+    /// 本地却以为同步成功把队列清了 —— 静默丢数据。
+    public let failedExpenseIndexes: [Int]?
 }
 
 public struct SyncChange: Decodable {
