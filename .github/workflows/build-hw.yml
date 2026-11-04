@@ -115,7 +115,10 @@ jobs:
               FOUND_HAP=$(find /workspace/hw-native -type f -name "*.hap" | head -n 1)
               if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
                 echo "找到产物: $FOUND_HAP"
-                cp -v "$FOUND_HAP" "/workspace/app/suenmoney-${{ env.VERSION_NAME }}.hap"
+                # ⚠ 名字必须与下游三处（Verify Artifact / Upload HAP / Publish Release）
+                # 及清理白名单 `/^SuenMoney-v[\d.]+-unsigned\.hap$/` 完全一致。
+                # 之前这里写的是 suenmoney-<ver>.hap，构建成功也会卡在 Verify Artifact 报 exit 1。
+                cp -v "$FOUND_HAP" "/workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
               else
                 echo "未在 /workspace/hw-native 找到 .hap，检索工作区:"
                 find /workspace -type f -name "*.hap" || true
@@ -217,10 +220,15 @@ jobs:
               }
               const release = await res.json();
               // 规范产物名单：Android release.apk / iOS release.ipa / 鸿蒙 unsigned.hap
+              // 两种命名风格都放行：老的是 SuenMoney-vX-release.ipa / -unsigned.hap，
+              // 新的是 suenmoney-X.ipa / suenmoney-X.fpk（iOS 与 fnOS 工作流现在的输出）。
+              // 只认老的会把别的工作流刚上传的包当「冗余」删掉 —— 2026-11-04 差点踩到。
               const allowedPatterns = [
                 /^SuenMoney-v[\d.]+-release\.apk$/,
                 /^SuenMoney-v[\d.]+-release\.ipa$/,
-                /^SuenMoney-v[\d.]+-unsigned\.hap$/
+                /^SuenMoney-v[\d.]+-unsigned\.hap$/,
+                /^suenmoney-[\d.]+\.[\w.]+$/,
+                /^SuenMoney-[\d.]+-unsigned\.hap$/
               ];
 
               for (const asset of release.assets || []) {
