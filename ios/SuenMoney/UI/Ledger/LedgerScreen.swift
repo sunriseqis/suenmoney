@@ -335,22 +335,32 @@ public struct LedgerScreen: View {
     ///
     /// 口径由服务端唯一提供（报表 SQL 不在客户端重写，避免三端跑偏），
     /// 本地只缓存它最后一次的响应；没有缓存时用本地数据兜底。
+    /// hero 三个数字 + 本月要还。
+    ///
+    /// ⚠ **支出与笔数一律本地算**（按还款日归属，与服务端月报同口径）。
+    /// 本机记一笔之后服务端还没收到（同步在后台），这时读报表缓存只能拿到旧数 ——
+    /// 用户会看到「刚记的 100 元在列表里，但上面总数没变」。本地库此刻已准确。
     private func loadHeroNumbers() async {
-        let key = "monthly:\(anchorMonth)"
-        if let body = await reportWithCache(key: key,
-                                            fetch: { try await Api.monthlyReport(month: anchorMonth) },
-                                            onFresh: { [self] (b: MonthlyReportBody) in
-                                                self.applyMonthlyReport(b.report)
-                                            }) {
-            applyMonthlyReport(body.report)
-            return
-        }
-        // 无缓存（首装且还没同步到报表）：本地兜底
-        let total = (try? ExpenseDao.monthTotal(anchorMonth))
+        let local = (try? ExpenseDao.monthTotalByRepayment(anchorMonth))
             ?? LocalMonthTotal(totalCents: 0, count: 0)
-        monthTotalCents = total.totalCents
-        monthCount = total.count
-        creditDueCents = 0
+        monthTotalCents = local.totalCents
+        monthCount = local.count
+        creditDueCents = (try? ExpenseDao.creditDueByRepayment(anchorMonth)) ?? 0
+
+        let key = "monthly:\(anchorMonth)"
+        let body = await reportWithCache(key: key,
+                                         fetch: { try await Api.monthlyReport(month: anchorMonth) },
+                                         onFresh: { [self] (b: MonthlyReportBody) in
+                                             self.prevTotalCents = b.report.previous.totalCents
+                                         })
+        // 环比：优先服务端（含上月对比），没有就本地算上月
+        if let r = body?.report {
+            prevTotalCents = r.previous.totalCents
+        } else {
+            let prev = (try? ExpenseDao.monthTotalByRepayment(shiftMonth(anchorMonth, -1)))
+                ?? LocalMonthTotal(totalCents: 0, count: 0)
+            prevTotalCents = prev.totalCents
+        }
     }
 
     private func applyMonthlyReport(_ report: MonthlyReport) {

@@ -116,6 +116,29 @@ public enum ExpenseDao {
         try Db.shared.run("DELETE FROM expenses WHERE id = ?", [id])
     }
 
+    /// 某月合计 —— **按还款日归属**（与服务端月报同口径）。
+    /// 与 `monthTotal()` 的区别：那个按 `spend_date`（跟列表一致），这个按 `repayment_date`。
+    public static func monthTotalByRepayment(_ month: String) throws -> LocalMonthTotal {
+        let rows = try Db.shared.query("""
+            SELECT COALESCE(SUM(amount_cents), 0) AS total, COUNT(*) AS cnt
+              FROM expenses WHERE substr(repayment_date, 1, 7) = ?
+            """, [month])
+        let r = rows.first
+        return LocalMonthTotal(totalCents: r?["total"] as? Int ?? 0,
+                               count: r?["cnt"] as? Int ?? 0)
+    }
+
+    /// 某月「要还」：信用卡类支付方式的还款额（与月报 creditDueCents 同口径）
+    public static func creditDueByRepayment(_ month: String) throws -> Int {
+        let rows = try Db.shared.query("""
+            SELECT COALESCE(SUM(e.amount_cents), 0) AS total
+              FROM expenses e
+              JOIN payment_methods m ON m.id = e.payment_method_id
+             WHERE substr(e.repayment_date, 1, 7) = ? AND m.type = 'credit'
+            """, [month])
+        return rows.first?["total"] as? Int ?? 0
+    }
+
     public static func count() throws -> Int {
         let rows = try Db.shared.query("SELECT COUNT(*) AS c FROM expenses")
         return rows.first?["c"] as? Int ?? 0
