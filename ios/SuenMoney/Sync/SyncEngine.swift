@@ -62,6 +62,11 @@ public actor SyncEngine {
         } catch {
             report.error = error.localizedDescription
         }
+        /*
+         本地优先之后，屏幕不再等接口返回而是读本地库 —— 所以同步写完之后
+         必须发个信号让它们重读，否则界面停在旧数据直到用户手动切页。
+         */
+        postDataChanged()
         return report
     }
 
@@ -159,10 +164,20 @@ public actor SyncEngine {
     private struct PullResult {
         var applied = 0
         var cursor = 0
+        var hasMore = false
     }
 
     private func pull() async throws -> PullResult {
         let cursor = try readCursor()
+        /*
+         本地是空的（首装 / 换账号 / 清过库）→ 拉全量快照，而不是从 0 重放变更历史。
+         放在 pull 里而不是调用方，是为了让 syncNow / refresh 两条路径都自动覆盖。
+         */
+        if cursor == 0 && ((try? ExpenseDao.count()) ?? 0) == 0 {
+            let version = try await SyncStore.bootstrap()
+            try writeCursor(version)
+            return PullResult(applied: 0, cursor: version, hasMore: false)
+        }
         let body = try await Api.syncPull(since: cursor, limit: 200)
         var applied = 0
         for change in body.changes {
@@ -170,7 +185,21 @@ public actor SyncEngine {
             applied += 1
         }
         try writeCursor(body.latestVersion)
-        return PullResult(applied: applied, cursor: body.latestVersion)
+        return PullResult(applied: applied, cursor: body.latestVersion, hasMore: body.hasMore)
+    }
+
+    /// **拉取一次更新**（冷启动 / 热启动各调一次）：一直翻页到 `hasMore=false`。
+    public func refresh() async {
+        for _ in 0..<50 {
+            guard let result = try? await pull() else { return }
+            if !result.hasMore { break }
+        }
+        postDataChanged()
+    }
+
+    /// 本地数据变了：广播给各屏重读
+    private func postDataChanged() {
+        NotificationCenter.default.post(name: .suenLocalDataChanged, object: nil)
     }
 
     public func readCursor() throws -> Int {
@@ -194,6 +223,19 @@ public actor SyncEngine {
             try Db.shared.run("DELETE FROM \(table) WHERE id = ?", [entityId])
             return
         }
+
+        /*
+         ⚠ 分类 / 支付方式**不能**用 REPLACE：那会把本地的 `color` / `icon` 一起覆盖掉。
+
+         这两列在本地是**各端的个性化偏好**（服务端不再存也不再下发），
+         每次同步冲一遍的话，用户挑的配色每次都白设。
+         所以只更新契约字段（名称/层级/排序/启用），颜色与图标保留本地值。
+         */
+        if entityType == "category" || entityType == "payment_method" {
+            try mergeDictionary(entityType, entityId, payload)
+            return
+        }
+
         guard let (sql, args) = bucketOf(entityType, payload) else { return }
         try Db.shared.run(sql, args)
     }
@@ -239,6 +281,89 @@ public actor SyncEngine {
     }
 
     /// 服务端 payload（camelCase）→ 本地列（snake_case）
+    /*
+     ⚠ **两种命名风格并存**，必须都认：
+
+       · `category` / `payment_method` 的 payload 是 camelCase（`parentId` / `sortOrder`）；
+       · `expense` / `plan` / `plan_todo` 的 payload 是 **snake_case**（`owner_id` / `amount_cents`）。
+
+     旧实现一律按 camelCase 读，于是每次增量拉取都把本地支出写成
+     `owner_id=''`、`amount_cents=0` —— 数据被静默冲成空值。
+     与鸿蒙 `SyncEngine.ets` 的 `pick()` 同一套修法。
+     */
+    private func pick(_ p: [String: Any], _ snake: String, _ camel: String) -> Any? {
+        if let v = p[snake], !(v is NSNull) { return v }
+        if let v = p[camel], !(v is NSNull) { return v }
+        return nil
+    }
+
+    private func str2(_ p: [String: Any], _ snake: String, _ camel: String) -> String {
+        strOf(pick(p, snake, camel))
+    }
+
+    private func int2(_ p: [String: Any], _ snake: String, _ camel: String) -> Int {
+        intOf(pick(p, snake, camel))
+    }
+
+    private func bool2(_ p: [String: Any], _ snake: String, _ camel: String, default def: Bool) -> Int {
+        boolOf(pick(p, snake, camel), default: def)
+    }
+
+    /// 字典实体（分类 / 支付方式）的增量合并：只更新契约字段，保留本地 color / icon
+    private func mergeDictionary(_ entityType: String, _ id: String, _ p: [String: Any]) throws {
+        let existing = try Db.shared.query(
+            "SELECT id FROM \(entityType == "category" ? "categories" : "payment_methods") WHERE id = ?",
+            [id])
+        let isNew = existing.isEmpty
+
+        if entityType == "category" {
+            if isNew {
+                try Db.shared.run("""
+                    INSERT OR REPLACE INTO categories
+                      (id, parent_id, name, depth, icon, color, sort_order, is_enabled)
+                    VALUES (?,?,?,?, '', '', ?,?)
+                    """,
+                    [id, str2(p, "parent_id", "parentId"), str2(p, "name", "name"),
+                     int2(p, "depth", "depth") == 0 ? 1 : int2(p, "depth", "depth"),
+                     int2(p, "sort_order", "sortOrder"),
+                     bool2(p, "is_enabled", "isEnabled", default: true)])
+            } else {
+                try Db.shared.run("""
+                    UPDATE categories SET parent_id = ?, name = ?, depth = ?,
+                           sort_order = ?, is_enabled = ? WHERE id = ?
+                    """,
+                    [str2(p, "parent_id", "parentId"), str2(p, "name", "name"),
+                     int2(p, "depth", "depth") == 0 ? 1 : int2(p, "depth", "depth"),
+                     int2(p, "sort_order", "sortOrder"),
+                     bool2(p, "is_enabled", "isEnabled", default: true), id])
+            }
+            return
+        }
+
+        // payment_method
+        let type = str2(p, "type", "type")
+        if isNew {
+            try Db.shared.run("""
+                INSERT OR REPLACE INTO payment_methods
+                  (id, name, type, icon, billing_day, repayment_day, is_enabled, sort_order)
+                VALUES (?,?,?, '', ?,?,?,?)
+                """,
+                [id, str2(p, "name", "name"), type.isEmpty ? "cash" : type,
+                 int2(p, "billing_day", "billingDay"), int2(p, "repayment_day", "repaymentDay"),
+                 bool2(p, "is_enabled", "isEnabled", default: true),
+                 int2(p, "sort_order", "sortOrder")])
+        } else {
+            try Db.shared.run("""
+                UPDATE payment_methods SET name = ?, type = ?, billing_day = ?,
+                       repayment_day = ?, is_enabled = ?, sort_order = ? WHERE id = ?
+                """,
+                [str2(p, "name", "name"), type.isEmpty ? "cash" : type,
+                 int2(p, "billing_day", "billingDay"), int2(p, "repayment_day", "repaymentDay"),
+                 bool2(p, "is_enabled", "isEnabled", default: true),
+                 int2(p, "sort_order", "sortOrder"), id])
+        }
+    }
+
     private func bucketOf(_ entityType: String, _ p: [String: Any]) -> (String, [Any?])? {
         let id = strOf(p["id"])
         guard !id.isEmpty else { return nil }
@@ -252,11 +377,12 @@ public actor SyncEngine {
                    spend_date, posting_date, repayment_date, note, source, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                [id, strOf(p["ownerId"]), intOf(p["amountCents"]), strOf(p["categoryId"]),
-                 strOf(p["paymentMethodId"]), strOf(p["spendDate"]), strOf(p["postingDate"]),
-                 strOf(p["repaymentDate"]), strOf(p["note"]),
-                 strOf(p["source"]).isEmpty ? "manual" : strOf(p["source"]),
-                 strOf(p["updatedAt"]).isEmpty ? now : strOf(p["updatedAt"])])
+                [id, str2(p, "owner_id", "ownerId"), int2(p, "amount_cents", "amountCents"),
+                 str2(p, "category_id", "categoryId"), str2(p, "payment_method_id", "paymentMethodId"),
+                 str2(p, "spend_date", "spendDate"), str2(p, "posting_date", "postingDate"),
+                 str2(p, "repayment_date", "repaymentDate"), str2(p, "note", "note"),
+                 str2(p, "source", "source").isEmpty ? "manual" : str2(p, "source", "source"),
+                 str2(p, "updated_at", "updatedAt").isEmpty ? now : str2(p, "updated_at", "updatedAt")])
 
         case "category":
             return ("""
@@ -287,31 +413,46 @@ public actor SyncEngine {
                    purchase_date, first_due_date, remind_days_before, auto_post, source, state, note, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                [id, strOf(p["name"]), strOf(p["categoryId"]), strOf(p["paymentMethodId"]),
-                 intOf(p["amountCents"]), intOf(p["totalAmountCents"]), strOf(p["purchaseDate"]),
-                 strOf(p["firstDueDate"]),
-                 intOf(p["remindDaysBefore"]) == 0 ? 3 : intOf(p["remindDaysBefore"]),
-                 boolOf(p["autoPost"]),
-                 strOf(p["source"]).isEmpty ? "manual" : strOf(p["source"]),
-                 strOf(p["state"]).isEmpty ? "active" : strOf(p["state"]),
-                 strOf(p["note"]),
-                 strOf(p["updatedAt"]).isEmpty ? now : strOf(p["updatedAt"])])
+                [id, str2(p, "name", "name"), str2(p, "category_id", "categoryId"),
+                 str2(p, "payment_method_id", "paymentMethodId"),
+                 int2(p, "amount_cents", "amountCents"),
+                 int2(p, "total_amount_cents", "totalAmountCents"),
+                 str2(p, "purchase_date", "purchaseDate"),
+                 str2(p, "first_due_date", "firstDueDate"),
+                 int2(p, "remind_days_before", "remindDaysBefore") == 0
+                    ? 3 : int2(p, "remind_days_before", "remindDaysBefore"),
+                 bool2(p, "auto_post", "autoPost", default: false),
+                 str2(p, "source", "source").isEmpty ? "manual" : str2(p, "source", "source"),
+                 str2(p, "state", "state").isEmpty ? "active" : str2(p, "state", "state"),
+                 str2(p, "note", "note"),
+                 str2(p, "updated_at", "updatedAt").isEmpty ? now : str2(p, "updated_at", "updatedAt")])
 
         case "plan_todo":
             return ("""
                 INSERT OR REPLACE INTO plan_todos
                   (id, plan_id, plan_name, period_seq, amount_cents, repayment_date,
-                   status, will_auto_post, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                   status, will_auto_post, expense_id, posted_date, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                [id, strOf(p["planId"]), strOf(p["planName"]), intOf(p["periodSeq"]),
-                 intOf(p["amountCents"]), strOf(p["repaymentDate"]),
-                 strOf(p["status"]).isEmpty ? "pending" : strOf(p["status"]),
-                 boolOf(p["willAutoPost"]),
-                 strOf(p["updatedAt"]).isEmpty ? now : strOf(p["updatedAt"])])
+                [id, str2(p, "plan_id", "planId"),
+                 // plan_name 是历史冗余列：payload 不带，留空由读取时 JOIN plans 补
+                 str2(p, "plan_name", "planName"),
+                 int2(p, "period_seq", "periodSeq"),
+                 int2(p, "amount_cents", "amountCents"),
+                 str2(p, "repayment_date", "repaymentDate"),
+                 str2(p, "status", "status").isEmpty ? "pending" : str2(p, "status", "status"),
+                 bool2(p, "will_auto_post", "willAutoPost", default: false),
+                 str2(p, "expense_id", "expenseId"),
+                 str2(p, "posted_date", "postedDate"),
+                 str2(p, "updated_at", "updatedAt").isEmpty ? now : str2(p, "updated_at", "updatedAt")])
 
         default:
             return nil
         }
     }
+}
+
+/// 本地数据变更通知：各屏 `.onReceive` 它来重读本地库
+public extension Notification.Name {
+    static let suenLocalDataChanged = Notification.Name("suenLocalDataChanged")
 }
