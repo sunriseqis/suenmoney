@@ -44,7 +44,7 @@ public final class Db: @unchecked Sendable {
     public static let shared = Db()
 
     /// 表结构版本，改表时 +1 并在 migrate 里补分支
-    public static let schemaVersion = 2
+    public static let schemaVersion = 3
 
     private var handle: OpaquePointer?
 
@@ -253,6 +253,9 @@ public final class Db: @unchecked Sendable {
           repayment_date TEXT NOT NULL,
           note TEXT NOT NULL DEFAULT '',
           source TEXT NOT NULL DEFAULT 'manual',
+          -- 计划生成的记录：来源计划与期次（流水行显示「京东分期 · 3期」靠它）
+          plan_id TEXT,
+          plan_period_seq INTEGER,
           updated_at TEXT NOT NULL
         )
         """,
@@ -319,6 +322,9 @@ public final class Db: @unchecked Sendable {
         "ALTER TABLE plan_todos ADD COLUMN ack_at TEXT",
         "ALTER TABLE plan_todos ADD COLUMN expense_id TEXT",
         "ALTER TABLE plan_todos ADD COLUMN posted_date TEXT",
+        // v3：expenses 补计划来源（流水行「N期」标记靠它）
+        "ALTER TABLE expenses ADD COLUMN plan_id TEXT",
+        "ALTER TABLE expenses ADD COLUMN plan_period_seq INTEGER",
     ]
 
     private static let createIndexes: [String] = [

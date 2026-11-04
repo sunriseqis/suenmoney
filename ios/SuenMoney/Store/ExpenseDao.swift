@@ -104,10 +104,11 @@ public enum ExpenseDao {
         try Db.shared.run("""
             INSERT OR REPLACE INTO expenses
               (id, owner_id, amount_cents, category_id, payment_method_id, spend_date,
-               posting_date, repayment_date, note, source, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               posting_date, repayment_date, note, source, plan_id, plan_period_seq, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [item.id, item.ownerId, item.amountCents, item.categoryId, item.paymentMethodId,
                   item.spendDate, item.postingDate, item.repaymentDate, item.note, item.source,
+                  item.planId ?? "", item.planPeriodSeq ?? 0,
                   ISO8601DateFormatter().string(from: Date())])
     }
 
@@ -161,6 +162,7 @@ public enum ExpenseDao {
         let sql = """
             SELECT e.id, e.owner_id, e.amount_cents, e.category_id, e.payment_method_id,
                    e.spend_date, e.posting_date, e.repayment_date, e.note, e.source,
+                   e.plan_id, e.plan_period_seq,
                    COALESCE(u.display_name, '') AS owner_name,
                    COALESCE(c.name, '') AS category_name,
                    COALESCE(c.icon, '') AS category_icon,
@@ -211,7 +213,8 @@ public enum ExpenseDao {
             repaymentDate: row["repayment_date"] as? String ?? "",
             note: row["note"] as? String ?? "",
             source: row["source"] as? String ?? "manual",
-            planPeriodSeq: nil
+            planPeriodSeq: row["plan_period_seq"] as? Int,
+            planId: (row["plan_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 
@@ -236,7 +239,8 @@ public enum ExpenseDao {
             repaymentDate: row["repayment_date"] as? String ?? "",
             note: row["note"] as? String ?? "",
             source: row["source"] as? String ?? "manual",
-            planPeriodSeq: nil
+            planPeriodSeq: row["plan_period_seq"] as? Int,
+            planId: (row["plan_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 }

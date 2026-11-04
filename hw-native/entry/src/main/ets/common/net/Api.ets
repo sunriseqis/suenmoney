@@ -108,6 +108,8 @@ export interface ExpenseItem {
    * 流水条目要显示「京东分期 · iPhone · 3期」，历史记录也能靠它补全。
    */
   planPeriodSeq?: number | null;
+  /** 计划来源的记录属于哪个计划（本地表 plan_id 用；服务端一直有下发） */
+  planId?: string | null;
 }
 
 export interface ExpensePage {
@@ -361,6 +363,13 @@ export interface PlanTodoItem {
   status: string;
   /** 实际入账日（已入账时有值）；设置页「已处理」按它显示，而不是还款日 */
   postedDate?: string | null;
+  /**
+   * 「我知道了」摘除时间。
+   *
+   * ⚠ 必须落地：提醒窗口的 SQL 里有 `ack_at IS NULL` 条件，
+   *   不同步它的话，用户点过「我知道了」的期次会在每次快照后重新冒出来。
+   */
+  ackAt?: string | null;
 }
 
 export interface UserCreateRequest {

@@ -22,7 +22,7 @@ public enum PlanDao {
         let rows = try Db.shared.query("""
             SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
                    t.period_seq, t.amount_cents, t.repayment_date, t.status,
-                   t.will_auto_post, t.expense_id, t.posted_date
+                   t.will_auto_post, t.expense_id, t.posted_date, t.ack_at
               FROM plan_todos t
               LEFT JOIN plans p ON p.id = t.plan_id
              WHERE (
@@ -41,7 +41,7 @@ public enum PlanDao {
         let rows = try Db.shared.query("""
             SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
                    t.period_seq, t.amount_cents, t.repayment_date, t.status,
-                   t.will_auto_post, t.expense_id, t.posted_date
+                   t.will_auto_post, t.expense_id, t.posted_date, t.ack_at
               FROM plan_todos t
               LEFT JOIN plans p ON p.id = t.plan_id
              WHERE t.status = 'pending'
@@ -55,7 +55,7 @@ public enum PlanDao {
         let rows = try Db.shared.query("""
             SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
                    t.period_seq, t.amount_cents, t.repayment_date, t.status,
-                   t.will_auto_post, t.expense_id, t.posted_date
+                   t.will_auto_post, t.expense_id, t.posted_date, t.ack_at
               FROM plan_todos t
               LEFT JOIN plans p ON p.id = t.plan_id
              WHERE t.status = ?
@@ -136,7 +136,8 @@ public enum PlanDao {
             repaymentDate: row["repayment_date"] as? String ?? "",
             willAutoPost: (row["will_auto_post"] as? Int ?? 0) == 1,
             status: row["status"] as? String ?? "pending",
-            postedDate: (row["posted_date"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            postedDate: (row["posted_date"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            ackAt: (row["ack_at"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 }

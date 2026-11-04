@@ -173,7 +173,13 @@ public actor SyncEngine {
          本地是空的（首装 / 换账号 / 清过库）→ 拉全量快照，而不是从 0 重放变更历史。
          放在 pull 里而不是调用方，是为了让 syncNow / refresh 两条路径都自动覆盖。
          */
-        if cursor == 0 && ((try? ExpenseDao.count()) ?? 0) == 0 {
+        /*
+         ⚠ 额外要求 outbox 为空：快照是「先清后灌」，如果本地有还没推上去的记录
+           （离线刚记的账），清表会把它删掉 —— 那是真丢数据。
+           有未推送项时退回增量 pull，等推送成功后再找机会快照。
+         */
+        let pendingCount = (try? Outbox.pendingCount()) ?? 0
+        if cursor == 0 && ((try? ExpenseDao.count()) ?? 0) == 0 && pendingCount == 0 {
             let version = try await SyncStore.bootstrap()
             try writeCursor(version)
             return PullResult(applied: 0, cursor: version, hasMore: false)
@@ -375,14 +381,16 @@ public actor SyncEngine {
             return ("""
                 INSERT OR REPLACE INTO expenses
                   (id, owner_id, amount_cents, category_id, payment_method_id,
-                   spend_date, posting_date, repayment_date, note, source, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   spend_date, posting_date, repayment_date, note, source,
+                   plan_id, plan_period_seq, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 [id, str2(p, "owner_id", "ownerId"), int2(p, "amount_cents", "amountCents"),
                  str2(p, "category_id", "categoryId"), str2(p, "payment_method_id", "paymentMethodId"),
                  str2(p, "spend_date", "spendDate"), str2(p, "posting_date", "postingDate"),
                  str2(p, "repayment_date", "repaymentDate"), str2(p, "note", "note"),
                  str2(p, "source", "source").isEmpty ? "manual" : str2(p, "source", "source"),
+                 str2(p, "plan_id", "planId"), int2(p, "plan_period_seq", "planPeriodSeq"),
                  str2(p, "updated_at", "updatedAt").isEmpty ? now : str2(p, "updated_at", "updatedAt")])
 
         case "category":
@@ -442,8 +450,8 @@ public actor SyncEngine {
             return ("""
                 INSERT OR REPLACE INTO plan_todos
                   (id, plan_id, plan_name, period_seq, amount_cents, repayment_date,
-                   status, will_auto_post, expense_id, posted_date, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   status, will_auto_post, expense_id, posted_date, ack_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 [id, str2(p, "plan_id", "planId"),
                  // plan_name 是历史冗余列：payload 不带，留空由读取时 JOIN plans 补
@@ -455,6 +463,7 @@ public actor SyncEngine {
                  bool2(p, "will_auto_post", "willAutoPost", default: false),
                  str2(p, "expense_id", "expenseId"),
                  str2(p, "posted_date", "postedDate"),
+                 str2(p, "ack_at", "ackAt"),
                  str2(p, "updated_at", "updatedAt").isEmpty ? now : str2(p, "updated_at", "updatedAt")])
 
         default:

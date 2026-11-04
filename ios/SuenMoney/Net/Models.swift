@@ -131,13 +131,15 @@ public struct ExpenseItem: Decodable, Identifiable, Hashable {
     public let source: String
     /// 计划来源的记录属于第几期。流水条目显示「· 3期」用它，历史记录也能补全。
     public let planPeriodSeq: Int?
+    /// 计划来源的记录属于哪个计划（本地表 plan_id 用；服务端一直有下发）
+    public let planId: String?
 
     public init(id: String, ownerId: String, ownerName: String, amountCents: Int,
                 categoryId: String, categoryName: String, categoryIcon: String, categoryColor: String,
                 parentCategoryColor: String?, parentCategoryName: String?,
                 paymentMethodId: String, paymentMethodName: String, paymentMethodType: String,
                 spendDate: String, postingDate: String, repaymentDate: String,
-                note: String, source: String, planPeriodSeq: Int?) {
+                note: String, source: String, planPeriodSeq: Int?, planId: String? = nil) {
         self.id = id
         self.ownerId = ownerId
         self.ownerName = ownerName
@@ -157,6 +159,7 @@ public struct ExpenseItem: Decodable, Identifiable, Hashable {
         self.note = note
         self.source = source
         self.planPeriodSeq = planPeriodSeq
+        self.planId = planId
     }
 }
 
@@ -399,6 +402,10 @@ public struct PlanTodoItem: Decodable, Identifiable {
     public let status: String
     /// 实际入账日（已入账时有值）；设置页「已处理」按它显示，而不是还款日
     public let postedDate: String?
+    /// 「我知道了」摘除时间。
+    /// ⚠ 必须落地：提醒窗口 SQL 有 `ack_at IS NULL` 条件，
+    ///   不同步它的话，点过「我知道了」的期次会在每次快照后重新冒出来。
+    public let ackAt: String?
 }
 
 public struct PlanTodoList: Decodable {

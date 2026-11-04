@@ -185,7 +185,13 @@ export class SyncEngine {
      * 本地是空的（首装 / 换账号 / 清过库）→ 拉全量快照，而不是从 0 重放变更历史。
      * 放在 pull 里而不是调用方，是为了让 syncNow / refresh 两条路径都自动覆盖。
      */
-    if (cursor === 0 && (await ExpenseDao.count()) === 0) {
+    /*
+     * ⚠ 额外要求 outbox 为空：快照是「先清后灌」，如果本地有还没推上去的记录
+     *   （离线刚记的账），清表会把它删掉 —— 那是真丢数据。
+     *   有未推送项时退回增量 pull，等推送成功后再找机会快照。
+     */
+    const pending = await Outbox.pendingCount();
+    if (cursor === 0 && (await ExpenseDao.count()) === 0 && pending === 0) {
       const version = await SyncStore.bootstrap();
       await SyncEngine.writeCursor(version);
       return { applied: 0, cursor: version, hasMore: false };
@@ -340,6 +346,8 @@ function toBucket(entityType: string, payload: object): relationalStore.ValuesBu
       'repayment_date': str(p, 'repayment_date', 'repaymentDate'),
       'note': str(p, 'note', 'note'),
       'source': str(p, 'source', 'source', 'manual'),
+      'plan_id': str(p, 'plan_id', 'planId'),
+      'plan_period_seq': num(p, 'plan_period_seq', 'planPeriodSeq'),
       'updated_at': str(p, 'updated_at', 'updatedAt', new Date().toISOString())
     };
     return String(bucket['id']) === '' ? null : bucket;
@@ -402,6 +410,7 @@ function toBucket(entityType: string, payload: object): relationalStore.ValuesBu
       'will_auto_post': bool(p, 'will_auto_post', 'willAutoPost') ? 1 : 0,
       'expense_id': str(p, 'expense_id', 'expenseId'),
       'posted_date': str(p, 'posted_date', 'postedDate'),
+      'ack_at': str(p, 'ack_at', 'ackAt'),
       'updated_at': str(p, 'updated_at', 'updatedAt', new Date().toISOString())
     };
     return String(bucket['id']) === '' ? null : bucket;

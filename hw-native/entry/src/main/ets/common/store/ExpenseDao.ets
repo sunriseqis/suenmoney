@@ -59,6 +59,8 @@ function toBucket(item: ExpenseItem): relationalStore.ValuesBucket {
     'repayment_date': item.repaymentDate,
     'note': item.note,
     'source': item.source,
+    'plan_id': item.planId ?? '',
+    'plan_period_seq': item.planPeriodSeq ?? 0,
     'updated_at': new Date().toISOString()
   };
   return bucket;
@@ -72,6 +74,7 @@ function toBucket(item: ExpenseItem): relationalStore.ValuesBucket {
  */
 const SELECT_JOINED = `SELECT e.id, e.owner_id, e.amount_cents, e.category_id, e.payment_method_id,
        e.spend_date, e.posting_date, e.repayment_date, e.note, e.source,
+       e.plan_id, e.plan_period_seq,
        COALESCE(u.display_name, '') AS owner_name,
        COALESCE(c.name, '') AS category_name,
        COALESCE(c.icon, '') AS category_icon,
@@ -225,7 +228,11 @@ export class ExpenseDao {
       postingDate: rs.getString(rs.getColumnIndex('posting_date')),
       repaymentDate: rs.getString(rs.getColumnIndex('repayment_date')),
       note: rs.getString(rs.getColumnIndex('note')),
-      source: rs.getString(rs.getColumnIndex('source'))
+      source: rs.getString(rs.getColumnIndex('source')),
+      planId: rs.isColumnNull(rs.getColumnIndex('plan_id'))
+        ? null : rs.getString(rs.getColumnIndex('plan_id')),
+      planPeriodSeq: rs.isColumnNull(rs.getColumnIndex('plan_period_seq'))
+        ? null : rs.getLong(rs.getColumnIndex('plan_period_seq'))
     };
     return item;
   }
