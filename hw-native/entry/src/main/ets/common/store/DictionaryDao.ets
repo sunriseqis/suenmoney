@@ -51,6 +51,30 @@ export class DictionaryDao {
   }
 
   /**
+   * 各分类的流水笔数（全历史，与服务端 `expenseCount` 同口径）。
+   *
+   * 用途：记账抽屉「常用分类」按笔数排序挑前 6 个。本地没有这个数就只能
+   * 全填 0 —— 那样 `quickCats()` 的 `expenseCount > 0` 过滤会把整条分类条滤空。
+   */
+  static async categoryCounts(): Promise<Map<string, number>> {
+    const out: Map<string, number> = new Map<string, number>();
+    try {
+      const rs = await Db.get().querySql(
+        'SELECT category_id, COUNT(*) AS c FROM expenses GROUP BY category_id'
+      );
+      while (rs.goToNextRow()) {
+        out.set(rs.getString(rs.getColumnIndex('category_id')),
+          rs.getLong(rs.getColumnIndex('c')));
+      }
+      rs.close();
+    } catch (e) {
+      // 统计失败就当没有（分类条会走兜底逻辑，不至于整条消失）
+    }
+    return out;
+  }
+
+
+  /**
    * 从本地缓存**还原分类树**（离线记账用）。
    *
    * 记账抽屉需要完整的 `CategoryNode[]`（一级 + 二级）才能选分类。
@@ -83,6 +107,12 @@ export class DictionaryDao {
       });
     }
     rs.close();
+    // 补笔数：quickCats 要按笔数挑「常用分类」，全 0 会让整条分类条消失
+    const counts: Map<string, number> = await DictionaryDao.categoryCounts();
+    for (const node of all) {
+      const n = counts.get(node.id);
+      node.expenseCount = n === undefined ? 0 : n;
+    }
     const roots: CategoryNode[] = [];
     for (const node of all) {
       if (node.parentId === null) {

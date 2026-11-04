@@ -829,18 +829,32 @@ export struct ExpenseEditor {
   }
 
   /** 常用分类：二级里本月笔数最多的前 6 个（不足则补最近使用的） */
+  /**
+   * 键盘上方的常用分类（与 Web `quickCategories` 同一套逻辑）。
+   *
+   * 按「该分类下的记录笔数」降序挑前 6；**笔数 > 0 的不足 3 个时退回前 6 个**。
+   *
+   * ⚠ 那个兜底不能省：新装/本地笔数还没统计出来时所有 `expenseCount` 都是 0，
+   *   没有兜底就会把整条分类条滤空 —— 用户看到的就是「键盘上的分类不见了」。
+   */
   private quickCats(): CategoryNode[] {
-    const out: CategoryNode[] = [];
+    const all: CategoryNode[] = [];
     for (const root of this.categories) {
       for (const kid of root.children) {
-        if (kid.isEnabled && kid.expenseCount > 0) {
-          out.push(kid);
+        if (kid.isEnabled) {
+          all.push(kid);
         }
       }
     }
-    out.sort((a: CategoryNode, b: CategoryNode) => b.expenseCount - a.expenseCount);
-    // Web 是横向滚动、胶囊按内容自适应，不再受键盘列宽限制 → 取前 6
-    return out.slice(0, 6);
+    const sorted: CategoryNode[] = all.slice();
+    sorted.sort((a: CategoryNode, b: CategoryNode) => b.expenseCount - a.expenseCount);
+    const picked: CategoryNode[] = [];
+    for (const c of sorted) {
+      if (c.expenseCount > 0 && picked.length < 6) {
+        picked.push(c);
+      }
+    }
+    return picked.length >= 3 ? picked : sorted.slice(0, 6);
   }
 
   @Builder
