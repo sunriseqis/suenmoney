@@ -276,6 +276,7 @@ public actor SyncEngine {
         case "payment_method": return "payment_methods"
         case "plan": return "plans"
         case "plan_todo": return "plan_todos"
+        case "user": return "users"
         default: return ""
         }
     }
@@ -405,6 +406,16 @@ public actor SyncEngine {
                  strOf(p["type"]).isEmpty ? "cash" : strOf(p["type"]),
                  strOf(p["icon"]), intOf(p["billingDay"]), intOf(p["repaymentDay"]),
                  boolOf(p["isEnabled"], default: true), intOf(p["sortOrder"])])
+
+        case "user":
+            // 用户（显示名/角色）：流水行要显示「记录人」，改了名字就得跟着更新
+            return ("""
+                INSERT OR REPLACE INTO users (id, display_name, role, updated_at)
+                VALUES (?,?,?,?)
+                """,
+                [id, str2(p, "display_name", "displayName"),
+                 str2(p, "role", "role").isEmpty ? "member" : str2(p, "role", "role"),
+                 str2(p, "updated_at", "updatedAt").isEmpty ? now : str2(p, "updated_at", "updatedAt")])
 
         case "plan":
             return ("""

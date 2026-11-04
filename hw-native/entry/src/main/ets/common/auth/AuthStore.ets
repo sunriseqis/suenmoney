@@ -64,6 +64,27 @@ export class AuthStore {
   static async logout(): Promise<void> {
     await ServerConfig.get().clearToken();
     AuthStore.current = null;
+
+    /*
+     主动登出要**清空本地业务数据**：家庭账本多人共用一台设备时，
+     A 登出、B 登录，B 在首次同步完成前会看到 A 的全部账目 —— 串号。
+
+     只清业务表，`meta.schema_version` 保留；同步游标重置为 0，
+     下次登录会重新拉全量快照（`SyncEngine.pull` 里「本地空 → 快照」会命中）。
+     注意：**登录失效（401）不走这里** —— 那种情况要保留数据让用户继续看。
+     */
+    try {
+      const store = Db.get();
+      await store.executeSql('DELETE FROM expenses');
+      await store.executeSql('DELETE FROM plans');
+      await store.executeSql('DELETE FROM plan_todos');
+      await store.executeSql('DELETE FROM categories');
+      await store.executeSql('DELETE FROM payment_methods');
+      await store.executeSql('DELETE FROM users');
+      await store.executeSql("INSERT OR REPLACE INTO meta(key, value) VALUES ('sync_cursor', '0')");
+    } catch (e) {
+      // 清库失败不该阻塞登出（令牌已经清掉了，用户已经算退出）
+    }
   }
 
   /**

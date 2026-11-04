@@ -189,6 +189,10 @@ public struct SettingsScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .suenLocalDataChanged)) { _ in
+            // 同步写完后重读（否则停在本页看不到更新）
+            Task { await reload() }
+        }
         .onAppear {
             srvList = ServerConfig.shared.allServers
             srvActive = ServerConfig.shared.baseUrl
@@ -1519,10 +1523,31 @@ public struct SettingsScreen: View {
     /// 弹层正文（三种形态的内容）
     @ViewBuilder
     private func formBody(_ kind: SheetKind) -> some View {
-        // 名称
+        // 名称：**计划**可改（用户自己的数据）；分类/支付方式只读（管理员在服务端维护）
         VStack(alignment: .leading, spacing: 6) {
             fieldLabel(kind == .plan ? "计划名称" : "名称")
-            plainField("请输入名称", $formName)
+            if kind == .plan {
+                plainField("请输入名称", $formName)
+            } else {
+                // 只读展示：客户端提交不了名称，做成输入框会让人以为能改
+                Text(formName)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(css: tokens.ink))
+                    .padding(.horizontal, 10)
+                    .frame(height: 38)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
+                    .clipShape(RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, tokens.rMd))
+                            .stroke(Color(css: outlineStrongOf(isCyber)), lineWidth: 1)
+                    )
+                Text(kind == .category
+                     ? "名称与层级由管理员在服务端维护，本机只能调整外观"
+                     : "名称与账单周期由管理员在服务端维护，本机只能调整图标")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Color(css: tokens.ink3))
+            }
         }
 
         if kind == .category {

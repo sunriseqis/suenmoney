@@ -28,6 +28,7 @@ import { SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
 import { DictionaryDao } from '../../common/store/DictionaryDao';
 import { PlanDao } from '../../common/store/PlanDao';
+import { DATA_VERSION_KEY } from '../../common/sync/SyncEngine';
 import { ProbeResult, ServerRouter } from '../../common/net/ServerRouter';
 import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
@@ -180,6 +181,8 @@ export struct SettingsScreen {
   /** 会话失效（令牌被服务端拒了）：只在设置页显示一行小字 */
   @StorageLink(SESSION_EXPIRED_KEY) sessionExpired: boolean = false;
   @State editingCategoryId: string = '';
+  /** 本地数据版本：同步写完后 +1，本屏据此重读（否则停在本页看不到更新） */
+  @StorageLink(DATA_VERSION_KEY) @Watch('onDataVersion') dataVersion: number = 0;
   @State formName: string = '';
   @State formIcon: string = '';
   /** '' = 自动；'1'..'16' = 色号（存索引不存色值，换主题整体重排） */
@@ -210,6 +213,11 @@ export struct SettingsScreen {
   @State revertWarnOpen: boolean = false;
   @State revertWarnText: string = '';
   private pendingRevertId: string = '';
+
+  /** 同步写完了：重读本页数据 */
+  private onDataVersion(): void {
+    this.reload();
+  }
 
   aboutToAppear(): void {
     this.loadServers();
@@ -2470,15 +2478,26 @@ export struct SettingsScreen {
       .width('100%')
   }
 
-  /** 分类表单 */
+  /** 分类表单：**只能改外观**（名称、层级、增删都是服务端管理员权限） */
   @Builder
   catForm() {
     Column({ space: 12 }) {
       Column({ space: 6 }) {
         this.fieldLabel('名称')
-        this.fieldInput(this.formName, '如：外卖', false, (v: string) => {
-          this.formName = v;
-        })
+        // 只读展示：名称由管理员在服务端维护，客户端改了也提交不上去，
+        // 做成可编辑输入框会让人以为能改（点了保存却什么都不变）
+        Text(this.formName)
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tok().ink)
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+          .backgroundColor(this.tok().surface2)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+          .border({ width: 1, color: this.tok().line })
+        Text('名称与层级由管理员在服务端维护，本机只能调整外观')
+          .fontSize(9.5)
+          .fontColor(this.tok().ink3)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -2594,15 +2613,24 @@ export struct SettingsScreen {
     .alignItems(HorizontalAlign.Start)
   }
 
-  /** 支付方式表单 */
+  /** 支付方式表单：**只能改图标**（名称/账单日/还款日都是服务端管理员权限） */
   @Builder
   payForm() {
     Column({ space: 12 }) {
       Column({ space: 6 }) {
         this.fieldLabel('名称')
-        this.fieldInput(this.formName, '如：招商信用卡', false, (v: string) => {
-          this.formName = v;
-        })
+        Text(this.formName)
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tok().ink)
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+          .backgroundColor(this.tok().surface2)
+          .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
+          .border({ width: 1, color: this.tok().line })
+        Text('名称与账单周期由管理员在服务端维护，本机只能调整图标')
+          .fontSize(9.5)
+          .fontColor(this.tok().ink3)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)

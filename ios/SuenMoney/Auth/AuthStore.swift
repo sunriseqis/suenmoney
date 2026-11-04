@@ -52,6 +52,13 @@ public final class AuthStore {
         ServerConfig.shared.saveToken(body.token)
         current = body.user
         isAuthenticated = true
+        /*
+         把用户 id 落到 meta：离线启动时 `AuthStore.current` 是 nil，
+         而记账要拿 owner_id（谁记归谁）—— 没有它归属就是空。
+         与鸿蒙 `AuthStore.login` 同一处理。
+         */
+        try? Db.shared.run("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                           ["current_user_id", body.user.id])
         return body.user
     }
 
@@ -65,6 +72,22 @@ public final class AuthStore {
         ServerConfig.shared.clearToken()
         current = nil
         isAuthenticated = false
+
+        /*
+         主动登出要**清空本地业务数据**：家庭账本多人共用一台设备时，
+         A 登出、B 登录，B 在首次同步完成前会看到 A 的全部账目 —— 串号。
+
+         只清业务表，`meta.schema_version` 保留；
+         同步游标也重置为 0，下次登录会重新拉全量快照
+         （`SyncEngine.pull` 里「本地空 → 快照」的分支会命中）。
+         注意：**登录失效（401）不走这里** —— 那种情况要保留数据让用户继续看。
+         */
+        try? ExpenseDao.clear()
+        try? PlanDao.clearAll()
+        try? Db.shared.run("DELETE FROM categories")
+        try? Db.shared.run("DELETE FROM payment_methods")
+        try? Db.shared.run("DELETE FROM users")
+        try? Db.shared.run("INSERT OR REPLACE INTO meta(key, value) VALUES ('sync_cursor', '0')")
     }
 
     /// 拉当前用户（启动时校验令牌是否还有效）

@@ -10,6 +10,7 @@
 
 
 import { router } from '@kit.ArkUI';
+import { SyncEngine } from '../common/sync/SyncEngine';
 import { AuthStore } from '../common/auth/AuthStore';
 import { ApiError } from '../common/net/ApiError';
 import { ServerConfig } from '../common/net/ServerConfig';
@@ -98,6 +99,12 @@ struct LoginPage {
         return;
       }
       await AuthStore.login(this.username, this.password);
+      /*
+       登录成功后立刻拉一次（新设备本地库是空的 → 会走全量快照）。
+       不 await：首屏先用本地/空态渲染出来，同步在后台跑，写完广播数据版本。
+       */
+      void SyncEngine.syncNow().catch(() => {
+      });
       router.replaceUrl({ url: 'pages/MainPage' });
     } catch (e) {
       const err = e as ApiError;
