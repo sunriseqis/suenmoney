@@ -200,7 +200,7 @@ public struct SettingsScreen: View {
                 let id = pendingRevertId
                 Task {
                     do {
-                        try await Api.revertTodo(id: id)
+                        try await PlanActions.revert(id: id)
                         showToast("已撤销入账")
                         await reload()
                     } catch let err as ApiError { reportError(err.message) } catch { reportError("撤销失败") }
@@ -219,10 +219,15 @@ public struct SettingsScreen: View {
         defer { loading = false }
         errorText = ""
         do {
-            categories = try await Api.categories().categories
+            /*
+             分类 / 支付方式从**本地**读：这是「看」的视图，离线也必须能看，
+             而且颜色/图标是本地个性化值，只有本地库有正确的。
+             计划与待办仍是管理视图（增删改需管理员在线），保留接口。
+             */
+            categories = (try? DictionaryDao.categoriesTree()) ?? []
             // 默认选中第一个一级分类（鸿蒙同）
             if railRootId.isEmpty { railRootId = categories.first?.id ?? "" }
-            payments = try await Api.paymentMethods().paymentMethods
+            payments = (try? DictionaryDao.paymentsList()) ?? []
             plans = try await Api.plans().plans
             // 设置页是「计划任务」管理页：要能看见并手动处理**所有**待处理期次，
             // 不做提醒窗口过滤（提醒窗口只用于流水页顶卡）
@@ -590,17 +595,8 @@ public struct SettingsScreen: View {
                                 .buttonStyle(.plain)
                             iconBtn("square.and.pencil") { openPayEdit(p) }
                             iconBtn("trash") {
-                                Task {
-                                    do {
-                                        try await Api.deletePayment(id: p.id)
-                                        showToast("支付方式已删除")
-                                        await reload()
-                                    } catch let err as ApiError {
-                                        reportError(err.message.contains("引用")
-                                                    ? "该支付方式已有流水引用，请改为停用"
-                                                    : err.message)
-                                    }
-                                }
+                                // 客户端不承载删除（服务端管理员权限）
+                                showToast("支付方式只能由管理员在服务端删除")
                             }
                         }
                         .padding(.vertical, 11)
@@ -980,10 +976,10 @@ public struct SettingsScreen: View {
     private func actTodo(_ t: PlanTodoItem) async {
         do {
             if t.willAutoPost {
-                try await Api.ackTodo(id: t.id)
+                try await PlanActions.ack(id: t.id)
                 showToast("已确认并自动入账")
             } else {
-                try await Api.confirmTodo(id: t.id)
+                try await PlanActions.confirm(id: t.id)
                 showToast("已手动入账")
             }
             await reload()
@@ -996,10 +992,10 @@ public struct SettingsScreen: View {
     private func skipTodo(_ t: PlanTodoItem) async {
         do {
             if t.willAutoPost {
-                try await Api.ackTodo(id: t.id)
+                try await PlanActions.ack(id: t.id)
                 showToast("已忽略提醒，到期自动入账")
             } else {
-                try await Api.skipTodo(id: t.id)
+                try await PlanActions.skip(id: t.id)
                 showToast("已忽略本期，不会入账")
             }
             await reload()
@@ -1013,7 +1009,7 @@ public struct SettingsScreen: View {
         Task {
             do {
                 if t.status == "skipped" {
-                    try await Api.restoreTodo(id: t.id)
+                    try await PlanActions.restore(id: t.id)
                     showToast("已恢复为待处理")
                 } else {
                     // 跨月撤销：先弹确认（鸿蒙 R126），说明「哪个月的报表会变」
@@ -1024,7 +1020,7 @@ public struct SettingsScreen: View {
                         revertWarnOpen = true
                         return
                     }
-                    try await Api.revertTodo(id: t.id)
+                    try await PlanActions.revert(id: t.id)
                     showToast("已撤销入账")
                 }
                 await reload()
@@ -1034,14 +1030,9 @@ public struct SettingsScreen: View {
         }
     }
 
+    /// 客户端不允许合并支付方式（管理权限在服务端）
     private func mergePayment(_ from: PaymentMethodItem, into: PaymentMethodItem) async {
-        do {
-            try await Api.mergePayment(id: from.id, intoId: into.id)
-            showToast("已并入「\(into.name)」")
-            await reload()
-        } catch let err as ApiError {
-            reportError(err.message)
-        } catch { reportError("合并失败") }
+        showToast("合并只能由管理员在服务端操作")
     }
 
     private func endPlan(_ p: PlanItem) async {
@@ -1883,8 +1874,10 @@ public struct SettingsScreen: View {
         editingId = cat.id
         formName = cat.name
         formParent = cat.parentId ?? ""
-        formIcon = cat.icon
-        formColor = cat.color
+        // 颜色/图标读本地个性化值（服务端已不再存）
+        let visual = DictPref.categoryVisual(id: cat.id)
+        formIcon = visual.icon
+        formColor = visual.color
         formEnabled = cat.isEnabled
         formSortOrder = cat.sortOrder
         sheetKind = .category
@@ -1909,7 +1902,8 @@ public struct SettingsScreen: View {
         editingId = p.id
         formName = p.name
         formType = p.type
-        formIcon = p.icon
+        // 图标读本地个性化值（服务端已不再存）
+        formIcon = DictPref.paymentVisual(id: p.id)
         formBillingDay = p.billingDay ?? 0
         formRepayDay = p.repaymentDay ?? 0
         formSortOrder = p.sortOrder
@@ -1941,16 +1935,9 @@ public struct SettingsScreen: View {
         sheetKind = .plan
     }
 
+    /// 客户端不允许删除分类（管理权限在服务端）
     private func removeCat(_ cat: CategoryNode) async {
-        do {
-            try await Api.deleteCategory(id: cat.id)
-            showToast("分类已删除")
-            await reload()
-        } catch let err as ApiError {
-            reportError(err.message.contains("引用")
-                        ? "该分类已有流水引用，请改为停用"
-                        : err.message)
-        } catch { reportError("删除失败") }
+        showToast("分类只能由管理员在服务端删除")
     }
 
     private func submitForm() async {
@@ -1964,33 +1951,31 @@ public struct SettingsScreen: View {
         defer { busy = false }
         do {
             if sheetKind == .category {
-                let isRoot = formParent.isEmpty
+                /*
+                 客户端**不承载分类新增**（服务端管理员权限，2026-11-03 裁定）。
+                 编辑时：名称/层级/启用走服务端（管理员），
+                 颜色/图标属**本地个性化**，写本地库、不回推。
+                 */
                 if editingId.isEmpty {
-                    try await Api.createCategory(CategoryCreateRequest(
-                        name: name, parentId: formParent,
-                        icon: formIcon, color: formColor, sortOrder: formSortOrder))
-                    showToast("分类已新增")
-                } else {
-                    // 二级分类不写颜色（跟随一级）；停用态原样带回 ——
-                    // 之前这里写死 `icon: ""` / `color: ""` / `isEnabled: true`，
-                    // 用户一编辑就把图标和颜色清空、把停用的分类重新启用。
-                    try await Api.patchCategory(id: editingId, CategoryPatchRequest(
-                        name: name, icon: formIcon,
-                        color: isRoot ? formColor : "",
-                        parentId: isRoot ? nil : formParent,
-                        isEnabled: formEnabled))
-                    showToast("分类已更新")
+                    formError = "分类只能由管理员在服务端添加"
+                    busy = false
+                    return
                 }
+                let isRoot = formParent.isEmpty
+                try DictPref.setCategoryVisual(
+                    id: editingId,
+                    icon: formIcon,
+                    color: isRoot ? formColor : ""
+                )
+                showToast("外观已更新（仅本机）")
             } else if sheetKind == .merge {
                 guard !mergeTarget.isEmpty else {
                     formError = "请选择要转到的支付方式"
                     busy = false
                     return
                 }
-                try await Api.mergePayment(id: editingId, intoId: mergeTarget)
-                showToast("已合并")
-                sheetKind = nil
-                await reload()
+                formError = "合并只能由管理员在服务端操作"
+                busy = false
                 return
             } else if sheetKind == .plan {
                 // 新建计划：每期金额 × 期数 = 总额；首期还款日默认今天 + 1 个月
@@ -2027,22 +2012,17 @@ public struct SettingsScreen: View {
                 ))
                 showToast("计划已创建")
             } else {
+                /*
+                 客户端**不承载支付方式新增**（服务端管理员权限）。
+                 编辑时只改**本地图标**：名称、账单日、还款日、启用态都是服务端契约字段。
+                 */
                 if editingId.isEmpty {
-                    try await Api.createPayment(PaymentCreateRequest(
-                        name: name, type: formType, icon: formIcon,
-                        billingDay: formType == "credit" ? formBillingDay : 0,
-                        repaymentDay: formType == "credit" ? formRepayDay : 0,
-                        sortOrder: formSortOrder))
-                    showToast("支付方式已新增")
-                } else {
-                    try await Api.patchPayment(id: editingId, PaymentPatchRequest(
-                        name: name, icon: formIcon,
-                        // 鸿蒙口径：非信用卡一律提交 0 / 0
-                        billingDay: formType == "credit" ? formBillingDay : 0,
-                        repaymentDay: formType == "credit" ? formRepayDay : 0,
-                        sortOrder: formSortOrder, isEnabled: formEnabled))
-                    showToast("支付方式已更新")
+                    formError = "支付方式只能由管理员在服务端添加"
+                    busy = false
+                    return
                 }
+                try DictPref.setPaymentVisual(id: editingId, icon: formIcon)
+                showToast("图标已更新（仅本机）")
             }
             sheetKind = nil
             await reload()
@@ -2053,26 +2033,10 @@ public struct SettingsScreen: View {
         }
     }
 
+    /// 客户端不允许删除分类/支付方式（管理权限在服务端）
     private func deleteForm() async {
         guard !editingId.isEmpty else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            if sheetKind == .category {
-                try await Api.deleteCategory(id: editingId)
-            } else {
-                try await Api.deletePayment(id: editingId)
-            }
-            sheetKind = nil
-            await reload()
-        } catch let err as ApiError {
-            // 软删除：被流水引用时服务端拒绝，给可执行建议
-            formError = err.message.contains("引用") || err.status == 409
-                ? "该\(sheetKind == .category ? "分类" : "支付方式")已有流水引用，请改为停用"
-                : err.message
-        } catch {
-            formError = "删除失败"
-        }
+        formError = "只能由管理员在服务端删除"
     }
 
 }

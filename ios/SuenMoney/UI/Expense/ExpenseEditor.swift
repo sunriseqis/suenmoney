@@ -456,15 +456,18 @@ public struct ExpenseEditor: View {
 
         do {
             if let row = editing {
-                let patch = ExpensePatchRequest(
+                // 本地优先：先改本地再入队，界面立刻反映（账单日期按支付方式本地重算）
+                let cycle = ExpenseActions.cycleOf(paymentMethodId: paymentId)
+                try ExpenseActions.update(
+                    id: row.id,
                     amountCents: isRefund ? -value : value,
                     categoryId: categoryId,
                     paymentMethodId: paymentId,
                     spendDate: spendDate,
-                    note: note
+                    note: note,
+                    cycle: cycle
                 )
-                let body = try await Api.updateExpense(id: row.id, patch)
-                onSaved(body.expense.id)
+                onSaved(row.id)
             } else if installment {
                 // 分期走计划接口（不是支出接口）：总额 + 期数，服务端生成各期待办
                 // 参数顺序必须与 struct 声明一致（memberwise init）
@@ -486,17 +489,20 @@ public struct ExpenseEditor: View {
                 try await Api.createPlan(planReq)
                 onSaved("")
             } else {
-                let req = ExpenseCreateRequest(
+                // 本地优先：算账单日期 → 写本地 → 入队 → 触发同步。
+                // 断网也照记，联网后自动回推（不再需要「先联网才能记账」）。
+                let cycle = ExpenseActions.cycleOf(paymentMethodId: paymentId)
+                let newId = try ExpenseActions.create(
                     amountCents: isRefund ? -value : value,
                     categoryId: categoryId,
                     paymentMethodId: paymentId,
                     spendDate: spendDate,
-                    note: note
+                    note: note,
+                    cycle: cycle
                 )
-                let body = try await Api.createExpense(req)
-                // 成功后才记住这次选择（失败的记账不该影响下次默认值）
+                // 本地记账成功后即可记住这次选择（不再依赖网络成功）
                 LastPick.write(LastPickValue(categoryId: categoryId, paymentMethodId: paymentId))
-                onSaved(body.expense.id)
+                onSaved(newId)
             }
         } catch let err as ApiError {
             /// 离线写：`.network`（连不上）与 `.unauthorized`（令牌失效）都算「暂时不能同步」。
@@ -556,16 +562,10 @@ public struct ExpenseEditor: View {
     private func confirmDelete() {
         guard let row = editing else { return }
         Task {
+            // 本地优先：先删本地再入队（断网也能删，联网后回推）
             do {
-                try await Api.deleteExpense(id: row.id)
+                try ExpenseActions.remove(id: row.id)
                 onSaved("")
-            } catch let err as ApiError {
-                if err.kind == .network {
-                    try? Outbox.enqueue(.deleteExpense, entityId: row.id, payload: "{}")
-                    onSaved("")
-                } else {
-                    errorText = err.message
-                }
             } catch {
                 errorText = "删除失败"
             }

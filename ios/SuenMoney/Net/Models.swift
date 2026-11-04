@@ -194,7 +194,7 @@ public struct ExpensePatchRequest: Encodable {
 
 // MARK: - 报表
 
-public struct CategoryBucket: Decodable, Identifiable {
+public struct CategoryBucket: Codable, Identifiable {
     public let categoryId: String
     public let name: String
     public let icon: String
@@ -211,12 +211,12 @@ public struct CategoryBucket: Decodable, Identifiable {
     public var id: String { categoryId }
 }
 
-public struct MonthChange: Decodable {
+public struct MonthChange: Codable {
     public let deltaCents: Int
     public let ratio: Double?
 }
 
-public struct MonthPointRef: Decodable {
+public struct MonthPointRef: Codable {
     public let month: String
     public let totalCents: Int
 }
@@ -225,20 +225,20 @@ public struct MonthPointRef: Decodable {
 ///
 /// 原来写成平铺的 `changeCents` / `changeRatio` 是错的 —— 服务端实际返回嵌套结构，
 /// 解码会直接失败（年报页整页空白）。
-public struct YearAgoCompare: Decodable {
+public struct YearAgoCompare: Codable {
     public let label: String
     public let totalCents: Int
     public let change: MonthChange?
 }
 
-public struct LargestExpense: Decodable {
+public struct LargestExpense: Codable {
     public let expenseId: String
     public let categoryName: String
     public let cents: Int
     public let repaymentDate: String
 }
 
-public struct DailyPoint: Decodable, Identifiable {
+public struct DailyPoint: Codable, Identifiable {
     public let date: String
     public let day: Int
     public let cents: Int
@@ -247,7 +247,7 @@ public struct DailyPoint: Decodable, Identifiable {
     public var id: String { date }
 }
 
-public struct PaymentBucket: Decodable, Identifiable {
+public struct PaymentBucket: Codable, Identifiable {
     public let paymentMethodId: String
     public let name: String
     public let type: String
@@ -258,7 +258,7 @@ public struct PaymentBucket: Decodable, Identifiable {
     public var id: String { paymentMethodId }
 }
 
-public struct MemberBucket: Decodable, Identifiable {
+public struct MemberBucket: Codable, Identifiable {
     public let ownerId: String
     public let name: String
     public let cents: Int
@@ -270,7 +270,7 @@ public struct MemberBucket: Decodable, Identifiable {
     public var id: String { ownerId }
 }
 
-public struct RollingMonth: Decodable, Identifiable {
+public struct RollingMonth: Codable, Identifiable {
     public let month: String
     public let totalCents: Int?
     public let count: Int
@@ -278,7 +278,7 @@ public struct RollingMonth: Decodable, Identifiable {
     public var id: String { month }
 }
 
-public struct MonthlyReport: Decodable {
+public struct MonthlyReport: Codable {
     public let month: String
     public let totalCents: Int
     public let count: Int
@@ -294,11 +294,11 @@ public struct MonthlyReport: Decodable {
     public let rolling12Months: [RollingMonth]
 }
 
-public struct MonthlyReportBody: Decodable {
+public struct MonthlyReportBody: Codable {
     public let report: MonthlyReport
 }
 
-public struct MonthPoint: Decodable, Identifiable {
+public struct MonthPoint: Codable, Identifiable {
     public let month: String
     public let totalCents: Int
     /// ⚠ 服务端 `months[]` 带 count，但 **`peakMonth` 不带**（只有 month/totalCents）。
@@ -308,7 +308,7 @@ public struct MonthPoint: Decodable, Identifiable {
     public var id: String { month }
 }
 
-public struct YearlyReport: Decodable {
+public struct YearlyReport: Codable {
     public let year: String
     public let totalCents: Int
     public let count: Int
@@ -323,11 +323,11 @@ public struct YearlyReport: Decodable {
     public let average3YearsCents: Int?
 }
 
-public struct YearlyReportBody: Decodable {
+public struct YearlyReportBody: Codable {
     public let report: YearlyReport
 }
 
-public struct YearPoint: Decodable, Identifiable {
+public struct YearPoint: Codable, Identifiable {
     public let year: String
     public let totalCents: Int
     public let count: Int
@@ -335,7 +335,7 @@ public struct YearPoint: Decodable, Identifiable {
     public var id: String { year }
 }
 
-public struct SummaryReport: Decodable {
+public struct SummaryReport: Codable {
     public let totalCents: Int
     public let count: Int
     public let recordedDays: Int
@@ -350,7 +350,7 @@ public struct SummaryReport: Decodable {
     public let members: [MemberBucket]?
 }
 
-public struct SummaryReportBody: Decodable {
+public struct SummaryReportBody: Codable {
     public let report: SummaryReport
 }
 

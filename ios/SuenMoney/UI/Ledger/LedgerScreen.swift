@@ -219,6 +219,14 @@ public struct LedgerScreen: View {
             await reload()
             // 进流水页时校准待同步条数
             pendingSync = (try? Outbox.pendingCount()) ?? 0
+            // 首屏先出本地数据，再让同步引擎去拉更新（不阻塞渲染）
+            await SyncEngine.shared.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .suenLocalDataChanged)) { _ in
+            Task {
+                pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
+                await reload()
+            }
         }
         .onChange(of: app.createRequest) { _, _ in
             editingRow = nil
@@ -257,49 +265,33 @@ public struct LedgerScreen: View {
 
     // MARK: - 数据加载
 
+    /// 首次进入 / 数据变更时重读。
+    ///
+    /// **全部从本地库读** —— 本地优先之后，这里不再调任何读接口。
+    /// 数据新鲜度由 `SyncEngine`（启动/回前台/写后）负责，它写完后发
+    /// `.suenLocalDataChanged`，本屏收到再 reload。
     private func reload() async {
         errorText = ""
         loading = true
         defer { loading = false }
-        do {
-            if categoryNames.isEmpty {
-                let cats = try await Api.categories()
-                try DictionaryDao.cacheCategories(cats.categories)
-                categoryNames = try DictionaryDao.categoryNames()
-                let pays = try await Api.paymentMethods()
-                try DictionaryDao.cachePayments(pays.paymentMethods)
-                paymentNames = try DictionaryDao.paymentNames()
 
-                // 筛选项：分类只列一级（二级归属一级，列出来会重复）；支付列全部；记录人取 users
-                // 鸿蒙直接遍历字典缓存、**不排序**（支付/记录人两组也不排序）→ 保持一致
-                rootCategories = categoryNames.values.filter { $0.parentId.isEmpty }
-                paymentOptions = pays.paymentMethods.filter { $0.isEnabled }.map {
-                    CachedCategory(id: $0.id, name: $0.name, icon: $0.icon, color: "", parentId: "")
-                }
-                let users = try await Api.users()
-                ownerOptions = users.users.map {
-                    CachedCategory(id: $0.id, name: $0.displayName, icon: "", color: "", parentId: "")
-                }
-            }
-            offline = false
-            await loadTier(manageLoading: false)
-            await loadHeroTodos()
-        } catch let err as ApiError {
-            if err.kind == .network {
-                // 离线 A 档：本地现算
-                offline = true
-                if categoryNames.isEmpty {
-                    categoryNames = (try? DictionaryDao.categoryNames()) ?? [:]
-                    paymentNames = (try? DictionaryDao.paymentNames()) ?? [:]
-                }
-                await loadTier(manageLoading: false)
-                await loadHeroTodos()
-            } else {
-                errorText = err.message
-            }
-        } catch {
-            errorText = "加载失败"
+        await loadLocalDict()
+        await loadTier(manageLoading: false)
+        await loadHeroTodos()
+    }
+
+    /// 字典一律来自本地（同步负责更新）；颜色/图标是本地个性化值
+    private func loadLocalDict() async {
+        categoryNames = (try? DictionaryDao.categoryNames()) ?? [:]
+        paymentNames = (try? DictionaryDao.paymentNames()) ?? [:]
+
+        // 分类只列一级（二级归属一级，列出来会重复）；支付列启用项；记录人取本地 users
+        // 鸿蒙直接遍历字典缓存、**不排序** → 保持一致
+        rootCategories = categoryNames.values.filter { $0.parentId.isEmpty }
+        paymentOptions = paymentNames.values.map {
+            CachedCategory(id: $0.id, name: $0.name, icon: $0.icon, color: "", parentId: "")
         }
+        ownerOptions = (try? DictionaryDao.owners()) ?? []
     }
 
     /// 按当前档位加载。
@@ -317,51 +309,54 @@ public struct LedgerScreen: View {
         }
     }
 
+    /// 月档：本地分页查询（筛选与键集分页全部下推 SQL，与服务端同一口径）
     private func loadMonth(reset: Bool) async {
-        if offline {
-            // 离线：从本地按还款日取数现算
-            let local = (try? ExpenseDao.byMonth(anchorMonth)) ?? []
-            let total = (try? ExpenseDao.monthTotal(anchorMonth)) ?? LocalMonthTotal(totalCents: 0, count: 0)
-            rows = applyLocalFilters(local)
-            monthTotalCents = total.totalCents
-            monthCount = total.count
-            // 离线时**不动** prevTotalCents（鸿蒙同）：否则环比胶囊会莫名消失
-            hasMore = false
+        let page = (try? ExpenseDao.query(
+            month: anchorMonth,
+            cursor: reset ? nil : cursor,
+            limit: Self.pageSize,
+            keyword: keyword.trimmingCharacters(in: .whitespaces),
+            categoryId: filterCategory,
+            paymentMethodId: filterPayment,
+            ownerId: filterOwner)) ?? ExpensePage(items: [], nextCursor: nil, hasMore: false)
+
+        rows = reset ? page.items : rows + page.items
+        cursor = page.nextCursor ?? ""
+        hasMore = page.hasMore
+
+        await loadHeroNumbers()
+    }
+
+    /// hero 三个数字 + 本月要还。
+    ///
+    /// 口径由服务端唯一提供（报表 SQL 不在客户端重写，避免三端跑偏），
+    /// 本地只缓存它最后一次的响应；没有缓存时用本地数据兜底。
+    private func loadHeroNumbers() async {
+        let key = "monthly:\(anchorMonth)"
+        if let body = await reportWithCache(key: key,
+                                            fetch: { try await Api.monthlyReport(month: anchorMonth) },
+                                            onFresh: { [self] (b: MonthlyReportBody) in
+                                                self.applyMonthlyReport(b.report)
+                                            }) {
+            applyMonthlyReport(body.report)
             return
         }
-        do {
-            let page = try await Api.expenses(
-                month: anchorMonth,
-                limit: Self.pageSize,
-                cursor: reset ? nil : cursor,
-                q: keyword.trimmingCharacters(in: .whitespaces),
-                categoryId: filterCategory,
-                paymentMethodId: filterPayment,
-                ownerId: filterOwner
-            )
-            try ExpenseDao.cache(page.items)
-            rows = reset ? page.items : rows + page.items
-            cursor = page.nextCursor ?? ""
-            hasMore = page.hasMore
+        // 无缓存（首装且还没同步到报表）：本地兜底
+        let total = (try? ExpenseDao.monthTotal(anchorMonth))
+            ?? LocalMonthTotal(totalCents: 0, count: 0)
+        monthTotalCents = total.totalCents
+        monthCount = total.count
+        creditDueCents = 0
+    }
 
-            let report = try await Api.monthlyReport(month: anchorMonth)
-            monthTotalCents = report.report.totalCents
-            monthCount = report.report.count
-            prevTotalCents = report.report.previous.totalCents
-            // 本月要还：信用卡类支付方式的还款额（服务端月报已给）
-            creditDueCents = report.report.paymentMethods
-                .filter { $0.type == "credit" }
-                .reduce(0) { $0 + $1.cents }
-        } catch let err as ApiError {
-            if err.kind == .network {
-                offline = true
-                await loadMonth(reset: reset)
-            } else {
-                errorText = err.message
-            }
-        } catch {
-            errorText = "加载失败"
-        }
+    private func applyMonthlyReport(_ report: MonthlyReport) {
+        monthTotalCents = report.totalCents
+        monthCount = report.count
+        prevTotalCents = report.previous.totalCents
+        // 本月要还：信用卡类支付方式的还款额
+        creditDueCents = report.paymentMethods
+            .filter { $0.type == "credit" }
+            .reduce(0) { $0 + $1.cents }
     }
 
     private func loadYear() async {
@@ -393,8 +388,8 @@ public struct LedgerScreen: View {
     /// 提醒列表（**只取该提醒的期次**，不是所有待办）
     private func loadHeroTodos() async {
         do {
-            let body = try await Api.planTodos(today: todayKey())
-            var list: [HeroTodo] = body.todos.map { t in
+            let todos = (try? PlanDao.reminderTodos(today: todayKey())) ?? []
+            var list: [HeroTodo] = todos.map { t in
                 HeroTodo(
                     id: t.id,
                     planName: t.planName,
@@ -439,7 +434,7 @@ public struct LedgerScreen: View {
     /// 「处理」= 立即入账（两种计划同一条路）
     private func processTodo(_ t: HeroTodo) async {
         do {
-            try await Api.confirmTodo(id: t.id)
+            try await PlanActions.confirm(id: t.id)
             showToast("已入账")
             await loadHeroTodos()
             await loadTier()
@@ -452,10 +447,10 @@ public struct LedgerScreen: View {
     private func ignoreTodo(_ t: HeroTodo) async {
         do {
             if t.willAutoPost {
-                try await Api.ackTodo(id: t.id)
+                try await PlanActions.ack(id: t.id)
                 showToast("已忽略提醒，到期自动入账")
             } else {
-                try await Api.skipTodo(id: t.id)
+                try await PlanActions.skip(id: t.id)
                 showToast("已忽略本期，不会入账")
             }
             await loadHeroTodos()

@@ -81,16 +81,18 @@ public struct AnnualScreen: View {
 
     // MARK: - 加载
 
+    /// 缓存优先 + 后台刷新（与 ReportScreen 同一套）：离线时显示上次结果
     private func load() async {
         loading = true
         defer { loading = false }
-        do {
-            report = try await Api.yearlyReport(year: year).report
-        } catch let err as ApiError {
-            errorText = err.message
-            report = nil
-        } catch {
-            report = nil
+        let body = await reportWithCache(key: "yearly:\(year)",
+            fetch: { try await Api.yearlyReport(year: year) },
+            onFresh: { [self] (b: YearlyReportBody) in self.report = b.report })
+        report = body?.report
+        if report == nil {
+            errorText = "报表加载失败，请检查网络后重试"
+        } else {
+            errorText = ""
         }
     }
 
@@ -98,8 +100,10 @@ public struct AnnualScreen: View {
     private func openYearPicker() async {
         yearCalOpen = true
         var out: [YearOption] = []
-        if let s = try? await Api.summaryReport().report {
-            out = s.years.map { YearOption(year: $0.year, totalCents: $0.totalCents, count: $0.count) }
+        if let body = await reportWithCache(key: "summary:all",
+                                            fetch: { try await Api.summaryReport() },
+                                            onFresh: { (_: SummaryReportBody) in }) {
+            out = body.report.years.map { YearOption(year: $0.year, totalCents: $0.totalCents, count: $0.count) }
         }
         if !out.contains(where: { $0.year == year }) {
             out.append(YearOption(year: year, totalCents: 0, count: 0))

@@ -51,17 +51,25 @@ public let categoryColors: [String] = [
     "#E0A878", "#9D8FF5", "#74A8D6", "#8C8C8C"
 ]
 
-/// 分类名/ID → 16 色槽里的稳定颜色（鸿蒙 `categoryColorOf` 同源）
+/// 分类名/ID → 稳定颜色。**按当前主题取调色板**。
+///
+/// 与鸿蒙 `categoryColorOf` 同一套语义：
+///   · candy 用 `tokens.chart1..8`（与 Web `.app` 的 `--chart-N` 一致）；
+///   · cyber 用荧光 16 色（Web `.app[data-theme="cyber"]` 那套）。
+///
+/// ⚠ 旧实现**不分主题**，candy 下也照用 cyber 的荧光色 ——
+///   同一分类在 Web 浅色主题和原生端是两个颜色。
 public func categoryColorOf(_ name: String, _ explicit: String) -> String {
+    let tokens = ThemeManager.shared.tokens
     if !explicit.isEmpty {
-        if let n = Int(explicit), n >= 1, n <= categoryColors.count {
-            return categoryColors[n - 1]
+        if let n = Int(explicit), n >= 1 {
+            return chartColor(tokens, (n - 1) % paletteSize)
         }
         if explicit.hasPrefix("#") {
             return explicit
         }
     }
-    return categoryColors[deriveColorIndex(name) - 1]
+    return chartColor(tokens, (deriveColorIndex(name) - 1) % paletteSize)
 }
 
 /// 名称哈希 → 1..16

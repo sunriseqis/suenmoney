@@ -112,17 +112,30 @@ public struct ReportScreen: View {
         defer { loading = false }
         errorText = ""
 
-        var m: MonthlyReport?
-        var p: MonthlyReport?
-        var y: YearlyReport?
-        var s: SummaryReport?
-        m = try? await Api.monthlyReport(month: anchorMonth).report
-        p = try? await Api.monthlyReport(month: shiftMonth(anchorMonth, -1)).report
-        y = try? await Api.yearlyReport(year: anchorYear).report
-        s = try? await Api.summaryReport().report
+        /*
+         报表一律「缓存优先 + 后台刷新」：口径由服务端唯一提供
+         （不在客户端重写 800+ 行 SQL，避免三端跑偏），本地只缓存最后一次的响应。
+         离线时显示缓存，联网时后台更新。
+         */
+        let prevMonth = shiftMonth(anchorMonth, -1)
+        let monthBody = await reportWithCache(key: "monthly:\(anchorMonth)",
+            fetch: { try await Api.monthlyReport(month: anchorMonth) },
+            onFresh: { [self] (b: MonthlyReportBody) in self.monthReport = b.report })
+        let prevBody = await reportWithCache(key: "monthly:\(prevMonth)",
+            fetch: { try await Api.monthlyReport(month: prevMonth) },
+            onFresh: { [self] (b: MonthlyReportBody) in self.prevMonthReport = b.report })
+        let yearBody = await reportWithCache(key: "yearly:\(anchorYear)",
+            fetch: { try await Api.yearlyReport(year: anchorYear) },
+            onFresh: { [self] (b: YearlyReportBody) in self.yearReport = b.report })
+        let summaryBody = await reportWithCache(key: "summary:all",
+            fetch: { try await Api.summaryReport() },
+            onFresh: { [self] (b: SummaryReportBody) in self.summary = b.report })
 
+        let m = monthBody?.report
+        let y = yearBody?.report
+        let s = summaryBody?.report
         monthReport = m
-        prevMonthReport = p
+        prevMonthReport = prevBody?.report
         yearReport = y
         summary = s
 

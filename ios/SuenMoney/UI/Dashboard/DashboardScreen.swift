@@ -112,6 +112,12 @@ public struct DashboardScreen: View {
             // 进概况页时校准一次待同步条数（流水页可能已经推空）
             await refreshPending()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .suenLocalDataChanged)) { _ in
+            Task {
+                await refreshPending()
+                await load()
+            }
+        }
     }
 
     // MARK: - 加载
@@ -127,13 +133,23 @@ public struct DashboardScreen: View {
         defer { loading = false }
         errorText = ""
 
-        var m: MonthlyReport?
-        var y: YearlyReport?
-        var s: SummaryReport?
-        m = try? await Api.monthlyReport(month: anchorMonth).report
-        y = try? await Api.yearlyReport(year: anchorYear).report
-        s = try? await Api.summaryReport().report
+        /*
+         报表「缓存优先 + 后台刷新」：口径由服务端唯一提供，本地只缓存最后响应。
+         离线时显示缓存，联网时后台更新。
+         */
+        let monthBody = await reportWithCache(key: "monthly:\(anchorMonth)",
+            fetch: { try await Api.monthlyReport(month: anchorMonth) },
+            onFresh: { [self] (b: MonthlyReportBody) in self.monthReport = b.report })
+        let yearBody = await reportWithCache(key: "yearly:\(anchorYear)",
+            fetch: { try await Api.yearlyReport(year: anchorYear) },
+            onFresh: { [self] (b: YearlyReportBody) in self.yearReport = b.report })
+        let summaryBody = await reportWithCache(key: "summary:all",
+            fetch: { try await Api.summaryReport() },
+            onFresh: { [self] (b: SummaryReportBody) in self.summary = b.report })
 
+        let m = monthBody?.report
+        let y = yearBody?.report
+        let s = summaryBody?.report
         monthReport = m
         yearReport = y
         summary = s
@@ -144,10 +160,11 @@ public struct DashboardScreen: View {
         await loadTodos()
     }
 
+    /// 待办一律来自本地（提醒窗口口径与服务端 reminderToday 一致）
     private func loadTodos() async {
         do {
-            let body = try await Api.planTodos(today: todayKey())
-            todos = body.todos.map {
+            let list = try PlanDao.reminderTodos(today: todayKey())
+            todos = list.map {
                 DashTodo(id: $0.id, planName: $0.planName, periodSeq: $0.periodSeq,
                          amountCents: $0.amountCents, repaymentDate: $0.repaymentDate,
                          willAutoPost: $0.willAutoPost,
@@ -296,13 +313,13 @@ public struct DashboardScreen: View {
     private func todoAction(_ t: DashTodo, _ kind: String) async {
         do {
             if kind == "ack" {
-                try await Api.ackTodo(id: t.id)
+                try await PlanActions.ack(id: t.id)
                 showToast("已确认并自动入账")
             } else if kind == "confirm" {
-                try await Api.confirmTodo(id: t.id)
+                try await PlanActions.confirm(id: t.id)
                 showToast("已手动入账")
             } else {
-                try await Api.skipTodo(id: t.id)
+                try await PlanActions.skip(id: t.id)
                 showToast("已忽略这笔待办")
             }
             await load()
