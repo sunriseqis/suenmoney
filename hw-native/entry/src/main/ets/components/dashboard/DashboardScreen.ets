@@ -14,6 +14,7 @@
 import { Api, CategoryBucket, MonthlyReport, MonthlyReportBody, SummaryReport, SummaryReportBody, YearlyReport, YearlyReportBody } from '../../common/net/Api';
 import { reportWithCache } from '../../common/store/ReportCache';
 import { PlanDao } from '../../common/store/PlanDao';
+import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { DATA_VERSION_KEY } from '../../common/sync/SyncEngine';
 import { PlanActions } from '../../common/store/PlanActions';
 import { LengthMetrics } from '@kit.ArkUI';
@@ -69,6 +70,9 @@ export struct DashboardScreen {
   @State todoOpen: boolean = false;
 
   @State monthReport: MonthlyReport | null = null;
+  /** 月档「本月支出」的本地统计（不依赖服务端报表，记账后立刻正确） */
+  @State monthTotalCents: number = 0;
+  @State monthCountLocal: number = 0;
   @State yearReport: YearlyReport | null = null;
   @State summary: SummaryReport | null = null;
   @State todos: DashTodo[] = [];
@@ -229,6 +233,10 @@ export struct DashboardScreen {
     this.monthReport = m;
     this.yearReport = y;
     this.summary = s;
+    // 月档 hero 用本地统计（一次查询同时拿到合计与笔数）
+    const localMonth = await ExpenseDao.monthTotalByRepayment(this.anchorMonth);
+    this.monthTotalCents = localMonth.totalCents;
+    this.monthCountLocal = localMonth.count;
     if (m === null && y === null && s === null) {
       this.errorText = '报表加载失败，请检查网络后重试';
     }
@@ -298,7 +306,9 @@ export struct DashboardScreen {
 
   private totalCents(): number {
     if (this.tier === 0) {
-      return this.monthReport !== null ? this.monthReport.totalCents : 0;
+      // 月档用**本地统计**（按还款日归属，与服务端月报同口径）：
+      // 本机刚记的账服务端还没收到，读报表缓存会显示旧数。
+      return this.monthTotalCents;
     }
     if (this.tier === 1) {
       return this.yearReport !== null ? this.yearReport.totalCents : 0;
@@ -356,7 +366,7 @@ export struct DashboardScreen {
 
   private countOf(): number {
     if (this.tier === 0) {
-      return this.monthReport !== null ? this.monthReport.count : 0;
+      return this.monthCountLocal;
     }
     if (this.tier === 1) {
       return this.yearReport !== null ? this.yearReport.count : 0;
