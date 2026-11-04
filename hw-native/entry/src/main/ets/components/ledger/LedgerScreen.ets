@@ -12,13 +12,13 @@
  * 金额一律来自服务端/本地的整数分，展示时才格式化。
  */
 
-import { Api, ExpenseItem, MonthPoint, MonthlyReportBody, PaymentMethodItem, UserSummary, YearPoint } from '../../common/net/Api';
+import { Api, ExpenseItem, MonthPoint, MonthlyReportBody, PaymentMethodItem, SummaryReport, SummaryReportBody, UserSummary, YearPoint, YearlyReport, YearlyReportBody } from '../../common/net/Api';
 import { PlanActions } from '../../common/store/PlanActions';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { PlanDao } from '../../common/store/PlanDao';
-import { ReportCache } from '../../common/store/ReportCache';
+import { ReportCache, reportWithCache } from '../../common/store/ReportCache';
 import { Outbox } from '../../common/sync/Outbox';
 import { DATA_VERSION_KEY, SyncEngine, SyncReport } from '../../common/sync/SyncEngine';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
@@ -411,18 +411,48 @@ export struct LedgerScreen {
     return this.allTotalCents;
   }
 
+  /** 年档：报表缓存优先（离线显示上次结果） */
   private async loadYear(): Promise<void> {
-    const body = await Api.yearlyReport(this.anchorYear);
-    this.yearPoints = body.report.months;
-    this.yearTotalCents = body.report.totalCents;
-    // 年档的「上期」= 去年（Web prevTotalCents 同源）；不设的话环比会拿月档的上期算
-    this.prevTotalCents = body.report.yearAgo !== undefined ? body.report.yearAgo.totalCents : 0;
+    const body = await reportWithCache<YearlyReportBody>(`yearly:${this.anchorYear}`,
+      async (): Promise<YearlyReportBody> => Api.yearlyReport(this.anchorYear),
+      (d: YearlyReportBody): void => {
+        this.applyYearly(d.report);
+      });
+    if (body === null) {
+      this.yearPoints = [];
+      this.yearTotalCents = 0;
+      this.prevTotalCents = 0;
+    } else {
+      this.applyYearly(body.report);
+    }
   }
 
+  private applyYearly(r: YearlyReport): void {
+    this.yearPoints = r.months;
+    this.yearTotalCents = r.totalCents;
+    // 年档的「上期」= 去年（Web prevTotalCents 同源）；不设的话环比会拿月档的上期算
+    this.prevTotalCents = r.yearAgo !== undefined ? r.yearAgo.totalCents : 0;
+  }
+
+  /** 全部档：报表缓存优先（离线显示上次结果） */
   private async loadAll(): Promise<void> {
-    const body = await Api.summaryReport();
-    this.allYears = body.report.years;
-    this.allTotalCents = body.report.totalCents;
+    const body = await reportWithCache<SummaryReportBody>('summary:all',
+      async (): Promise<SummaryReportBody> => Api.summaryReport(),
+      (d: SummaryReportBody): void => {
+        this.applySummary(d.report);
+      });
+    if (body === null) {
+      this.allYears = [];
+      this.allTotalCents = 0;
+      this.prevTotalCents = 0;
+    } else {
+      this.applySummary(body.report);
+    }
+  }
+
+  private applySummary(r: SummaryReport): void {
+    this.allYears = r.years;
+    this.allTotalCents = r.totalCents;
     // 全部档没有「上期」（Web prevTotalCents 返回 0），环比胶囊不显示
     this.prevTotalCents = 0;
   }

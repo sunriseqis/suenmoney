@@ -222,9 +222,16 @@ public struct ExpenseEditor: View {
         }
         .task {
             await loadDict()
-            // 本月已支出：不 await（拿不到就显示 —），别为一行背景信息阻塞抽屉
+            // 本月已支出：缓存优先（离线显示上次结果），拿不到就显示 —
+            let monthKey = String(todayKey().prefix(7))
             Task {
-                monthSpentCents = try? await Api.monthlyReport(month: String(todayKey().prefix(7))).report.totalCents
+                var value: Int? = nil
+                if let body = await reportWithCache(key: "monthly:\(monthKey)",
+                    fetch: { try await Api.monthlyReport(month: monthKey) },
+                    onFresh: { (_: MonthlyReportBody) in }) {
+                    value = body.report.totalCents
+                }
+                monthSpentCents = value ?? ((try? ExpenseDao.monthTotal(monthKey))?.totalCents)
             }
         }
         .onAppear { prefill() }
@@ -267,30 +274,30 @@ public struct ExpenseEditor: View {
 
     // MARK: - 字典
 
+    /// 字典一律来自**本地**（同步负责更新）。
+    ///
+    /// 本地优先的意义在这里最明显：分类的 `icon`/`color` 是本地个性化值，
+    /// 服务端返回的是空串 —— 走接口会把用户挑的配色显示成默认色。
     private func loadDict() async {
-        do {
-            let cats = try await Api.categories()
+        if let tree = try? DictionaryDao.categoriesTree(), !tree.isEmpty {
             // **保留全量**（含停用）：直接过滤会让停用一级的整棵子树消失，
             // 历史记录回填时 findCategory 返回 nil → 显示「选择分类」
-            categories = cats.categories
-            let pays = try await Api.paymentMethods()
-            payments = pays.paymentMethods.filter { $0.isEnabled }
-        } catch {
-            // 离线：用本地缓存
-            let names = (try? DictionaryDao.categoryNames()) ?? [:]
-            let flat: [CategoryNode] = names.values.map {
-                CategoryNode(id: $0.id, parentId: $0.parentId.isEmpty ? nil : $0.parentId,
-                             name: $0.name, depth: $0.parentId.isEmpty ? 1 : 2,
-                             icon: $0.icon, color: $0.color, sortOrder: 0,
-                             isEnabled: true, expenseCount: 0, children: [])
+            categories = tree
+        }
+        if let list = try? DictionaryDao.paymentsList() {
+            payments = list.filter { $0.isEnabled }
+        }
+        // 本地还没有字典（首装还没同步完）→ 兜底问一次接口
+        if categories.isEmpty {
+            if let cats = try? await Api.categories() {
+                categories = cats.categories
+                try? DictionaryDao.cacheCategories(cats.categories)
             }
-            // 离线时也要把二级挂回一级，否则 findCategory / quickCats 都查不到二级
-            categories = flat.filter { $0.parentId == nil }.map { root in
-                let kids = flat.filter { $0.parentId == root.id }
-                return CategoryNode(id: root.id, parentId: nil, name: root.name, depth: 1,
-                                    icon: root.icon, color: root.color, sortOrder: root.sortOrder,
-                                    isEnabled: root.isEnabled, expenseCount: root.expenseCount,
-                                    children: kids)
+        }
+        if payments.isEmpty {
+            if let pays = try? await Api.paymentMethods() {
+                payments = pays.paymentMethods.filter { $0.isEnabled }
+                try? DictionaryDao.cachePayments(pays.paymentMethods)
             }
         }
         // 上次选择可能已被停用 → 清掉。
@@ -311,7 +318,7 @@ public struct ExpenseEditor: View {
         if paymentId.isEmpty { paymentId = payments.first?.id ?? "" }
         // 兜底：支付方式不是信用卡时不能残留分期状态
         if findPayment(paymentId)?.type != "credit" { installment = false }
-        await refreshPreview()
+        refreshPreview()
     }
 
     /// 快捷分类：遍历**二级**分类，取「启用且有笔数」的前 5（按笔数降序）。
@@ -349,7 +356,7 @@ public struct ExpenseEditor: View {
         if findPayment(id)?.type != "credit" {
             installment = false
         }
-        Task { await refreshPreview() }
+        refreshPreview()
     }
 
     /// 分类显示名：二级带父级前缀（`餐饮 · 外卖`，鸿蒙同）
@@ -423,10 +430,15 @@ public struct ExpenseEditor: View {
         amountText = next
     }
 
-    /// 跨月预览：这笔会记在哪个月（服务端算）
-    private func refreshPreview() async {
+    /// 跨月预览：这笔会记在哪个月。
+    ///
+    /// **本地算**：账单周期算法已随 `BillingCycle.swift` 移植（与服务端同源），
+    /// 逐字节等价，没必要为一行预览文字跑一次网络 —— 离线时它也不该显示「账期未取到」。
+    private func refreshPreview() {
         guard !paymentId.isEmpty else { preview = nil; return }
-        preview = try? await Api.previewExpense(spendDate: spendDate, paymentMethodId: paymentId)
+        let cycle = ExpenseActions.cycleOf(paymentMethodId: paymentId)
+        let dates = resolveExpenseDates(spendDate: spendDate, cycle: cycle)
+        preview = ExpensePreview(postingDate: dates.postingDate, repaymentDate: dates.repaymentDate)
     }
 
     /// 这笔的归属月份是否与消费日期不同（跨月警告）
@@ -755,7 +767,7 @@ public struct ExpenseEditor: View {
         let shape = RoundedRectangle(cornerRadius: radiusOf(tokens, isCyber, 11))
         return Button {
             categoryId = cat.id
-            Task { await refreshPreview() }
+            refreshPreview()
         } label: {
             HStack(spacing: 4) {
                 CatIconView(catName: cat.name, iconSize: 13,
@@ -975,7 +987,7 @@ public struct ExpenseEditor: View {
                             Button {
                                 categoryId = kid.id
                                 categoryOpen = false
-                                Task { await refreshPreview() }
+                                refreshPreview()
                             } label: {
                                 Text(kid.name)
                                     .font(.system(size: 11))
@@ -1150,7 +1162,7 @@ public struct ExpenseEditor: View {
                             Button {
                                 spendDate = key
                                 dateCalOpen = false
-                                Task { await refreshPreview() }
+                                refreshPreview()
                             } label: {
                                 Text("\(d)")
                                     .font(.custom(fontMonoOf(), size: 12.5))

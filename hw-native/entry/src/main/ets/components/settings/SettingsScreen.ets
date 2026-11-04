@@ -26,6 +26,8 @@ import { categoryColorOf, categoryPalette } from '../../common/ui/CategoryIcon';
 import { ServerConfig } from '../../common/net/ServerConfig';
 import { SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
+import { DictionaryDao } from '../../common/store/DictionaryDao';
+import { PlanDao } from '../../common/store/PlanDao';
 import { ProbeResult, ServerRouter } from '../../common/net/ServerRouter';
 import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
@@ -219,25 +221,40 @@ export struct SettingsScreen {
     this.loading = true;
     this.errorText = '';
     try {
-      const cats = await Api.categories();
-      this.categories = cats.categories;
+      /*
+       分类 / 支付方式 / 待办全部读**本地**：都是「看」的视图，离线也必须能看，
+       而且分类的颜色图标是本地个性化值，只有本地库有正确的。
+
+       计划列表仍走接口：这是「管理视图」（新建/终止计划要联网且需权限），
+       本地有 plans 表但展示要算进度，改成纯本地会引入两套进度算法。
+       */
+      this.categories = await DictionaryDao.categoriesTree();
       if (this.categories.length > 0 && this.railRootId === '') {
         this.railRootId = this.categories[0].id;
       }
-      const pays = await Api.paymentMethods();
-      this.payments = pays.paymentMethods;
-      const planBody = await Api.plans();
-      this.plans = planBody.plans;
+      this.payments = await DictionaryDao.paymentsList();
       // 设置页是「计划任务」管理页：要能看见并手动处理**所有**待处理期次，
       // 不做提醒窗口过滤（提醒窗口只用于流水页顶卡/概况页的提醒）。
-      const todoBody = await Api.planTodosAll(todayKey());
-      this.todos = todoBody.todos;
-      const skipped = await Api.doneTodos('skipped');
-      const done = await Api.doneTodos('confirmed');
-      this.doneTodos = skipped.todos.concat(done.todos);
+      this.todos = await PlanDao.pendingTodos();
+      this.doneTodos = (await PlanDao.todosByStatus('skipped'))
+        .concat(await PlanDao.todosByStatus('confirmed'));
+
+      try {
+        const planBody = await Api.plans();
+        this.plans = planBody.plans;
+      } catch (e) {
+        const err = e as ApiError;
+        this.plans = [];
+        if (err.kind === 'network') {
+          // 计划区离线不可用是可接受的（改不了），不打断其它区
+          this.errorText = '';
+        } else {
+          this.errorText = err.message;
+        }
+      }
     } catch (e) {
       const err = e as ApiError;
-      this.errorText = err.kind === 'network' ? '离线：设置项需要联网' : err.message;
+      this.errorText = err.message;
     } finally {
       this.loading = false;
     }

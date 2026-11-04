@@ -202,6 +202,20 @@ export class PlanDao {
     return out;
   }
 
+  /** 按状态查待办（设置页「已处理」区用：skipped / confirmed） */
+  static async todosByStatus(status: string): Promise<PlanTodoItem[]> {
+    const rs = await Db.get().querySql(
+      `${SELECT_TODOS} WHERE t.status = ? ORDER BY t.repayment_date, t.period_seq`,
+      [status]
+    );
+    const out: PlanTodoItem[] = [];
+    while (rs.goToNextRow()) {
+      out.push(PlanDao.rowToTodo(rs));
+    }
+    rs.close();
+    return out;
+  }
+
   /** 待办计数（诊断/自检用） */
   static async counts(): Promise<string> {
     const rs = await Db.get().querySql('SELECT (SELECT COUNT(*) FROM plans) AS p, (SELECT COUNT(*) FROM plan_todos) AS t');

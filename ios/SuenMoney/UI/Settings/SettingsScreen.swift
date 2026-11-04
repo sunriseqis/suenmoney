@@ -228,13 +228,19 @@ public struct SettingsScreen: View {
             // 默认选中第一个一级分类（鸿蒙同）
             if railRootId.isEmpty { railRootId = categories.first?.id ?? "" }
             payments = (try? DictionaryDao.paymentsList()) ?? []
-            plans = try await Api.plans().plans
+            // 待办区读**本地**（离线也能看；动作走 PlanActions 本地先写）
             // 设置页是「计划任务」管理页：要能看见并手动处理**所有**待处理期次，
             // 不做提醒窗口过滤（提醒窗口只用于流水页顶卡）
-            todos = try await Api.planTodosAll(today: todayKey()).todos
-            let skipped = try await Api.doneTodos(status: "skipped").todos
-            let done = try await Api.doneTodos(status: "confirmed").todos
-            doneTodos = skipped + done
+            todos = (try? PlanDao.pendingTodos()) ?? []
+            let skipped = (try? PlanDao.todosByStatus("skipped")) ?? []
+            let confirmed = (try? PlanDao.todosByStatus("confirmed")) ?? []
+            doneTodos = skipped + confirmed
+            /*
+             计划列表仍走接口：这是「管理视图」（新建/终止计划都要联网且需权限），
+             本地库有 plans 表但展示要算进度，改成纯本地会引入两套进度算法。
+             离线时这块报「离线：设置项需要联网」，不影响记账与查看流水。
+             */
+            plans = try await Api.plans().plans
         } catch let err as ApiError {
             reportError(err.kind == .network ? "离线：设置项需要联网" : err.message)
         } catch {

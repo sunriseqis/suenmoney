@@ -50,6 +50,20 @@ public enum PlanDao {
         return rows.map(rowToTodo)
     }
 
+    /// 按状态查待办（设置页「已处理」区用：skipped / confirmed）
+    public static func todosByStatus(_ status: String) throws -> [PlanTodoItem] {
+        let rows = try Db.shared.query("""
+            SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
+                   t.period_seq, t.amount_cents, t.repayment_date, t.status,
+                   t.will_auto_post, t.expense_id, t.posted_date
+              FROM plan_todos t
+              LEFT JOIN plans p ON p.id = t.plan_id
+             WHERE t.status = ?
+             ORDER BY t.repayment_date, t.period_seq
+            """, [status])
+        return rows.map(rowToTodo)
+    }
+
     /// 待办动作的本地状态改写（由 PlanActions 调用）
     public static func setStatus(id: String, status: String,
                                  postedDate: String? = nil,
