@@ -359,30 +359,46 @@ public struct LedgerScreen: View {
             .reduce(0) { $0 + $1.cents }
     }
 
+    /// 年档：报表缓存优先（离线显示上次结果）
     private func loadYear() async {
-        do {
-            let body = try await Api.yearlyReport(year: anchorYear)
-            yearPoints = body.report.months
-            yearTotalCents = body.report.totalCents
-            // 年档的「上期」= 去年；不设的话环比会拿月档的上期算
-            prevTotalCents = body.report.yearAgo?.totalCents ?? 0
-        } catch let err as ApiError {
-            if err.kind == .network { offline = true }
-            errorText = err.kind == .network ? "" : err.message
-        } catch {}
+        let body = await reportWithCache(key: "yearly:\(anchorYear)",
+            fetch: { try await Api.yearlyReport(year: anchorYear) },
+            onFresh: { [self] (b: YearlyReportBody) in self.applyYearlyReport(b.report) })
+        if let r = body?.report {
+            applyYearlyReport(r)
+        } else {
+            yearPoints = []
+            yearTotalCents = 0
+            prevTotalCents = 0
+        }
     }
 
+    private func applyYearlyReport(_ r: YearlyReport) {
+        yearPoints = r.months
+        yearTotalCents = r.totalCents
+        // 年档的「上期」= 去年；不设的话环比会拿月档的上期算
+        prevTotalCents = r.yearAgo?.totalCents ?? 0
+    }
+
+    /// 全部档：报表缓存优先（离线显示上次结果）
     private func loadAll() async {
-        do {
-            let body = try await Api.summaryReport()
-            allYears = body.report.years
-            allTotalCents = body.report.totalCents
-            // 全部档没有「上期」，环比胶囊不显示
+        let body = await reportWithCache(key: "summary:all",
+            fetch: { try await Api.summaryReport() },
+            onFresh: { [self] (b: SummaryReportBody) in self.applySummary(b.report) })
+        if let r = body?.report {
+            applySummary(r)
+        } else {
+            allYears = []
+            allTotalCents = 0
             prevTotalCents = 0
-        } catch let err as ApiError {
-            if err.kind == .network { offline = true }
-            errorText = err.kind == .network ? "" : err.message
-        } catch {}
+        }
+    }
+
+    private func applySummary(_ r: SummaryReport) {
+        allYears = r.years
+        allTotalCents = r.totalCents
+        // 全部档没有「上期」，环比胶囊不显示
+        prevTotalCents = 0
     }
 
     /// 提醒列表（**只取该提醒的期次**，不是所有待办）

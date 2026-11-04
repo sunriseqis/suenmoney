@@ -27,6 +27,7 @@ import {
 import { display, window } from '@kit.ArkUI';
 import { DictionaryDao } from '../../common/store/DictionaryDao';
 import { ExpenseActions, LocalExpenseInput, LocalExpensePatch } from '../../common/store/ExpenseActions';
+import { PaymentCycle, resolveExpenseDates } from '../../common/contract/BillingCycle';
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -116,36 +117,32 @@ export struct ExpenseEditor {
   }
 
   /**
-   * 载入分类 / 支付方式。
+   * 载入分类 / 支付方式 —— **本地优先**。
    *
-   * ⚠ **离线必须能记账**：接口拿不到时回退到本地缓存（`DictionaryDao`）。
-   *   原来这里只有接口一条路，断网时整棵树是空的 → 抽屉里选不了分类 →
-   *   保存直接卡在「请选择分类与支付方式」，记账根本走不到入队那一步。
-   *   缓存表里本来就有全部数据，没理由不用。
+   * 本地库是唯一显示源：分类的 `icon`/`color` 是本地个性化值，
+   * 服务端返回的是空串 —— 走接口会把用户挑的配色显示成默认色。
+   * 只有本地还没有字典（首装还没同步完）才兜底问一次接口。
    */
   private async loadDict(): Promise<void> {
-    let cats: CategoryNode[] = [];
-    let pays: PaymentMethodItem[] = [];
-    try {
-      const body = await Api.categories();
-      cats = body.categories;
-      const payBody = await Api.paymentMethods();
-      pays = payBody.paymentMethods;
-      // 接口成功时顺手刷新缓存，供下次离线用
+    let cats: CategoryNode[] = await DictionaryDao.categoriesTree();
+    let pays: PaymentMethodItem[] = await DictionaryDao.paymentsList();
+
+    if (cats.length === 0) {
       try {
+        const body = await Api.categories();
+        cats = body.categories;
         await DictionaryDao.cacheCategories(cats);
+      } catch (e) {
+        // 首装且离线：只能空着，界面会提示先联网同步
+      }
+    }
+    if (pays.length === 0) {
+      try {
+        const payBody = await Api.paymentMethods();
+        pays = payBody.paymentMethods;
         await DictionaryDao.cachePayments(pays);
       } catch (e) {
-        // 缓存失败不影响本次记账
-      }
-    } catch (e) {
-      const err = e as ApiError;
-      // 连不上 / 令牌失效：都退回本地缓存（账目本身不依赖服务端）
-      if (err.kind === 'network' || err.kind === 'unauthorized') {
-        cats = await DictionaryDao.categoriesTree();
-        pays = await DictionaryDao.paymentsList();
-      } else {
-        throw e as Error;
+        // 同上
       }
     }
     {
@@ -225,16 +222,40 @@ export struct ExpenseEditor {
     this.refreshPreview();
   }
 
-  private async refreshPreview(): Promise<void> {
+  /**
+   * 账期预览：这笔会记在哪个月。
+   *
+   * **本地算**：账单周期算法已随 `BillingCycle.ets` 移植（与服务端同源），
+   * 没必要为一行预览文字跑一次网络 —— 离线时它也不该显示「账期未取到」。
+   */
+  private refreshPreview(): void {
     if (this.paymentId === '') {
       this.preview = null;
       return;
     }
-    try {
-      this.preview = await Api.previewExpense(this.spendDate, this.paymentId);
-    } catch (e) {
-      this.preview = null;
+    const cycle = this.cycleOfPayment(this.paymentId);
+    const dates = resolveExpenseDates(this.spendDate, cycle);
+    const p: ExpensePreview = {
+      postingDate: dates.postingDate,
+      repaymentDate: dates.repaymentDate
+    };
+    this.preview = p;
+  }
+
+  /** 从已加载的 payments 同步构造账单周期（无 IO，预览可即时刷新） */
+  private cycleOfPayment(id: string): PaymentCycle {
+    for (const p of this.payments) {
+      if (p.id === id) {
+        const c: PaymentCycle = {
+          type: p.type,
+          billingDay: p.billingDay === null || p.billingDay === undefined ? 0 : p.billingDay,
+          repaymentDay: p.repaymentDay === null || p.repaymentDay === undefined ? 0 : p.repaymentDay
+        };
+        return c;
+      }
     }
+    const cash: PaymentCycle = { type: 'cash', billingDay: 0, repaymentDay: 0 };
+    return cash;
   }
 
   /** 当前支付方式是不是信用卡（决定分期可用性） */

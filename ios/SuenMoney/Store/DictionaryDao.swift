@@ -50,6 +50,74 @@ public enum DictionaryDao {
     }
 
     /// 分类名映射（离线行显示用）
+    /// 从本地缓存**还原分类树**（本地优先的读取源；记账抽屉 / 设置页都要它）
+    ///
+    /// 根节点的 `parent_id` 可能是 NULL 也可能是空串（快照写入用空串），
+    /// 两种都必须当成「没有父级」，否则整棵树会被过滤成空。
+    public static func categoriesTree() throws -> [CategoryNode] {
+        let rows = try Db.shared.query("""
+            SELECT id, parent_id, name, depth, icon, color, sort_order, is_enabled
+              FROM categories ORDER BY sort_order, id
+            """)
+        var flat: [CategoryNode] = []
+        for r in rows {
+            let rawParent = r["parent_id"] as? String ?? ""
+            flat.append(CategoryNode(
+                id: r["id"] as? String ?? "",
+                parentId: rawParent.isEmpty ? nil : rawParent,
+                name: r["name"] as? String ?? "",
+                depth: r["depth"] as? Int ?? 1,
+                icon: r["icon"] as? String ?? "",
+                color: r["color"] as? String ?? "",
+                sortOrder: r["sort_order"] as? Int ?? 0,
+                isEnabled: (r["is_enabled"] as? Int ?? 1) == 1,
+                expenseCount: 0,
+                children: []
+            ))
+        }
+        // 挂二级到一级
+        return flat.filter { $0.parentId == nil }.map { root in
+            let kids = flat.filter { $0.parentId == root.id }
+            return CategoryNode(id: root.id, parentId: nil, name: root.name, depth: root.depth,
+                                icon: root.icon, color: root.color, sortOrder: root.sortOrder,
+                                isEnabled: root.isEnabled, expenseCount: 0, children: kids)
+        }
+    }
+
+    /// 从本地缓存还原支付方式列表（本地优先的读取源）
+    public static func paymentsList() throws -> [PaymentMethodItem] {
+        let rows = try Db.shared.query("""
+            SELECT id, name, type, icon, billing_day, repayment_day, is_enabled, sort_order
+              FROM payment_methods ORDER BY sort_order, id
+            """)
+        return rows.map { r in
+            let billing = r["billing_day"] as? Int ?? 0
+            let repay = r["repayment_day"] as? Int ?? 0
+            return PaymentMethodItem(
+                id: r["id"] as? String ?? "",
+                name: r["name"] as? String ?? "",
+                type: r["type"] as? String ?? "cash",
+                icon: r["icon"] as? String ?? "",
+                billingDay: billing > 0 ? billing : nil,
+                repaymentDay: repay > 0 ? repay : nil,
+                isEnabled: (r["is_enabled"] as? Int ?? 1) == 1,
+                sortOrder: r["sort_order"] as? Int ?? 0,
+                expenseCount: 0
+            )
+        }
+    }
+
+    /// 记录人列表（本地 users 表；流水筛选与归属显示用）
+    public static func owners() throws -> [CachedCategory] {
+        let rows = try Db.shared.query(
+            "SELECT id, display_name FROM users ORDER BY display_name, id")
+        return rows.map {
+            CachedCategory(id: $0["id"] as? String ?? "",
+                           name: $0["display_name"] as? String ?? "",
+                           icon: "", color: "", parentId: "")
+        }
+    }
+
     public static func categoryNames() throws -> [String: CachedCategory] {
         let rows = try Db.shared.query("SELECT id, name, icon, color, parent_id FROM categories")
         var out: [String: CachedCategory] = [:]

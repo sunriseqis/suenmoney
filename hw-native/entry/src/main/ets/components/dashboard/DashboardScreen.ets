@@ -11,7 +11,9 @@
  * 待办动作与流水页不同：这里带「确认 / 入账 / 忽略本期」动作层（Web 概况页现状）。
  */
 
-import { Api, CategoryBucket, MonthlyReport, SummaryReport, YearlyReport } from '../../common/net/Api';
+import { Api, CategoryBucket, MonthlyReport, MonthlyReportBody, SummaryReport, SummaryReportBody, YearlyReport, YearlyReportBody } from '../../common/net/Api';
+import { reportWithCache } from '../../common/store/ReportCache';
+import { PlanDao } from '../../common/store/PlanDao';
 import { PlanActions } from '../../common/store/PlanActions';
 import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -194,24 +196,28 @@ export struct DashboardScreen {
   private async load(): Promise<void> {
     this.loading = true;
     this.errorText = '';
-    let m: MonthlyReport | null = null;
-    let y: YearlyReport | null = null;
-    let s: SummaryReport | null = null;
-    try {
-      m = (await Api.monthlyReport(this.anchorMonth)).report;
-    } catch (e) {
-      m = null;
-    }
-    try {
-      y = (await Api.yearlyReport(this.anchorYear())).report;
-    } catch (e) {
-      y = null;
-    }
-    try {
-      s = (await Api.summaryReport()).report;
-    } catch (e) {
-      s = null;
-    }
+    /*
+     报表「缓存优先 + 后台刷新」：口径由服务端唯一提供，本地只缓存最后响应。
+     离线时显示缓存，联网时后台更新。
+     */
+    const mBody = await reportWithCache<MonthlyReportBody>(`monthly:${this.anchorMonth}`,
+      async (): Promise<MonthlyReportBody> => Api.monthlyReport(this.anchorMonth),
+      (d: MonthlyReportBody): void => {
+        this.monthReport = d.report;
+      });
+    const yBody = await reportWithCache<YearlyReportBody>(`yearly:${this.anchorYear()}`,
+      async (): Promise<YearlyReportBody> => Api.yearlyReport(this.anchorYear()),
+      (d: YearlyReportBody): void => {
+        this.yearReport = d.report;
+      });
+    const sBody = await reportWithCache<SummaryReportBody>('summary:all',
+      async (): Promise<SummaryReportBody> => Api.summaryReport(),
+      (d: SummaryReportBody): void => {
+        this.summary = d.report;
+      });
+    const m: MonthlyReport | null = mBody === null ? null : mBody.report;
+    const y: YearlyReport | null = yBody === null ? null : yBody.report;
+    const s: SummaryReport | null = sBody === null ? null : sBody.report;
     this.monthReport = m;
     this.yearReport = y;
     this.summary = s;
@@ -223,9 +229,9 @@ export struct DashboardScreen {
 
   private async loadTodos(): Promise<void> {
     try {
-      const body = await Api.planTodos(todayKey());
+      const todos = await PlanDao.reminderTodos(todayKey());
       const list: DashTodo[] = [];
-      for (const t of body.todos) {
+      for (const t of todos) {
         const days = daysUntilLocal(t.repaymentDate, todayKey());
         list.push({
           id: t.id,
