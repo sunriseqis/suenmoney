@@ -14,6 +14,7 @@
 import { Api, CategoryBucket, MonthlyReport, MonthlyReportBody, SummaryReport, SummaryReportBody, YearlyReport, YearlyReportBody } from '../../common/net/Api';
 import { reportWithCache } from '../../common/store/ReportCache';
 import { PlanDao } from '../../common/store/PlanDao';
+import { DATA_VERSION_KEY } from '../../common/sync/SyncEngine';
 import { PlanActions } from '../../common/store/PlanActions';
 import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -59,6 +60,8 @@ export struct DashboardScreen {
   @State anchorMonth: string = currentMonthKey();
   /** 本地待同步记录数（与流水页共用 pendingSync 键） */
   @StorageLink('pendingSync') pendingSync: number = 0;
+  /** 本地数据版本：同步写完后 +1，本屏据此重读（否则停在本页看不到更新） */
+  @StorageLink(DATA_VERSION_KEY) @Watch('onDataVersion') dataVersion: number = 0;
   /** 手动同步进行中（按钮禁用，避免连点） */
   @State syncing: boolean = false;
 
@@ -73,6 +76,11 @@ export struct DashboardScreen {
   @State errorText: string = '';
   /** 轻提示（web useToast） */
   @State toastText: string = '';
+
+  /** 同步写完了：重读本页数据 */
+  private onDataVersion(): void {
+    this.reload();
+  }
 
   aboutToAppear(): void {
     this.reload();
