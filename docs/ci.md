@@ -34,13 +34,16 @@
 **本仓库不再发行任何产物** —— 三端（fnos / hw / ios）的包统一发到
 **`sunriseqis/suenapp`**，与 suenmusic、suenweb 并列。
 
+**产物命名统一为 `suenmoney-<版本>.<ext>`**（用户裁决）：全小写、版本号不带 `v`、
+不带 `-unsigned` / `-release` 后缀；三端扩展名分别是 `.fpk` / `.hap` / `.ipa`。
+
 三端共用**同一个 Release**：
 
 ```
 tag       = suenmoney-vX.Y.Z          ← 硬性要求，必须带 suenmoney- 前缀
-附件       = suenmoney-vX.Y.Z.fpk     （fnOS）
-            SuenMoney-vX.Y.Z-unsigned.hap
-            SuenMoney-vX.Y.Z-release.ipa
+附件       = suenmoney-X.Y.Z.fpk        （fnOS）
+            suenmoney-X.Y.Z.hap        （鸿蒙，未签名）
+            suenmoney-X.Y.Z.ipa        （iOS，未签名）
 body      = 三节 SECTION（FNOS / HARMONY / IOS），由
             scripts/prepare-release-notes.mjs 各自替换自己那节
 ```

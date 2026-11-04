@@ -115,10 +115,11 @@ jobs:
               FOUND_HAP=$(find /workspace/hw-native -type f -name "*.hap" | head -n 1)
               if [ -n "$FOUND_HAP" ] && [ -f "$FOUND_HAP" ]; then
                 echo "找到产物: $FOUND_HAP"
-                # ⚠ 名字必须与下游三处（Verify Artifact / Upload HAP / Publish Release）
-                # 及清理白名单 `/^SuenMoney-v[\d.]+-unsigned\.hap$/` 完全一致。
-                # 之前这里写的是 suenmoney-<ver>.hap，构建成功也会卡在 Verify Artifact 报 exit 1。
-                cp -v "$FOUND_HAP" "/workspace/app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
+                # ⚠ 产物命名是**裁决过的统一口径**：`suenmoney-<版本>.<ext>`
+                #   （fpk / ipa / hap 三端一致，全小写、不带 v、不带 -unsigned/-release 后缀）。
+                # 这里必须与下游三处（Verify Artifact / Upload HAP / Publish Release）
+                # 以及清理白名单逐字一致，否则构建成功也会卡在 Verify Artifact 报 exit 1。
+                cp -v "$FOUND_HAP" "/workspace/app/suenmoney-${{ env.VERSION_NAME }}.hap"
               else
                 echo "未在 /workspace/hw-native 找到 .hap，检索工作区:"
                 find /workspace -type f -name "*.hap" || true
@@ -164,7 +165,7 @@ jobs:
         run: |
           mkdir -p app
           ls -lh app/ 2>/dev/null || true
-          HAP="app/SuenMoney-${{ env.VERSION }}-unsigned.hap"
+          HAP="app/suenmoney-${{ env.VERSION_NAME }}.hap"
           if [ ! -f "$HAP" ]; then
             echo "✖ 未找到 $HAP！输出构建日志末尾 120 行：" >&2
             tail -n 120 build.log 2>/dev/null || true
@@ -191,8 +192,8 @@ jobs:
       - name: Upload HAP Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SuenMoney-${{ env.VERSION }}-hap
-          path: app/SuenMoney-${{ env.VERSION }}-unsigned.hap
+          name: suenmoney-${{ env.VERSION_NAME }}
+          path: app/suenmoney-${{ env.VERSION_NAME }}.hap
           retention-days: 30
 
       # 清理 Release 上的冗余历史资产（如 build.log、无版本号或重复命名产物）
@@ -220,15 +221,14 @@ jobs:
               }
               const release = await res.json();
               // 规范产物名单：Android release.apk / iOS release.ipa / 鸿蒙 unsigned.hap
-              // 两种命名风格都放行：老的是 SuenMoney-vX-release.ipa / -unsigned.hap，
-              // 新的是 suenmoney-X.ipa / suenmoney-X.fpk（iOS 与 fnOS 工作流现在的输出）。
-              // 只认老的会把别的工作流刚上传的包当「冗余」删掉 —— 2026-11-04 差点踩到。
+              // 只放行**裁决过的统一命名** `suenmoney-<版本>.<ext>`（三端同一口径）：
+              // 老风格 SuenMoney-vX-release.ipa / -unsigned.hap 属于历史遗留，
+              // 出现在当前 Release 上就该被清掉，否则一个版本里两种命名并存。
               const allowedPatterns = [
-                /^SuenMoney-v[\d.]+-release\.apk$/,
-                /^SuenMoney-v[\d.]+-release\.ipa$/,
-                /^SuenMoney-v[\d.]+-unsigned\.hap$/,
-                /^suenmoney-[\d.]+\.[\w.]+$/,
-                /^SuenMoney-[\d.]+-unsigned\.hap$/
+                /^suenmoney-[\d.]+\.fpk$/,
+                /^suenmoney-[\d.]+\.fpk\.sha256$/,
+                /^suenmoney-[\d.]+\.ipa$/,
+                /^suenmoney-[\d.]+\.hap$/
               ];
 
               for (const asset of release.assets || []) {
@@ -286,4 +286,4 @@ jobs:
           make_latest: true
           append_body: false
           files: |
-            app/SuenMoney-${{ env.VERSION }}-unsigned.hap
+            app/suenmoney-${{ env.VERSION_NAME }}.hap
