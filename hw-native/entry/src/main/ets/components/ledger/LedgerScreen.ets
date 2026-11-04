@@ -16,7 +16,7 @@ import { Api, ExpenseItem, MonthPoint, MonthlyReportBody, PaymentMethodItem, Sum
 import { PlanActions } from '../../common/store/PlanActions';
 import { AuthStore } from '../../common/auth/AuthStore';
 import { ApiError } from '../../common/net/ApiError';
-import { ExpenseDao } from '../../common/store/ExpenseDao';
+import { ExpenseDao, ExpensePageLocal } from '../../common/store/ExpenseDao';
 import { PlanDao } from '../../common/store/PlanDao';
 import { ReportCache, reportWithCache } from '../../common/store/ReportCache';
 import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
@@ -277,15 +277,22 @@ export struct LedgerScreen {
 
   /** 月档：本地分页查询 */
   private async loadMonth(reset: boolean): Promise<void> {
-    const page = await ExpenseDao.query({
+    let page: ExpensePageLocal;
+    try {
+      page = await ExpenseDao.query({
       month: this.anchorMonth,
       cursor: reset ? null : this.cursor,
       limit: PAGE_SIZE,
       q: this.keyword.trim(),
       categoryId: this.filterCategory,
       paymentMethodId: this.filterPayment,
-      ownerId: this.filterOwner
-    });
+        ownerId: this.filterOwner
+      });
+    } catch (e) {
+      // 本地库出错（未打开 / SQL 失败）：给出明确错误，不要让它冒泡成「永久转圈」
+      this.errorText = '本地数据读取失败';
+      return;
+    }
     this.rows = reset ? page.items : this.rows.concat(page.items);
     this.cursor = page.nextCursor === null ? '' : page.nextCursor;
     this.hasMore = page.hasMore;
@@ -690,6 +697,10 @@ export struct LedgerScreen {
     this.loading = true;
     this.loadTier().then(() => {
       this.loading = false;
+    })
+    .catch(() => {
+      // 出错也必须复位，否则界面永久卡在转圈
+      this.loading = false;
     });
   }
 
@@ -702,6 +713,10 @@ export struct LedgerScreen {
     }
     this.loading = true;
     this.loadTier().then(() => {
+      this.loading = false;
+    })
+    .catch(() => {
+      // 出错也必须复位，否则界面永久卡在转圈
       this.loading = false;
     });
   }
@@ -1725,6 +1740,10 @@ export struct LedgerScreen {
             this.loading = true;
             this.loadTier().then(() => {
               this.loading = false;
+            })
+            .catch(() => {
+              // 出错也必须复位，否则界面永久卡在转圈
+              this.loading = false;
             });
           })
         }, (point: MonthPoint) => point.month)
@@ -1821,6 +1840,10 @@ export struct LedgerScreen {
                   this.loading = true;
                   this.reload().then(() => {
                     this.loading = false;
+                  })
+                  .catch(() => {
+                    // 出错也必须复位，否则界面永久卡在转圈
+                    this.loading = false;
                   });
                 })
             }
@@ -1850,6 +1873,10 @@ export struct LedgerScreen {
               this.loading = true;
               this.reload().then(() => {
                 this.loading = false;
+              })
+              .catch(() => {
+                // 出错也必须复位，否则界面永久卡在转圈
+                this.loading = false;
               });
             })
           Text('回到本月')
@@ -1867,6 +1894,10 @@ export struct LedgerScreen {
               this.calOpen = false;
               this.loading = true;
               this.reload().then(() => {
+                this.loading = false;
+              })
+              .catch(() => {
+                // 出错也必须复位，否则界面永久卡在转圈
                 this.loading = false;
               });
             })
@@ -1991,6 +2022,10 @@ export struct LedgerScreen {
               this.tier = 1;
               this.loading = true;
               this.loadTier().then(() => {
+                this.loading = false;
+              })
+              .catch(() => {
+                // 出错也必须复位，否则界面永久卡在转圈
                 this.loading = false;
               });
             })
