@@ -17,14 +17,17 @@ const FALLBACK_SYMBOL: Resource = $r('sys.symbol.doc_text');
 /**
  * 深色（cyber）分类色 16 色槽。
  *
- * 与 Web `.app[data-theme="cyber"]` 的 `--chart-1..` 对应（Web 只定义到 8，
- * 其余 8 个是原生扩展的补充色，保证 16 槽不重复）。
+ * **前 8 槽严格等于 Web `.app[data-theme="cyber"]` 的 `--chart-1..8`**
+ * （#00ff88 / #ff00ff / #00d4ff / #ffb020 / #8b5cff / #00a3ff / #ff3366 / #7dffd0）。
+ * 之前 4~8 槽是另一套（#FBBF24/#5FD6A8/#66C4CC/#E07060/#93A5F0），
+ * 于是同一个分类在 Web 赛博下和原生端是两种颜色 —— 用户 2026-11-04 反馈「色卡尽量一致」。
+ * Web 只定义到 8，后 8 个是原生扩展的补充色（同一荧光家族，保证 16 槽不重复）。
  */
 export const CATEGORY_COLORS: string[] = [
-  '#00ff88', '#ff00ff', '#00d4ff', '#FBBF24',
-  '#5FD6A8', '#66C4CC', '#E07060', '#93A5F0',
+  '#00ff88', '#ff00ff', '#00d4ff', '#ffb020',
+  '#8b5cff', '#00a3ff', '#ff3366', '#7dffd0',
   '#C8D656', '#5AD4C4', '#E37FB2', '#A8C056',
-  '#E0A878', '#9D8FF5', '#74A8D6', '#8C8C8C'
+  '#E0A878', '#9D8FF5', '#74A8D6', '#8C8C8C',
 ];
 
 /**

@@ -43,12 +43,16 @@ public func hashIndex(_ id: String) -> Int {
     return h % paletteSize
 }
 
-/// 16 色槽（鸿蒙 `CATEGORY_COLORS` 同源）
+/// 16 色槽（鸿蒙 `CATEGORY_COLORS` 同源）。
+///
+/// **前 8 槽严格等于 Web `.app[data-theme="cyber"]` 的 `--chart-1..8`**，
+/// 之前 4~8 槽是另一套，导致同一分类在 Web 赛博下和两端原生是两种颜色
+/// （用户 2026-11-04 反馈「色卡尽量一致」）。后 8 槽是原生扩展补充色。
 public let categoryColors: [String] = [
-    "#00ff88", "#ff00ff", "#00d4ff", "#FBBF24",
-    "#5FD6A8", "#66C4CC", "#E07060", "#93A5F0",
+    "#00ff88", "#ff00ff", "#00d4ff", "#ffb020",
+    "#8b5cff", "#00a3ff", "#ff3366", "#7dffd0",
     "#C8D656", "#5AD4C4", "#E37FB2", "#A8C056",
-    "#E0A878", "#9D8FF5", "#74A8D6", "#8C8C8C"
+    "#E0A878", "#9D8FF5", "#74A8D6", "#8C8C8C",
 ]
 
 /// 分类名/ID → 稳定颜色。**按当前主题取调色板**。

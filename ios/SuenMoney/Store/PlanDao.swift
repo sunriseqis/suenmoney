@@ -18,15 +18,22 @@ import Foundation
 
 public enum PlanDao {
     /// 提醒窗口内的待办（流水页顶卡 / 概况页）
+    ///
+    /// `will_auto_post` 是服务端**派生值**（`plans.auto_post = 1` 且 `hold_auto_post = 0`），
+    /// 增量 payload 里不带这个字段，本地那一列永远是 0 —— 于是自动入账的期次会显示成
+    /// 「需手动」，动作也从 ack 变成 confirm（自动入账变成立刻入账）。三条查询统一按公式现算。
     public static func reminderTodos(today: String) throws -> [PlanTodoItem] {
         let rows = try Db.shared.query("""
             SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
                    t.period_seq, t.amount_cents, t.repayment_date, t.status,
-                   t.will_auto_post, t.expense_id, t.posted_date, t.ack_at
+                   CASE WHEN COALESCE(p.auto_post, 0) = 1 THEN 1 ELSE 0 END AS will_auto_post,
+                   t.expense_id, t.posted_date, t.ack_at
               FROM plan_todos t
               LEFT JOIN plans p ON p.id = t.plan_id
              WHERE (
-               (t.status = 'pending' AND t.repayment_date <= date(?, '+3 days') AND t.ack_at IS NULL)
+               // ack_at 判 IS NULL 不够：增量同步把服务端 null 写成空串，这里两种都认
+               (t.status = 'pending' AND t.repayment_date <= date(?, '+3 days')
+                  AND (t.ack_at IS NULL OR t.ack_at = ''))
                OR (t.status = 'skipped' AND t.repayment_date < ? AND t.plan_id IN (
                  SELECT id FROM plans WHERE auto_post = 0
                ))
@@ -41,7 +48,8 @@ public enum PlanDao {
         let rows = try Db.shared.query("""
             SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
                    t.period_seq, t.amount_cents, t.repayment_date, t.status,
-                   t.will_auto_post, t.expense_id, t.posted_date, t.ack_at
+                   CASE WHEN COALESCE(p.auto_post, 0) = 1 THEN 1 ELSE 0 END AS will_auto_post,
+                   t.expense_id, t.posted_date, t.ack_at
               FROM plan_todos t
               LEFT JOIN plans p ON p.id = t.plan_id
              WHERE t.status = 'pending'
@@ -55,7 +63,8 @@ public enum PlanDao {
         let rows = try Db.shared.query("""
             SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
                    t.period_seq, t.amount_cents, t.repayment_date, t.status,
-                   t.will_auto_post, t.expense_id, t.posted_date, t.ack_at
+                   CASE WHEN COALESCE(p.auto_post, 0) = 1 THEN 1 ELSE 0 END AS will_auto_post,
+                   t.expense_id, t.posted_date, t.ack_at
               FROM plan_todos t
               LEFT JOIN plans p ON p.id = t.plan_id
              WHERE t.status = ?

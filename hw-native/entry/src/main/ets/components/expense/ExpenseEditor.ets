@@ -431,6 +431,13 @@ export struct ExpenseEditor {
           note: this.note
         };
         await Api.createPlan(planReq);
+        /*
+         * ⚠ 分期是**服务端写入**（本地队列表达不了 periods/purchaseDate），
+         * 写完必须立刻拉一次 —— 否则这笔分期在本地库里根本不存在：
+         * 流水页、hero「本月要还」、待办提醒条全都看不到，要等下次冷启动才出现。
+         * 用户刚记完分期就看不见东西，是「本地优先」下最容易踩的一类不一致。
+         */
+        await SyncEngine.refresh();
         savedId = '';
       } else {
         // 本地优先：算账单日期 → 写本地 → 入队 → 触发同步。
