@@ -19,7 +19,7 @@ import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { formatYuan } from '../../common/contract/Contract';
 
-import { fieldBgOf, fieldBorderWOf } from '../../common/ui/UiStyle';
+import { fieldBgOf, fieldBorderWOf, fieldTextColor, fieldHintColor } from '../../common/ui/UiStyle';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { categoryColorOf, categoryPalette } from '../../common/ui/CategoryIcon';
@@ -896,7 +896,8 @@ export struct SettingsScreen {
         .backgroundColor(this.isCyber() ? this.tok().surface3 : this.tok().surface2)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rSm))
         .border({ width: fieldBorderWOf(1, this.isCyber()), color: this.tok().line })
-        .fontColor(this.tok().ink)
+        .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+        .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
         .onChange((v: string) => {
           // 只写草稿：写 @State 会让 TextInput 被重置、光标跳走
           this.srvDraft[$$.index] = v;
@@ -2186,7 +2187,8 @@ export struct SettingsScreen {
           .type(InputType.Password)
           .height(40)
           .fontSize(13)
-          .fontColor(this.tok().ink)
+          .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+          .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
           .backgroundColor(fieldBgOf(this.tok().surface, this.tok().surface2, this.isCyber()))
           .border({ width: fieldBorderWOf(this.tok().borderW, this.isCyber()), color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
@@ -2206,7 +2208,8 @@ export struct SettingsScreen {
           .type(InputType.Password)
           .height(40)
           .fontSize(13)
-          .fontColor(this.tok().ink)
+          .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+          .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
           .backgroundColor(fieldBgOf(this.tok().surface, this.tok().surface2, this.isCyber()))
           .border({ width: fieldBorderWOf(this.tok().borderW, this.isCyber()), color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
@@ -2512,7 +2515,9 @@ export struct SettingsScreen {
       .type(password ? InputType.Password : InputType.Normal)
       .height(40)
       .fontSize(13)
-      .fontColor(this.tok().ink)
+      // 文字/示例都必须显式给色：原生 TextInput 不继承，深色底上默认是近黑
+      .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+      .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
       // cyber 下输入框体要走 surface2，否则贴在 bg 上看不出边界（用户反馈可见性差）
       .backgroundColor(fieldBgOf(this.tok().surface, this.tok().surface2, this.isCyber()))
       .border({ width: fieldBorderWOf(this.tok().borderW, this.isCyber()), color: outlineStrongOf(this.isCyber()) })

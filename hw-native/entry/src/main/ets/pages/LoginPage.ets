@@ -16,7 +16,7 @@ import { ApiError } from '../common/net/ApiError';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ProbeResult, ServerRouter } from '../common/net/ServerRouter';
 import { THEME_STORAGE_KEY, ThemeManager } from '../common/theme/ThemeManager';
-import { FOCUS_RING, radiusOf, outlineStrongOf, fontMonoOf } from '../common/ui/UiStyle';
+import { FOCUS_RING, radiusOf, outlineStrongOf, fontMonoOf, fieldTextColor, fieldHintColor } from '../common/ui/UiStyle';
 import { BrandMark } from '../components/BrandMark';
 import { CANDY, CYBER, ThemeTokens } from '../common/theme/AppTheme';
 import { displayFont, bodyFont } from '../common/theme/Fonts';
@@ -177,7 +177,9 @@ struct LoginPage {
         // 输入框体改用 surface2(#1c1c2e)，描边加粗到 1.5
         .backgroundColor(this.isCyber() ? this.tok().surface2 : this.tok().surface)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
+        // 原生 TextInput 不继承颜色：不给色，深色底上输入的字就是近黑，等于看不见
+        .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+        .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
 
       TextInput({ placeholder: '口令' })
         .border({ width: this.passwordFocus ? 2 : (this.isCyber() ? 1.5 : 1), color: this.passwordFocus ? FOCUS_RING : outlineStrongOf(this.isCyber()) })
@@ -196,7 +198,8 @@ struct LoginPage {
         // 输入框体改用 surface2(#1c1c2e)，描边加粗到 1.5
         .backgroundColor(this.isCyber() ? this.tok().surface2 : this.tok().surface)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
+        .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+        .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
 
       if (this.errorText !== '') {
         Text(this.errorText)
@@ -235,6 +238,10 @@ struct LoginPage {
           .layoutWeight(1)
           .fontSize(12.5)
           .fontFamily(fontMonoOf())
+          // 这里原先**一个颜色都没给**：装包自带的那串地址就显示成深底黑字，
+          // 整块看起来像「空的输入框」（用户反馈）。
+          .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+          .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
           .backgroundColor(this.isCyber() ? this.tok().surface3 : this.tok().surface2)
           .border({ width: this.isCyber() ? 1.5 : this.tok().borderW, color: outlineStrongOf(this.isCyber()) })
           .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))

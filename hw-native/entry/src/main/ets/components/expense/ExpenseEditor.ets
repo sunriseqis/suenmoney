@@ -31,7 +31,7 @@ import { PaymentCycle, resolveExpenseDates } from '../../common/contract/Billing
 import { ApiError } from '../../common/net/ApiError';
 import { formatCents, formatYuan, parseYuanToCents } from '../../common/contract/Contract';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { FOCUS_RING, fontBodyOf, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { FOCUS_RING, fontBodyOf, fontDisplayOf, fontMonoOf, outlineStrongOf, parseShadow, radiusOf, fieldTextColor, fieldHintColor } from '../../common/ui/UiStyle';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { categoryColorOf } from '../../common/ui/CategoryIcon';
@@ -1169,9 +1169,9 @@ export struct ExpenseEditor {
         // cyber 下 surface(#12121a) 贴在 bg(#0a0a0f) 上边界不清 → 用 surface2
         .backgroundColor(this.isCyber() ? this.tok().surface2 : this.tok().surface)
         .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
-        .fontColor(this.tok().ink)
+        .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
         // placeholder 不给色会用默认深灰，深色主题下几乎看不见
-        .placeholderColor(this.tok().ink3)
+        .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
         .onChange((v: string) => {
           this.note = v;
         })

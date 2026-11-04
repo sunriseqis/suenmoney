@@ -23,7 +23,7 @@ import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
 import { DATA_VERSION_KEY, SyncEngine, SyncReport } from '../../common/sync/SyncEngine';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
-import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
+import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf, fieldTextColor, fieldHintColor } from '../../common/ui/UiStyle';
 import { CATEGORY_COLORS, parseCategoryColorIndex, deriveColorIndex } from '../../common/ui/CategoryIcon';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
@@ -1062,8 +1062,8 @@ export struct LedgerScreen {
               .padding({ left: 34, right: 12, top: 9, bottom: 9 })
               .height(40)
               .fontSize(13)
-              .fontColor(this.tok().ink)
-              .placeholderColor(this.tok().ink3)
+              .fontColor(fieldTextColor(this.tok().ink, this.isCyber()))
+              .placeholderColor(fieldHintColor(this.tok().ink3, this.tok().ink2, this.isCyber()))
               .backgroundColor(this.isCyber() ? '#12121a' : this.tok().surface)
               .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rMd))
               .border({

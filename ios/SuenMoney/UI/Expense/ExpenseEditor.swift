@@ -661,9 +661,10 @@ public struct ExpenseEditor: View {
             // 备注：**整行输入框，无左标签**（鸿蒙同）；聚焦时 2px #5DB8FF 焦点环；
             // placeholder 必须显式给色，否则深色底上几乎不可见
             TextField("", text: $note,
-                      prompt: Text("备注（选填）").foregroundStyle(Color(css: tokens.ink3)))
+                      prompt: Text("备注（选填）")
+                        .foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                 .font(.system(size: 16))
-                .foregroundStyle(Color(css: tokens.ink))
+                .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                 .focused($noteFocused)
                 .padding(.horizontal, 9)
                 .frame(height: 36)
