@@ -44,6 +44,22 @@ export class ReportCache {
     }
   }
 
+  /**
+   * 让全部报表缓存失效。
+   *
+   * ⚠ 本机写操作（记账 / 改账 / 删账 / 待办动作）之后必须调它：
+   *   报表缓存有 5 分钟 TTL，`reportWithCache` 在 TTL 内不会重新拉 ——
+   *   用户刚记的 60 元会出现在列表里，但 hero 的「本月支出」还是旧数，
+   *   要等 5 分钟或切页才更新。这不是能接受的延迟。
+   */
+  static async invalidateAll(): Promise<void> {
+    try {
+      await Db.get().executeSql("DELETE FROM meta WHERE key LIKE 'report:%'");
+    } catch (e) {
+      // 清不掉也不影响记账本身（最多显示旧报表 5 分钟）
+    }
+  }
+
   /** 写缓存（拿服务端新响应时调） */
   static async put(key: string, data: Object): Promise<void> {
     const payload: CachedReport<Object> = {

@@ -23,6 +23,7 @@
 import { Db } from './Db';
 import { Outbox } from '../sync/Outbox';
 import { SyncEngine } from '../sync/SyncEngine';
+import { ReportCache } from './ReportCache';
 
 export class PlanActions {
   /** 入账（手动确认）。`spendDate` 为空时按还款日入账（与服务端一致） */
@@ -33,6 +34,7 @@ export class PlanActions {
       [spendDate === '' ? today : spendDate, new Date().toISOString(), id]
     );
     await Outbox.enqueue('confirm_todo', id, JSON.stringify({ id: id, spendDate: spendDate }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 
@@ -43,6 +45,7 @@ export class PlanActions {
       [new Date().toISOString(), id]
     );
     await Outbox.enqueue('skip_todo', id, JSON.stringify({ id: id }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 
@@ -53,6 +56,7 @@ export class PlanActions {
       [new Date().toISOString(), new Date().toISOString(), id]
     );
     await Outbox.enqueue('ack_todo', id, JSON.stringify({ id: id }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 
@@ -63,6 +67,7 @@ export class PlanActions {
       [new Date().toISOString(), id]
     );
     await Outbox.enqueue('revert_todo', id, JSON.stringify({ id: id }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 
@@ -73,6 +78,7 @@ export class PlanActions {
       [new Date().toISOString(), id]
     );
     await Outbox.enqueue('restore_todo', id, JSON.stringify({ id: id }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 }

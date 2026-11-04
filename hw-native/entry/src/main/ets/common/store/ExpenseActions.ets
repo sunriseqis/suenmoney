@@ -15,6 +15,7 @@
 import { Db } from './Db';
 import { Outbox } from '../sync/Outbox';
 import { SyncEngine } from '../sync/SyncEngine';
+import { ReportCache } from './ReportCache';
 import { AuthStore } from '../auth/AuthStore';
 import { ulid } from '../contract/Contract';
 import { PaymentCycle, resolveExpenseDates, ResolvedDates } from '../contract/BillingCycle';
@@ -70,6 +71,7 @@ export class ExpenseActions {
       note: input.note
     });
     await Outbox.enqueue('create_expense', id, payload);
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
     return id;
   }
@@ -92,6 +94,7 @@ export class ExpenseActions {
       spendDate: patch.spendDate,
       note: patch.note
     }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 
@@ -99,6 +102,7 @@ export class ExpenseActions {
   static async remove(id: string): Promise<void> {
     await Db.get().executeSql('DELETE FROM expenses WHERE id = ?', [id]);
     await Outbox.enqueue('delete_expense', id, JSON.stringify({ id: id }));
+    await ReportCache.invalidateAll();
     SyncEngine.schedulePush();
   }
 
