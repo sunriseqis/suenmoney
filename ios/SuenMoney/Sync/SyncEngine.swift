@@ -65,6 +65,15 @@ public actor SyncEngine {
             report.pulled = pullResult.applied
             report.cursor = pullResult.cursor
         } catch let err as ApiError {
+            /*
+             令牌失效也要打标记。
+             只靠 `AuthStore.refreshMe()` 设置的话，用户在流水页记账（本地入队成功）
+             后同步一直 401 失败，界面上却什么都没有 —— 队列永远推不上去，
+             用户完全不知道是「登录失效了」。
+             */
+            if err.kind == .unauthorized {
+                await MainActor.run { AuthStore.shared.sessionExpired = true }
+            }
             report.error = err.kind == .network ? "离线：稍后自动重试" : err.message
         } catch {
             report.error = error.localizedDescription
