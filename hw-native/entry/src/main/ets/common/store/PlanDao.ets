@@ -58,8 +58,15 @@ const SELECT_PLANS = `SELECT p.id, p.name, p.category_id, p.payment_method_id, p
 
 // plan_name 一律从 plans 表 JOIN 取真名。
 // `plan_todos.plan_name` 是历史冗余列：增量 payload 不带它，只信它会出现空名字。
+/*
+ * will_auto_post 是服务端**派生值**（plans.auto_post = 1 且 hold_auto_post = 0），
+ * 增量 payload 里根本不带这个字段 —— 本地这一列永远是 0，
+ * 于是概况页把「自动入账」的期次全显示成「需手动」，动作也从 ack 变成 confirm
+ * （自动入账变成立刻入账，语义就错了）。这里按服务端同一公式现算。
+ */
 const SELECT_TODOS = `SELECT t.id, t.plan_id, COALESCE(p.name, t.plan_name, '') AS plan_name,
-       t.period_seq, t.amount_cents, t.repayment_date, t.status, t.will_auto_post,
+       t.period_seq, t.amount_cents, t.repayment_date, t.status,
+       CASE WHEN COALESCE(p.auto_post, 0) = 1 THEN 1 ELSE 0 END AS will_auto_post,
        t.expense_id, t.posted_date
   FROM plan_todos t
   LEFT JOIN plans p ON p.id = t.plan_id`;
@@ -168,12 +175,19 @@ export class PlanDao {
    * 提醒窗口内的待办（流水页顶卡 / 概况页）。
    *
    * SQL 与服务端 `listTodos({ reminderToday })` 逐条对齐，别单独改一边。
+   *
+   * ⚠ `ack_at` 判断必须容忍空串：增量同步把服务端的 null 写成了 ''（`str()` 的兜底），
+   *   只判 `IS NULL` 会让每一期都「看起来已忽略过」，提醒条永远不出现（上机实测踩到）。
+   *   `''` 与 NULL 都算「未摘除」。
+   *
+   * 注意：这段是模板字符串，**注释里不能出现反引号**（会提前结束字符串）。
    */
   static async reminderTodos(today: string): Promise<PlanTodoItem[]> {
     const rs = await Db.get().querySql(
       `${SELECT_TODOS}
         WHERE (
-          (t.status = 'pending' AND t.repayment_date <= date(?, '+3 days') AND t.ack_at IS NULL)
+          (t.status = 'pending' AND t.repayment_date <= date(?, '+3 days')
+             AND (t.ack_at IS NULL OR t.ack_at = ''))
           OR (t.status = 'skipped' AND t.repayment_date < ? AND t.plan_id IN (
             SELECT id FROM plans WHERE auto_post = 0
           ))
