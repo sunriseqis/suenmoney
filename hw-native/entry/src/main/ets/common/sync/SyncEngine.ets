@@ -30,6 +30,13 @@ export interface SyncReport {
   pulled: number;
   cursor: number;
   error: string;
+  /**
+   * 本次调用因「已有同步在跑」被跳过。
+   *
+   * 调用方必须区分它和「同步失败」：跳过时所有计数都是 0、error 也是空，
+   * 不判断就会把「正在同步」误报成「服务器连不上」。
+   */
+  skipped: boolean;
 }
 
 export class SyncEngine {
@@ -56,22 +63,46 @@ export class SyncEngine {
    * 只负责「拉」。推送由 `syncNow()` 负责（它先推后拉）。
    */
   static async refresh(): Promise<number> {
-    // 增量可能有多页：一直翻到 hasMore=false，否则一次启动只同步 200 条
-    let last = await SyncEngine.readCursor();
-    for (let i = 0; i < 50; i++) {
-      const result = await SyncEngine.pull();
-      last = result.cursor;
-      if (!result.hasMore) {
-        break;
-      }
+    /*
+     * ⚠ **必须与 syncNow 共用同一把锁**。
+     *
+     * 冷启动时 `EntryAbility.loadRoot` 会触发 syncNow()，而 `LedgerScreen.aboutToAppear`
+     * 又触发 refresh() —— 两者并发时会同时 pull：读同一个游标、各自 applyChange、
+     * 互相覆盖 `sync_cursor`。极端情况下一边走「本地空 → 快照（先清表）」、
+     * 另一边还在 append，数据直接错乱。
+     */
+    if (SyncEngine.running) {
+      return await SyncEngine.readCursor();
     }
-    return last;
+    SyncEngine.running = true;
+    try {
+      // 增量可能有多页：一直翻到 hasMore=false，否则一次启动只同步 200 条
+      let last = await SyncEngine.readCursor();
+      for (let i = 0; i < 50; i++) {
+        const result = await SyncEngine.pull();
+        last = result.cursor;
+        if (!result.hasMore) {
+          break;
+        }
+      }
+      // 拉取也算「本地数据变了」：屏幕要重读
+      const prev: number = AppStorage.get<number>(DATA_VERSION_KEY) ?? 0;
+      AppStorage.setOrCreate<number>(DATA_VERSION_KEY, prev + 1);
+      return last;
+    } catch (e) {
+      return await SyncEngine.readCursor();
+    } finally {
+      SyncEngine.running = false;
+    }
   }
 
   /** 完整一轮：先推后拉（推成功后本地才有正确游标语义） */
   static async syncNow(): Promise<SyncReport> {
-    const report: SyncReport = { pushed: 0, deadLettered: 0, pulled: 0, cursor: 0, error: '' };
+    const report: SyncReport = {
+      pushed: 0, deadLettered: 0, pulled: 0, cursor: 0, error: '', skipped: false
+    };
     if (SyncEngine.running) {
+      report.skipped = true;
       return report;
     }
     SyncEngine.running = true;
