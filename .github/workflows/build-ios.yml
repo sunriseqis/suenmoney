@@ -135,7 +135,7 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SuenMoney-${{ env.VERSION }}-ipa
+          name: suenmoney-${{ env.VERSION_NAME }}-ipa
           path: app/suenmoney-${{ env.VERSION_NAME }}.ipa
           retention-days: 30
 
