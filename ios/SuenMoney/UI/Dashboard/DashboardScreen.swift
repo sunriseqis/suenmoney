@@ -46,6 +46,9 @@ public struct DashboardScreen: View {
     @State private var syncing: Bool = false
 
     @State private var monthReport: MonthlyReport?
+    /// 月档「本月支出」的本地统计（不依赖服务端报表，记账后立刻正确）
+    @State private var monthTotalLocal: Int = 0
+    @State private var monthCountLocal: Int = 0
     @State private var yearReport: YearlyReport?
     @State private var summary: SummaryReport?
     @State private var todos: [DashTodo] = []
@@ -147,6 +150,11 @@ public struct DashboardScreen: View {
             fetch: { try await Api.summaryReport() },
             onFresh: { [self] (b: SummaryReportBody) in self.summary = b.report })
 
+        let localMonth = (try? ExpenseDao.monthTotalByRepayment(anchorMonth))
+            ?? LocalMonthTotal(totalCents: 0, count: 0)
+        monthTotalLocal = localMonth.totalCents
+        monthCountLocal = localMonth.count
+
         let m = monthBody?.report
         let y = yearBody?.report
         let s = summaryBody?.report
@@ -195,7 +203,9 @@ public struct DashboardScreen: View {
     // MARK: - 派生值
 
     private func totalCents() -> Int {
-        if tier == 0 { return monthReport?.totalCents ?? 0 }
+        // 月档用**本地统计**（按还款日归属，与月报同口径）：
+        // 本机刚记的账服务端还没收到，读报表缓存会显示旧数。
+        if tier == 0 { return monthTotalLocal }
         if tier == 1 { return yearReport?.totalCents ?? 0 }
         return summary?.totalCents ?? 0
     }
@@ -221,7 +231,7 @@ public struct DashboardScreen: View {
     }
 
     private func countOf() -> Int {
-        if tier == 0 { return monthReport?.count ?? 0 }
+        if tier == 0 { return monthCountLocal }
         if tier == 1 { return yearReport?.count ?? 0 }
         return summary?.count ?? 0
     }
