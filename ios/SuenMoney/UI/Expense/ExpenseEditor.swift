@@ -325,15 +325,21 @@ public struct ExpenseEditor: View {
     ///
     /// 之前取的是**一级**前 5 —— 语义完全不同：用户高频记的是「买菜/外卖/打车」这类
     /// 二级，一级只是「餐饮/交通」这种粗分类。
+    /// 键盘上方的常用分类（与 Web `quickCategories`、鸿蒙 `quickCats` 同一套）。
+    ///
+    /// 按笔数降序取前 6；**笔数 > 0 的不足 3 个时退回前 6 个**。
+    /// ⚠ 兜底不能省：本地笔数还没统计出来时全 0，没兜底会把整条分类条滤空
+    ///   （用户看到「键盘上的分类不见了」）。
     private func quickCats() -> [CategoryNode] {
-        var out: [CategoryNode] = []
+        var all: [CategoryNode] = []
         for root in categories {
-            for kid in root.children where kid.isEnabled && kid.expenseCount > 0 {
-                out.append(kid)
+            for kid in root.children where kid.isEnabled {
+                all.append(kid)
             }
         }
-        out.sort { $0.expenseCount > $1.expenseCount }
-        return Array(out.prefix(5))
+        let sorted = all.sorted { $0.expenseCount > $1.expenseCount }
+        let picked = Array(sorted.filter { $0.expenseCount > 0 }.prefix(6))
+        return picked.count >= 3 ? picked : Array(sorted.prefix(6))
     }
 
     private func findCategory(_ id: String) -> CategoryNode? {

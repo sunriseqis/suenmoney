@@ -24,7 +24,7 @@ import { CatIconView } from '../../common/ui/CatIconView';
 import { PayIconView } from '../../common/ui/PayIconView';
 import { categoryColorOf, categoryPalette } from '../../common/ui/CategoryIcon';
 import { ServerConfig } from '../../common/net/ServerConfig';
-import { SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
+import { AuthStore, SESSION_EXPIRED_KEY } from '../../common/auth/AuthStore';
 import { Db } from '../../common/store/Db';
 import { DictionaryDao } from '../../common/store/DictionaryDao';
 import { PlanDao } from '../../common/store/PlanDao';
@@ -2128,6 +2128,31 @@ export struct SettingsScreen {
 
 
 
+  /** 退出登录（先确认：会清空本机账目） */
+  private confirmLogout(): void {
+    AlertDialog.show({
+      title: '退出登录',
+      message: '将清空本机缓存的账目数据（服务端数据不受影响）。\n'
+        + '下次登录会重新拉取全量数据。',
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '退出',
+        fontColor: this.tok().danger,
+        action: () => {
+          AuthStore.logout().then(() => {
+            router.replaceUrl({ url: 'pages/LoginPage' });
+          }).catch(() => {
+            router.replaceUrl({ url: 'pages/LoginPage' });
+          });
+        }
+      }
+    });
+  }
+
   /** 修改口令卡（web「我的账号」口令部分） */
   @Builder
   passwordCard() {
@@ -2209,6 +2234,26 @@ export struct SettingsScreen {
         .fontColor(this.tok().ink3)
         .lineHeight(18)
         .width('100%')
+
+      // 退出登录：家庭共用设备时换人用。
+      // 会清空本地业务数据（防串号），下次登录重新拉全量快照。
+      Divider().color(this.tok().line).margin({ top: 4 })
+
+      Row({ space: 10 }) {
+        Text('退出登录')
+          .fontSize(12.5)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.tok().danger)
+          .layoutWeight(1)
+        Text('清空本机账目，重新登录后重新同步')
+          .fontSize(9.5)
+          .fontColor(this.tok().ink3)
+      }
+      .width('100%')
+      .padding({ top: 10, bottom: 4 })
+      .onClick(() => {
+        this.confirmLogout();
+      })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

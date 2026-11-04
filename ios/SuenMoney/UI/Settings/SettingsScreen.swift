@@ -62,6 +62,8 @@ enum SheetKind: String, Identifiable {
 public struct SettingsScreen: View {
     @Environment(ThemeManager.self) private var theme
     @Environment(AuthStore.self) private var auth
+    /// 退出登录确认弹窗
+    @State private var logoutConfirm: Bool = false
     @Environment(AppState.self) private var app
 
     @State private var section: Int = 0
@@ -1338,6 +1340,36 @@ public struct SettingsScreen: View {
                     Text(pwdMsg)
                         .font(.system(size: 10))
                         .foregroundStyle(Color(css: tokens.ink3))
+                }
+
+                // 退出登录：家庭共用设备换人用。会清空本地业务数据（防串号），
+                // 下次登录重新拉全量快照。
+                Divider().overlay(Color(css: tokens.line)).padding(.top, 4)
+
+                Button {
+                    logoutConfirm = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Text("退出登录")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundStyle(Color(css: tokens.danger))
+                        Spacer(minLength: 0)
+                        Text("清空本机账目，重新登录后重新同步")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(Color(css: tokens.ink3))
+                    }
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .alert("退出登录", isPresented: $logoutConfirm) {
+                    Button("取消", role: .cancel) {}
+                    Button("退出", role: .destructive) {
+                        auth.logout()
+                    }
+                } message: {
+                    Text("将清空本机缓存的账目数据（服务端数据不受影响）。下次登录会重新拉取全量数据。")
                 }
             }
         }

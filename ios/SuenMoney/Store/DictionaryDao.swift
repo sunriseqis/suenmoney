@@ -75,6 +75,16 @@ public enum DictionaryDao {
                 children: []
             ))
         }
+        // 补笔数：quickCats 要按笔数挑「常用分类」，全 0 会让整条分类条消失
+        let counts = (try? categoryCounts()) ?? [:]
+        for i in flat.indices {
+            flat[i] = CategoryNode(
+                id: flat[i].id, parentId: flat[i].parentId, name: flat[i].name,
+                depth: flat[i].depth, icon: flat[i].icon, color: flat[i].color,
+                sortOrder: flat[i].sortOrder, isEnabled: flat[i].isEnabled,
+                expenseCount: counts[flat[i].id] ?? 0, children: []
+            )
+        }
         // 挂二级到一级
         return flat.filter { $0.parentId == nil }.map { root in
             let kids = flat.filter { $0.parentId == root.id }
@@ -82,6 +92,20 @@ public enum DictionaryDao {
                                 icon: root.icon, color: root.color, sortOrder: root.sortOrder,
                                 isEnabled: root.isEnabled, expenseCount: 0, children: kids)
         }
+    }
+
+    /// 各分类的流水笔数（全历史，与服务端 `expenseCount` 同口径）。
+    /// 用途：记账抽屉「常用分类」按笔数排序 —— 本地全 0 会让整条分类条滤空。
+    public static func categoryCounts() throws -> [String: Int] {
+        let rows = try Db.shared.query(
+            "SELECT category_id, COUNT(*) AS c FROM expenses GROUP BY category_id")
+        var out: [String: Int] = [:]
+        for r in rows {
+            if let id = r["category_id"] as? String {
+                out[id] = r["c"] as? Int ?? 0
+            }
+        }
+        return out
     }
 
     /// 从本地缓存还原支付方式列表（本地优先的读取源）
