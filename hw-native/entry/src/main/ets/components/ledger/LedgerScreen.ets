@@ -152,12 +152,13 @@ export struct LedgerScreen {
         await Outbox.retryDeadLetters();
       }
       const report = await SyncEngine.syncNow();
+      // 先刷计数：被跳过时也要刷，否则死信/待同步条数会一直停在旧值
+      this.refreshPending();
       if (report.skipped) {
         // 后台正有一轮在跑：不是失败，别误报「连不上」
         this.showToast('正在同步，请稍候');
         return;
       }
-      this.refreshPending();
       if (report.error !== '') {
         this.showToast('当前服务器无法连接');
         return;
@@ -204,11 +205,13 @@ export struct LedgerScreen {
     // 首屏先出本地数据，再让同步引擎去拉更新（不阻塞渲染）
     void SyncEngine.refresh().catch(() => {
     });
-    Outbox.pendingCount().then((n: number) => {
-      this.pendingSync = n;
-      this.sharedPending = n;
-    }).catch(() => {
-    });
+    /*
+     * ⚠ 必须走 refreshPending()，不能只数 pending。
+     * 只数 pending 会漏掉**死信件数**：冷启动时如果服务端没有新变更，
+     * 拉取不会广播 DATA_VERSION，`onDataVersion` 也就不会触发 —— deadCount 永远停在 0，
+     * 「N 条记录同步失败」整条提示根本不渲染。死信是**永久失败**，用户看不见就等于丢账。
+     */
+    this.refreshPending();
   }
 
   /** 外壳「记一笔」：切屏后 StorageLink 变化触发 */
@@ -848,7 +851,9 @@ export struct LedgerScreen {
 
       // hero-todo：待办提醒 + 本地待同步，**共用一个容器**
       // （用户裁定：离线通知放在提醒条的同一个容器内，文案「有 N 条本地记录待同步」+「同步」）
-      if (this.heroTodos.length > 0 || this.pendingSync > 0) {
+      // ⚠ 外层条件也要包含 deadCount：死信时 pendingSync 一定是 0（那条已不再参与推送），
+      // 只判 pending 会让「N 条记录同步失败」整条容器不渲染 —— 死信等于看不见。
+      if (this.heroTodos.length > 0 || this.pendingSync > 0 || this.deadCount > 0) {
         Column({ space: 0 }) {
           // 第一行：待办（无待办时这一行不渲染，容器只显示同步提醒）
           if (this.heroTodos.length > 0) {

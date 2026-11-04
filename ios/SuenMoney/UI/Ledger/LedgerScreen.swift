@@ -221,14 +221,14 @@ public struct LedgerScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await reload()
-            // 进流水页时校准待同步条数
-            pendingSync = (try? Outbox.pendingCount()) ?? 0
+            // 进流水页时校准待同步条数 + 死信件数
+            refreshPending()
             // 首屏先出本地数据，再让同步引擎去拉更新（不阻塞渲染）
             await SyncEngine.shared.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: .suenLocalDataChanged)) { _ in
             Task {
-                pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
+                refreshPending()
                 await reload()
             }
         }
@@ -926,6 +926,16 @@ public struct LedgerScreen: View {
         .padding(.top, 10)
     }
 
+    /// 待同步 / 死信件数：两处都要算。
+    ///
+    /// ⚠ 只算 pending 会漏掉死信：冷启动时如果服务端没有新变更，拉取不会广播
+    /// `.suenLocalDataChanged`，死信件数就永远停在 0 ——「N 条记录同步失败」
+    /// 整条提示根本不渲染。死信是**永久失败**，用户看不见就等于丢账。
+    private func refreshPending() {
+        pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
+        deadCount = (try? Outbox.deadLetters().count) ?? deadCount
+    }
+
     /// 手动同步：只在用户点按时跑，失败明确提示「服务器无法连接」
     private func manualSync() async {
         if syncing { return }
@@ -934,13 +944,14 @@ public struct LedgerScreen: View {
         // 有死信先清零重投：用户点「重试」的语义就是「再试一次」
         if deadCount > 0 { try? Outbox.retryDeadLetters() }
         let report = await SyncEngine.shared.syncNow()
+        // 先刷计数：被跳过时也要刷，否则死信/待同步条数会一直停在旧值
+        refreshPending()
         if report.skipped {
             // 后台正有一轮在跑：不是失败，别误报「连不上」
             showToast("正在同步，请稍候")
             syncing = false
             return
         }
-        pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
         if !report.error.isEmpty {
             showToast("当前服务器无法连接")
             return

@@ -11,7 +11,7 @@
  */
 import { relationalStore } from '@kit.ArkData';
 
-import { Api, SyncPullBody, SyncPushRequest, SyncUpdateExpense } from '../net/Api';
+import { Api, SyncPullBody, SyncPushBody, SyncPushRequest, SyncUpdateExpense } from '../net/Api';
 import { AuthStore, SESSION_EXPIRED_KEY } from '../auth/AuthStore';
 import { ApiError } from '../net/ApiError';
 import { Db } from '../store/Db';
@@ -162,9 +162,13 @@ export class SyncEngine {
       restoredTodoIds: []
     };
 
+    /** 与 `req.expenses` 同序，用来把服务端回传的下标映射回队列条目 */
+    const createEntries: OutboxEntry[] = [];
+
     for (const entry of entries) {
       const payload = parsePayload(entry.payload);
       if (entry.action === 'create_expense') {
+        createEntries.push(entry);
         req.expenses.push({
           id: entry.entityId,
           amountCents: Number(payload['amountCents'] ?? 0),
@@ -200,9 +204,35 @@ export class SyncEngine {
     }
 
     try {
-      await Api.syncPush(req);
-      await Outbox.remove(entries.map((e: OutboxEntry): string => e.id));
-      result.pushed = entries.length;
+      const body: SyncPushBody = await Api.syncPush(req);
+      /*
+       * 服务端对新增支出是**逐条容错**的：坏数据不会 4xx，而是跳过并在
+       * `failedExpenseIndexes` 里回传下标。只看 HTTP 200 就整批清队列，
+       * 等于把「服务端拒收的那一笔」当成功删掉 —— 本地还在、服务器没有，
+       * 用户以为同步完了。这里按 Web 的语义分流：
+       * 成功项出队，被拒项留在队列里累计重试，超限自然进死信。
+       */
+      const failed: number[] = body.failedExpenseIndexes === undefined ? [] : body.failedExpenseIndexes;
+      const okIds: string[] = [];
+      for (const entry of entries) {
+        if (entry.action !== 'create_expense') {
+          // 修改/删除/待办：服务端已逐条容错接收（与 Web 一致，视为已处理）
+          okIds.push(entry.id);
+        }
+      }
+      for (let i = 0; i < createEntries.length; i++) {
+        const entry = createEntries[i];
+        if (failed.indexOf(i) >= 0) {
+          await Outbox.markFailed(entry.id, '服务端拒绝该笔新增');
+          if (entry.retryCount + 1 >= OUTBOX_MAX_RETRY) {
+            result.dead += 1;
+          }
+        } else {
+          okIds.push(entry.id);
+        }
+      }
+      await Outbox.remove(okIds);
+      result.pushed = okIds.length;
       return result;
     } catch (e) {
       const err = e as ApiError;
