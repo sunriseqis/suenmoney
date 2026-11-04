@@ -25,6 +25,10 @@ public struct SyncReport {
     public var pulled: Int = 0
     public var cursor: Int = 0
     public var error: String = ""
+    /// 本次调用因「已有同步在跑」被跳过。
+    /// 调用方必须区分它和「同步失败」：跳过时所有计数都是 0、error 也是空，
+    /// 不判断就会把「正在同步」误报成「服务器连不上」。
+    public var skipped: Bool = false
 }
 
 public actor SyncEngine {
@@ -46,7 +50,10 @@ public actor SyncEngine {
     /// 完整一轮：先推后拉（推成功后本地才有正确游标语义）
     public func syncNow() async -> SyncReport {
         var report = SyncReport()
-        if running { return report }
+        if running {
+            report.skipped = true
+            return report
+        }
         running = true
         defer { running = false }
 
@@ -195,9 +202,17 @@ public actor SyncEngine {
     }
 
     /// **拉取一次更新**（冷启动 / 热启动各调一次）：一直翻页到 `hasMore=false`。
+    ///
+    /// ⚠ 必须与 `syncNow` 共用同一把锁：冷启动时 App 层会触发 syncNow，
+    /// 而流水页 `.task` 又触发 refresh —— 并发 pull 会同时读游标、各自应用变更、
+    /// 互相覆盖 `sync_cursor`；极端情况下一边走「本地空 → 快照（先清表）」、
+    /// 另一边还在 append，数据直接错乱。
     public func refresh() async {
+        if running { return }
+        running = true
+        defer { running = false }
         for _ in 0..<50 {
-            guard let result = try? await pull() else { return }
+            guard let result = try? await pull() else { break }
             if !result.hasMore { break }
         }
         postDataChanged()

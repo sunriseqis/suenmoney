@@ -72,6 +72,10 @@ public struct LedgerScreen: View {
     @State private var pendingSync: Int = 0
     /// 手动同步进行中（按钮禁用，避免连点）
     @State private var syncing: Bool = false
+    /// 同步失败（死信）条数。
+    /// ⚠ 必须让用户看见：死信是**永久失败**（重试 3 次仍被服务端拒绝），
+    ///   不是「离线」，不会自动恢复 —— 只计数不显示，用户记的账就静默丢了。
+    @State private var deadCount: Int = 0
     @State private var todoOpen: Bool = false
     @State private var highlightId: String = ""
 
@@ -771,7 +775,7 @@ public struct LedgerScreen: View {
             }
 
             // hero-todo：待办提醒 + 本地待同步（两者都没有时整条不渲染）
-            if !heroTodos.isEmpty || pendingSync > 0 {
+            if !heroTodos.isEmpty || pendingSync > 0 || deadCount > 0 {
                 todoSection
             }
         }
@@ -866,18 +870,22 @@ public struct LedgerScreen: View {
                 }
             }
 
-            // 第二行：本地待同步（有队列才出现）
-            if pendingSync > 0 {
+            // 第二行：本地待同步 / 同步失败（有其一就出现）
+            if pendingSync > 0 || deadCount > 0 {
                 HStack(spacing: 8) {
-                    Circle().fill(Color(css: tokens.warn)).frame(width: 6, height: 6)
-                    Text("有 \(pendingSync) 条本地记录待同步")
+                    // 有死信用 danger：这是永久失败，不是「稍后会同步」
+                    Circle().fill(Color(css: deadCount > 0 ? tokens.danger : tokens.warn))
+                        .frame(width: 6, height: 6)
+                    Text(deadCount > 0
+                         ? "\(deadCount) 条记录同步失败，点「重试」再试一次"
+                         : "有 \(pendingSync) 条本地记录待同步")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Color(css: tokens.ink))
                     Spacer(minLength: 0)
                     Button {
                         Task { await manualSync() }
                     } label: {
-                        Text(syncing ? "同步中…" : "同步")
+                        Text(syncing ? "同步中…" : (deadCount > 0 ? "重试" : "同步"))
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color(css: syncing ? tokens.ink3 : tokens.accent))
                             .padding(.horizontal, 10)
@@ -913,7 +921,15 @@ public struct LedgerScreen: View {
         if syncing { return }
         syncing = true
         defer { syncing = false }
+        // 有死信先清零重投：用户点「重试」的语义就是「再试一次」
+        if deadCount > 0 { try? Outbox.retryDeadLetters() }
         let report = await SyncEngine.shared.syncNow()
+        if report.skipped {
+            // 后台正有一轮在跑：不是失败，别误报「连不上」
+            showToast("正在同步，请稍候")
+            syncing = false
+            return
+        }
         pendingSync = (try? Outbox.pendingCount()) ?? pendingSync
         if !report.error.isEmpty {
             showToast("当前服务器无法连接")

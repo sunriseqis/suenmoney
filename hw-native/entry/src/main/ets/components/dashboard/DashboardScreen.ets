@@ -516,6 +516,11 @@ export struct DashboardScreen {
     this.syncing = true;
     try {
       const report = await SyncEngine.syncNow();
+      if (report.skipped) {
+        // 后台正有一轮在跑：不是失败，别误报「连不上」
+        this.showToast('正在同步，请稍候');
+        return;
+      }
       await this.refreshPending();
       if (report.error !== '') {
         this.showToast('当前服务器无法连接');

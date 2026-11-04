@@ -668,6 +668,12 @@ public struct DashboardScreen: View {
         syncing = true
         defer { syncing = false }
         let report = await SyncEngine.shared.syncNow()
+        if report.skipped {
+            // 后台正有一轮在跑：不是失败，别误报「连不上」
+            showToast("正在同步，请稍候")
+            syncing = false
+            return
+        }
         await refreshPending()
         if !report.error.isEmpty {
             showToast("当前服务器无法连接")

@@ -19,7 +19,7 @@ import { ApiError } from '../../common/net/ApiError';
 import { ExpenseDao } from '../../common/store/ExpenseDao';
 import { PlanDao } from '../../common/store/PlanDao';
 import { ReportCache, reportWithCache } from '../../common/store/ReportCache';
-import { Outbox } from '../../common/sync/Outbox';
+import { Outbox, OutboxEntry } from '../../common/sync/Outbox';
 import { DATA_VERSION_KEY, SyncEngine, SyncReport } from '../../common/sync/SyncEngine';
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
@@ -85,6 +85,14 @@ export struct LedgerScreen {
   @State highlightId: string = '';
   /** 手动同步进行中（按钮禁用，避免连点） */
   @State syncing: boolean = false;
+  /**
+   * 同步失败（死信）条数。
+   *
+   * ⚠ 必须让用户看见：死信是**永久失败**（重试 3 次仍被服务端拒绝，
+   * 如分类已被停用），不是「离线」，不会自动恢复 ——
+   * 只在后台计数、界面上不显示，用户记的账就静默丢了。
+   */
+  @State deadCount: number = 0;
   /** 待同步条目数（离线提示只由它驱动） */
   @State pendingSync: number = 0;
   /** 同步到 AppStorage，供 build-stamp 订阅 */
@@ -139,7 +147,16 @@ export struct LedgerScreen {
     }
     this.syncing = true;
     try {
+      // 有死信先清零重投：用户点「重试」的语义就是「再试一次」
+      if (this.deadCount > 0) {
+        await Outbox.retryDeadLetters();
+      }
       const report = await SyncEngine.syncNow();
+      if (report.skipped) {
+        // 后台正有一轮在跑：不是失败，别误报「连不上」
+        this.showToast('正在同步，请稍候');
+        return;
+      }
       this.refreshPending();
       if (report.error !== '') {
         this.showToast('当前服务器无法连接');
@@ -165,6 +182,10 @@ export struct LedgerScreen {
     Outbox.pendingCount().then((n: number) => {
       this.pendingSync = n;
       this.sharedPending = n;
+    }).catch(() => {
+    });
+    Outbox.deadLetters().then((list: OutboxEntry[]) => {
+      this.deadCount = list.length;
     }).catch(() => {
     });
   }
@@ -837,20 +858,23 @@ export struct LedgerScreen {
             })
           }
 
-          // 第二行：本地待同步（有队列才出现）。离线时这里是唯一的手动触发入口。
-          if (this.pendingSync > 0) {
+          // 第二行：本地待同步 / 同步失败（有其一就出现）。离线时这里是唯一的手动触发入口。
+          if (this.pendingSync > 0 || this.deadCount > 0) {
             Row({ space: 8 }) {
               Row()
                 .width(6)
                 .height(6)
                 .borderRadius(3)
-                .backgroundColor(this.tok().warn)
-              Text(`有 ${this.pendingSync} 条本地记录待同步`)
+                // 有死信用 danger：这是永久失败，不是「稍后会同步」
+                .backgroundColor(this.deadCount > 0 ? this.tok().danger : this.tok().warn)
+              Text(this.deadCount > 0
+                ? `${this.deadCount} 条记录同步失败，点「重试」再试一次`
+                : `有 ${this.pendingSync} 条本地记录待同步`)
                 .fontSize(11.5)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.tok().ink)
                 .layoutWeight(1)
-              Text(this.syncing ? '同步中…' : '同步')
+              Text(this.syncing ? '同步中…' : (this.deadCount > 0 ? '重试' : '同步'))
                 .fontSize(11)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.syncing ? this.tok().ink3 : this.tok().accent)
