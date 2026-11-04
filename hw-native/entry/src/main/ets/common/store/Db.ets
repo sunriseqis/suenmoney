@@ -20,7 +20,7 @@ const DOMAIN = 0x0001;
 const TAG = 'Db';
 const DB_NAME = 'suenmoney.db';
 /** 表结构版本，改表时 +1 并在 migrate 里补分支 */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const CONFIG: relationalStore.StoreConfig = {
   name: DB_NAME,
@@ -69,6 +69,9 @@ const CREATE_TABLES: string[] = [
      repayment_date TEXT NOT NULL,
      note TEXT NOT NULL DEFAULT '',
      source TEXT NOT NULL DEFAULT 'manual',
+     -- 计划生成的记录：来源计划与期次（流水行显示「京东分期 · 3期」靠它）
+     plan_id TEXT,
+     plan_period_seq INTEGER,
      updated_at TEXT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS plans (
@@ -145,6 +148,11 @@ const MIGRATIONS: string[][] = [
     'ALTER TABLE plan_todos ADD COLUMN ack_at TEXT',
     'ALTER TABLE plan_todos ADD COLUMN expense_id TEXT',
     'ALTER TABLE plan_todos ADD COLUMN posted_date TEXT'
+  ],
+  // v3：expenses 补计划来源（流水行「N期」标记靠它）
+  [
+    'ALTER TABLE expenses ADD COLUMN plan_id TEXT',
+    'ALTER TABLE expenses ADD COLUMN plan_period_seq INTEGER'
   ]
 ];
 
@@ -215,7 +223,7 @@ export const TABLES: TableSpec[] = [
   { name: 'meta', columns: ['key', 'value'] },
   { name: 'categories', columns: ['id', 'parent_id', 'name', 'depth', 'icon', 'color', 'sort_order', 'is_enabled'] },
   { name: 'payment_methods', columns: ['id', 'name', 'type', 'icon', 'billing_day', 'repayment_day', 'is_enabled', 'sort_order'] },
-  { name: 'expenses', columns: ['id', 'owner_id', 'amount_cents', 'category_id', 'payment_method_id', 'spend_date', 'posting_date', 'repayment_date', 'note', 'source', 'updated_at'] },
+  { name: 'expenses', columns: ['id', 'owner_id', 'amount_cents', 'category_id', 'payment_method_id', 'spend_date', 'posting_date', 'repayment_date', 'note', 'source', 'plan_id', 'plan_period_seq', 'updated_at'] },
   { name: 'plans', columns: ['id', 'name', 'category_id', 'payment_method_id', 'amount_cents', 'total_amount_cents', 'purchase_date', 'first_due_date', 'remind_days_before', 'auto_post', 'source', 'state', 'note', 'updated_at'] },
   { name: 'plan_todos', columns: ['id', 'plan_id', 'plan_name', 'period_seq', 'amount_cents', 'repayment_date', 'status', 'will_auto_post', 'ack_at', 'expense_id', 'posted_date', 'updated_at'] },
   { name: 'outbox', columns: ['id', 'action', 'entity_id', 'payload', 'created_at', 'retry_count', 'last_error'] }

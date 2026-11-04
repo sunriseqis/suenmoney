@@ -459,6 +459,18 @@ export struct ExpenseEditor {
        * 令牌一失效就记不了账 —— 而账目本来就不依赖服务端，这说不过去。
        * 归属不用额外逻辑：队列补推时由令牌决定「谁记归谁」，与在线记账完全一致。
        */
+      /*
+       * ⚠ **分期不能走离线队列**（与 iOS 保持一致）。
+
+       * 队列里只有 createExpense 的字段（没有 periods / purchaseDate），
+       * 补传后会变成一笔**普通支出** —— 用户以为记了分期，实际没记，
+       * 而且这种错误在界面上看不出来。
+       * 宁可明确报错，也不静默降级成错误的账。
+       */
+      if (this.installment) {
+        this.errorText = '分期需要联网创建（离线无法确定各期还款日）';
+        return;
+      }
       if ((err.kind === 'network' || err.kind === 'unauthorized') && this.props.editing === null) {
         await this.enqueueOffline(cents, err.kind);
         this.props.onSaved('');

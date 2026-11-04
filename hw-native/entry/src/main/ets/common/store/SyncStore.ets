@@ -191,6 +191,8 @@ export class SyncStore {
       'repayment_date': item.repaymentDate,
       'note': item.note,
       'source': item.source,
+      'plan_id': item.planId === undefined || item.planId === null ? '' : item.planId,
+      'plan_period_seq': item.planPeriodSeq === undefined || item.planPeriodSeq === null ? 0 : item.planPeriodSeq,
       'updated_at': new Date().toISOString()
     };
     return bucket;
@@ -224,6 +226,7 @@ export class SyncStore {
       'will_auto_post': todo.willAutoPost ? 1 : 0,
       'expense_id': todo.expenseId === undefined || todo.expenseId === null ? '' : todo.expenseId,
       'posted_date': todo.postedDate === undefined || todo.postedDate === null ? '' : todo.postedDate,
+      'ack_at': todo.ackAt === undefined || todo.ackAt === null ? '' : todo.ackAt,
       'updated_at': new Date().toISOString()
     };
     return bucket;
