@@ -1125,15 +1125,17 @@ public struct SettingsScreen: View {
                                 .fill(Color(css: probeColor(idx)))
                                 .frame(width: 7, height: 7)
                             // 行内可编辑（原来只能看）
-                            TextField("http://主机:端口", text: Binding(
+                            TextField("", text: Binding(
                                 get: { srvList[idx] },
                                 set: { srvList[idx] = $0 }
-                            ))
+                            ),
+                                      prompt: Text("http://主机:端口")
+                                        .foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                             .font(.custom(fontMonoOf(), size: 11))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
-                            .foregroundStyle(Color(css: tokens.ink2))
+                            .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                             .padding(.horizontal, 8)
                             .frame(height: 32)
                             .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
@@ -1385,7 +1387,7 @@ public struct SettingsScreen: View {
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.trailing)
                 .font(.custom(fontMonoOf(), size: 13))
-                .foregroundStyle(Color(css: tokens.ink))
+                .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                 .padding(.horizontal, 9)
                 .frame(height: 34)
                 .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
@@ -1400,9 +1402,11 @@ public struct SettingsScreen: View {
     }
 
     private func secureField(_ placeholder: String, _ text: Binding<String>) -> some View {
-        SecureField(placeholder, text: text)
+        SecureField("", text: text,
+                    prompt: Text(placeholder)
+                        .foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
             .font(.system(size: 12))
-            .foregroundStyle(Color(css: tokens.ink))
+            .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
             .padding(.horizontal, 9)
             .frame(height: 34)
             .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))
@@ -1788,9 +1792,11 @@ public struct SettingsScreen: View {
     }
 
     private func plainField(_ placeholder: String, _ text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
+        TextField("", text: text,
+                  prompt: Text(placeholder)
+                    .foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
             .font(.system(size: 13))
-            .foregroundStyle(Color(css: tokens.ink))
+            .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
             .padding(.horizontal, 10)
             .frame(height: 38)
             .background(Color(css: fieldBgOf(tokens.surface, tokens.surface2, isCyber)))

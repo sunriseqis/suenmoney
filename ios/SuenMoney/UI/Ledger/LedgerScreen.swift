@@ -1031,9 +1031,11 @@ public struct LedgerScreen: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15))
                         .foregroundStyle(Color(css: tokens.ink3))
-                    TextField("搜索备注或分类", text: $keyword)
+                    TextField("", text: $keyword,
+                              prompt: Text("搜索备注或分类")
+                                .foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                         .font(.system(size: 13))
-                        .foregroundStyle(Color(css: tokens.ink))
+                        .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                         .focused($searchFocused)
                         // 点搜索框自动展开高级区（鸿蒙 onFocus → advOpen = true），
                         // 否则用户找不到档位切换

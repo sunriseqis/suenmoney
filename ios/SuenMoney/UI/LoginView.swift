@@ -104,12 +104,13 @@ public struct LoginView: View {
     private var inputs: some View {
         VStack(spacing: 14) {
             fieldBox(focused: focus == .username) {
-                TextField("登录名", text: $username)
+                TextField("", text: $username,
+                          prompt: Text("登录名").foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($focus, equals: .username)
                     .font(.system(size: 16))
-                    .foregroundStyle(Color(css: tokens.ink))
+                    .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                     .submitLabel(.next)
                     .onSubmit { focus = .password }
                     .accessibilityIdentifier("login.username")
@@ -117,15 +118,18 @@ public struct LoginView: View {
             fieldBox(focused: focus == .password) {
                 HStack(spacing: 6) {
                     Group {
+                        // 不抽 `let prompt`：ViewBuilder 里少一层变量，读起来也不差
                         if showPassword {
-                            TextField("口令", text: $password)
+                            TextField("", text: $password,
+                                      prompt: Text("口令").foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                         } else {
-                            SecureField("口令", text: $password)
+                            SecureField("", text: $password,
+                                        prompt: Text("口令").foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                         }
                     }
                     .focused($focus, equals: .password)
                     .font(.system(size: 16))
-                    .foregroundStyle(Color(css: tokens.ink))
+                    .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                     .submitLabel(.go)
                     .onSubmit {
                         focus = nil
@@ -197,8 +201,13 @@ public struct LoginView: View {
                                  : (probeState == "bad" ? tokens.danger : tokens.ink3)))
                     .frame(width: 8, height: 8)
 
-                TextField("http://主机:端口", text: $serverUrl)
+                // 这里原先**一个颜色都没给**：装包自带的那串地址就显示成深底黑字，
+                // 整块看起来像「空的输入框」（用户反馈）。
+                TextField("", text: $serverUrl,
+                          prompt: Text("http://主机:端口")
+                            .foregroundColor(Color(css: fieldHintColor(tokens.ink3, tokens.ink2, isCyber))))
                     .font(.custom(fontMonoOf(), size: 12.5))
+                    .foregroundStyle(Color(css: fieldTextColor(tokens.ink, isCyber)))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)

@@ -13,15 +13,22 @@ const KEY_TOKEN = 'suenmoney:token';
 const KEY_SERVERS = 'suenmoney:servers';
 const KEY_ACTIVE = 'suenmoney:active-server';
 
-/** 开发期默认地址：本机能直连的实例 */
-export const DEFAULT_SERVER = 'http://192.168.89.10:5310';
+/**
+ * **不内置任何服务端地址**（用户裁决 2026-11-04）。
+ *
+ * 之前这里hardcode 着开发机的 `http://192.168.89.10:5310`，等于每个装包的人都
+ * 自带一个他根本连不上的地址：装完就能看到「服务器」里填着一串别人的内网 IP，
+ * 登录只会得到「连不上服务端」，还很难判断是自己填错了还是包的问题。
+ * 首次装包应当是**空**的，地址由用户自己填。
+ */
+export const DEFAULT_SERVER = '';
 
 export class ServerConfig {
   private static instance: ServerConfig | null = null;
   private store: preferences.Preferences | null = null;
   private token: string = '';
-  private servers: string[] = [DEFAULT_SERVER];
-  private active: string = DEFAULT_SERVER;
+  private servers: string[] = [];
+  private active: string = '';
 
   static get(): ServerConfig {
     if (ServerConfig.instance === null) {
@@ -42,11 +49,12 @@ export class ServerConfig {
         }
       }
       const savedActive = this.store.getSync(KEY_ACTIVE, '') as string;
-      this.active = savedActive !== '' ? savedActive : this.servers[0];
+      // 没存过生效地址：取候选首项；候选也是空（首次装包）→ 保持空，让登录页显示占位符
+      this.active = savedActive !== '' ? savedActive : (this.servers.length > 0 ? this.servers[0] : '');
     } catch (e) {
       this.token = '';
-      this.servers = [DEFAULT_SERVER];
-      this.active = DEFAULT_SERVER;
+      this.servers = [];
+      this.active = '';
     }
   }
 

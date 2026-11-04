@@ -98,6 +98,24 @@ public func fieldBgOf(_ surface: String, _ surface2: String, _ isCyber: Bool) ->
     isCyber ? surface2 : surface
 }
 
+/// 输入框**正文**颜色。
+///
+/// Web 是 `input, textarea { color: inherit }`，继承到 `--ink`；SwiftUI 的 TextField
+/// 没有「继承」这回事，**不给色就用系统默认色**（深色底上是近黑）—— 用户反馈
+/// 「输入的字和底色完全一样」就是这个原因。cyber 下按用户要求用纯白（2026-11-04）。
+public func fieldTextColor(_ ink: String, _ isCyber: Bool) -> String {
+    isCyber ? "#ffffff" : ink
+}
+
+/// 输入框**示例文字**（placeholder / prompt）颜色。
+///
+/// Web 是 `input::placeholder { color: var(--ink-3) }`；但 cyber 的 #6b7280 压在
+/// #1c1c2e 上偏暗，用户要求「深色底 + 灰白文字」，故 cyber 提亮到 ink2。
+/// SwiftUI 的 String 标题占位符同样吃系统色，深色底上不保证可见，必须显式给。
+public func fieldHintColor(_ ink3: String, _ ink2: String, _ isCyber: Bool) -> String {
+    isCyber ? ink2 : ink3
+}
+
 /// 输入框描边宽度：cyber 1.5 / candy 跟随 borderW
 public func fieldBorderWOf(_ borderW: CGFloat, _ isCyber: Bool) -> CGFloat {
     isCyber ? 1.5 : borderW

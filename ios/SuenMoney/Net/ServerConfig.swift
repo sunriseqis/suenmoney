@@ -12,8 +12,13 @@
 import Foundation
 import Security
 
-/// 开发期默认地址：本机能直连的实例
-public let defaultServer = "http://192.168.89.10:5310"
+/// **不内置任何服务端地址**（用户裁决 2026-11-04）。
+///
+/// 之前这里 hardcode 着开发机的 `http://192.168.89.10:5310`，等于每个装包的人都
+/// 自带一个他根本连不上的地址：装完就能看到「服务器」里填着一串别人的内网 IP，
+/// 登录只会得到「连不上服务端」，还很难判断是自己填错了还是包的问题。
+/// 首次装包应当是**空**的，地址由用户自己填。
+public let defaultServer = ""
 
 private let keyToken = "suenmoney:token"
 private let keyServers = "suenmoney:servers"
@@ -27,8 +32,8 @@ public final class ServerConfig: @unchecked Sendable {
     public static let shared = ServerConfig()
 
     private var token: String = ""
-    private var servers: [String] = [defaultServer]
-    private var active: String = defaultServer
+    private var servers: [String] = []
+    private var active: String = ""
 
     private init() {}
 
@@ -43,7 +48,8 @@ public final class ServerConfig: @unchecked Sendable {
             servers = parsed
         }
         let savedActive = UserDefaults.standard.string(forKey: keyActive) ?? ""
-        active = savedActive.isEmpty ? servers[0] : savedActive
+        // 没存过生效地址：取候选首项；候选也是空（首次装包）→ 保持空，让登录页显示占位符
+        active = savedActive.isEmpty ? (servers.first ?? "") : savedActive
     }
 
     public var authToken: String { token }

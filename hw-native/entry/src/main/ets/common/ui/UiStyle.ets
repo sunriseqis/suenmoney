@@ -171,5 +171,27 @@ export function fieldBorderWOf(borderW: number, isCyber: boolean): number {
   return isCyber ? 1.5 : borderW;
 }
 
+/**
+ * 输入框**正文**颜色。
+ *
+ * Web 是 `input, textarea { color: inherit }`，继承到 `--ink`；原生端 TextInput 没有
+ * 「继承」这回事，**不给色就用系统默认色**（深色底上是近黑）—— 用户反馈「输入的字和
+ * 底色完全一样」就是这个原因。cyber 下按用户要求用纯白（2026-11-04）。
+ */
+export function fieldTextColor(ink: string, isCyber: boolean): string {
+  return isCyber ? '#ffffff' : ink;
+}
+
+/**
+ * 输入框**示例文字**（placeholder）颜色。
+ *
+ * Web 是 `input::placeholder { color: var(--ink-3) }`；但 cyber 的 #6b7280 压在
+ * #1c1c2e 上偏暗，用户要求「深色底 + 灰白文字」，故 cyber 提亮到 ink2。
+ * 原生端同样**必须显式给**，否则默认色在深色底上几乎不可见。
+ */
+export function fieldHintColor(ink3: string, ink2: string, isCyber: boolean): string {
+  return isCyber ? ink2 : ink3;
+}
+
 /** R35 焦点环：聚焦时的高亮描边颜色（Candy/Cyber 同色） */
 export const FOCUS_RING: string = '#5DB8FF';
