@@ -306,33 +306,36 @@ export struct LedgerScreen {
    * 口径由服务端唯一提供（报表 SQL 不在客户端重写，避免三端跑偏），
    * 本地只缓存它最后一次的响应；没有缓存时用本地数据兜底算。
    */
+  /**
+   * hero 三个数字 + 本月要还。
+   *
+   * ⚠ **支出与笔数一律本地算**（按还款日归属，与服务端月报同口径）。
+   *
+   * 为什么不读缓存的服务端报表：本机记一笔之后，服务端还没收到（同步在后台），
+   * 这时去读报表缓存只能拿到**旧数** —— 用户会看到「刚记的 100 元在列表里，
+   * 但上面总数没变」。本地库此刻已经是准确的，直接用。
+   *
+   * 环比用它自己的一点点服务端数据（上月合计），拿不到就不显示环比。
+   */
   private async loadHeroNumbers(): Promise<void> {
+    const local = await ExpenseDao.monthTotalByRepayment(this.anchorMonth);
+    this.monthTotalCents = local.totalCents;
+    this.monthCount = local.count;
+    this.creditDueCents = await ExpenseDao.creditDueByRepayment(this.anchorMonth);
+
     const key = `monthly:${this.anchorMonth}`;
     const cached = await ReportCache.get<MonthlyReportBody>(key);
     // 缓存缺失或超过 5 分钟 → 后台问一次服务端并刷新缓存（失败就用旧值，不打扰用户）
     if (cached === null || Date.now() - new Date(cached.fetchedAt).getTime() > 5 * 60 * 1000) {
       void this.refreshMonthlyCache(key);
     }
+    // 环比：优先服务端（含上月对比），没有就用本地算上月
     if (cached !== null) {
-      const r = cached.data.report;
-      this.monthTotalCents = r.totalCents;
-      this.monthCount = r.count;
-      this.prevTotalCents = r.previous.totalCents;
-      let credit = 0;
-      for (const p of r.paymentMethods) {
-        if (p.type === 'credit') {
-          credit += p.cents;
-        }
-      }
-      this.creditDueCents = credit;
-      return;
+      this.prevTotalCents = cached.data.report.previous.totalCents;
+    } else {
+      const prev = await ExpenseDao.monthTotalByRepayment(shiftMonth(this.anchorMonth, -1));
+      this.prevTotalCents = prev.totalCents;
     }
-    // 无缓存（首装且还没同步到报表）：本地兜底
-    const total = await ExpenseDao.monthTotal(this.anchorMonth);
-    this.monthTotalCents = total.totalCents;
-    this.monthCount = total.count;
-    this.prevTotalCents = -1;
-    this.creditDueCents = 0;
   }
 
   /** 向服务端要一次月报并写缓存；成功后重读 hero 数字 */

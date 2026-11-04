@@ -196,6 +196,44 @@ export class ExpenseDao {
     return { totalCents: total, count: count };
   }
 
+  /**
+   * 某月合计 —— **按还款日归属**（与服务端月报同口径）。
+   *
+   * 与 `monthTotal()` 的区别：那个按 `spend_date`（跟列表筛选一致），
+   * 这个按 `repayment_date`（跟报表口径一致）。hero 的「本月支出」要用后者。
+   */
+  static async monthTotalByRepayment(month: string): Promise<LocalMonthTotal> {
+    const rs = await Db.get().querySql(
+      "SELECT COALESCE(SUM(amount_cents), 0) AS total, COUNT(*) AS cnt FROM expenses WHERE substr(repayment_date, 1, 7) = ?",
+      [month]
+    );
+    let total = 0;
+    let count = 0;
+    if (rs.goToFirstRow()) {
+      total = rs.getLong(rs.getColumnIndex('total'));
+      count = rs.getLong(rs.getColumnIndex('cnt'));
+    }
+    rs.close();
+    return { totalCents: total, count: count };
+  }
+
+  /** 某月「要还」金额：信用卡类支付方式的还款额（与月报 creditDueCents 同口径） */
+  static async creditDueByRepayment(month: string): Promise<number> {
+    const rs = await Db.get().querySql(
+      `SELECT COALESCE(SUM(e.amount_cents), 0) AS total
+         FROM expenses e
+         JOIN payment_methods m ON m.id = e.payment_method_id
+        WHERE substr(e.repayment_date, 1, 7) = ? AND m.type = 'credit'`,
+      [month]
+    );
+    let total = 0;
+    if (rs.goToFirstRow()) {
+      total = rs.getLong(rs.getColumnIndex('total'));
+    }
+    rs.close();
+    return total;
+  }
+
   /** 本地总条数（诊断/自检用） */
   static async count(): Promise<number> {
     const rs = await Db.get().querySql('SELECT COUNT(*) AS cnt FROM expenses');
