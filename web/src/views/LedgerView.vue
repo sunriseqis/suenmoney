@@ -15,7 +15,8 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Filter, Search, SlidersHorizontal, X } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type SummaryReport, type YearlyReport } from '@/api';
+import { expenses as expensesApi, reports, users as usersApi, type Expense, type MonthlyReport, type PlanTodo, type SummaryReport, type YearlyReport } from '@/api';
+import { useToast } from '@/composables/useToast';
 import CompositionCard from '@/components/CompositionCard.vue';
 import PCatIcon from '@/components/PCatIcon.vue';
 import PPayIcon from '@/components/PPayIcon.vue';
@@ -29,6 +30,7 @@ import { formatYuan } from '@/utils/money';
 const ui = useUiStore();
 const dict = useDictionariesStore();
 const plans = usePlansStore();
+const toast = useToast();
 
 type Tier = 'month' | 'year' | 'all';
 
@@ -316,6 +318,47 @@ function clearFilters(): void {
   query.value = '';
 }
 
+/**
+ * 顶卡待办是否逾期（还款日早于今天）。
+ *
+ * 逾期行**只给「入账」**、不给「忽略」—— 这一期已经被忽略过一次，
+ * 再给忽略等于无限拖延（验收清单 C3，与两端原生同一口径）。
+ */
+function todoOverdue(t: PlanTodo): boolean {
+  return t.repaymentDate < todayLocal();
+}
+
+/**
+ * 顶卡待办动作（验收清单 C3：「处理」「忽略」，逾期只给「入账」）。
+ *
+ * 「处理」= 立即入账（confirm）；「忽略」= 自动入账类只摘提醒（ack，到期照旧入账），
+ * 否则本期跳过（skip，不提醒也不入账）。分支放这里而不是模板里，避免三目套三目。
+ *
+ * 为什么要等 `reload()`：确认会立刻生成一笔支出、忽略会改状态，
+ * 不重读的话顶卡数字与列表还停在旧值（服务端已变、界面没变最容易被当成没生效）。
+ */
+function todoAction(t: PlanTodo, kind: 'process' | 'ignore'): void {
+  void (async () => {
+    try {
+      if (kind === 'ignore') {
+        if (t.willAutoPost) {
+          await plans.ackTodo(t.id);
+          toast.show('已忽略提醒，到期自动入账');
+        } else {
+          await plans.skipTodo(t.id);
+          toast.show('已忽略本期，不会入账');
+        }
+      } else {
+        await plans.confirmTodo(t.id);
+        toast.show('已入账');
+      }
+      await Promise.all([reload(), reloadReports()]);
+    } catch {
+      toast.show('操作失败，请重试');
+    }
+  })();
+}
+
 function drillMonth(month: string): void {
   tier.value = 'month';
   anchor.value = month;
@@ -416,6 +459,18 @@ onMounted(async () => {
             {{ t.willAutoPost ? '自动' : '需手动' }}
           </span>
           <b class="mono tiny">{{ formatYuan(t.amountCents) }}</b>
+          <!-- 动作层（验收清单 C3）：逾期只给「入账」，不逾期给「处理」+「忽略」 -->
+          <button type="button" class="btn btn--ghost btn--sm todo-act" @click="todoAction(t, 'process')">
+            {{ todoOverdue(t) ? '入账' : '处理' }}
+          </button>
+          <button
+            v-if="!todoOverdue(t)"
+            type="button"
+            class="btn btn--ghost btn--sm todo-act"
+            @click="todoAction(t, 'ignore')"
+          >
+            忽略
+          </button>
         </div>
       </div>
     </div>
@@ -815,5 +870,18 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11.5px;
+}
+/*
+ * 顶卡待办的动作按钮（验收清单 C3：「处理」「忽略」）。
+ *
+ * 行宽被 期次名/徽标/金额 占满后再塞两个按钮，窄屏（360px）会挤到换行 ——
+ * 所以按钮一律 `flex: 0 0 auto` + 小内距，标题那侧靠 `min-width:0` 让位。
+ */
+.todo-act {
+  flex: 0 0 auto;
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  line-height: 1;
 }
 </style>
