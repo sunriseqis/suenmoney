@@ -385,6 +385,8 @@ export interface WebdavConfig {
   path: string;
   isEnabled: boolean;  /** 备份加密口令（.mn 用），必填 */
   passphrase?: string;
+  /** 服务端是否已存过备份口令（**口令本身永不回传**） */
+  hasPassphrase?: boolean;
 }
 
 export interface WebdavStatus {

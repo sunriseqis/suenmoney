@@ -667,14 +667,32 @@ async function loadOverview(): Promise<void> {
 }
 
 // ── 备份与快照 ──────────────────────────────────────────────────────────────
-const webdav = ref<{ url: string; username: string; path: string; isEnabled: boolean; hasPassword?: boolean } | null>(null);
+const webdav = ref<{
+  url: string;
+  username: string;
+  path: string;
+  isEnabled: boolean;
+  hasPassword?: boolean;
+  /** 备份口令是否已在服务端设置过（口令本身永远不回传） */
+  hasPassphrase?: boolean;
+} | null>(null);
 const webdavUrl = ref('');
 const webdavUser = ref('');
 const webdavPass = ref('');
+/**
+ * 备份口令最短长度。与 `server/src/db/repo/webdav.ts` 的 `MIN_PASSPHRASE_LENGTH` 一致
+ * （6 位，2026-11-19 产品裁决）；前端只做即时提示，服务端才是最终判定。
+ */
+const MIN_PASSPHRASE_LENGTH = 6;
 const webdavPath = ref('suenmoney');
 const webdavEnabled = ref(false);
 /** 备份口令：推 WebDAV 的 .mn 靠它加密，必填 */
 const webdavPassphrase = ref('');
+/**
+ * 服务端**已经存了口令**。口令本身不回传（加密密钥不该在接口里出现），
+ * 所以这里只拿布尔值判断：已设置过就不必逼用户每次改配置都重输。
+ */
+const webdavPassphraseSet = computed(() => webdav.value?.hasPassphrase === true);
 const webdavTesting = ref(false);
 const webdavMessage = ref<string | null>(null);
 
@@ -700,10 +718,21 @@ async function saveWebdav(): Promise<void> {
     return;
   }
   try {
-    // 门禁：启用 WebDAV 就必须设备份口令 —— 推到远端的是整库 JSON，
-    // 没有口令就等于把账号和口令哈希明文放进第三方存储
-    if (webdavEnabled.value && webdavPassphrase.value.trim().length < 8) {
-      toast.show('启用 WebDAV 前请设置至少 8 位的备份口令');
+    /*
+     * 门禁：启用 WebDAV 就必须有备份口令 —— 推到远端的是整库 JSON，
+     * 没有口令等于把账号与口令哈希明文放进第三方存储。
+     *
+     * ⚠ 判据是「**输入框里有值 或 服务端已存过**」，不能只看输入框：
+     * 口令不回传，用户刷新页面后输入框必然是空的。只看输入框的话，
+     * 已经设过口令的人哪怕只改一下路径，都会被自己拦在门外（前端门禁误报）。
+     */
+    const typed = webdavPassphrase.value.trim();
+    if (typed !== '' && typed.length < MIN_PASSPHRASE_LENGTH) {
+      toast.show(`备份口令至少 ${MIN_PASSPHRASE_LENGTH} 位`);
+      return;
+    }
+    if (webdavEnabled.value && typed === '' && !webdavPassphraseSet.value) {
+      toast.show(`启用 WebDAV 前请设置至少 ${MIN_PASSPHRASE_LENGTH} 位的备份口令`);
       return;
     }
     await webdavBackup.save({
@@ -712,9 +741,12 @@ async function saveWebdav(): Promise<void> {
       ...(webdavPass.value !== '' ? { password: webdavPass.value } : {}),
       path: webdavPath.value.trim() || 'suenmoney',
       isEnabled: webdavEnabled.value,
-      ...(webdavPassphrase.value !== '' ? { passphrase: webdavPassphrase.value } : {}),
+      // 只在真的输入了新口令时才发；不发 = 服务端保留原口令
+      ...(typed !== '' ? { passphrase: typed } : {}),
     });
+    // 已提交的密钥不留在输入框里：密码与备份口令都是「写一次、之后不回显」
     webdavPass.value = '';
+    webdavPassphrase.value = '';
     toast.show('WebDAV 配置已保存');
     await loadWebdav();
   } catch (error) {
@@ -1178,7 +1210,15 @@ onMounted(() => {
             <PInput id="wd-path" v-model="webdavPath" placeholder="suenmoney" />
           </PField>
           <PField label="备份口令（必填，用于加密 .mn）" id="wd-mn">
-            <PInput id="wd-mn" v-model="webdavPassphrase" type="password" placeholder="至少 8 位，务必记住" />
+            <PInput
+              id="wd-mn"
+              v-model="webdavPassphrase"
+              type="password"
+              :placeholder="webdavPassphraseSet ? '已设置，留空表示不改' : `至少 ${MIN_PASSPHRASE_LENGTH} 位，务必记住`"
+            />
+            <span class="set-s" style="display: block; margin-top: 4px">
+              {{ webdavPassphraseSet ? '✅ 已设置备份口令（服务端不保存明文回显；忘记口令将无法解密备份）' : '⚠️ 尚未设置备份口令 —— 推送到 WebDAV 前必须设置' }}
+            </span>
           </PField>
           <div class="set-row" style="padding: 4px 0">
             <span class="set-body">

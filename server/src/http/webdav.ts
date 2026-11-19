@@ -7,6 +7,7 @@ import { getDatabase } from '../db/index.ts';
 import {
   getWebdavConfig,
   getWebdavStatus,
+  MIN_PASSPHRASE_LENGTH,
   runWebdavBackup,
   saveWebdavConfig,
   testWebdav,
@@ -30,6 +31,11 @@ export async function webdavRoutes(app: FastifyInstance): Promise<void> {
             username: config.username,
             password: config.password ? '******' : '',
             hasPassword: Boolean(config.password),
+            /**
+             * 备份口令是否已设置。**绝不回传口令本身** —— 前端只需要知道
+             * 「要不要再让用户填一次」，回传值等于把加密密钥摊在接口里。
+             */
+            hasPassphrase: Boolean(config.passphrase),
             path: config.path || '/suenmoney',
             isEnabled: config.isEnabled,
           }
@@ -58,10 +64,30 @@ export async function webdavRoutes(app: FastifyInstance): Promise<void> {
       password = existing.password;
     }
 
+    /*
+     * 备份口令：**必须落库**，否则 runWebdavBackup 的门禁永远判定「未设置」。
+     *
+     * v2.1.1 之前的实现压根没读这个字段：前端发了（SettingsView 的 saveWebdav），
+     * 服务端建 newConfig 时没有它，于是「保存成功」之后点备份永远返回
+     * 「请先设置备份口令」。密码那边有「掩码/空 → 保留旧值」的逻辑，口令照抄一份，
+     * 否则以后改地址、开关都会把口令冲掉。
+     *
+     * 注意这里**不**因为「启用了但没口令」就 400：保存配置和能不能上传是两件事，
+     * 先填地址、回头再设口令是合理流程。真上传时由 runWebdavBackup 拦下并给出
+     * 与事实一致的提示（前端另有 `hasPassphrase` 用来提前显示「尚未设置」）。
+     */
+    let passphrase = body['passphrase'] !== undefined ? String(body['passphrase']).trim() : '';
+    if (passphrase === '******' || passphrase === '') {
+      passphrase = existing?.passphrase ?? '';
+    } else if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      throw badRequest(`备份口令至少 ${MIN_PASSPHRASE_LENGTH} 位`);
+    }
+
     const newConfig: WebdavConfig = {
       url,
       username,
       password,
+      ...(passphrase !== '' ? { passphrase } : {}),
       path: path.startsWith('/') ? path : `/${path}`,
       isEnabled,
     };
@@ -75,6 +101,7 @@ export async function webdavRoutes(app: FastifyInstance): Promise<void> {
         username: newConfig.username,
         password: '******',
         hasPassword: true,
+        hasPassphrase: Boolean(newConfig.passphrase),
         path: newConfig.path,
         isEnabled: newConfig.isEnabled,
       },
