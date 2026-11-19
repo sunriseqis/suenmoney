@@ -40,6 +40,18 @@ export interface ChangeItem {
 
 export interface PullChangesResult {
   changes: ChangeItem[];
+  /**
+   * **客户端下一次该传的 `since`** = 本页最后一条变更的版本号（本页为空时等于
+   * `latestVersion`）。
+   *
+   * ⚠ 不要拿 `latestVersion` 当游标 —— 它是**全局最新版本**，可能远大于本页最后
+   * 一条（`limit` 一页取不完时）。用它覆写游标等于把「本页之后、最新之前」的
+   * 变更全部标记成已同步：下一次 `since=latestVersion` 查不到任何东西，
+   * 那批变更**永久丢失且不报错**。iOS / 鸿蒙两端都踩过这个坑（v2.1.1 修）。
+   *
+   * 游标语义只认这一个字段：客户端不要自己从 `changes` / `latestVersion` 推导。
+   */
+  nextSince: number;
   latestVersion: number;
   hasMore: boolean;
 }
@@ -144,8 +156,17 @@ export function pullChanges(
   const hasMore =
     changes.length === safeLimit && changes[changes.length - 1]!.version < latestVersion;
 
+  /*
+   * 游标只能推进到**本页真正发出去的最后一条**。
+   * 本页为空时说明 since 已经追平（不可能有空洞：版本号单调自增），
+   * 这时给 latestVersion 是安全的 —— 它不会跨过任何未发送的变更。
+   */
+  const nextSince =
+    changes.length > 0 ? changes[changes.length - 1]!.version : latestVersion;
+
   return {
     changes,
+    nextSince,
     latestVersion,
     hasMore,
   };

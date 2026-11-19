@@ -28,6 +28,10 @@ public struct LocalCategoryTotal {
 
 public enum ExpenseDao {
     /// 批量缓存（每页拉回来就写一次，冲突替换）
+    ///
+    /// ⚠ `plan_id` / `plan_period_seq` 必须一起写。快照是「先清后灌」，
+    /// 少写这两列 = 计划生成的记录在全量重灌后**丢掉「哪一期」的关联**，
+    /// 流水行上的「京东分期 · 3期」标记会集体消失，而且没有任何报错。
     public static func cache(_ items: [ExpenseItem]) throws {
         guard !items.isEmpty else { return }
         let db = Db.shared
@@ -35,12 +39,14 @@ public enum ExpenseDao {
             try db.run("""
                 INSERT OR REPLACE INTO expenses
                   (id, owner_id, amount_cents, category_id, payment_method_id,
-                   spend_date, posting_date, repayment_date, note, source, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   spend_date, posting_date, repayment_date, note, source,
+                   plan_id, plan_period_seq, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 [
                     item.id, item.ownerId, item.amountCents, item.categoryId, item.paymentMethodId,
                     item.spendDate, item.postingDate, item.repaymentDate, item.note, item.source,
+                    item.planId, item.planPeriodSeq,
                     ISO8601DateFormatter().string(from: Date())
                 ])
         }

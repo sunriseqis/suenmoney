@@ -16,8 +16,13 @@
 import Foundation
 
 private let cursorKey = "sync_cursor"
+/// 游标修复版（v2.1.1）的一次性补偿标记：没有这个 key 就先重灌一次全量快照
+private let resnapshotKey = "sync_resnapshot_v2"
 /// 本地变更后 300ms 防抖再推（连续记账不会每次打一次网络）
 private let debounceInterval: TimeInterval = 0.3
+/// 单轮同步最多翻多少页（200 条/页 → 上限 1 万条变更）。
+/// 设上限只为防止服务端异常导致死循环；正常一轮远达不到。
+private let maxPullPages = 50
 
 public struct SyncReport {
     public var pushed: Int = 0
@@ -61,7 +66,13 @@ public actor SyncEngine {
             let pushResult = try await push()
             report.pushed = pushResult.pushed
             report.deadLettered = pushResult.dead
-            let pullResult = try await pull()
+            /*
+             ⚠ 必须 `pullAll()` 而不是单次 `pull()`。
+             一次 pull 只取一页（200 条）；服务端积压更多时，只拉一页就收工
+             等于把剩下的变更留在服务端 —— 以前还会因为「游标被覆写成
+             latestVersion」而永久跳过它们，现在游标对了，但不翻页同样拉不完。
+             */
+            let pullResult = try await pullAll()
             report.pulled = pullResult.applied
             report.cursor = pullResult.cursor
         } catch let err as ApiError {
@@ -222,6 +233,28 @@ public actor SyncEngine {
            有未推送项时退回增量 pull，等推送成功后再找机会快照。
          */
         let pendingCount = (try? Outbox.pendingCount()) ?? 0
+        /*
+         ⚠ 一次性自愈（v2.1.1）：把旧版本因游标跳跃而永久漏掉的记录补回来。
+
+         旧版本把游标写成 `latestVersion`（见下面 `cursorAfter` 的注释），已经在用的
+         设备可能从此永久缺掉「另一台设备记的那批账」—— 光修游标不会让它们回来。
+         升级后**第一次同步强制重走一次全量快照**补齐，之后不再做（meta 留标记）。
+
+         两个前置条件都是必要的：
+           · outbox 必须为空 —— 快照是「先清后灌」，有没推上去的本地账会被冲掉；
+           · 快照失败**只试一次**、并立刻留标记 —— 否则服务端还是老版本（没有
+             快照接口）时会每次都失败，把日常同步整个卡死。
+         */
+        if pendingCount == 0 && needsFullResnapshot() {
+            do {
+                let version = try await SyncStore.bootstrap()
+                try writeCursor(version)
+                markFullResnapshotDone()
+                return PullResult(applied: 0, cursor: version, hasMore: false)
+            } catch {
+                markFullResnapshotDone()
+            }
+        }
         if cursor == 0 && ((try? ExpenseDao.count()) ?? 0) == 0 && pendingCount == 0 {
             let version = try await SyncStore.bootstrap()
             try writeCursor(version)
@@ -233,8 +266,40 @@ public actor SyncEngine {
             try applyChange(change.entityType, change.entityId, change.op, change.payload)
             applied += 1
         }
-        try writeCursor(body.latestVersion)
-        return PullResult(applied: applied, cursor: body.latestVersion, hasMore: body.hasMore)
+        /*
+         ⚠ 游标只能推进到**本页最后一条真正应用过的变更**（`cursorAfter`）。
+
+         曾经的写法是 `writeCursor(body.latestVersion)` —— latestVersion 是服务端
+         **全局最新版本**，一页取不完时它远大于本页最后一条。于是：
+           第 1 页 (v1..v200) → 游标写成 latestVersion(=500)
+           第 2 页 since=500 → 空 → hasMore=false → 收工
+         v201..v500 这批变更**永久丢失，且没有任何报错**（`refresh()` 里的翻页
+         循环也因此形同虚设）。表现就是「另一台设备记的账，这一台永远看不到，
+         但这一台记的账对方都能看到」—— 单向同步，且只发生在落后的一端。
+         */
+        let next = body.cursorAfter
+        try writeCursor(next)
+        return PullResult(applied: applied, cursor: next, hasMore: body.hasMore)
+    }
+
+    /// 拉取直到追平：一页一页翻，直到服务端说 `hasMore == false`。
+    ///
+    /// 与 `pull()` 分开的原因：`syncNow` 和 `refresh` 都要「拉完」，而
+    /// 「拉一页」是它们共用的原子步骤。以前 `syncNow` 直接调 `pull()`，
+    /// 只有 `refresh` 自己写了循环，两条路径行为不一致。
+    private func pullAll() async throws -> PullResult {
+        var total = PullResult()
+        for _ in 0..<maxPullPages {
+            let page = try await pull()
+            total.applied += page.applied
+            total.cursor = page.cursor
+            total.hasMore = page.hasMore
+            // 本页为空还声称 hasMore：服务端数据异常，停手而不是空转
+            if !page.hasMore || page.applied == 0 {
+                break
+            }
+        }
+        return total
     }
 
     /// **拉取一次更新**（冷启动 / 热启动各调一次）：一直翻页到 `hasMore=false`。
@@ -247,10 +312,8 @@ public actor SyncEngine {
         if running { return }
         running = true
         defer { running = false }
-        for _ in 0..<50 {
-            guard let result = try? await pull() else { break }
-            if !result.hasMore { break }
-        }
+        // 拉失败不抛给调用方（冷启动路径上没有错误提示的位置），但必须拉完所有页
+        _ = try? await pullAll()
         postDataChanged()
     }
 
@@ -267,6 +330,17 @@ public actor SyncEngine {
 
     private func writeCursor(_ value: Int) throws {
         try Db.shared.run("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", [cursorKey, String(value)])
+    }
+
+    /// 还没做过「补缺口」的全量重灌（首次升级到 v2.1.1 时为 true）
+    private func needsFullResnapshot() -> Bool {
+        let rows = (try? Db.shared.query("SELECT value FROM meta WHERE key = ?", [resnapshotKey])) ?? []
+        return rows.isEmpty
+    }
+
+    private func markFullResnapshotDone() {
+        try? Db.shared.run(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", [resnapshotKey, "1"])
     }
 
     /// 应用一条变更。

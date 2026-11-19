@@ -361,3 +361,112 @@ describe('增量同步接口（GET/POST /api/sync）', () => {
   });
 });
 
+
+/**
+ * 增量游标契约（v2.1.1）。
+ *
+ * 背景：iOS / 鸿蒙两端曾把响应里的 `latestVersion`（**全局最新版本**）当成
+ * 下一页的 `since`。一页取不完时 latestVersion 远大于本页最后一条，于是
+ * 「第 1 页消费完 → 游标直接跳到最新 → 中间那批变更再也拉不到」。
+ * 表现是单向同步：落后的一端永远看不到另一端记的账，且**没有任何报错**。
+ *
+ * 这组测试锁死两件事：
+ *   1. `nextSince` 必须等于本页最后一条变更的版本（不是 latestVersion）；
+ *   2. 按 `nextSince` 翻页必须零丢失 —— 这是客户端唯一的正确用法。
+ */
+describe('增量游标 nextSince（一页取不完时不能丢变更）', () => {
+  test('hasMore=true 时 nextSince 指向本页最后一条，而不是全局最新版本', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sync/pull?since=0&limit=2',
+      headers: auth(userToken),
+    });
+    assert.equal(res.statusCode, 200);
+    const json = res.json();
+
+    assert.equal(json.changes.length, 2);
+    assert.equal(json.hasMore, true);
+    assert.equal(json.nextSince, json.changes[1].version, 'nextSince 必须是本页最后一条的版本');
+    assert.ok(
+      json.nextSince < json.latestVersion,
+      '只要还有下一页，nextSince 就必须小于 latestVersion —— 否则说明服务端又想让我们一页吞完',
+    );
+  });
+
+  test('本页为空时 nextSince 等于 latestVersion（追平后不再前进）', async () => {
+    const statusRes = await app.inject({
+      method: 'GET',
+      url: '/api/sync/status',
+      headers: auth(userToken),
+    });
+    const latest = statusRes.json().latestVersion;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/sync/pull?since=${latest}`,
+      headers: auth(userToken),
+    });
+    const json = res.json();
+    assert.equal(json.changes.length, 0);
+    assert.equal(json.hasMore, false);
+    assert.equal(json.nextSince, latest);
+  });
+
+  test('250 条变更按 nextSince 翻页拉取：零丢失（回归：曾经会永久丢 50 条）', async () => {
+    const before = await app.inject({
+      method: 'GET',
+      url: '/api/sync/status',
+      headers: auth(userToken),
+    });
+    const since = before.json().latestVersion;
+
+    // 一次推入 250 笔 → 250 条 change，超过一页(200)
+    const items = Array.from({ length: 250 }, (_, i) => ({
+      id: `01J9PAGING${String(i).padStart(14, '0')}`,
+      amountCents: 100 + i,
+      categoryId: testCategoryId,
+      paymentMethodId: testPaymentMethodId,
+      spendDate: '2026-11-19',
+      note: `翻页-${i}`,
+    }));
+
+    const pushRes = await app.inject({
+      method: 'POST',
+      url: '/api/sync/push',
+      headers: auth(userToken),
+      payload: { expenses: items },
+    });
+    assert.equal(pushRes.statusCode, 200);
+    assert.equal(pushRes.json().pushedExpensesCount, 250);
+
+    // 客户端算法：since ← nextSince，一页一页翻到 hasMore=false
+    let cursor = since;
+    const seen = new Set<string>();
+    let pages = 0;
+    let hasMore = true;
+    while (hasMore && pages < 50) {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/sync/pull?since=${cursor}&limit=200`,
+        headers: auth(userToken),
+      });
+      const body = res.json();
+      for (const change of body.changes) {
+        if (change.entityType === 'expense') seen.add(change.entityId);
+      }
+      // 游标必须单调前进，否则会死循环
+      assert.ok(body.nextSince >= cursor, 'nextSince 不能倒退');
+      cursor = body.nextSince;
+      hasMore = body.hasMore;
+      pages++;
+      if (body.changes.length === 0) break;
+    }
+
+    assert.equal(hasMore, false, '应在 50 页内追平');
+    assert.equal(pages, 2, '250 条 = 两页（200 + 50）');
+    assert.equal(seen.size, 250, '一条都不能丢');
+    for (const item of items) {
+      assert.ok(seen.has(item.id), `丢失了 ${item.id}`);
+    }
+  });
+});
