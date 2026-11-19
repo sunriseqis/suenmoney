@@ -472,6 +472,15 @@ export interface SyncSnapshotBody {
 
 export interface SyncPullBody {
   changes: SyncChange[];
+  /**
+   * 下一次 since 该传的值 = 本页最后一条变更的版本号。
+   *
+   * ⚠ 不要拿 `latestVersion` 当游标：它是全局最新版本，一页取不完时远大于本页
+   * 最后一条，用它覆写游标会把「本页之后、最新之前」的变更全部跳掉 ——
+   * 那批记录**永久丢失且不报错**（v2.1.1 修的就是这个）。
+   * 可选：老服务端不返回该字段时，客户端退化为「本页最后一条的 version」。
+   */
+  nextSince?: number;
   latestVersion: number;
   hasMore: boolean;
 }

@@ -572,8 +572,23 @@ public struct SyncSnapshotBody: Decodable {
 
 public struct SyncPullBody: Decodable {
     public let changes: [SyncChange]
+    /// **下一次 `since` 该传的值** = 本页最后一条变更的版本号。
+    ///
+    /// ⚠ 绝对不能拿 `latestVersion` 当游标：它是全局最新版本，一页取不完时
+    /// 远大于本页最后一条，用它覆写游标会把「本页之后、最新之前」的变更
+    /// 全部跳掉 —— 那批记录**永久丢失且不报错**（v2.1.1 修的就是这个）。
+    /// 声明为可选：老服务端不返回该字段时退化为「本页最后一条的 version」。
+    public let nextSince: Int?
     public let latestVersion: Int
     public let hasMore: Bool
+
+    /// 游标推进口径的唯一实现处：优先服务端下发的 `nextSince`，
+    /// 其次本页最后一条的 version，最后才退到 latestVersion（本页为空时两者等价）。
+    public var cursorAfter: Int {
+        if let n = nextSince { return n }
+        if let last = changes.last { return last.version }
+        return latestVersion
+    }
 }
 
 public struct SyncStatusBody: Decodable {

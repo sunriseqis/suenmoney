@@ -20,10 +20,17 @@ import { ExpenseDao } from '../store/ExpenseDao';
 import { Outbox, OutboxEntry, OUTBOX_MAX_RETRY } from './Outbox';
 
 const CURSOR_KEY = 'sync_cursor';
+/** 游标修复版（v2.1.1）的一次性补偿标记：没有这个 key 就先重灌一次全量快照 */
+const RESNAPSHOT_KEY = 'sync_resnapshot_v2';
 /** 本地数据版本：同步写完 +1，各屏订阅它重新读本地库 */
 export const DATA_VERSION_KEY = 'localDataVersion';
 /** 本地变更后 300ms 防抖再推（连续记账不会每次打一次网络） */
 const DEBOUNCE_MS = 300;
+/**
+ * 单轮同步最多翻多少页（200 条/页 → 上限 1 万条变更）。
+ * 设上限只为防止服务端异常导致死循环；正常一轮远达不到。
+ */
+const MAX_PULL_PAGES = 50;
 
 export interface SyncReport {
   pushed: number;
@@ -77,19 +84,12 @@ export class SyncEngine {
     }
     SyncEngine.running = true;
     try {
-      // 增量可能有多页：一直翻到 hasMore=false，否则一次启动只同步 200 条
-      let last = await SyncEngine.readCursor();
-      for (let i = 0; i < 50; i++) {
-        const result = await SyncEngine.pull();
-        last = result.cursor;
-        if (!result.hasMore) {
-          break;
-        }
-      }
+      // 拉完所有页（增量可能多于一页）
+      const result = await SyncEngine.pullAll();
       // 拉取也算「本地数据变了」：屏幕要重读
       const prev: number = AppStorage.get<number>(DATA_VERSION_KEY) ?? 0;
       AppStorage.setOrCreate<number>(DATA_VERSION_KEY, prev + 1);
-      return last;
+      return result.cursor;
     } catch (e) {
       return await SyncEngine.readCursor();
     } finally {
@@ -111,7 +111,13 @@ export class SyncEngine {
       const pushResult = await SyncEngine.push();
       report.pushed = pushResult.pushed;
       report.deadLettered = pushResult.dead;
-      const pullResult = await SyncEngine.pull();
+      /*
+       * ⚠ 必须 pullAll() 而不是单次 pull()。
+       * 一次 pull 只取一页（200 条）；服务端积压更多时只拉一页就收工，
+       * 剩下的变更留在服务端。以前更糟：游标被覆写成 latestVersion，
+       * 那批变更会被**永久跳过**（见 pull() 里的注释）。
+       */
+      const pullResult = await SyncEngine.pullAll();
       report.pulled = pullResult.applied;
       report.cursor = pullResult.cursor;
     } catch (e) {
@@ -264,6 +270,28 @@ export class SyncEngine {
      *   有未推送项时退回增量 pull，等推送成功后再找机会快照。
      */
     const pending = await Outbox.pendingCount();
+    /*
+     * ⚠ 一次性自愈（v2.1.1）：把旧版本因游标跳跃而永久漏掉的记录补回来。
+     *
+     * 旧版本把游标写成 latestVersion（见下面 cursorAfterOf 的注释），已经在用的
+     * 设备可能从此永久缺掉「另一台设备记的那批账」—— 光修游标不会让它们回来。
+     * 升级后**第一次同步强制重走一次全量快照**补齐，之后不再做（meta 留标记）。
+     *
+     * 两个前置条件都是必要的：
+     *   · outbox 必须为空 —— 快照是「先清后灌」，有没推上去的本地账会被冲掉；
+     *   · 快照失败**只试一次**并立刻留标记 —— 否则服务端还是老版本（没有快照
+     *     接口）时每次都会失败，把日常同步整个卡死。
+     */
+    if (pending === 0 && (await SyncEngine.needsFullResnapshot())) {
+      try {
+        const version = await SyncStore.bootstrap();
+        await SyncEngine.writeCursor(version);
+        await SyncEngine.markFullResnapshotDone();
+        return { applied: 0, cursor: version, hasMore: false };
+      } catch (e) {
+        await SyncEngine.markFullResnapshotDone();
+      }
+    }
     if (cursor === 0 && (await ExpenseDao.count()) === 0 && pending === 0) {
       const version = await SyncStore.bootstrap();
       await SyncEngine.writeCursor(version);
@@ -275,9 +303,43 @@ export class SyncEngine {
       await SyncEngine.applyChange(change.entityType, change.entityId, change.op, change.payload);
       applied += 1;
     }
-    const next = body.latestVersion;
+    /*
+     * ⚠ 游标只能推进到**本页最后一条真正应用过的变更**。
+     *
+     * 曾经的写法是 `const next = body.latestVersion` —— latestVersion 是服务端
+     * **全局最新版本**，一页取不完时远大于本页最后一条。于是：
+     *   第 1 页 (v1..v200) → 游标写成 latestVersion(=500)
+     *   第 2 页 since=500 → 空 → hasMore=false → 收工
+     * v201..v500 这批变更**永久丢失，且没有任何报错**（refresh() 的翻页循环
+     * 也因此形同虚设）。表现就是「另一台设备记的账，这一台永远看不到，
+     * 但这一台记的账对方都能看到」—— 单向同步，且只发生在落后的一端。
+     */
+    const next = cursorAfterOf(body);
     await SyncEngine.writeCursor(next);
     return { applied: applied, cursor: next, hasMore: body.hasMore };
+  }
+
+  /**
+   * 拉取直到追平：一页一页翻，直到服务端说 hasMore=false。
+   *
+   * 与 pull() 分开的原因：syncNow / refresh 都要「拉完」，而「拉一页」是它们
+   * 共用的原子步骤。以前 syncNow 直接调 pull()，只有 refresh 自己写了循环，
+   * 两条路径行为不一致，且循环因为游标跳跃而空转。
+   */
+  static async pullAll(): Promise<PullResult> {
+    const start: number = await SyncEngine.readCursor();
+    const total: PullResult = { applied: 0, cursor: start, hasMore: false };
+    for (let i = 0; i < MAX_PULL_PAGES; i++) {
+      const page = await SyncEngine.pull();
+      total.applied += page.applied;
+      total.cursor = page.cursor;
+      total.hasMore = page.hasMore;
+      // 本页为空还声称 hasMore：服务端数据异常，停手而不是空转
+      if (!page.hasMore || page.applied === 0) {
+        break;
+      }
+    }
+    return total;
   }
 
   static async readCursor(): Promise<number> {
@@ -294,6 +356,20 @@ export class SyncEngine {
   private static async writeCursor(value: number): Promise<void> {
     const store = Db.get();
     await store.executeSql('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)', [CURSOR_KEY, String(value)]);
+  }
+
+  /** 还没做过「补缺口」的全量重灌（首次升级到 v2.1.1 时为 true） */
+  private static async needsFullResnapshot(): Promise<boolean> {
+    const store = Db.get();
+    const rs = await store.querySql('SELECT value FROM meta WHERE key = ?', [RESNAPSHOT_KEY]);
+    const exists: boolean = rs.goToFirstRow();
+    rs.close();
+    return !exists;
+  }
+
+  private static async markFullResnapshotDone(): Promise<void> {
+    const store = Db.get();
+    await store.executeSql('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)', [RESNAPSHOT_KEY, '1']);
   }
 
   /**
@@ -329,6 +405,25 @@ interface PullResult {
   applied: number;
   cursor: number;
   hasMore: boolean;
+}
+
+/**
+ * 本页之后该用的游标：优先服务端下发的 `nextSince`（本页最后一条的版本），
+ * 其次本页最后一条的 `version`，最后才退到 `latestVersion`（本页为空时等价）。
+ *
+ * 独立成模块级函数而不是私有静态方法：ArkTS 对 `private static` 的跨静态调用
+ * 限制较严，放在外面没有歧义，也方便别处复用同一口径。
+ */
+function cursorAfterOf(body: SyncPullBody): number {
+  // `typeof === 'number'` 而不是 `!== undefined && !== null`：
+  // 后者在严格空安全下会被判成「没有重叠类型」的无效比较（TS2367）
+  if (typeof body.nextSince === 'number') {
+    return body.nextSince;
+  }
+  if (body.changes.length > 0) {
+    return body.changes[body.changes.length - 1].version;
+  }
+  return body.latestVersion;
 }
 
 function parsePayload(raw: string): Record<string, Object> {

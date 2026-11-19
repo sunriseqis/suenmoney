@@ -1117,10 +1117,25 @@ curl -s -X GET 'http://127.0.0.1:5310/api/sync/pull?since=0&limit=5' \
     },
     "…共 5 项"
   ],
+  "nextSince": 5,
   "latestVersion": 33,
   "hasMore": true
 }
 ```
+
+> ⚠ **游标只能用 `nextSince`，不能用 `latestVersion`。**
+>
+> `latestVersion` 是**服务端全局最新版本**（这里是 33），而本页只发到 5。
+> 把 latestVersion 写进本地游标 = 声明「1..33 我都收到了」，下一次
+> `since=33` 查不到任何东西 —— **v6..v33 那批变更永久丢失，且不报错**。
+>
+> 正确算法：`cursor = nextSince`，然后循环请求直到 `hasMore === false`。
+> 本页为空时 `nextSince` 等于 `latestVersion`（已经追平，不会跨过任何变更）。
+>
+> 客户端必须**一轮拉完**（`syncNow` 里也要翻页，不能只拉一页）。
+> v2.1.1 之前 iOS / 鸿蒙两端都写成 `cursor = latestVersion` 且只拉一页，
+> 症状是「单向同步」：一台设备记的账另一台永远看不到，反向却正常。
+> Web 端自始用 `max(cursor, change.version)` 递进，所以没踩这个坑。
 
 ---
 
