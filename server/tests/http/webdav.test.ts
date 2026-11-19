@@ -157,3 +157,95 @@ describe('WebDAV 远程安全备份 API', () => {
     assert.equal(config.isEnabled, false);
   });
 });
+
+/**
+ * 备份口令落库（回归）。
+ *
+ * v2.1.1 之前 `PUT /api/backup/webdav` 压根没读 body 里的 `passphrase`：
+ * 前端发了、服务端建 newConfig 时丢了，于是界面「保存成功」之后点备份
+ * 永远返回「请先设置备份口令」—— 用户设多少次都没用。
+ */
+describe('备份口令落库（v2.1.1 回归）', () => {
+  const put = (payload: Record<string, unknown>) =>
+    app.inject({
+      method: 'PUT',
+      url: '/api/backup/webdav',
+      headers: auth(adminToken),
+      payload,
+    });
+
+  test('保存时带上 passphrase → 真的落库，GET 只回 hasPassphrase=true（不回明文）', async () => {
+    const res = await put({
+      url: 'https://dav.example.com/dav',
+      username: 'u',
+      password: 'pw-123456',
+      path: '/b',
+      isEnabled: true,
+      passphrase: 'abc123',
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().config.hasPassphrase, true);
+
+    const cfg = getWebdavConfig(getDatabase());
+    assert.ok(cfg);
+    assert.equal(cfg.passphrase, 'abc123', '口令必须落库，否则上传前门禁永远判定未设置');
+
+    const got = await app.inject({
+      method: 'GET',
+      url: '/api/backup/webdav',
+      headers: auth(adminToken),
+    });
+    assert.equal(got.json().config.hasPassphrase, true);
+    // 口令是加密密钥，任何接口都不许回传
+    assert.equal(got.json().config.passphrase, undefined);
+  });
+
+  test('二次保存不带 passphrase（只改地址/路径）→ 保留原口令', async () => {
+    const res = await put({
+      url: 'https://nas.local:5005/dav',
+      username: 'u',
+      password: '******',
+      path: '/suenmoney',
+      isEnabled: true,
+    });
+    assert.equal(res.statusCode, 200);
+
+    const cfg = getWebdavConfig(getDatabase());
+    assert.ok(cfg);
+    assert.equal(cfg.passphrase, 'abc123', '不带口令 = 不改，不能被清空');
+    assert.equal(cfg.password, 'pw-123456');
+  });
+
+  test('口令少于 6 位 → 400', async () => {
+    const res = await put({
+      url: 'https://nas.local:5005/dav',
+      username: 'u',
+      password: '******',
+      path: '/suenmoney',
+      isEnabled: true,
+      passphrase: 'abc12',
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.json().error, /至少 6 位/);
+  });
+
+  test('启用但库里没有口令 → 仍可保存，且 hasPassphrase 如实为 false', async () => {
+    const db = getDatabase();
+    db.prepare("DELETE FROM settings WHERE key = 'webdav_backup_config'").run();
+
+    const res = await put({
+      url: 'https://nas.local/dav',
+      username: 'u',
+      password: 'pw-123456',
+      path: '/suenmoney',
+      isEnabled: true,
+    });
+    // 保存配置与能不能上传是两件事：不在这里拒绝，由 runWebdavBackup 在上传时拦
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().config.hasPassphrase, false);
+
+    const cfg = getWebdavConfig(getDatabase());
+    assert.ok(cfg);
+    assert.equal(cfg.passphrase, undefined, '没设过就是没设过，不能凭空造一个');
+  });
+});

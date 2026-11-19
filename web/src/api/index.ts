@@ -453,8 +453,20 @@ export const webdavBackup = {
   /** 获取 WebDAV 配置及备份状态 */
   get: () => request<{ config: WebdavConfig | null; status: WebdavStatus }>('/api/backup/webdav'),
 
-  /** 保存 WebDAV 配置 */
-  save: (payload: { url: string; username: string; password?: string; path?: string; isEnabled?: boolean }) =>
+  /**
+   * 保存 WebDAV 配置。
+   *
+   * ⚠ `passphrase` 是**备份加密口令**，不是 WebDAV 账号密码。不传 = 服务端保留原值
+   * （前端不回显口令，所以「改地址/开关」时它一定是空字符串）。
+   */
+  save: (payload: {
+    url: string;
+    username: string;
+    password?: string;
+    path?: string;
+    isEnabled?: boolean;
+    passphrase?: string;
+  }) =>
     request<{ ok: boolean; config: WebdavConfig }>('/api/backup/webdav', {
       method: 'PUT',
       body: payload,

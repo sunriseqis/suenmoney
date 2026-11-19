@@ -36,6 +36,15 @@ export interface WebdavStatus {
 const CONFIG_KEY = 'webdav_backup_config';
 const STATUS_KEY = 'webdav_backup_status';
 
+/**
+ * 备份口令最短长度。
+ *
+ * 6 位是**产品裁决**（2026-11-19）：口令只防「备份文件落到第三方存储后被直接读」，
+ * 家庭场景下再长用户就记不住了，记不住 = 备份解不开 = 比不加密更糟。
+ * 前端提示与服务端校验共用这一个常量，避免两处各写一个数字后悄悄漂移。
+ */
+export const MIN_PASSPHRASE_LENGTH = 6;
+
 export function getWebdavConfig(db: DatabaseSync): WebdavConfig | null {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(CONFIG_KEY) as
     | { value: string }
