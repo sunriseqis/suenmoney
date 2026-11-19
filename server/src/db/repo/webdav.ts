@@ -9,7 +9,7 @@
  */
 import type { DatabaseSync } from 'node:sqlite';
 
-import { badRequest } from '../../lib/http-error.ts';
+import { badGateway, badRequest } from '../../lib/http-error.ts';
 import { buildPackage } from './transfer.ts';
 import { MnFormatError, mnFileName, packMn, unpackMn } from '../../lib/backup-crypto.ts';
 
@@ -128,37 +128,126 @@ export function extractBackupHrefs(xmlText: string): string[] {
   return hrefs;
 }
 
+/**
+ * 出网请求的统一超时。
+ *
+ * 没有超时的话，远端 WebDAV 挂住（防火墙吞包、反代不回）会让「立即备份」那个
+ * 请求一直悬着、前端无限转圈，定时任务也一样卡死。15s 是「家庭 NAS 走公网」的
+ * 经验上限，正常上传大文件不受影响 —— 超时只约束「拿到响应头」之前。
+ */
+const WEBDAV_TIMEOUT_MS = 15_000;
+
+/**
+ * 把 fetch 抛出的底层错误翻译成人能看懂的一句话。
+ *
+ * Node 的 fetch 只给 `TypeError: fetch failed`，真正的原因埋在 `cause` 里
+ * （`getaddrinfo ENOTFOUND` / `ECONNREFUSED` / 证书错误 …）。不翻译的话，
+ * 用户只能看到一个 500「服务器内部错误」，完全不知道该改地址、改端口还是改证书。
+ */
+function describeFetchError(error: unknown): string {
+  const cause = (error as { cause?: { code?: string; message?: string } } | undefined)?.cause;
+  const code = cause?.code ?? '';
+  const raw = cause?.message ?? (error instanceof Error ? error.message : String(error));
+
+  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+    return `请求超时（${WEBDAV_TIMEOUT_MS / 1000}s 内没有响应）`;
+  }
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return '域名解析失败，检查 WebDAV 地址是否写错';
+  }
+  if (code === 'ECONNREFUSED') {
+    return '连接被拒绝，检查主机端口与 WebDAV 服务是否在运行';
+  }
+  if (code === 'ECONNRESET' || code === 'ETIMEDOUT') {
+    return '连接被重置或超时，检查网络与反向代理';
+  }
+  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') {
+    return '主机不可达，检查网络路由';
+  }
+  if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(code) || /certificate/i.test(raw)) {
+    return '证书校验失败（自签证书需要在服务端受信，或改用 http）';
+  }
+  return raw;
+}
+
+/**
+ * 所有 WebDAV 出网请求的唯一入口。
+ *
+ * 统一做两件事：**加超时**、**把失败翻译成有信息量的 HttpError**。
+ * 之前各调用点直接 `fetch` + `throw new Error(...)`，被 Fastify 兜成
+ * `500 服务器内部错误` —— 用户拿不到「认证失败 / 404 / 空间不足」这种可行动提示，
+ * 而且没有超时，远端挂住时请求会一直悬着。
+ */
+async function webdavFetch(url: string, init: RequestInit, action: string): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(WEBDAV_TIMEOUT_MS) });
+  } catch (error) {
+    throw badGateway(`无法连接 WebDAV 服务器（${action}）：${describeFetchError(error)}`);
+  }
+}
+
+/**
+ * 远端返回非预期状态码时的提示。
+ *
+ * 分两类：**用户能自己修的**（地址/账号/权限/空间）给 400，让前端原样展示；
+ * **远端自己出问题**（5xx）给 502 —— 那是「上游挂了」，不是用户配错了。
+ */
+function throwForStatus(status: number, action: string): never {
+  if (status === 401 || status === 403) {
+    throw badRequest(
+      `WebDAV 拒绝认证（HTTP ${status}，${action}）：用户名或密码不对，或该账号没有这个目录的读写权限`,
+    );
+  }
+  if (status === 404) {
+    throw badRequest(`远端路径不存在（HTTP 404，${action}）：检查 WebDAV 地址与「远端目录」是否填错`);
+  }
+  if (status === 405) {
+    throw badRequest(`远端不允许该操作（HTTP 405，${action}）：该地址可能不是 WebDAV 端点`);
+  }
+  if (status === 409) {
+    throw badRequest(`远程目录的上级不存在（HTTP 409，${action}）：先建好上级目录，或把「远端目录」改浅一层`);
+  }
+  if (status === 423) {
+    throw badRequest(`远端文件被锁定（HTTP 423，${action}）：稍后重试，或先删掉同名的锁文件`);
+  }
+  if (status === 507) {
+    throw badRequest(`远端存储空间不足（HTTP 507，${action}）：清理网盘空间后重试`);
+  }
+  if (status >= 500) {
+    throw badGateway(`WebDAV 服务器内部错误（HTTP ${status}，${action}）：稍后重试，或检查网盘服务状态`);
+  }
+  throw badRequest(`WebDAV 返回了意外的状态码 HTTP ${status}（${action}）`);
+}
+
 /** 确保远程 WebDAV 目录存在，若不存在则创建 */
 async function ensureRemoteDir(dirUrl: string, authHeader: string): Promise<void> {
-  let checkRes: Response;
-  try {
-    checkRes = await fetch(dirUrl, {
-      method: 'PROPFIND',
-      headers: {
-        Authorization: authHeader,
-        Depth: '0',
-      },
-    });
-  } catch (networkError) {
-    throw new Error(`无法连接到 WebDAV 服务器：${networkError instanceof Error ? networkError.message : String(networkError)}`);
-  }
+  const checkRes = await webdavFetch(
+    dirUrl,
+    { method: 'PROPFIND', headers: { Authorization: authHeader, Depth: '0' } },
+    '检查远程目录',
+  );
 
   if (checkRes.status === 200 || checkRes.status === 207) {
     return;
   }
-  if (checkRes.status === 401 || checkRes.status === 403) {
-    throw new Error('WebDAV 认证失败：用户名或密码错误');
-  }
   if (checkRes.status === 404) {
-    const mkRes = await fetch(dirUrl, {
-      method: 'MKCOL',
-      headers: { Authorization: authHeader },
-    });
-    if (mkRes.status === 201 || mkRes.status === 405 || mkRes.status === 200) {
+    const mkRes = await webdavFetch(
+      dirUrl,
+      { method: 'MKCOL', headers: { Authorization: authHeader } },
+      '创建远程目录',
+    );
+    // 405 = 已存在（有些服务端不用 201）；200 也当成功
+    if (mkRes.status === 201 || mkRes.status === 200 || mkRes.status === 405) {
       return;
     }
-    throw new Error(`无法创建 WebDAV 远程备份目录（HTTP ${mkRes.status}）`);
+    throwForStatus(mkRes.status, '创建远程目录');
   }
+  /*
+   * ⚠ 除 207/404 之外的任何状态都必须抛。
+   * 旧实现只处理 401/403/404，其它（405/409/500…）会**直接 return**，
+   * 于是校验「假装通过」、后面 PUT 再莫名失败，报错位置离真因很远。
+   */
+  throwForStatus(checkRes.status, '检查远程目录');
 }
 
 /**
@@ -177,24 +266,27 @@ export async function testWebdav(config: WebdavConfig): Promise<{ ok: boolean; m
   // 写入探针文件测试写权限
   const probeName = `suenmoney-probe-${Date.now()}.tmp`;
   const probeUrl = `${dirUrl}${probeName}`;
-  const putRes = await fetch(probeUrl, {
-    method: 'PUT',
-    headers: {
-      Authorization: authHeader,
-      'Content-Type': 'text/plain; charset=utf-8',
+  const putRes = await webdavFetch(
+    probeUrl,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'text/plain; charset=utf-8',
+      },
+      body: 'probe',
     },
-    body: 'probe',
-  });
+    '写入探针文件',
+  );
 
   if (putRes.status !== 200 && putRes.status !== 201 && putRes.status !== 204) {
-    throw new Error(`WebDAV 写入测试失败（HTTP ${putRes.status}）`);
+    throwForStatus(putRes.status, '写入探针文件');
   }
 
-  // 清除探针文件
-  await fetch(probeUrl, {
-    method: 'DELETE',
-    headers: { Authorization: authHeader },
-  }).catch(() => {});
+  // 清除探针文件（失败不影响结论：能写不能删是「可写目录」的常见形态）
+  await webdavFetch(probeUrl, { method: 'DELETE', headers: { Authorization: authHeader } }, '清理探针文件').catch(
+    () => {},
+  );
 
   return { ok: true, message: 'WebDAV 连接与写入权限测试成功' };
 }
@@ -218,7 +310,22 @@ export async function runWebdavBackup(
   const { dirUrl } = normalizeWebdavUrls(cfg.url, cfg.path);
   const authHeader = basicAuthHeader(cfg.username, cfg.password);
 
-  await ensureRemoteDir(dirUrl, authHeader);
+  /*
+   * 目录检查失败也要落一条失败状态。
+   * 否则「上次备份」永远停在上一次成功的时间，用户以为一直在正常备份 ——
+   * 而实际上从某天起每天都是 401，只是没人看日志。
+   */
+  try {
+    await ensureRemoteDir(dirUrl, authHeader);
+  } catch (error) {
+    saveWebdavStatus(db, {
+      lastBackupAt: new Date().toISOString(),
+      lastBackupStatus: 'error',
+      lastBackupMessage: error instanceof Error ? error.message : String(error),
+      lastBackupFilename: null,
+    });
+    throw error;
+  }
 
   // 生成「整库 JSON」→ gzip → 口令加密 → .mn
   const pkg = buildPackage(db, { kind: 'all', period: '' }, 'suenmoney-backup');
@@ -227,37 +334,40 @@ export async function runWebdavBackup(
   const targetFilename = mnFileName();
   const targetFileUrl = `${dirUrl}${targetFilename}`;
 
-  const putRes = await fetch(targetFileUrl, {
-    method: 'PUT',
-    headers: {
-      Authorization: authHeader,
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': String(fileBuffer.length),
+  const putRes = await webdavFetch(
+    targetFileUrl,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(fileBuffer.length),
+      },
+      body: fileBuffer,
     },
-    body: fileBuffer,
-  });
+    '上传加密备份',
+  );
 
   if (putRes.status !== 200 && putRes.status !== 201 && putRes.status !== 204) {
-    const errorText = await putRes.text().catch(() => '');
-    const err = `上传加密备份到 WebDAV 失败（HTTP ${putRes.status}）：${errorText.slice(0, 100)}`;
+    const errorText = (await putRes.text().catch(() => '')).trim().slice(0, 100);
+    const err = `上传加密备份到 WebDAV 失败（HTTP ${putRes.status}）${errorText ? `：${errorText}` : ''}`;
     saveWebdavStatus(db, {
       lastBackupAt: new Date().toISOString(),
       lastBackupStatus: 'error',
       lastBackupMessage: err,
       lastBackupFilename: targetFilename,
     });
-    throw new Error(err);
+    // 走统一映射：认证/路径/空间问题给 400（用户可自己修），5xx 给 502
+    throwForStatus(putRes.status, '上传加密备份');
   }
 
   // 轮转清理远程旧备份：只保留最近 3 天（3 份）
   try {
-    const listRes = await fetch(dirUrl, {
-      method: 'PROPFIND',
-      headers: {
-        Authorization: authHeader,
-        Depth: '1',
-      },
-    });
+    const listRes = await webdavFetch(
+      dirUrl,
+      { method: 'PROPFIND', headers: { Authorization: authHeader, Depth: '1' } },
+      '列出远程备份',
+    );
     if (listRes.status === 207 || listRes.status === 200) {
       const xml = await listRes.text();
       const hrefs = extractBackupHrefs(xml);
@@ -277,10 +387,12 @@ export async function runWebdavBackup(
       if (backupNames.length > KEEP_COUNT) {
         const toDelete = backupNames.slice(KEEP_COUNT);
         for (const oldFile of toDelete) {
-          await fetch(`${dirUrl}${oldFile}`, {
-            method: 'DELETE',
-            headers: { Authorization: authHeader },
-          }).catch(() => {});
+          // 删旧备份失败不阻断本次备份：留着只是占空间，丢的是「轮转」不是「备份」
+          await webdavFetch(
+            `${dirUrl}${oldFile}`,
+            { method: 'DELETE', headers: { Authorization: authHeader } },
+            '删除超期备份',
+          ).catch(() => {});
         }
       }
     }

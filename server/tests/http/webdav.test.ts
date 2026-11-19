@@ -249,3 +249,128 @@ describe('备份口令落库（v2.1.1 回归）', () => {
     assert.equal(cfg.passphrase, undefined, '没设过就是没设过，不能凭空造一个');
   });
 });
+
+/**
+ * 远端错误必须给出可行动提示。
+ *
+ * 旧实现里所有网络/协议失败都是 `throw new Error(...)`，被 Fastify 兜成
+ * `500 服务器内部错误` —— 用户只能看到这句没信息量的话，不知道是地址错、
+ * 账号错、还是网盘挂了。这里用本地假 WebDAV 服务端逐条锁住映射关系。
+ */
+const { createServer } = await import('node:http');
+const { testWebdav, runWebdavBackup, saveWebdavConfig, getWebdavStatus } = await import(
+  '../../src/db/repo/webdav.ts'
+);
+
+describe('WebDAV 远端错误的可行动提示', () => {
+  let server: import('node:http').Server;
+  let base = '';
+  let mode: 'ok' | 'auth' | 'boom' | 'notfound' = 'ok';
+
+  before(async () => {
+    server = createServer((req, res) => {
+      if (mode === 'auth') {
+        res.writeHead(401);
+        res.end();
+        return;
+      }
+      if (mode === 'boom') {
+        res.writeHead(500);
+        res.end('boom');
+        return;
+      }
+      if (mode === 'notfound') {
+        // PROPFIND 404 → 走 MKCOL，MKCOL 也 404 → 应报「远端路径不存在」
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      if (req.method === 'PROPFIND') {
+        res.writeHead(207, { 'Content-Type': 'application/xml' });
+        res.end('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"/>');
+        return;
+      }
+      res.writeHead(201);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address() as import('node:net').AddressInfo;
+    base = `http://127.0.0.1:${addr.port}`;
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  const cfg = () => ({
+    url: base,
+    username: 'u',
+    password: 'pw-123456',
+    path: '/dav',
+    isEnabled: true,
+    passphrase: 'abc123',
+  });
+
+  test('正常站点：连通性测试通过', async () => {
+    mode = 'ok';
+    const res = await testWebdav(cfg());
+    assert.equal(res.ok, true);
+  });
+
+  test('远端 401 → 400，且提示「拒绝认证」（不是 500）', async () => {
+    mode = 'auth';
+    await assert.rejects(testWebdav(cfg()), (err: { statusCode?: number; message?: string }) => {
+      assert.equal(err.statusCode, 400);
+      assert.match(err.message ?? '', /拒绝认证|401/);
+      return true;
+    });
+  });
+
+  test('远端 5xx → 502（上游问题，不是用户配错）', async () => {
+    mode = 'boom';
+    await assert.rejects(testWebdav(cfg()), (err: { statusCode?: number; message?: string }) => {
+      assert.equal(err.statusCode, 502);
+      assert.match(err.message ?? '', /服务器内部错误|500/);
+      return true;
+    });
+  });
+
+  test('远端 404（含自动建目录也失败）→ 400，提示路径不存在', async () => {
+    mode = 'notfound';
+    await assert.rejects(testWebdav(cfg()), (err: { statusCode?: number; message?: string }) => {
+      assert.equal(err.statusCode, 400);
+      assert.match(err.message ?? '', /路径不存在|404/);
+      return true;
+    });
+  });
+
+  test('连不上（端口关闭）→ 502，提示无法连接', async () => {
+    mode = 'ok';
+    // 拿一个「确实没人监听」的端口：先开再关
+    const probe = createServer();
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const deadPort = (probe.address() as import('node:net').AddressInfo).port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    await assert.rejects(
+      testWebdav({ ...cfg(), url: `http://127.0.0.1:${deadPort}` }),
+      (err: { statusCode?: number; message?: string }) => {
+        assert.equal(err.statusCode, 502);
+        assert.match(err.message ?? '', /无法连接 WebDAV 服务器/);
+        return true;
+      },
+    );
+  });
+
+  test('备份失败会把原因写进「上次备份」状态（定时任务也不至于静默）', async () => {
+    mode = 'auth';
+    saveWebdavConfig(getDatabase(), cfg());
+    await assert.rejects(runWebdavBackup(getDatabase()), (err: { statusCode?: number }) => {
+      assert.equal(err.statusCode, 400);
+      return true;
+    });
+    const status = getWebdavStatus(getDatabase());
+    assert.equal(status.lastBackupStatus, 'error');
+    assert.match(status.lastBackupMessage ?? '', /拒绝认证|401/);
+  });
+});
