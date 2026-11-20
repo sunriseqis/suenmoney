@@ -68,7 +68,7 @@ const PLATFORMS = {
     content: (tag) => `<!-- SECTION:DOCKER -->
 ### SuenMoney ${tag} Docker 镜像
 
-- **地址**：\`ghcr.io/sunriseqis/suenmoney\`（多架构：linux/amd64 + linux/arm64，构建机自动选对）
+- **地址**：\`ghcr.io/sunriseqis/suenmoney\`（\`linux/amd64\`）
 - **拉取**：\`docker pull ghcr.io/sunriseqis/suenmoney:${tag.replace(/^v/, '')}\`（或 \`:latest\`）
 - **启动**：仓库根的 \`docker-compose.yml\` 已指向该镜像，\`docker compose up -d\` 即可；数据落在命名卷 \`suenmoney-data\`
 - **端口**：只有 \`5310\` —— 页面与 \`/api\` 同源同端口，没有第二个端口要配

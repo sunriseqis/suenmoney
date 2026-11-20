@@ -36,7 +36,7 @@ git tag suenmoney-v2.1.1 && git push origin suenmoney-v2.1.1
 >
 > 失败重跑用 GitHub 页面上的 **Re-run jobs**，不需要 `workflow_dispatch`。
 
-**产物**：`ghcr.io/sunriseqis/suenmoney`，多架构 `linux/amd64` + `linux/arm64`，四个 tag：
+**产物**：`ghcr.io/sunriseqis/suenmoney`，**仅 `linux/amd64`**（用户裁决：不需要 arm64），四个 tag：
 
 | tag | 用途 |
 |---|---|
@@ -45,9 +45,12 @@ git tag suenmoney-v2.1.1 && git push origin suenmoney-v2.1.1
 | `X.Y` | 跟随小版本 |
 | `sha-xxxxxxx` | 精确到提交 |
 
-推完流水线会 `docker buildx imagetools inspect` 回读 manifest，**断言 amd64 与 arm64
-都在**才判成功 —— 多架构「推成功」只代表 blob 上去了，少一个架构要等用户
-`docker pull` 才炸。
+推完流水线会 `docker buildx imagetools inspect` 回读 manifest，**断言 `linux/amd64`
+在**才判成功 —— build-push 的「成功」只代表 blob 上去了，manifest 里的架构不对
+要等用户 `docker pull` 才炸（`exec format error`）。
+
+因为只出单架构，流水线**不装 QEMU**、不做跨架构模拟：`amd64` 与 runner 原生架构一致，
+装 QEMU 只会平白引入「arm64 下 V8 JIT 崩」那类历史上踩过的坑。
 
 > ⚠ **首次推送后确认包可见性**。GHCR 的包可见性**独立于仓库**：由 `GITHUB_TOKEN`
 > 首次创建时会继承仓库可见性（公开仓库 → 公开包），但若同名包曾以私有方式建过，
@@ -80,7 +83,7 @@ git tag suenmoney-v2.1.1 && git push origin suenmoney-v2.1.1
 | `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk` | 手动派发 |
 | `build-hw.yml` | 未签名 HAP | 手动派发 |
 | `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 手动派发 |
-| `build-image.yml` | 多架构容器镜像（GHCR） | **推 `suenmoney-v*` tag** |
+| `build-image.yml` | 容器镜像（GHCR，`linux/amd64`） | **推 `suenmoney-v*` tag** |
 
 ## 发行仓库约定（2026-10-31 起）
 
