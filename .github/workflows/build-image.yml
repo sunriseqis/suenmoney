@@ -157,7 +157,11 @@ jobs:
           echo "── ${IMG}:${VER} ──"
           docker buildx imagetools inspect "${IMG}:${VER}" | tee /tmp/inspect.txt
           echo "── ${IMG}:latest ──"
-          docker buildx imagetools inspect "${IMG}:latest" | head -5
+          # ⚠ 不能写 `| head -5`：head 读够就关管道，inspect 吃 SIGPIPE 以 255 退出，
+          #   而本脚本开了 pipefail → 整个校验步骤假失败（镜像其实已经推好了）。
+          #   先落盘再截取，sed 会读到底，不会提前关闭管道。
+          docker buildx imagetools inspect "${IMG}:latest" > /tmp/inspect-latest.txt
+          sed -n '1,5p' /tmp/inspect-latest.txt
 
           if ! grep -q "linux/amd64" /tmp/inspect.txt; then
             echo "✖ manifest 里没有 linux/amd64"
