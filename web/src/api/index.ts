@@ -546,6 +546,10 @@ export interface SyncPushResult {
   expenseIds: string[];
   /** 被服务端拒绝的新增支出条目在请求 expenses 数组中的下标（0 起） */
   failedExpenseIndexes: number[];
+  /** 被拒绝的修改条目 id（客户端保留队列项重试，不当成功清掉） */
+  failedUpdateExpenseIds: string[];
+  /** 被拒绝的删除条目 id（同上） */
+  failedDeleteExpenseIds: string[];
   latestVersion: number;
 }
 

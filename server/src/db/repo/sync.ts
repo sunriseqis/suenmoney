@@ -251,6 +251,15 @@ export interface SyncPushResult {
   expenseIds: string[];
   /** 新增支出中被服务端拒绝的条目在 input.expenses 里的下标（0 起），客户端据此做重试/死信隔离 */
   failedExpenseIndexes: number[];
+  /**
+   * 被拒绝的修改/删除条目 id（客户端据此保留队列项重试，而非当成功清掉）。
+   *
+   * ⚠ 曾经只有 `failedExpenseIndexes`（新增的失败下标），修改/删除一律
+   * `catch {}` 静默吞掉 —— 客户端无法区分"这条已处理过（幂等命中）"与
+   * "这条被拒（权限/状态冲突）"，会把被拒的当成功清掉 → **变更静默丢失**。
+   */
+  failedUpdateExpenseIds: string[];
+  failedDeleteExpenseIds: string[];
   latestVersion: number;
 }
 
@@ -277,6 +286,8 @@ export function pushChanges(
   let deletedPlansCount = 0;
   let expenseIds: string[] = [];
   const failedExpenseIndexes: number[] = [];
+  const failedUpdateExpenseIds: string[] = [];
+  const failedDeleteExpenseIds: string[] = [];
 
   inTransaction(db, () => {
     // 1. 新增支出：逐条校验入库。
@@ -310,7 +321,11 @@ export function pushChanges(
           });
           updatedExpensesCount++;
         } catch {
-          // 忽略如已被删除或已被他人修改等异常，保证批量同步幂等且不因个别条目阻断
+          /*
+           * ⚠ 不再静默吞掉：记录被拒 id，让客户端能区分"幂等命中"与"真失败"。
+           * 常见原因：已被删除（软删后 upsert 被条件更新拦）、权限冲突、计划生成记录改核心字段。
+           */
+          failedUpdateExpenseIds.push(item.id);
         }
       }
     }
@@ -322,7 +337,8 @@ export function pushChanges(
           softDeleteExpense(db, id, actorId);
           deletedExpensesCount++;
         } catch {
-          // 忽略已被删除或不存在的记录
+          // 同上：记录被拒 id
+          failedDeleteExpenseIds.push(id);
         }
       }
     }
@@ -471,6 +487,8 @@ export function pushChanges(
     deletedPlansCount,
     expenseIds,
     failedExpenseIndexes,
+    failedUpdateExpenseIds,
+    failedDeleteExpenseIds,
     latestVersion: currentSyncVersion(db),
   };
 }

@@ -66,7 +66,24 @@ export function recordChange(db: DatabaseSync, input: ChangeInput): number {
  * 所以这里做成**可重入**的：已经处于事务中时直接执行，由最外层负责提交或回滚。
  * 单进程单连接下这个深度计数是安全的。
  */
-let transactionDepth = 0;
+/*
+ * 事务深度计数挂在 db 实例上（WeakMap）而非模块级全局变量 ——
+ * 多连接/多实例场景下，全局计数会把两个连接的事务状态互相干扰。
+ * WeakMap 让 gc 自动回收，无需手工清理。
+ */
+const transactionDepthMap = new WeakMap<DatabaseSync, number>();
+
+function getDepth(db: DatabaseSync): number {
+  return transactionDepthMap.get(db) ?? 0;
+}
+
+function setDepth(db: DatabaseSync, depth: number): void {
+  if (depth === 0) {
+    transactionDepthMap.delete(db);
+  } else {
+    transactionDepthMap.set(db, depth);
+  }
+}
 
 /**
  * 在写事务里执行一段逻辑（可重入）。
@@ -76,10 +93,11 @@ let transactionDepth = 0;
  * 互相等待并触发 SQLITE_BUSY。IMMEDIATE 一开始就拿写锁，行为可预期。
  */
 export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {
-  if (transactionDepth > 0) return fn();
+  const depth = getDepth(db);
+  if (depth > 0) return fn();
 
   db.exec('BEGIN IMMEDIATE');
-  transactionDepth += 1;
+  setDepth(db, depth + 1);
 
   try {
     const result = fn();
@@ -89,7 +107,7 @@ export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {
     db.exec('ROLLBACK');
     throw error;
   } finally {
-    transactionDepth -= 1;
+    setDepth(db, depth);
   }
 }
 
