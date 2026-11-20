@@ -32,6 +32,7 @@ import {
   type PlanSource,
   type User,
 } from '@/api';
+import { saveDownload } from '@/api/client';
 import type { ServerUpdateResult } from '@/api/update';
 import { prefOf, setPref } from '@/utils/category-prefs';
 import BillImportModal from '@/components/BillImportModal.vue';
@@ -445,7 +446,8 @@ const csvImportReport = ref<{ created: number; skipped: number; problems: Array<
 /** 导出流水 CSV（服务端按角色决定范围：管理员全部，成员只有自己的） */
 async function exportCsv(): Promise<void> {
   try {
-    await dataApi.exportExpensesCsv();
+    const file = await dataApi.exportExpensesCsv();
+    saveDownload(file);
     toast.show('流水 CSV 已导出');
   } catch (error) {
     toast.show(errText(error, '导出失败'));
@@ -783,7 +785,8 @@ async function runWebdavBackup(): Promise<void> {
 
 async function downloadBackup(): Promise<void> {
   try {
-    await dataApi.backup();
+    const file = await dataApi.backup();
+    saveDownload(file);
     toast.show('备份文件已开始下载');
   } catch (error) {
     toast.show(errText(error, '下载失败'));
