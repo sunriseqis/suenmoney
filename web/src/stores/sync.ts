@@ -17,6 +17,7 @@ import {
   getMeta,
   getOutboxDeadLetters,
   getOutboxItems,
+  getCachedExpenseById,
   getCachedPlanTodos,
   isIdbSupported,
   removeOutboxItems,
@@ -383,12 +384,29 @@ export const useSyncStore = defineStore('sync', () => {
 
     await writeOffline('离线修改', async () => {
       if (isIdbSupported()) {
-        await updateCachedExpense(id, partial, true);
-
+        /*
+         * ⚠ 目标必须存在（本地缓存或离线新建队列里）。
+         *
+         * 曾经这里不管 target 在不在就直接 `updateCachedExpense` + `addOutboxItem`，
+         * 若记录**只在 outbox 里、不在本地缓存**（比如之前一条 create_expense
+         * 因 IDB 写失败/被清、只留在队列），就会：
+         *   · `updateCachedExpense` 对不存在记录 `resolve()` 静默放行 → 本地不生效；
+         *   · `addOutboxItem` 一条 update 推上去 → 服务端 `updateExpense` 不存在的
+         *     id 也 `catch {}` 静默吞掉，不报错不回传失败；
+         *   · 队列被当成功清空 → **操作静默丢失**，用户以为改了某笔账。
+         * 这里显式检查目标存在，缺失就抛错，不假装成功。
+         */
         const items = await getOutboxItems();
         const existingCreate = items.find(
           (item) => item.action === 'create_expense' && item.entityId === id,
         );
+        const cached = await getCachedExpenseById(id);
+
+        if (!existingCreate && cached === null) {
+          throw new Error(`记录 ${id} 不存在（本地缓存里找不到），无法修改`);
+        }
+
+        await updateCachedExpense(id, partial, true);
 
         if (existingCreate) {
           // 如果这笔账还在离线新建队列里，直接合并修改该新建项
@@ -431,12 +449,23 @@ export const useSyncStore = defineStore('sync', () => {
   async function deleteOfflineExpense(id: string): Promise<void> {
     await writeOffline('离线删除', async () => {
       if (isIdbSupported()) {
-        await deleteCachedExpense(id);
-
+        /*
+         * ⚠ 与 updateOfflineExpense 同理：目标必须存在。
+         * 若记录只在 outbox 里、不在本地缓存，直接 `deleteCachedExpense` 会静默放行，
+         * 而服务端 `softDeleteExpense` 对不存在的 id 也 `catch {}` 吞掉 —— 用户以为
+         * 删了某笔账，本地/服务端都没变，队列被清空。
+         */
         const items = await getOutboxItems();
         const localRelated = items.filter((item) => item.entityId === id);
-
         const wasPendingCreate = localRelated.some((item) => item.action === 'create_expense');
+        const cached = await getCachedExpenseById(id);
+
+        if (!wasPendingCreate && cached === null) {
+          throw new Error(`记录 ${id} 不存在（本地缓存里找不到），无法删除`);
+        }
+
+        await deleteCachedExpense(id);
+
         if (wasPendingCreate) {
           // 该记录还从未同步上云，直接撤销相关的所有离线队列项
           await removeOutboxItems(localRelated.map((i) => i.id));
@@ -725,6 +754,7 @@ export const useSyncStore = defineStore('sync', () => {
     let totalPulled = 0;
     let anyDictChanged = false;
     let anyPlanChanged = false;
+    let anyUserChanged = false;
 
     while (hasMore) {
       const result = await syncApi.pull(currentVer, 200);
@@ -736,6 +766,16 @@ export const useSyncStore = defineStore('sync', () => {
           anyDictChanged = true;
         } else if (change.entityType === 'plan' || change.entityType === 'plan_todo') {
           anyPlanChanged = true;
+        } else if (change.entityType === 'user') {
+          /*
+           * ⚠ 用户变更也必须落地（改显示名/角色）。
+           * 曾经这里对 `user` 实体完全没有分支处理 —— 流水行「记录人」硬写 `''`，
+           * 而 `ownerName` 只在新增时填、从不更新，结果是：
+           *   · 别人改了显示名，本端永远看不到；
+           *   · 流水「记录人」长期为空（甚至服务端的名字是 `张三`、本地显示空）。
+           * 标记 `anyUserChanged`，循环结束后重刷用户列表。
+           */
+          anyUserChanged = true;
         } else if (change.entityType === 'expense') {
           if (change.op === 'delete') {
             await deleteCachedExpense(change.entityId);
@@ -798,6 +838,12 @@ export const useSyncStore = defineStore('sync', () => {
     if (anyPlanChanged) {
       const plans = usePlansStore();
       void plans.refresh();
+    }
+
+    // 若用户有变动（改显示名/角色），通知 auth store 重刷「记录人」显示
+    if (anyUserChanged) {
+      const authStore = useAuthStore();
+      void authStore.refreshUser();
     }
 
     return totalPulled;

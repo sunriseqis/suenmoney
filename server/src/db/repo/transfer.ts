@@ -30,7 +30,8 @@ import { badRequest, conflict } from '../../lib/http-error.ts';
 import { hashPassword } from '../../lib/password.ts';
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange, type EntityType } from '../sync.ts';
-import { createUserWithId } from './users.ts';
+import { validateAmount } from './expenses.ts';
+import { createUserWithId, toSyncUser, type UserRow } from './users.ts';
 
 // ---------------------------------------------------------------------------
 // 列清单
@@ -570,7 +571,7 @@ export interface MemberRestoreResult {
  * `plan_todos.confirmed_by` 外键引用，物理删要在事务里 `PRAGMA defer_foreign_keys`
  * 并级联清会话，一个环节出错就是半截状态。软删达到同样的净效果，风险小得多。
  */
-function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult {
+function restoreUsers(db: DatabaseSync, pkg: ExportPackage, actorId: string): MemberRestoreResult {
   const backupIds = new Set(pkg.data.members.map((m) => String(m['id'] ?? '')).filter((x) => x !== ''));
 
   /**
@@ -593,6 +594,23 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
     db.prepare('UPDATE users SET deleted_at = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
       .run(now, now, id);
     removed.push({ id, username: String(u['username']), displayName: String(u['display_name']) });
+
+    /*
+     * 软删也要落 `changes`（users 是同步实体）。
+     * 否则客户端永远不知道「这个人被恢复文件删掉了」，本地副本里他还是活的，
+     * 流水「记录人」还会显示一个已经被删掉的名字。
+     */
+    const removedRow = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+    if (removedRow) {
+      recordChange(db, {
+        entityType: 'user',
+        entityId: id,
+        op: 'delete',
+        actorId,
+        payload: toSyncUser(removedRow),
+        deviceId: removedRow.device_id,
+      });
+    }
   }
 
   let restored = 0;
@@ -635,6 +653,24 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage): MemberRestoreResult
       row['device_id'] === undefined ? null : (row['device_id'] as string | null),
     );
     restored += 1;
+
+    /*
+     * upsert 也要落 `changes`。`users` 是同步实体（EntityType='user'），
+     * 恢复文件改了显示名/角色，客户端必须收到变更才知道「记录人」改了名字。
+     * 不落的话，其它设备的用户表会与服务端永远不同步。
+     */
+    const restoredRow = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+    if (restoredRow) {
+      recordChange(db, {
+        entityType: 'user',
+        entityId: id,
+        op: 'upsert',
+        actorId,
+        payload: toSyncUser(restoredRow),
+        deviceId: restoredRow.device_id,
+      });
+    }
+
     if (needsNewPassword) {
       needsPassword.push({
         id,
@@ -796,14 +832,16 @@ export function mergePackage(
    */
   let memberRestore: MemberRestoreResult = { restored: 0, removed: [], needsPassword: [] };
 
-  if (overwrite) {
-    // 恢复备份 = 整库覆盖（含账号与口令），见 restoreUsers
-    memberRestore = restoreUsers(db, pkg);
-  }
-
   let snapshotPath: string | null = null;
 
   inTransaction(db, () => {
+    if (overwrite) {
+      // 恢复备份 = 整库覆盖（含账号与口令），见 restoreUsers。
+      // ⚠ 必须在 inTransaction 里面 —— 用户写入与后续数据写入是一个原子单元，
+      // 否则若数据写入回滚，账号却已被改/软删，留下「账号改了、账目没改」的半截态。
+      memberRestore = restoreUsers(db, pkg, actorId);
+    }
+
     // 冒烟：先抓一份当前全量存档。恢复是覆盖性的，这一步是它的安全网 ——
     // 而且要**在事务里、在第一次写入之前**做，否则存档存的可能已经是半改过的状态。
     if (options.snapshot !== undefined) {
@@ -1014,13 +1052,64 @@ export function importExpensesCsv(
     const repaymentDate = iRepay >= 0 && /^\d{4}-\d{2}-\d{2}$/.test((cells[iRepay] ?? '').trim())
       ? String(cells[iRepay]).trim() : postingDate;
 
-    insert.run(
-      ulid(), ownerId, cents, categoryId, paymentId,
-      spendDate, postingDate, repaymentDate,
-      iNote >= 0 ? String(cells[iNote] ?? '') : '',
-      now, now,
-    );
-    report.created += 1;
+    /*
+     * ⚠ 每行一个事务 + `recordChange`。
+     *
+     * 曾经这里直接 `insert.run(...)`，**既不走 inTransaction、也不落 changes** ——
+     * 违反了本文件顶部第 1 条铁律（写入必须走 db/sync.ts）。
+     * 后果：导入的流水在服务端"存在"，但其他设备 `/api/sync/pull` **永远同步不到**，
+     * 症状是"手机看不到导入的账"，且无报错。与游标跳跃丢数据同源但更隐蔽。
+     *
+     * 每行独立事务（而非整批一个）：坏行只回滚自己，好行照常落库，
+     * 与 `batchCreateExpensesTolerant` 的逐行容错语义一致。
+     */
+    try {
+      const id = ulid();
+      inTransaction(db, () => {
+        // 金额也走 validateAmount —— 否则 CSV 里一个天文数字会直接落库并污染报表
+        validateAmount(cents);
+
+        insert.run(
+          id, ownerId, cents, categoryId, paymentId,
+          spendDate, postingDate, repaymentDate,
+          iNote >= 0 ? String(cells[iNote] ?? '') : '',
+          now, now,
+        );
+
+        // 落 changes，否则其他设备同步不到这条导入的记录
+        recordChange(db, {
+          entityType: 'expense',
+          entityId: id,
+          op: 'upsert',
+          actorId,
+          payload: {
+            id,
+            owner_id: ownerId,
+            amount_cents: cents,
+            category_id: categoryId,
+            payment_method_id: paymentId,
+            spend_date: spendDate,
+            posting_date: postingDate,
+            repayment_date: repaymentDate,
+            note: iNote >= 0 ? String(cells[iNote] ?? '') : '',
+            source: 'manual',
+            plan_id: null,
+            plan_period_seq: null,
+            created_at: now,
+            updated_at: now,
+            deleted_at: null,
+            rev: 1,
+            device_id: null,
+          },
+          deviceId: null,
+        });
+      });
+      report.created += 1;
+    } catch (error) {
+      report.skipped += 1;
+      const reason = error instanceof Error ? error.message : String(error);
+      if (report.problems.length < 5) report.problems.push({ line, reason });
+    }
   }
 
   return report;

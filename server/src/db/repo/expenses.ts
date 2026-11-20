@@ -167,7 +167,7 @@ export function toSyncExpense(row: ExpenseRow): Record<string, unknown> {
   };
 }
 
-function validateAmount(amountCents: number): void {
+export function validateAmount(amountCents: number): void {
   if (!Number.isInteger(amountCents) || amountCents === 0) {
     throw badRequest('金额必须是非零整数（单位：分）');
   }

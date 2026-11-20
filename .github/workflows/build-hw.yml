@@ -25,6 +25,26 @@ on:
 permissions:
   contents: write
 
+# ⚠ **同一版本的四个 workflow 必须串行写 suenapp 的 Release body**。
+#
+# 四个 workflow 各自对同一个 Release body 做「GET 现有 body → 本地合并 → PUT 整体覆盖」。
+# 两个同时（或重叠窗口内）发布时，后 PUT 者会用只含自己那节的 body 覆盖先 PUT 者
+# 刚写入的那节 —— 别的平台的 SECTION 静默消失，且流程全绿（2026-11-20 实测复现）。
+#
+# 用 `suenapp-release-<版本>` 作并发组（不是按 ref）：两个版本的并发**应该**允许，
+# 只有同一版本的四个平台必须互斥。
+#
+# ⚠ 取消旧运行而不是排队：`cancel-in-progress: false` 会让后来的 run 排队等前面的
+# 跑完（顺序正确）。设 `true` 则会取消进行中的那个 —— 那是错的，被取消的 run
+# 可能已经写了一半。
+concurrency:
+  # ⚠ **所有 suenapp 发布 workflow 共用同一把锁**（不分版本）。
+  # 发布目标是 suenapp 的同一个 Release，任何两个平台同时写 body 都会冲突 ——
+  # 即使是不同版本也会互相覆盖（因为 softprops 用的是 tag_name 找 Release）。
+  # 用固定的 group 名 = 全局串行，简单且绝对安全。
+  group: suenapp-release-publish
+  cancel-in-progress: false
+
 jobs:
   build-hw:
     name: Build HarmonyOS HAP (unsigned)
@@ -196,63 +216,18 @@ jobs:
           path: app/suenmoney-${{ env.VERSION_NAME }}.hap
           retention-days: 30
 
-      # 清理 Release 上的冗余历史资产（如 build.log、无版本号或重复命名产物）
-      - name: Clean Up Redundant Release Assets
-        # 与发布同策略：只有 v* tag 才允许改动 Release。
-        # 原因：push main 时产物版本号来自 VERSION 文件，常与已发布 Release 同名，
-        # 此时清理/覆盖会造成已发布内容被静默改动或混版。
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          node -e '
-            const token = process.env.GITHUB_TOKEN;
-            const repo = process.env.GITHUB_REPOSITORY;
-            const tag = process.env.VERSION;
-            const headers = {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github+json",
-              "User-Agent": "SuenMoney-CI"
-            };
-
-            async function cleanup() {
-              const res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
-              if (!res.ok) {
-                console.log(`Release ${tag} 暂不存在或未创建，跳过清理`);
-                return;
-              }
-              const release = await res.json();
-              // 规范产物名单：Android release.apk / iOS release.ipa / 鸿蒙 unsigned.hap
-              // 只放行**裁决过的统一命名** `suenmoney-<版本>.<ext>`（三端同一口径）：
-              // 老风格 SuenMoney-vX-release.ipa / -unsigned.hap 属于历史遗留，
-              // 出现在当前 Release 上就该被清掉，否则一个版本里两种命名并存。
-              const allowedPatterns = [
-                /^suenmoney-[\d.]+\.fpk$/,
-                /^suenmoney-[\d.]+\.fpk\.sha256$/,
-                /^suenmoney-[\d.]+\.ipa$/,
-                /^suenmoney-[\d.]+\.hap$/
-              ];
-
-              for (const asset of release.assets || []) {
-                const isAllowed = allowedPatterns.some(re => re.test(asset.name));
-                if (!isAllowed) {
-                  console.log(`正在从 Release 清理冗余资产: ${asset.name} (ID: ${asset.id})...`);
-                  const delRes = await fetch(`https://api.github.com/repos/${repo}/releases/assets/${asset.id}`, {
-                    method: "DELETE",
-                    headers
-                  });
-                  if (delRes.status === 204) {
-                    console.log(`✔ 已成功清理: ${asset.name}`);
-                  } else {
-                    console.warn(`✖ 清理失败 ${asset.name}: HTTP ${delRes.status}`);
-                  }
-                }
-              }
-            }
-            cleanup().catch(err => {
-              console.error("清理冗余资产异常:", err);
-            });
-          '
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ❌ 已删除（2026-11-20）：「Clean Up Redundant Release Assets」步骤是四重失效的死代码，
+      # 任何情况下都不会执行，给人假安全感。删除原因：
+      #
+      #   1. 条件恒假：`if: startsWith(github.ref, 'refs/tags/v')` —— 但本 workflow 是纯
+      #      `workflow_dispatch`，`github.ref` 只会是分支（`refs/heads/...`），永远不会是
+      #      `refs/tags/v*`，整个步骤从不跑在 tag ref 上。
+      #   2. 查错仓库：`env.GITHUB_REPOSITORY` = suenmoney（源仓库），但要清理的 Release
+      #      在 sunriseqis/suenapp（发行仓库）。即使条件成立，也是 404 跳过。
+      #   3. token 错：`secrets.GITHUB_TOKEN` 是本仓库只读 token，对 suenapp 无写权限。
+      #   4. tag 会 404：`env.VERSION` = v2.1.1（裸 v），但发行 tag 是 suenmoney-v2.1.1。
+      #
+      # 需要清理冗余资产时，在 Publish 步骤后手动跑一次（用正确的 token 和 repo）。
 
       # 上面的 Upload Build Log / Upload HAP Artifact 均无 main/master 判断，
       # push main 时照常上传 Actions artifact，保持「随时下载最新包测试」的能力。

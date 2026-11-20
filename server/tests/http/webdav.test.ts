@@ -374,3 +374,42 @@ describe('WebDAV 远端错误的可行动提示', () => {
     assert.match(status.lastBackupMessage ?? '', /拒绝认证|401/);
   });
 });
+
+/**
+ * 备份轮转正则（回归）。
+ *
+ * v2.1.1 之前的正则是 `\.sqlite$`，而实际产物是 `mnFileName()` 生成的 `.mn` ——
+ * 两者永远匹配不上，`backupNames` 恒为空数组，"只保留最近 3 份"从未生效，
+ * 远端 `.mn` 备份无限堆积。这里锁死正则必须认 `.mn`（且保留 `.sqlite` 清旧档）。
+ */
+describe('备份轮转正则（.mn 产物）', () => {
+  // 与 webdav.ts 里的过滤正则保持一致 —— 若那边改了这里必须跟着改
+  const ROTATION_RE = /^suenmoney-(?:backup|snapshot)-[\w.-]+\.(?:mn|sqlite)$/;
+
+  test('匹配 .mn 产物（mnFileName 生成的格式）', () => {
+    assert.match('suenmoney-backup-2026-11-20.mn', ROTATION_RE);
+    assert.match('suenmoney-backup-2026-12-01.mn', ROTATION_RE);
+    assert.match('suenmoney-snapshot-2026-11-20.mn', ROTATION_RE);
+  });
+
+  test('匹配 .sqlite 旧档（清理遗留）', () => {
+    assert.match('suenmoney-backup-2026-11-20.sqlite', ROTATION_RE);
+    assert.match('suenmoney-snapshot-2026-11-20.sqlite', ROTATION_RE);
+  });
+
+  test('不匹配无关文件（避免误删用户其他文件）', () => {
+    assert.doesNotMatch('photo.jpg', ROTATION_RE);
+    assert.doesNotMatch('suenmoney-backup-2026-11-20.zip', ROTATION_RE);
+    assert.doesNotMatch('other-app-backup.mn', ROTATION_RE);
+    assert.doesNotMatch('suenmoney-2.1.1.fpk', ROTATION_RE);
+    assert.doesNotMatch('suenmoney-2.1.1.hap', ROTATION_RE);
+    assert.doesNotMatch('suenmoney-2.1.1.ipa', ROTATION_RE);
+  });
+
+  test('mnFileName 产物名被正则认出（真正的契约对齐）', async () => {
+    const { mnFileName } = await import('../../src/lib/backup-crypto.ts');
+    const name = mnFileName(new Date('2026-11-20'));
+    assert.match(name, ROTATION_RE, `mnFileName 产物 ${name} 必须被轮转正则认出`);
+    assert.match(name, /\.mn$/, '产物后缀必须是 .mn');
+  });
+});
