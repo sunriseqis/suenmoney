@@ -25,6 +25,26 @@ on:
 permissions:
   contents: write
 
+# ⚠ **同一版本的四个 workflow 必须串行写 suenapp 的 Release body**。
+#
+# 四个 workflow 各自对同一个 Release body 做「GET 现有 body → 本地合并 → PUT 整体覆盖」。
+# 两个同时（或重叠窗口内）发布时，后 PUT 者会用只含自己那节的 body 覆盖先 PUT 者
+# 刚写入的那节 —— 别的平台的 SECTION 静默消失，且流程全绿（2026-11-20 实测复现）。
+#
+# 用 `suenapp-release-<版本>` 作并发组（不是按 ref）：两个版本的并发**应该**允许，
+# 只有同一版本的四个平台必须互斥。
+#
+# ⚠ 取消旧运行而不是排队：`cancel-in-progress: false` 会让后来的 run 排队等前面的
+# 跑完（顺序正确）。设 `true` 则会取消进行中的那个 —— 那是错的，被取消的 run
+# 可能已经写了一半。
+concurrency:
+  # ⚠ **所有 suenapp 发布 workflow 共用同一把锁**（不分版本）。
+  # 发布目标是 suenapp 的同一个 Release，任何两个平台同时写 body 都会冲突 ——
+  # 即使是不同版本也会互相覆盖（因为 softprops 用的是 tag_name 找 Release）。
+  # 用固定的 group 名 = 全局串行，简单且绝对安全。
+  group: suenapp-release-publish
+  cancel-in-progress: false
+
 jobs:
   build-fnos:
     name: Build & Release fnOS FPK

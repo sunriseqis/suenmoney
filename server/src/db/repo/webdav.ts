@@ -378,7 +378,14 @@ export async function runWebdavBackup(
               const segs = h.split('/');
               return segs[segs.length - 1] || segs[segs.length - 2] || '';
             })
-            .filter((name) => /^suenmoney-(?:backup|snapshot)-[\w.-]+\.sqlite$/.test(name)),
+            /*
+             * ⚠ 后缀必须与 `mnFileName()` 的产物一致（`.mn`）。
+             * 曾经的正则是 `\.sqlite$` —— 与实际产物 `.mn` 永远匹配不上，
+             * 于是 `backupNames` 恒为空数组、`KEEP_COUNT` 分支永不执行，
+             * 远端备份**只增不删**，"只保留最近 3 份"从未生效。
+             * 保留 `\.sqlite$` 分支只为清理早期版本留下的旧文件。
+             */
+            .filter((name) => /^suenmoney-(?:backup|snapshot)-[\w.-]+\.(?:mn|sqlite)$/.test(name)),
         ),
       ];
       backupNames.sort((a, b) => b.localeCompare(a)); // 按时间倒序，最新的在前

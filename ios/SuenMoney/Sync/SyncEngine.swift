@@ -524,10 +524,17 @@ public actor SyncEngine {
                   (id, parent_id, name, depth, icon, color, sort_order, is_enabled)
                 VALUES (?,?,?,?,?,?,?,?)
                 """,
-                [id, strOf(p["parentId"]), strOf(p["name"]),
-                 intOf(p["depth"]) == 0 ? 1 : intOf(p["depth"]),
-                 strOf(p["icon"]), strOf(p["color"]), intOf(p["sortOrder"]),
-                 boolOf(p["isEnabled"], default: true)])
+                // ⚠ 必须走 pick() 双键：snake_case 优先、camelCase 兜底。
+                // 曾经这里只读 `p["parentId"]`/`p["sortOrder"]`/`p["isEnabled"]` ——
+                // 服务端一旦把字段改成 snake_case，本地会把 sort_order=0、
+                // is_enabled=true 之类**静默冲成默认值**，且无任何报错。
+                // expense / plan / plan_todo 分支早就用了 str2/int2/bool2，
+                // 这里与它们必须同口径。
+                [id, str2(p, "parent_id", "parentId"), str2(p, "name", "name"),
+                 int2(p, "depth", "depth") == 0 ? 1 : int2(p, "depth", "depth"),
+                 str2(p, "icon", "icon"), str2(p, "color", "color"),
+                 int2(p, "sort_order", "sortOrder"),
+                 bool2(p, "is_enabled", "isEnabled", default: true)])
 
         case "payment_method":
             return ("""
@@ -535,10 +542,13 @@ public actor SyncEngine {
                   (id, name, type, icon, billing_day, repayment_day, is_enabled, sort_order)
                 VALUES (?,?,?,?,?,?,?,?)
                 """,
-                [id, strOf(p["name"]),
-                 strOf(p["type"]).isEmpty ? "cash" : strOf(p["type"]),
-                 strOf(p["icon"]), intOf(p["billingDay"]), intOf(p["repaymentDay"]),
-                 boolOf(p["isEnabled"], default: true), intOf(p["sortOrder"])])
+                // ⚠ 同上：必须走 pick() 双键
+                [id, str2(p, "name", "name"),
+                 str2(p, "type", "type").isEmpty ? "cash" : str2(p, "type", "type"),
+                 str2(p, "icon", "icon"),
+                 int2(p, "billing_day", "billingDay"), int2(p, "repayment_day", "repaymentDay"),
+                 bool2(p, "is_enabled", "isEnabled", default: true),
+                 int2(p, "sort_order", "sortOrder")])
 
         case "user":
             // 用户（显示名/角色）：流水行要显示「记录人」，改了名字就得跟着更新

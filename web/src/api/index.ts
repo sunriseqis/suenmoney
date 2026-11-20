@@ -491,7 +491,7 @@ export const webdavBackup = {
 export interface PullChangesResult {
   changes: Array<{
     version: number;
-    entityType: 'expense' | 'category' | 'payment_method' | 'plan' | 'plan_todo';
+    entityType: 'user' | 'expense' | 'category' | 'payment_method' | 'plan' | 'plan_todo' | 'plan_revision';
     entityId: string;
     op: 'upsert' | 'delete';
     actorId: string | null;
