@@ -356,3 +356,5 @@ tail -f /var/apps/suenmoney/var/info.log
 | 登录频繁被限流、所有人都一起被限 | 前面有反代但 `SUENMONEY_TRUST_PROXY` 还是 `false`（所有人同 IP）；或反过来没有反代却开成了 `true`（IP 可伪造）。按第五节对齐 |
 | 导入大文件报 413 | 服务端请求体上限是 **512KB**（`server/src/http/server.ts` 的 `bodyLimit`）。确实需要更大就改这个常量后重建镜像，不要在反代上放宽 —— 反代放宽不改服务端行为 |
 | 页面改了但用户还是旧版 | `index.html` 是 `no-cache`、`/assets/*` 是 `immutable` + 内容哈希，正常情况刷新即更新；如果换了产物却没换文件名，说明构建没跑 |
+| `docker compose pull` 报 `unauthorized` | GHCR 的包可见性独立于仓库，`sunriseqis/suenmoney` 若不是 Public 就拉不到。用 `curl -s "https://ghcr.io/token?scope=repository:sunriseqis/suenmoney:pull&service=ghcr.io"` 自测（200 公开 / 403 私有），或去 Packages → 该包 → Package settings 改可见性 |
+| `docker compose pull` 报 `manifest unknown` | 该 tag 还没构建过。可用 tag 见第二节；镜像由 `build-image` 流水线在推 `suenmoney-v*` tag 时产出（见 docs/ci.md） |

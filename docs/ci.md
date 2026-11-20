@@ -49,6 +49,14 @@ git tag suenmoney-v2.1.1 && git push origin suenmoney-v2.1.1
 都在**才判成功 —— 多架构「推成功」只代表 blob 上去了，少一个架构要等用户
 `docker pull` 才炸。
 
+> ⚠ **首次推送后确认包可见性**。GHCR 的包可见性**独立于仓库**：由 `GITHUB_TOKEN`
+> 首次创建时会继承仓库可见性（公开仓库 → 公开包），但若同名包曾以私有方式建过，
+> 会一直保持私有 —— 表现是流水线全绿、而部署机 `docker compose pull` 报
+> `unauthorized`。核对办法：不登录直接
+> `curl -s "https://ghcr.io/token?scope=repository:sunriseqis/suenmoney:pull&service=ghcr.io"`
+> 返回 200 即公开（403 为私有或不存在）。需要改就去
+> `Packages → suenmoney → Package settings → Change visibility`。
+
 **与 suenapp 的关系**：镜像本体在 GHCR，发行页只写一节 `<!-- SECTION:DOCKER -->`
 （地址、拉取命令、compose 用法）。**不**把镜像导出成 tar.gz 附到 Release ——
 几百 MB 的附件换不来什么，`docker pull` 本来就能离线缓存。
