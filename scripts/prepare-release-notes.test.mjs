@@ -63,6 +63,16 @@ describe('发行页 SECTION 合并', () => {
     assert.ok(!merged.includes('suenmoney:v2.1.1'), 'docker tag 不能带 v 前缀');
   });
 
+  test('只承诺 linux/amd64 —— 不写 arm64（2026-11-20 裁决）', () => {
+    const merged = mergeBody('', 'docker', TAG);
+    assert.match(merged, /linux\/amd64/);
+    assert.ok(
+      !/arm64/.test(merged),
+      '发行页不能出现 arm64：镜像只出 amd64，写了就是「文档承诺、用户拉不到」',
+    );
+    assert.ok(!/多架构/.test(merged), '不再是多架构，别写「多架构」');
+  });
+
   test('不认识的平台名直接抛错（避免静默写成空节）', () => {
     assert.throws(() => mergeBody('', 'android', TAG), /Unsupported platform/);
   });

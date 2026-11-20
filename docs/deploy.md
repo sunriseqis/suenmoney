@@ -50,7 +50,8 @@ mkdir -p ~/suenmoney && cd ~/suenmoney
 curl -fsSLO https://raw.githubusercontent.com/sunriseqis/suenmoney/main/docker-compose.yml
 ```
 
-镜像地址 `ghcr.io/sunriseqis/suenmoney`，多架构（`linux/amd64` + `linux/arm64`，构建机自动选对）。
+镜像地址 `ghcr.io/sunriseqis/suenmoney`，**仅 `linux/amd64`**。
+> ARM 主机（Apple Silicon、arm64 NAS）跑不了这个镜像，请改用飞牛套件 / 源码部署。
 可用 tag：
 
 | tag | 说明 |

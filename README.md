@@ -60,7 +60,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build   #
 docker compose exec suenmoney node scripts/node-run.mjs src/cli/user-add.ts --username admin --name 管理员 --admin
 ```
 
-镜像：`ghcr.io/sunriseqis/suenmoney`（多架构 amd64/arm64）。
+镜像：`ghcr.io/sunriseqis/suenmoney`（`linux/amd64`）。
 
 ### 三、本机直接跑（不用 Docker）
 
@@ -138,7 +138,7 @@ npm run icons           # 从矢量母版重新生成品牌图标
 **三条出包流水线手动派发**：`build-fnos` / `build-hw` / `build-ios`（推代码不触发）。
 
 **容器镜像由 tag 触发**：`build-image` 只在推 `suenmoney-v*` tag 时构建
-（多架构 amd64/arm64）→ 推 `ghcr.io/sunriseqis/suenmoney` → 在发行页写一节说明。
+（`linux/amd64`）→ 推 `ghcr.io/sunriseqis/suenmoney` → 在发行页写一节说明。
 
 四端统一发到 **[`sunriseqis/suenapp`](https://github.com/sunriseqis/suenapp/releases)**，
 共用 tag `suenmoney-vX.Y.Z`；**本仓库不发行产物**（镜像在 GHCR，没有附件）。
