@@ -719,22 +719,42 @@ export const useSyncStore = defineStore('sync', () => {
       }
     });
 
-    // 其余动作（修改/删除/待办）服务端已逐条容错接收，全部清理
-    const otherOutboxIds = items
-      .filter((i) => i.action !== 'create_expense')
-      .map((i) => i.id);
+    // 其余动作：按服务端回传的被拒 id 分流。
+    // ⚠ 曾经这里对修改/删除一律当成功清掉 —— 但服务端可能拒绝（软删后 upsert、
+    // 权限冲突等），把被拒的当成功清掉 → 变更静默丢失。现在按 failedXxxIds 分流。
+    const failedUpdateIds = new Set(result.failedUpdateExpenseIds ?? []);
+    const failedDeleteIds = new Set(result.failedDeleteExpenseIds ?? []);
+
+    const otherOutboxIds: string[] = [];
+    const rejectedOthers: OutboxItem[] = [];
+
+    for (const item of items) {
+      if (item.action === 'create_expense') continue; // 已单独处理
+      const entityId = item.entityId;
+      const isRejected =
+        (item.action === 'update_expense' && failedUpdateIds.has(entityId)) ||
+        (item.action === 'delete_expense' && failedDeleteIds.has(entityId));
+
+      if (isRejected) {
+        rejectedOthers.push(item);
+      } else {
+        otherOutboxIds.push(item.id);
+      }
+    }
+
     await removeOutboxItems([...succeededOutboxIds, ...otherOutboxIds]);
 
-    for (const item of rejectedCreates) {
+    for (const item of [...rejectedCreates, ...rejectedOthers]) {
       const nextRetry = item.retryCount + 1;
+      const label = item.action === 'create_expense' ? '新增' : '修改/删除';
       if (nextRetry > OUTBOX_MAX_RETRY) {
         await addOutboxItem({
           ...item,
           retryCount: nextRetry,
-          lastError: '多次被服务端拒绝，已隔离（死信）',
+          lastError: `多次被服务端拒绝，已隔离（死信）`,
         });
       } else {
-        await addOutboxItem({ ...item, retryCount: nextRetry, lastError: '服务端拒绝该笔新增' });
+        await addOutboxItem({ ...item, retryCount: nextRetry, lastError: `服务端拒绝该笔${label}` });
       }
     }
 

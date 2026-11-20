@@ -501,6 +501,7 @@ function insertBatchItem(
   const id = typeof item.id === 'string' && item.id.trim() !== '' ? item.id.trim() : ulid();
 
   // 幂等：客户端用自己生成的 ULID 作主键，重复导入同一批不会产生重复数据
+  // ⚠ 区分「活着」与「已软删」：命中已软删行不算"创建"，但也不能重新插入（主键冲突）
   const existing = db.prepare('SELECT id FROM expenses WHERE id = ?').get(id);
   if (existing !== undefined) {
     return id;

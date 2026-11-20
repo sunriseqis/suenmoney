@@ -178,6 +178,14 @@ const nowIso = (): string => new Date().toISOString();
  * 会落到前一天，入账日期就会记错一天。
  * 服务端以 TZ=Asia/Shanghai 运行，这里取本地年月日即可。
  */
+/**
+ * 取「服务器本地时区」的今天，格式 YYYY-MM-DD。
+ *
+ * ⚠ 依赖进程 TZ（与 billing-cycle 的 UTC 纯函数口径不同）。
+ * 容器里 Dockerfile 固定 `TZ=Asia/Shanghai`，与 `webdav.ts` 的 `localDateString`
+ * 同口径。若进程 TZ 变化，自动入账日期会漂移 —— 这是已知的环境依赖，
+ * 调用方若需要确定性日期，应显式传入而不是依赖此函数。
+ */
 const localToday = (): string => {
   const d = new Date();
   const m = d.getMonth() + 1;
@@ -962,10 +970,21 @@ export function endPlan(db: DatabaseSync, id: string, actorId: string): PlanApi 
 
 /**
  * 删除计划：
- * 1. 物理删除未执行的待办（pending），skipped 落入下一步软删除；
+/**
+ * 删除计划。
+ *
+ * 1. **物理删除**未执行的待办（pending），skipped 落入下一步软删除；
+ *    ⚠ 这里刻意用物理删而非软删：pending 待办是"待办池"里的临时项，没被
+ *    用户确认过、没有生成支出，软删留墓碑反而会让客户端本地副本积累垃圾。
+ *    已确认的待办（有支出关联）走软删墓碑，因为它们有下游影响（支出的
+ *    plan_id 指向它们），硬删会破坏引用完整性。
  * 2. 软删除其余待办（skipped / confirmed，记录墓碑变更）；
  * 3. 软删除计划本身（记录墓碑变更）；
  * 4. 历史已生成的支出保持不变。
+ *
+ * **删除语义二分法是有意为之**，不是遗漏：
+ *   pending  = 临时待办，未被确认 → 物理删，不留墓碑
+ *   confirmed/skipped = 已有下游影响 → 软删墓碑，客户端据此清理本地副本
  */
 export function deletePlan(db: DatabaseSync, id: string, actorId: string): void {
   const existing = requireOwnPlan(db, id, actorId);
