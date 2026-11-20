@@ -17,6 +17,9 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts && npm cache clean --force
 COPY web/ ./
+# vite.config.ts 的 buildStamp() 读 '../VERSION'（相对于 web/ 目录），
+# 不复制这个文件进来会退化成 v0.0.0 —— 界面角落的构建标记全对不上。
+COPY VERSION ../VERSION
 RUN npm run build
 
 # ---- 阶段 2：服务端生产依赖（构建机原生平台） ----
