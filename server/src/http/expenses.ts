@@ -25,7 +25,7 @@ import {
   requireInt,
   requireString,
 } from '../lib/validate.ts';
-import { currentAuth, requireAuth } from './guard.ts';
+import { currentAuth, requireAdmin, requireAuth } from './guard.ts';
 
 /**
  * 支出记录。
@@ -152,7 +152,7 @@ export async function expenseRoutes(app: FastifyInstance): Promise<void> {
    * 挂在支出路由下而不是分类路由下：被修改的实体是**支出记录**，
    * 它记录的是「这些账换了分类」，而不是「分类被改了」。
    */
-  app.post('/api/expenses/transfer', { preHandler: requireAuth }, async (request) => {
+  app.post('/api/expenses/transfer', { preHandler: [requireAuth, requireAdmin] }, async (request) => {
     const auth = currentAuth(request);
     const body = asRecord(request.body);
     const fromCategoryId = requireString(body, 'fromCategoryId');

@@ -202,6 +202,15 @@ public actor SyncEngine {
             if err.kind == .network {
                 return result
             }
+            /*
+             * ⚠ 401（令牌失效）也不计入重试次数。
+             * 长期未登录的用户每次启动都会触发 syncNow → push → 401 → markFailed +1，
+             * 重试 3 次后把好账推进死信。令牌失效是**环境问题**，不是数据问题，
+             * 不该消耗重试预算。
+             */
+            if err.kind == .unauthorized {
+                return result
+            }
             // 4xx/5xx：逐条标记，超过上限的会成为死信
             for entry in entries {
                 try? Outbox.markFailed(entry.id, error: err.message)
@@ -232,7 +241,13 @@ public actor SyncEngine {
            （离线刚记的账），清表会把它删掉 —— 那是真丢数据。
            有未推送项时退回增量 pull，等推送成功后再找机会快照。
          */
-        let pendingCount = (try? Outbox.pendingCount()) ?? 0
+        /*
+         * ⚠ 快照前置条件必须查**队列总数（含死信）**，不能只查 pendingCount。
+         * 死信条目（retry_count >= max）虽然不再参与推送，但**代表真实未上云的账**。
+         * 只查 pending 的话，队列里只剩死信时会判定"队列已空"，走快照清表
+         * 把死信对应的本地记录也清掉 → 真丢数据。
+         */
+        let pendingCount = (try? Outbox.totalCount()) ?? 0
         /*
          ⚠ 一次性自愈（v2.1.1）：把旧版本因游标跳跃而永久漏掉的记录补回来。
 

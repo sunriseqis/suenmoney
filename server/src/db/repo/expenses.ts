@@ -722,12 +722,18 @@ export function updateExpense(db: DatabaseSync, id: string, input: UpdateExpense
   };
 
   inTransaction(db, () => {
-    db.prepare(
+    /*
+     * ⚠ 必须 `AND deleted_at IS NULL`。
+     * 否则「软删后再改」会把已删记录**复活**：UPDATE 只按 id 匹配，
+     * 即使 deleted_at 已有值也照改，且落一条 upsert change 在 delete change 之后，
+     * 客户端按版本号应用会把已删的记录恢复到本地。
+     */
+    const updated = db.prepare(
       `UPDATE expenses
           SET amount_cents = ?, category_id = ?, payment_method_id = ?,
               spend_date = ?, posting_date = ?, repayment_date = ?, note = ?,
               updated_at = ?, rev = ?, device_id = ?
-        WHERE id = ?`,
+        WHERE id = ? AND deleted_at IS NULL`,
     ).run(
       next.amount_cents,
       next.category_id,
@@ -741,6 +747,9 @@ export function updateExpense(db: DatabaseSync, id: string, input: UpdateExpense
       next.device_id,
       next.id,
     );
+
+    // 幂等：已被软删则不落 change（与 delete 后不复活的语义一致）
+    if (updated.changes === 0) return;
 
     recordChange(db, {
       entityType: 'expense',
@@ -774,12 +783,19 @@ export function softDeleteExpense(db: DatabaseSync, id: string, actorId: string)
   const next: ExpenseRow = { ...existing, deleted_at: timestamp, updated_at: timestamp, rev: existing.rev + 1 };
 
   inTransaction(db, () => {
-    db.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ?, rev = ? WHERE id = ?').run(
+    /*
+     * ⚠ `AND deleted_at IS NULL`：幂等 —— 重复软删不重复落 change，
+     * 也不把已删行的 rev 再 +1。
+     */
+    const deleted = db.prepare(
+      'UPDATE expenses SET deleted_at = ?, updated_at = ?, rev = ? WHERE id = ? AND deleted_at IS NULL',
+    ).run(
       timestamp,
       timestamp,
       next.rev,
       id,
     );
+    if (deleted.changes === 0) return;
 
     recordChange(db, {
       entityType: 'expense',

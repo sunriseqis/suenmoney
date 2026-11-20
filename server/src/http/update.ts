@@ -58,11 +58,17 @@ function platform(value: unknown): UpdatePlatform {
 
 export async function updateRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/update/check', async (req) => {
-    // 允许未登录状态下检查客户端更新（登录页也要能提示新版）
+    /*
+     * ⚠ 只有登录用户才签发 downloadToken。
+     * 允许未登录状态下检查客户端更新（登录页也要能提示新版），但**下载令牌**是
+     * 鉴权凭据 —— 匿名请求就签发等于任何人拿一次 check 就能下载安装包。
+     */
+    let isAuthenticated = false;
     try {
       await requireAuth(req);
+      isAuthenticated = true;
     } catch {
-      // 忽略
+      // 匿名：只回「有无新版」，不给下载令牌
     }
 
     const query = (req.query ?? {}) as Record<string, unknown>;
@@ -95,7 +101,8 @@ export async function updateRoutes(app: FastifyInstance): Promise<void> {
     const base = {
       current: { versionName: currentName, versionCode: currentCode },
       downloadPath: '/api/update/download',
-      downloadToken: signUpdateToken(target),
+      // 只给已登录用户签发下载令牌；匿名只回「有无新版」
+      downloadToken: isAuthenticated ? signUpdateToken(target) : null,
     };
 
     if (artifact === null) {

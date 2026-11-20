@@ -572,7 +572,8 @@ export async function getOutboxDeadLetters(maxRetry: number): Promise<DeadLetter
       req.onsuccess = () => {
         const list = (req.result as OutboxItem[]) ?? [];
         const dead = list
-          .filter((i) => i.retryCount > maxRetry)
+          // ⚠ 与 iOS/hw 一致：retry_count >= max = 死信（不是 > max）
+          .filter((i) => i.retryCount >= maxRetry)
           .map((i) => ({
             entityId: i.entityId,
             action: i.action,

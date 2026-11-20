@@ -174,11 +174,22 @@ systemctl stop suenmoney && ls -l /var/lib/suenmoney/   # -wal 应被归并为 0
 | `SUENMONEY_SESSION_DAYS` | `180` | 登录会话有效期（天） |
 | `SUENMONEY_ALLOW_REGISTRATION` | `false` | 是否开放公开注册（默认仅管理员建号） |
 | `SUENMONEY_TRUST_PROXY` | `false`（镜像是 `false`） | 是否信任 `X-Forwarded-For`。**前面没有反代时必须保持 false**：开了等于允许伪造来源 IP，登录限流（按 IP 计数）会被绕过 |
-| `SUENMONEY_CORS_ORIGINS` | 空（允许全部来源） | 跨源白名单，逗号分隔；`*` 表示放开。浏览器同源部署用不到，主要给旧 WebView 壳 |
+| `SUENMONEY_CORS_ORIGINS` | 空（**仅同源/无 Origin 放行**） | 跨源白名单，逗号分隔；`*` 表示放开所有来源。空值**不是**"允许全部"，而是"仅同源"。浏览器同源部署用不到，主要给旧 WebView 壳 |
 | `SUENMONEY_VERSION` | 从 `VERSION` 文件读取 | `/api/health` 里上报的版本号（原生端探活、套件升级自检用） |
 | `TZ` | `Asia/Shanghai`（镜像内置） | 影响备份调度时刻与日志时间戳；业务日期不受影响（客户端传入 `YYYY-MM-DD`） |
 
 > **不存在 `SUENMONEY_ADMIN_*` 这类环境变量**（旧版本文档写过，但代码里从未实现）。
+
+### 更新与运维变量（可选）
+
+| 环境变量 | 默认值 | 作用说明 |
+|---|---|---|
+| `SUENMONEY_UPDATE_SOURCE` | `github` | 更新通道：`github` / `off`。**设 `off` 关闭自动更新检查** |
+| `SUENMONEY_UPDATE_GITHUB_REPO` | `sunriseqis/suenapp` | 更新检查的目标仓库 |
+| `SUENMONEY_UPDATE_GITHUB_TOKEN` | 空 | 私有仓库更新检查需要 token |
+| `SUENMONEY_UPDATE_SECRET` | 空 | 更新包下载令牌的 HMAC 密钥。**多副本部署必须设置且保持一致**，否则令牌验证失败 |
+| `SUENMONEY_LOG_LEVEL` | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
+| `SUENMONEY_DEPLOY_ENV` | 空 | 部署形态标识（fnOS / Docker / 本地），影响更新提示文案 |
 > 首个管理员请用「初始化管理员」表单或上面的 `user-add` 命令创建。
 
 ---
@@ -219,35 +230,32 @@ server {
 
 ---
 
-## 六、双层备份与容灾恢复
+## 六、备份与容灾恢复
 
-### 1. 运维侧物理快照（SQLite `VACUUM INTO`）
+> ⚠ **`VACUUM INTO` 物理快照功能已在代码中移除**（2026-10-31 裁决）。
+> 本节描述的是**当前真实可用**的三种备份方式，不是历史版本的文档。
 
-- **机制**：服务端内置定时器每日执行 SQLite 原生 `VACUUM INTO`，把当前库完整复制并归并 WAL，产出物理一致性副本。
-- **存储**：`backups/snapshots/suenmoney-snapshot-YYYYMMDD-HHmmss.sqlite`。
-- **保留策略**：维持最近 `SUENMONEY_BACKUP_KEEP`（默认 14 份）。
-- **管理入口**：管理员登录后「设置 → 数据」可查看快照列表、大小、一键下载与手动创建。
+### 1. WebDAV 远程加密备份（推荐）
 
-### 2. 物理快照灾备还原（冷恢复）
+服务端每日自动把整库加密（AES-256-GCM）后推送到你的 WebDAV 存储（坚果云/Nextcloud/NAS）。
 
-```bash
-# 1. 停止服务
-docker compose stop
+- **配置**：Web 后台「设置 → 数据 → WebDAV」填地址/账号/密码，**必须设置备份口令**（≥6 位）
+- **产物**：`suenmoney-backup-YYYY-MM-DD.mn`（口令加密的 JSON）
+- **保留**：远端只保留最近 3 份（轮转自动清理）
+- **恢复**：用备份口令解密 `.mn` 后，「设置 → 数据」上传 JSON 数据包恢复
 
-# 2. 用快照覆盖主库（卷名不变：suenmoney-data）
-docker run --rm -v suenmoney-data:/data alpine sh -c "
-  cp /data/backups/snapshots/suenmoney-snapshot-20260929-120000.sqlite /data/suenmoney.sqlite &&
-  rm -f /data/suenmoney.sqlite-wal /data/suenmoney.sqlite-shm
-"
+### 2. 手动导出 JSON 数据包
 
-# 3. 重新启动
-docker compose start
-```
+「设置 → 数据」→「导出数据库备份」→ 得到 `suenmoney-backup-*.json`。
 
-### 3. 用户侧逻辑备份（JSON 数据包 + 对账 CSV）
+- **格式**：明文可读 JSON，版本兼容，支持幂等补缺合并
+- **恢复**：「设置 → 数据」→「恢复备份」上传该 JSON（覆盖式：文件里有的以文件为准，本地多的不删）
+- **自动存档**：恢复前服务端自动存一份当前全量快照到 `data/backups/pre-restore/*.json`，恢复错了能找回
 
-「设置 → 数据」里管理员可导出/导入全量 JSON 数据包（明文可读、版本兼容、支持幂等补缺合并），
-另有对账 CSV 与账单导入。**导出与备份是两个功能，不要拿按月导出当备份用**。
+### 3. 对账 CSV（流水导入/导出）
+
+「设置 → 数据」→「导出流水（CSV）」→ 用 Excel/Numbers 对账。
+**导出与备份是两个功能，不要拿按月导出当备份用**（导出包可能只含某年/某月，用它恢复会静默丢掉其他期间）。
 
 ---
 
@@ -359,3 +367,6 @@ tail -f /var/apps/suenmoney/var/info.log
 | 页面改了但用户还是旧版 | `index.html` 是 `no-cache`、`/assets/*` 是 `immutable` + 内容哈希，正常情况刷新即更新；如果换了产物却没换文件名，说明构建没跑 |
 | `docker compose pull` 报 `unauthorized` | GHCR 的包可见性独立于仓库，`sunriseqis/suenmoney` 若不是 Public 就拉不到。用 `curl -s "https://ghcr.io/token?scope=repository:sunriseqis/suenmoney:pull&service=ghcr.io"` 自测（200 公开 / 403 私有），或去 Packages → 该包 → Package settings 改可见性 |
 | `docker compose pull` 报 `manifest unknown` | 该 tag 还没构建过。可用 tag 见第二节；镜像由 `build-image` 流水线在推 `suenmoney-v*` tag 时产出（见 docs/ci.md） |
+| **登录/记账报 500，但页面能打开** | **容器以 uid 1000(`node`) 运行，数据目录不可写**。若用 bind mount（`volumes: - ./data:/app/data`），宿主机目录属主是 root 时 `node` 进程只读 → 建库/写 WAL 失败 → 登录等写操作 500，但读正常。修：`chown -R 1000:1000 <宿主目录>` 或改用命名卷 `suenmoney-data`。`docker compose logs` 看有无 `EACCES`/`unable to open database` |
+| 备份恢复后账号/密码变了 | 恢复是**整库覆盖**（含账号与口令哈希），备份里有的以备份为准。若备份不含某些账号，恢复接口会在 `needsPassword` 里点名，需管理员设初始密码（见第一节「备份与恢复」） |
+| `docker compose down -v` 后数据没了 | `-v` 会**删除数据卷**（含账本）。日常升级只用 `docker compose down` + `pull` + `up -d`，不要加 `-v` |

@@ -158,3 +158,68 @@
 - `paymentMethods[].repaymentDate` 取该组记录的 `MIN(repayment_date)`：
   同一张卡在同一账单周期内的还款日必然相同，所以这是精确值，
   不需要按「账单日 + 还款日」反推。
+
+---
+
+## 备份 / 导出 / 导入 / WebDAV
+
+### `GET /api/backup`（仅管理员）
+
+下载全量备份（JSON 数据包）。
+
+- **返回**：`Content-Disposition: attachment`，body 为 `suenmoney-backup` 格式的 JSON
+- **格式**：`{ format: 'suenmoney-backup', generatedAt, scope: {kind, period}, data: { members, categories, paymentMethods, plans, planTodos, expenses } }`
+- **恢复**：`POST /api/backup/restore`，只接受 `format: 'suenmoney-backup'`（导出包不能当备份恢复）
+
+### `POST /api/backup/restore`（仅管理员）
+
+恢复备份（整库覆盖，含账号与口令哈希）。
+
+- **请求体**：`suenmoney-backup` 格式 JSON
+- **返回**：`{ report: {...}, counts: {...}, scope: {...}, generatedAt, snapshotPath, needsPassword: [...] }`
+- **自动存档**：恢复前存一份当前全量到 `data/backups/pre-restore/*.json`，路径在 `snapshotPath` 返回
+- **`needsPassword`**：备份里缺口令哈希的账号会被点名，需管理员设初始密码
+
+### `GET /api/expenses.csv`
+
+导出流水 CSV（管理员全部，成员只导自己的）。
+
+### `POST /api/expenses.csv/import`
+
+导入流水 CSV（**不看归属，谁导入归谁**）。分类/支付方式按名字匹配，匹配不到跳过并回报原因。
+
+- **返回**：`{ created, skipped, problems: [{line, reason}] }`
+
+### `GET /api/data/overview`（仅管理员）
+
+数据概况（记录数、分类数、账号数、pre-restore 归档列表）。
+
+### `POST /api/data/wipe`（仅管理员）
+
+清空账目（软删 + 逐行 recordChange）。需 `confirm: '清空账目'` 二次确认。
+
+### `POST /api/data/reset-demo`（仅管理员）
+
+重置为演示数据。库里必须只有演示数据（否则拒绝）。
+
+### `GET /api/backup/webdav`（仅管理员）
+
+WebDAV 备份配置与状态。
+
+- **返回**：`{ config: { url, username, password: '******', hasPassword, hasPassphrase, path, isEnabled }, status: { lastBackupAt, lastBackupStatus, lastBackupMessage, lastBackupFilename } }`
+- **`hasPassphrase`**：备份口令是否已设置（**口令本身永不回传**）
+
+### `PUT /api/backup/webdav`（仅管理员）
+
+保存 WebDAV 配置。
+
+- **请求体**：`{ url, username, password, path, isEnabled, passphrase? }`
+- **`passphrase`**：备份加密口令（≥6 位）。空或 `******` 时保留原值
+
+### `POST /api/backup/webdav/test`（仅管理员）
+
+测试 WebDAV 连通性与写入权限。
+
+### `POST /api/backup/webdav/run`（仅管理员）
+
+手动触发一次 WebDAV 备份（加密上传 `.mn`，轮转保留最近 3 份）。
