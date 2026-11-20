@@ -135,11 +135,16 @@ npm run icons           # 从矢量母版重新生成品牌图标
 
 ### CI
 
-**只有三条出包流水线，全部手动派发**：`build-fnos` / `build-hw` / `build-ios`。
-推代码不会触发任何构建。
+**三条出包流水线手动派发**：`build-fnos` / `build-hw` / `build-ios`（推代码不触发）。
 
-三端产物统一发到 **[`sunriseqis/suenapp`](https://github.com/sunriseqis/suenapp/releases)**，
-共用 tag `suenmoney-vX.Y.Z`；**本仓库不发行产物**。
+**容器镜像由 tag 触发**：`build-image` 只在推 `suenmoney-v*` tag 时构建
+（多架构 amd64/arm64）→ 推 `ghcr.io/sunriseqis/suenmoney` → 在发行页写一节说明。
+
+四端统一发到 **[`sunriseqis/suenapp`](https://github.com/sunriseqis/suenapp/releases)**，
+共用 tag `suenmoney-vX.Y.Z`；**本仓库不发行产物**（镜像在 GHCR，没有附件）。
+
+> ⚠ 镜像 tag 必须打在**本仓库**：三端出包建的是 suenapp 的 tag，两者不通用。
+> 发版后记得 `git tag suenmoney-vX.Y.Z && git push origin suenmoney-vX.Y.Z`。
 
 细节（含 tag 前缀为什么是硬性要求）见 [docs/ci.md](docs/ci.md)。
 

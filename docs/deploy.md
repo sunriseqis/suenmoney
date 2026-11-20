@@ -50,6 +50,19 @@ mkdir -p ~/suenmoney && cd ~/suenmoney
 curl -fsSLO https://raw.githubusercontent.com/sunriseqis/suenmoney/main/docker-compose.yml
 ```
 
+镜像地址 `ghcr.io/sunriseqis/suenmoney`，多架构（`linux/amd64` + `linux/arm64`，构建机自动选对）。
+可用 tag：
+
+| tag | 说明 |
+|---|---|
+| `latest` | 最新发布版，`docker-compose.yml` 默认引用它 |
+| `X.Y.Z` | 与发行版本一一对应，**回滚时钉这个** |
+| `X.Y` | 跟随小版本 |
+| `sha-xxxxxxx` | 精确到某次提交 |
+
+固定版本部署把 compose 里的 `image:` 改成 `ghcr.io/sunriseqis/suenmoney:2.1.1` 即可 ——
+用 `latest` 时 `docker compose pull` 会静默升级到新版本，排障时很难意识到「代码变了」。
+
 ### 3. 启动服务
 
 ```bash
