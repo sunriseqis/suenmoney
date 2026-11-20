@@ -68,6 +68,18 @@ export class Outbox {
     return (await Outbox.pending()).length;
   }
 
+  /**
+   * 队列里**任何**条目（含死信）的数量。
+   *
+   * ⚠ 快照「先清后灌」前置条件必须用这个，不能用 `pendingCount` ——
+   * 死信条目（retry_count >= max）虽然不再参与推送，但**代表真实未上云的账**。
+   * 只检查 pendingCount 的话，队列里只剩死信时会判定"队列已空"，
+   * 于是走快照清表，把死信对应的本地记录也清掉 → 真丢数据。
+   */
+  static async totalCount(): Promise<number> {
+    return Outbox.query('1 = 1', []).then((entries: OutboxEntry[]) => entries.length);
+  }
+
   /** 成功回放后删除 */
   static async remove(ids: string[]): Promise<void> {
     if (ids.length === 0) {

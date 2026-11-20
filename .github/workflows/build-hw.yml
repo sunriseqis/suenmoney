@@ -81,8 +81,8 @@ jobs:
           CUSTOM_VER="${{ inputs.custom_version }}"
           if [ -n "$CUSTOM_VER" ]; then
             VERSION_NAME="$CUSTOM_VER"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            TAG_VER="${GITHUB_REF#refs/tags/v}"
+          elif [[ "${{ github.ref }}" == refs/tags/suenmoney-v* ]]; then
+            TAG_VER="${GITHUB_REF#refs/tags/suenmoney-v}"
             VERSION_NAME="${TAG_VER}"
           else
             VERSION_NAME="${BASE_VER}"

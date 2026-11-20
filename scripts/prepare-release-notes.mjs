@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 const PLATFORMS = {
   fnos: {
     id: 'FNOS',
-    titleRegex: /###\s+SuenMoney\s+.*?飞牛私有云[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|$)/gi,
+    titleRegex: /###\s+SuenMoney\s+.*?飞牛私有云[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|(?:\n(?![-*\s]))|$)/gi,
     content: (tag) => `<!-- SECTION:FNOS -->
 ### SuenMoney ${tag} 飞牛私有云（fnOS）原生套件
 
@@ -39,7 +39,7 @@ const PLATFORMS = {
   },
   harmony: {
     id: 'HARMONY',
-    titleRegex: /###\s+SuenMoney\s+.*?鸿蒙[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|$)/gi,
+    titleRegex: /###\s+SuenMoney\s+.*?鸿蒙[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|(?:\n(?![-*\s]))|$)/gi,
     content: (tag) => `<!-- SECTION:HARMONY -->
 ### SuenMoney ${tag} 鸿蒙 NEXT 原生客户端
 
@@ -49,7 +49,7 @@ const PLATFORMS = {
   },
   ios: {
     id: 'IOS',
-    titleRegex: /###\s+SuenMoney\s+.*?iOS[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|$)/gi,
+    titleRegex: /###\s+SuenMoney\s+.*?iOS[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|(?:\n(?![-*\s]))|$)/gi,
     content: (tag) => `<!-- SECTION:IOS -->
 ### SuenMoney ${tag} iOS 原生客户端
 
@@ -64,7 +64,7 @@ const PLATFORMS = {
      * 标题里刻意保留「Docker」字样：这一节在 suenmusic / suenweb 的发行页上不存在，
      * 用户扫一眼就要能认出这是 suenmoney 独有的交付形态。
      */
-    titleRegex: /###\s+SuenMoney\s+.*?Docker[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|$)/gi,
+    titleRegex: /###\s+SuenMoney\s+.*?Docker[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|(?:\n(?![-*\s]))|$)/gi,
     content: (tag) => `<!-- SECTION:DOCKER -->
 ### SuenMoney ${tag} Docker 镜像
 
@@ -108,16 +108,24 @@ async function fetchExistingReleaseBody(repo, tag) {
 
   try {
     const res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
+    // 404 = 该 tag 还没有 Release，这才是「全新 Release」的合法情况
     if (res.status === 404) return '';
     if (!res.ok) {
-      console.warn(`[WARN] 获取现有 Release 失败 (HTTP ${res.status})，将作为全新 Release 处理`);
-      return '';
+      /*
+       * ⚠ 非 404 的失败必须 exit(1)，不能当「全新 Release」处理。
+       * 否则 GitHub API 抖一次（rate limit / 5xx / token 权限不足），
+       * 合并逻辑会用空 body 生成只含本平台一节的 body，
+       * softprops 再整体覆盖 —— 已经发布在发行页上的其它三节被无预警清空。
+       * 这是 2026-10-31 tag 前缀事故的同型问题：流程全绿、发行页却错了。
+       */
+      console.error(`[ERROR] 获取现有 Release 失败 (HTTP ${res.status})，拒绝降级为空 body（会覆盖其它平台的 SECTION）`);
+      process.exit(1);
     }
     const data = await res.json();
     return typeof data.body === 'string' ? data.body : '';
   } catch (err) {
-    console.warn(`[WARN] 无法连接 GitHub API: ${err.message}，按全新 Release 处理`);
-    return '';
+    console.error(`[ERROR] 无法连接 GitHub API: ${err.message}，拒绝降级为空 body（会覆盖其它平台的 SECTION）`);
+    process.exit(1);
   }
 }
 

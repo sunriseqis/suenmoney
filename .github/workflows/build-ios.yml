@@ -77,9 +77,9 @@ jobs:
             BASE_VER=$(cat VERSION | tr -d ' \n\r')
           fi
 
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ github.ref }}" == refs/tags/suenmoney-v* ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
-            RAW_VERSION="${TAG_NAME#v}"
+            RAW_VERSION="${TAG_NAME#suenmoney-v}"
             VERSION="${TAG_NAME}"
             VERSION_NAME="${RAW_VERSION}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.custom_version }}" ]]; then

@@ -25,9 +25,23 @@ const DUMMY_HASH = hashPassword('\u0000never-matches\u0000');
 /** 登录限流：同一来源 + 同一用户名，15 分钟内最多 10 次。 */
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
+/**
+ * 纯 IP 桶：同一来源 IP，15 分钟内最多 30 次（含所有用户名）。
+ *
+ * ⚠ 只有 per-username 桶不够：换用户名即可绕过（`login:ip:admin`、`login:ip:bob`
+ * 各算一桶）。这层是兜底，上限比 per-username 高，避免误伤同 IP 的家庭成员。
+ */
+const LOGIN_IP_MAX_ATTEMPTS = 30;
+/** 初始化限流：同一来源 IP，1 小时内最多 5 次（初始化只该用一次，5 次已很宽裕）。 */
+const SETUP_WINDOW_MS = 60 * 60 * 1000;
+const SETUP_MAX_ATTEMPTS = 5;
 
 function loginKey(request: FastifyRequest, username: string): string {
   return `login:${request.ip}:${username.toLowerCase()}`;
+}
+
+function loginIpKey(request: FastifyRequest): string {
+  return `login:ip:${request.ip}`;
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -54,6 +68,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw forbidden('系统已初始化，请直接登录。新账号请由管理员在后台创建');
     }
 
+    // 初始化限流：防止脚本反复尝试建管理员（虽只在 countUsers==0 时可用）
+    enforceRateLimit(`setup:${request.ip}`, { windowMs: SETUP_WINDOW_MS, max: SETUP_MAX_ATTEMPTS });
+
     const body = asRecord(request.body);
     const user = createUser(db, {
       username: requireString(body, 'username'),
@@ -74,6 +91,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     const key = loginKey(request, username);
     enforceRateLimit(key, { windowMs: LOGIN_WINDOW_MS, max: LOGIN_MAX_ATTEMPTS });
+    // 纯 IP 桶：防止换用户名绕过 per-username 限流
+    enforceRateLimit(loginIpKey(request), { windowMs: LOGIN_WINDOW_MS, max: LOGIN_IP_MAX_ATTEMPTS });
 
     const db = getDatabase();
     const row = findUserByUsername(db, username);

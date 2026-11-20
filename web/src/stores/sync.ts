@@ -183,7 +183,8 @@ export const useSyncStore = defineStore('sync', () => {
   async function refreshPendingCount(): Promise<void> {
     if (!isIdbSupported()) return;
     const items = await getOutboxItems();
-    pendingCount.value = items.filter((i) => i.retryCount <= OUTBOX_MAX_RETRY).length;
+    // ⚠ 与 iOS/hw 的 Outbox.pending() 语义一致：retry_count >= max = 死信，不再参与推送
+    pendingCount.value = items.filter((i) => i.retryCount < OUTBOX_MAX_RETRY).length;
     deadLetters.value = await getOutboxDeadLetters(OUTBOX_MAX_RETRY);
   }
 
@@ -619,7 +620,8 @@ export const useSyncStore = defineStore('sync', () => {
 
     const allItems = await getOutboxItems();
     // 死信隔离：重试超限的毒丸条目不再参与推送，避免阻塞后续队列
-    const items = allItems.filter((i) => i.retryCount <= OUTBOX_MAX_RETRY);
+    // ⚠ 与 iOS/hw 一致：retry_count >= max = 死信，不参与推送
+    const items = allItems.filter((i) => i.retryCount < OUTBOX_MAX_RETRY);
     if (items.length === 0) return 0;
 
     const expenseCreates = items.filter((i) => i.action === 'create_expense');
