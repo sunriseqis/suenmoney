@@ -2,15 +2,15 @@
 /**
  * 为发行仓库（sunriseqis/suenapp）合并各平台的发布说明。
  *
- * 背景：三个平台的构建是**三个独立 workflow**（build-fnos / build-hw / build-ios），
- * 但对外应该表现为**同一个 Release**（tag `suenmoney-vX.Y.Z`），附件里放
- * `.fpk` / `.hap` / `.ipa`。
+ * 背景：四个平台的构建是**四个独立 workflow**（build-fnos / build-hw / build-ios /
+ * build-image），但对外应该表现为**同一个 Release**（tag `suenmoney-vX.Y.Z`）：
+ * 附件里放 `.fpk` / `.hap` / `.ipa`，容器镜像本体在 GHCR，发行页只留一节说明。
  *
  * 难点：后跑的 workflow 不能覆盖先跑的。所以用带标记的 SECTION 分区：
  * 每次只替换/追加「自己那一节」，其余原样保留。
  *
  * 用法：
- *   node scripts/prepare-release-notes.mjs --platform <fnos|harmony|ios> \
+ *   node scripts/prepare-release-notes.mjs --platform <fnos|harmony|ios|docker> \
  *     --tag suenmoney-v2.0.0 --output /tmp/release_body.md [--repo sunriseqis/suenapp]
  *
  * 行为：
@@ -22,6 +22,8 @@
  */
 
 import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PLATFORMS = {
   fnos: {
@@ -54,6 +56,23 @@ const PLATFORMS = {
 - **格式**：\`.ipa\` 未签名包。
 - **使用方式**：可直接使用 AltStore、SideStore、爱思助手等工具通过个人证书签名后安装到真机。
 <!-- /SECTION:IOS -->`
+  },
+  docker: {
+    id: 'DOCKER',
+    /*
+     * 镜像没有附件 —— 本体在 GHCR，发行页只负责告诉用户「怎么拉、拉哪个」。
+     * 标题里刻意保留「Docker」字样：这一节在 suenmusic / suenweb 的发行页上不存在，
+     * 用户扫一眼就要能认出这是 suenmoney 独有的交付形态。
+     */
+    titleRegex: /###\s+SuenMoney\s+.*?Docker[\s\S]*?(?=(?:###\s+SuenMoney|<!-- SECTION:)|$)/gi,
+    content: (tag) => `<!-- SECTION:DOCKER -->
+### SuenMoney ${tag} Docker 镜像
+
+- **地址**：\`ghcr.io/sunriseqis/suenmoney\`（多架构：linux/amd64 + linux/arm64，构建机自动选对）
+- **拉取**：\`docker pull ghcr.io/sunriseqis/suenmoney:${tag.replace(/^v/, '')}\`（或 \`:latest\`）
+- **启动**：仓库根的 \`docker-compose.yml\` 已指向该镜像，\`docker compose up -d\` 即可；数据落在命名卷 \`suenmoney-data\`
+- **端口**：只有 \`5310\` —— 页面与 \`/api\` 同源同端口，没有第二个端口要配
+<!-- /SECTION:DOCKER -->`
   }
 };
 
@@ -72,7 +91,7 @@ function parseArgs() {
   }
 
   if (!platform || !tag || !output) {
-    console.error('用法: node scripts/prepare-release-notes.mjs --platform <fnos|harmony|ios> --tag <suenmoney-vX.Y.Z> --output <file>');
+    console.error('用法: node scripts/prepare-release-notes.mjs --platform <fnos|harmony|ios|docker> --tag <suenmoney-vX.Y.Z> --output <file>');
     process.exit(1);
   }
 
@@ -161,7 +180,21 @@ async function main() {
   console.log(`[Release Notes] 已写入：${output}`);
 }
 
-main().catch(err => {
-  console.error('[Release Notes] 错误:', err);
-  process.exit(1);
-});
+/*
+ * 只在「被当作脚本执行」时跑 main()。
+ *
+ * 之前这里是无条件 `main()`，于是 `import { mergeBody } from './prepare-release-notes.mjs'`
+ * 会顺带触发一次 CLI 解析并因缺少 `--platform` 直接 `process.exit(1)` ——
+ * 导出的 `mergeBody` 实际上没法被 import 使用（想给它写测试都做不到）。
+ * 用 argv[1] 比对而不是 `import.meta.main`：后者要 Node ≥ 24.2，
+ * 而这个脚本会被多条流水线在不同 Node 版本下调起。
+ */
+const invokedDirectly =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error('[Release Notes] 错误:', err);
+    process.exit(1);
+  });
+}

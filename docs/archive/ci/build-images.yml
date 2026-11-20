@@ -4,8 +4,18 @@
 # 归档原因（用户 2026-10-31 裁决）：镜像 CI 暂时不做。本工作流已作废，从 CI 移除。
 # 归档时间：2026-10-31　　原位置：.github/workflows/build-images.yml
 #
+# ⚠ 2026-11-20 更新：镜像流水线已重新上线，但**不是**恢复本文件 ——
+#   取而代之的是 `.github/workflows/build-image.yml`。本文件保留仅供追溯，
+#   不要原样搬回 `.github/workflows/`，原因有三：
+#     1. `type=semver` 解析不了 `suenmoney-vX.Y.Z` 这种 tag（不是标准 semver），
+#        版本 tag 实际只来自 custom_tag，等于「发版镜像没有版本号」；
+#     2. `type=raw,value=latest,enable={{is_default_branch}}` 在 tag 事件下
+#        is_default_branch=false → **latest 永远不会更新**，而 compose 引用的正是
+#        `:latest`，用户拉到的还是旧镜像；
+#     3. 没有发布到 suenapp 发行页的步骤（新的要求：镜像进 GHCR，发行页写一节）。
+#   新文件的触发方式是「推 suenmoney-v* tag」，细节见 docs/ci.md。
+#
 # 本文件**不会被 GitHub Actions 加载**（不在 .github/workflows/ 下）。
-# 要恢复：移回 .github/workflows/ 并确认 on: 段（当前都是 workflow_dispatch 手动派发）。
 # 背景见 docs/ci.md。
 # ==============================================================================
 name: Build and Push Image to GHCR

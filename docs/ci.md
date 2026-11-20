@@ -1,55 +1,102 @@
 # CI 与发布构建
 
-**当前策略（2026-10-21 起）：自动构建全部关闭，只保留手动派发。**
-推送代码（含推 `main`、推 tag）**不会**启动任何工作流。
+**当前策略：默认手动派发；唯一的例外是镜像流水线由 tag 触发。**
+
+推送 `main` **不会**启动任何工作流；只有推 `suenmoney-v*` tag 会触发镜像构建。
 
 **2026-10-31 范围收缩**（用户裁决）：
 
 - **安卓不再有计划** —— 2.0 未重构，后续按情况再说。
-- **镜像 CI 暂时不做**。
+- ~~**镜像 CI 暂时不做**~~ → **2026-11-20 恢复上线**（见下节「镜像流水线」）。
 - **不做 CI 门禁** —— 本地推远端前都跑过 `npm run check`，CI 上再跑一遍没有信息增量。
 
-所以 CI 只保留三条**出包**流水线：`build-fnos` / `build-hw` / `build-ios`。
+所以 CI 现在是四条**出包**流水线：`build-fnos` / `build-hw` / `build-ios` / `build-image`。
 
 ---
 
-## 为什么关
+## 镜像流水线（2026-11-20 上线）
+
+**为什么现在要做**：`docker-compose.yml` 与 `docs/deploy.md` 从 2.0 起就引用
+`ghcr.io/sunriseqis/suenmoney:latest`，但**这个镜像从来没被发布过**
+（2026-11-20 核查：匿名拉取返回 403；旧的 `suenmoney-server` / `suenmoney-web`
+存在且停在 1.1.6）。也就是说照文档部署会直接 `manifest unknown` ——
+这条流水线首先是把断掉的部署路径接回来。
+
+**触发**：只认 tag，且 tag 必须打在**本仓库**。
+
+```bash
+# 发版后把同名 tag 也推到 suenmoney 仓库（三端出包流水线建的 tag 在 suenapp，不通用）
+git tag suenmoney-v2.1.1 && git push origin suenmoney-v2.1.1
+```
+
+> ⚠ 这是**最容易忘的一步**：`build-fnos` / `build-hw` / `build-ios` 的
+> `softprops/action-gh-release` 是在**发行仓库 suenapp** 上建 tag，
+> 本仓库的 tag 列表里没有它们。本仓库不打 tag = 镜像永远不构建，而且不报错
+> （只是「什么都没发生」）。
+>
+> 失败重跑用 GitHub 页面上的 **Re-run jobs**，不需要 `workflow_dispatch`。
+
+**产物**：`ghcr.io/sunriseqis/suenmoney`，多架构 `linux/amd64` + `linux/arm64`，四个 tag：
+
+| tag | 用途 |
+|---|---|
+| `latest` | `docker-compose.yml` 引用它，**必须无条件推**（tag 事件下 `is_default_branch` 为 false，旧工作流那套写法会让 latest 永远不更新） |
+| `X.Y.Z` | 与发行版本一一对应，回滚用 |
+| `X.Y` | 跟随小版本 |
+| `sha-xxxxxxx` | 精确到提交 |
+
+推完流水线会 `docker buildx imagetools inspect` 回读 manifest，**断言 amd64 与 arm64
+都在**才判成功 —— 多架构「推成功」只代表 blob 上去了，少一个架构要等用户
+`docker pull` 才炸。
+
+**与 suenapp 的关系**：镜像本体在 GHCR，发行页只写一节 `<!-- SECTION:DOCKER -->`
+（地址、拉取命令、compose 用法）。**不**把镜像导出成 tar.gz 附到 Release ——
+几百 MB 的附件换不来什么，`docker pull` 本来就能离线缓存。
+
+---
+
+## 为什么默认仍然手动
 
 - 镜像、macOS runner、鸿蒙构建容器都是自己掏的额度。日常提交（尤其文档、设计资产、
   Web 改动）自动触发全链路构建，收益接近零、成本是实打实的。
 - 之前为了绕开它，还得在 head commit 里塞 `[skip ci]` —— 那是**症状治理**：
   提交信息被迫承载构建策略，谁忘了写就烧一次。
 - 需要产物时（发版、验镜像、出 APK/IPA/HAP）再手动跑，**时间点是可控的**。
+- 镜像那条之所以按 tag 触发：tag 本身就是「这是一个版本」的信号，
+  和「日常提交」天然可区分，不需要额外判断。
 
 ## 现在怎么构建
 
-| 工作流 | 产出 | 何时手动跑 |
+| 工作流 | 产出 | 触发 |
 |---|---|---|
-| `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk` | 出飞牛包时 |
-| `build-hw.yml` | 未签名 HAP | 出鸿蒙包时 |
-| `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 出 iOS 包时 |
+| `build-fnos.yml` | 飞牛 fnOS 套件 `.fpk` | 手动派发 |
+| `build-hw.yml` | 未签名 HAP | 手动派发 |
+| `build-ios.yml` | 未签名 IPA（macOS runner 按 10 倍计费） | 手动派发 |
+| `build-image.yml` | 多架构容器镜像（GHCR） | **推 `suenmoney-v*` tag** |
 
 ## 发行仓库约定（2026-10-31 起）
 
-**本仓库不再发行任何产物** —— 三端（fnos / hw / ios）的包统一发到
+**本仓库不再发行任何产物** —— 四端（fnos / hw / ios / docker）的交付统一发到
 **`sunriseqis/suenapp`**，与 suenmusic、suenweb 并列。
 
 **产物命名统一为 `suenmoney-<版本>.<ext>`**（用户裁决）：全小写、版本号不带 `v`、
 不带 `-unsigned` / `-release` 后缀；三端扩展名分别是 `.fpk` / `.hap` / `.ipa`。
 
-三端共用**同一个 Release**：
+四端共用**同一个 Release**：
 
 ```
 tag       = suenmoney-vX.Y.Z          ← 硬性要求，必须带 suenmoney- 前缀
 附件       = suenmoney-X.Y.Z.fpk        （fnOS）
             suenmoney-X.Y.Z.hap        （鸿蒙，未签名）
             suenmoney-X.Y.Z.ipa        （iOS，未签名）
-body      = 三节 SECTION（FNOS / HARMONY / IOS），由
+            —— 镜像**没有附件**，本体在 ghcr.io/sunriseqis/suenmoney
+body      = 四节 SECTION（FNOS / HARMONY / IOS / DOCKER），由
             scripts/prepare-release-notes.mjs 各自替换自己那节
 ```
 
-三个 workflow 是**独立运行**的，先后发布靠 `<!-- SECTION:X -->` 标记合并：
+四个 workflow 是**独立运行**的，先后发布靠 `<!-- SECTION:X -->` 标记合并：
 每次只替换/追加自己那节，不会覆盖别人。同一端重跑也只是替换，不会重复堆叠。
+顺序无关 —— 镜像先跑（发行页只有 DOCKER 一节）也成立，后面三端各自追加。
 
 ### ⚠ tag 前缀是硬性要求
 
@@ -70,13 +117,13 @@ suenmoney 用 `suenmoney-v2.0.0`。
 | 归档文件 | 作废原因 |
 |---|---|
 | `docs/archive/ci/build-android.yml` | 安卓端 2.0 未重构，**不再有安卓计划**，后续按情况再说 |
-| `docs/archive/ci/build-images.yml` | **镜像 CI 暂时不做** |
+| `docs/archive/ci/build-images.yml` | **已被 `.github/workflows/build-image.yml` 取代**（2026-11-20 镜像流水线上线）。旧文件的 `type=semver` 对 `suenmoney-vX.Y.Z` 解析不出、`latest` 在 tag 事件下不更新、且没有发布到 suenapp 的步骤 —— 不要原样搬回来 |
 | `docs/archive/ci/ci-test.yml` | **不做 CI 门禁** —— 本地推远端前都跑过 `npm run check`，CI 上再跑没有信息增量 |
 
 恢复方式：移回 `.github/workflows/` 即可（`on:` 段都是 `workflow_dispatch`）。
 每个归档文件头部都写明了作废原因与归档时间。
 
-三种触发方式，任选：
+三条手动流水线的触发方式，任选：
 
 ```bash
 # 1) 网页：Actions → 选工作流 → Run workflow（可填 inputs）
@@ -86,6 +133,16 @@ gh workflow run build-fnos.yml --ref main
 
 # 3) 带参数
 gh workflow run build-fnos.yml --ref main -f custom_version=2.0.0 -f publish_release=true
+```
+
+镜像那条不在这里 —— 它只认 tag：
+
+```bash
+# 发版后补打本仓库 tag，才会触发镜像构建（详见上文「镜像流水线」）
+git tag suenmoney-v2.1.1 && git push origin suenmoney-v2.1.1
+
+# 或事后补一个旧版本的镜像
+git tag suenmoney-v2.1.0 <那个版本的 commit> && git push origin suenmoney-v2.1.0
 ```
 
 ## 要临时恢复自动构建怎么办

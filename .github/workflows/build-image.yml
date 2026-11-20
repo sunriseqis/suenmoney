@@ -1,0 +1,208 @@
+# ==============================================================================
+# SuenMoney 容器镜像：构建 → 推 GHCR → 在 suenapp 发行页写一节说明
+#
+# 为什么要有这条流水线
+# --------------------
+# `docker-compose.yml` 与 `docs/deploy.md` 一直引用
+# `ghcr.io/sunriseqis/suenmoney:latest`，但**这个镜像从未被发布过**
+# （2026-11-20 核查：匿名拉取返回 403，而旧的 suenmoney-server / suenmoney-web
+#  返回 200，且停在 1.1.6）。也就是说照文档 `docker compose up -d` 会直接
+# 报 `manifest unknown` —— 这条流水线的首要价值是把这个断掉的部署路径接回来。
+#
+# 触发方式（用户 2026-11-20 裁决）
+# ------------------------------
+# **只认 tag `suenmoney-v*`**，日常推 main 不构建。
+# 失败要重跑用 GitHub 页面上的 "Re-run jobs"，不需要额外的 workflow_dispatch。
+#
+# ⚠ 前提：tag 必须打在**本仓库（suenmoney）**。
+#   三端出包流水线创建的 tag 在**发行仓库 suenapp**，两者不通用 ——
+#   发版时记得把同名 tag 也推到本仓库，否则镜像不会构建。见 docs/ci.md。
+# ==============================================================================
+name: Build and Push Docker Image
+
+on:
+  push:
+    tags:
+      - 'suenmoney-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+# 同一个 tag 的重复触发（比如手工重推 tag）串行执行，避免两个构建同时写同一个 tag
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-image:
+    name: Build & Push Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # 版本号只从 tag 取：镜像 tag、/api/health 上报的版本、发行页标题必须是同一个数，
+      # 三处各读一处来源是「看起来都对、实际不一致」的经典来源。
+      - name: Determine Version from Tag
+        id: ver
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          case "${TAG}" in
+            suenmoney-v*) ;;
+            *) echo "✖ tag '${TAG}' 不是 suenmoney-v* 形式"; exit 1 ;;
+          esac
+
+          VER="${TAG#suenmoney-v}"
+          if ! printf '%s' "${VER}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "✖ 从 tag 解析出的版本 '${VER}' 不是 X.Y.Z 形式（tag='${TAG}'）"
+            exit 1
+          fi
+
+          MAJOR="${VER%%.*}"
+          REST="${VER#*.}"
+          MINOR="${REST%%.*}"
+          SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-7)"
+
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "minor=${MAJOR}.${MINOR}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "解析版本：${VER}（minor=${MAJOR}.${MINOR}，sha=${SHORT_SHA}）"
+
+      # 镜像里 COPY VERSION 供 /api/health 上报。若仓库里的 VERSION 与 tag 不一致，
+      # 运行时会报出错误的版本号 —— 这里对齐并**显式告警**，让「忘了改 VERSION」
+      # 在构建日志里一眼可见，而不是等用户来问「为什么显示旧版本」。
+      - name: Align VERSION File with Tag
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          FILE_VER="$(tr -d '[:space:]' < VERSION)"
+          if [ "${FILE_VER}" != "${VER}" ]; then
+            echo "::warning::仓库 VERSION 是 ${FILE_VER}，但 tag 是 ${VER} —— 已按 tag 覆盖（以 tag 为准）"
+            echo "${VER}" > VERSION
+          fi
+          echo "VERSION = $(cat VERSION)"
+
+      - name: Set up QEMU (Multi-arch support)
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolve Lowercase Owner Name
+        id: owner
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=${OWNER_LC}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ⚠ `latest` **必须无条件推**：docker-compose.yml 与文档引用的就是 `:latest`。
+      #   归档的旧版工作流写的是 `enable={{is_default_branch}}` —— 在 tag 事件下
+      #   is_default_branch 为 false，latest 永远不会被更新，用户拉到的还是旧镜像
+      #   （或者根本没有镜像）。这类「推成功了但没人能拉到」的失败极难察觉。
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.owner }}/suenmoney
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.ver.outputs.version }}
+            type=raw,value=${{ steps.ver.outputs.minor }}
+            type=raw,value=sha-${{ steps.ver.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # 构建上下文是仓库根：镜像里同时要有 web/dist（容器内构建）与 server/ 源码
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # tag 触发即发版，没有「只构建不推送」的中间态
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=suenmoney
+          cache-to: type=gha,mode=max,scope=suenmoney
+
+      # 推完必须回读一次：多架构构建的「推成功」只代表 blob 上去了，
+      # manifest list 里少一个架构要等用户 `docker pull` 才炸。
+      - name: Verify Published Manifest
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          OWNER="${{ steps.owner.outputs.owner }}"
+          IMG="ghcr.io/${OWNER}/suenmoney"
+
+          echo "── ${IMG}:${VER} ──"
+          docker buildx imagetools inspect "${IMG}:${VER}" | tee /tmp/inspect.txt
+          echo "── ${IMG}:latest ──"
+          docker buildx imagetools inspect "${IMG}:latest" | head -5
+
+          for ARCH in amd64 arm64; do
+            if ! grep -q "linux/${ARCH}" /tmp/inspect.txt; then
+              echo "✖ manifest 里没有 linux/${ARCH} —— 多架构构建不完整"
+              exit 1
+            fi
+          done
+          echo "✓ amd64 + arm64 均已就位"
+
+          DIGEST="$(grep -m1 '^Digest:' /tmp/inspect.txt | awk '{print $2}')"
+          {
+            echo "### 镜像"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 地址 | \`${IMG}\` |"
+            echo "| 版本 tag | \`${VER}\` |"
+            echo "| 别名 | \`${OWNER}/suenmoney:${VER}\` · \`:latest\` · \`${{ steps.ver.outputs.minor }}\` |"
+            echo "| 架构 | linux/amd64, linux/arm64 |"
+            echo "| Digest | \`${DIGEST}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          # 只给 prepare-release-notes.mjs 用（它要 node 跑 + 用全局 fetch 拉现有 body）。
+          # runner 自带的 node 版本随镜像漂移，显式钉住避免「昨天能跑今天不行」。
+          node-version: '24'
+
+      - name: Prepare Release Notes
+        run: |
+          node scripts/prepare-release-notes.mjs \
+            --platform docker \
+            --tag "suenmoney-v${{ steps.ver.outputs.version }}" \
+            --output /tmp/release_body.md
+          echo "--- 发布说明 ---"
+          cat /tmp/release_body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # 只改 body 的 DOCKER 一节，不动 fpk/hap/ipa 三个附件：
+      # prepare-release-notes 会先拉现有 body 再按 `<!-- SECTION:X -->` 合并，
+      # 所以谁先跑谁后跑都不会互相覆盖（见 docs/ci.md）。
+      - name: Publish Section to sunriseqis/suenapp
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: sunriseqis/suenapp
+          token: ${{ secrets.GH_RELEASE_TOKEN || secrets.SUENAPP_TOKEN || secrets.GITHUB_TOKEN }}
+          # tag 必须带 suenmoney- 前缀，否则会改到 suenmusic / suenweb 的同名发行页
+          tag_name: suenmoney-v${{ steps.ver.outputs.version }}
+          name: SuenMoney v${{ steps.ver.outputs.version }}
+          body_path: /tmp/release_body.md
+          draft: false
+          prerelease: false
+          make_latest: true
+          append_body: false
