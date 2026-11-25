@@ -85,6 +85,11 @@ output/
 # ---- 品牌渲染产物：由 npm run icons 从矢量母版重新生成 ----
 docs/design/brand/dist/
 
+# ---- 已入库的历史产物（规则后补，需 git rm --cached 清跟踪）----
+docs/reports/hw/dist/
+fn/app/VERSION
+archive/
+
 # ---- 通用 ----
 *.log
 .DS_Store
@@ -94,6 +99,13 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# ---- 凭据与密钥（绝不入库）----
+# 明文口令/签名密钥一旦入库即视为泄露，必须轮换。
+scripts/hwenv.sh
+android/app/*.keystore
+android/app/*.jks
+android/app/keystore.properties
 
 # ---- 私人数据（绝不入库）----
 # 备份/导出文件含全部账单，只存在于本地 output/

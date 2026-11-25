@@ -21,17 +21,22 @@ android {
     }
     signingConfigs {
         release {
-            def defaultKeystore = file('suenmoney.keystore')
+            // 签名凭据不落库：优先 CI 注入，其次读 gitignored 的 keystore.properties。
+            def keystorePropsFile = file('keystore.properties')
+            def keystoreProps = new Properties()
+            if (keystorePropsFile.exists()) {
+                keystoreProps.load(new FileInputStream(keystorePropsFile))
+            }
             if (project.hasProperty('android.injected.signing.store.file')) {
                 storeFile file(project.property('android.injected.signing.store.file'))
                 storePassword project.property('android.injected.signing.store.password')
                 keyAlias project.property('android.injected.signing.key.alias')
                 keyPassword project.property('android.injected.signing.key.password')
-            } else if (defaultKeystore.exists()) {
-                storeFile defaultKeystore
-                storePassword 'suenmoney'
-                keyAlias 'suenmoney'
-                keyPassword 'suenmoney'
+            } else if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
             }
             v1SigningEnabled true
             v2SigningEnabled true
