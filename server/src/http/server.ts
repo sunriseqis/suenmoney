@@ -80,7 +80,7 @@ export async function buildServer(
 
   await app.register(cors, {
     origin: (origin, cb) => {
-      // 允许没有 Origin 头的内部/curl 请求
+      // 允许没有 Origin 头的内部/curl 请求（非浏览器，不涉及 CORS）
       if (!origin) return cb(null, true);
       // 若配置了显式白名单，按白名单校验
       if (config.corsOrigins.length > 0) {
@@ -89,8 +89,9 @@ export async function buildServer(
         }
         return cb(null, false);
       }
-      // 默认允许 Capacitor、localhost 以及局域网客户端跨源访问
-      cb(null, true);
+      // 无白名单：不设 CORS 头 = 仅同源。同源请求浏览器本就不需要 CORS 放行，
+      // 跨源请求会被浏览器拦截。需要跨源时显式配置 SUENMONEY_CORS_ORIGINS。
+      cb(null, false);
     },
     credentials: false,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

@@ -71,7 +71,7 @@ export class VectorRunner {
     r.check("今天到期", String(urgencyOf('2026-10-22', '2026-10-22')), 'due');
     r.check("0–1 天都算 due", String(urgencyOf('2026-10-23', '2026-10-22')), 'due');
     r.check("2 天起为 later", String(urgencyOf('2026-10-24', '2026-10-22')), 'later');
-    r.check("逾期文案", String(urgencyLabel('2026-10-20', '2026-10-22')), '已逾期 2 天');
+    r.check("逾期文案", String(urgencyLabel('2026-10-20', '2026-10-22')), '逾期 2 天');
     r.check("当天文案", String(urgencyLabel('2026-10-22', '2026-10-22')), '今天到期');
     r.check("未来文案", String(urgencyLabel('2026-10-25', '2026-10-22')), '还有 3 天');
   }

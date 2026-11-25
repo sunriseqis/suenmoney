@@ -1,5 +1,5 @@
 /**
- * 数据的导出 / 导入 / 备份 / 恢复。
+ * 数据的导出 / 备份 / 恢复。
  *
  * ## 为什么单独一个文件
  *
@@ -11,11 +11,10 @@
  * 1. **写入必须走 `db/sync.ts`**：每次写入都要 `recordChange` 落 `changes`
  *    + 递增 `rev`。直接灌表在功能上「看起来能用」，但其他设备永远同步不到，
  *    而且**不报错** —— 正是 `decisions.md`「写入只有一个入口」那条的由来。
- * 2. **成员（users）永远不导入**。导出里带成员是为了把「记录人」这个名字还原出来，
- *    导入不会新建账号：那会造出一批**没有可用口令**的僵尸账号。缺失的成员
- *    一律 409 并列出名字，让用户先去「家庭与账号」把人建好 —— 见 `requireMembers`。
- * 3. **导入 = 只补缺，恢复 = 文件覆盖本地**。这两个不是同一个函数的两个参数：
- *    导入可重复执行且绝不动现有数据，恢复则让文件说了算。恢复必须先自动存档。
+ * 2. **成员（users）只随「恢复」覆盖**。备份里带成员是为了把「记录人」这个名字
+ *    还原出来；服务端不再提供「只补缺」的 JSON 导入路径（`mergePackage` 只做恢复），
+ *    因此不存在「导入新建账号」的入口。
+ * 3. **恢复 = 文件覆盖本地**：让文件说了算，恢复前必须先自动存档。
  * 4. **恢复不做删除**。它只把备份里的东西写回去；本地多出来的记录保留。
  *    「删掉本地有、备份里没有的记录」比「写回旧数据」危险得多，
  *    不该藏在一个叫「恢复」的按钮后面。
@@ -26,11 +25,11 @@ import { join } from 'node:path';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 
 import { config } from '../../config.ts';
-import { badRequest, conflict } from '../../lib/http-error.ts';
+import { badRequest } from '../../lib/http-error.ts';
 import { hashPassword } from '../../lib/password.ts';
 import { ulid } from '../../lib/ulid.ts';
 import { inTransaction, recordChange, type EntityType } from '../sync.ts';
-import { validateAmount } from './expenses.ts';
+import { validateAmount, validateNote } from './expenses.ts';
 import { createUserWithId, toSyncUser, type UserRow } from './users.ts';
 
 // ---------------------------------------------------------------------------
@@ -139,39 +138,6 @@ export interface ExportPackage {
 // ---------------------------------------------------------------------------
 // 范围
 // ---------------------------------------------------------------------------
-
-/**
- * 解析并校验导出范围。
- *
- * 期间一律是**前缀匹配 `repayment_date`**（`'YYYY-MM'` / `'YYYY'`），
- * 与 `reports.ts` 的聚合口径同源。**不能改用消费日 `spend_date` 去筛** ——
- * 那样「9 月导出的合计」与「9 月报表的合计」会不相等，
- * 而这种不一致看起来像丢数据，排查方向会完全跑偏。
- */
-export function parseScope(kindRaw: unknown, periodRaw: unknown): ExportScope {
-  const kind = kindRaw === undefined || kindRaw === '' ? 'all' : String(kindRaw);
-  if (kind !== 'all' && kind !== 'year' && kind !== 'month') {
-    throw badRequest('scope 只能是 all / year / month');
-  }
-
-  if (kind === 'all') {
-    // 给了 period 就明说它被忽略了，而不是静默丢掉 —— 静默会让调用方以为筛选生效了
-    if (periodRaw !== undefined && String(periodRaw).trim() !== '') {
-      throw badRequest('scope=all 不接受 period');
-    }
-    return { kind, period: '' };
-  }
-
-  const period = String(periodRaw ?? '').trim();
-  const pattern = kind === 'year' ? /^\d{4}$/ : /^\d{4}-(0[1-9]|1[0-2])$/;
-  if (!pattern.test(period)) {
-    throw badRequest(
-      kind === 'year' ? 'scope=year 需要 period=YYYY' : 'scope=month 需要 period=YYYY-MM',
-    );
-  }
-
-  return { kind, period };
-}
 
 /** 期间的文件名片段，`all` 时返回 `all`。 */
 function scopeSlug(scope: ExportScope): string {
@@ -474,8 +440,8 @@ export interface TableReport {
 }
 
 export interface MergeReport {
-  /** 写入模式：`merge` 只补缺，`restore` 文件覆盖本地 */
-  mode: 'merge' | 'restore';
+  /** 写入模式。本服务端只暴露「恢复」（整库覆盖）一条路径。 */
+  mode: 'restore';
   byTable: Record<TableName, TableReport>;
   created: number;
   skipped: number;
@@ -494,8 +460,6 @@ export interface MergeReport {
 }
 
 interface MergeOptions {
-  /** true = 文件覆盖本地（恢复）；false = 只补缺（导入） */
-  overwrite: boolean;
   /** 写快照的函数，由 http 层注入 —— repo 层不直接碰文件系统路径策略 */
   snapshot?: (() => string | null) | undefined;
 }
@@ -511,35 +475,6 @@ interface MergeOptions {
  * 按 id 查而不是按 username：id 是 ULID，改过用户名的人也认得出来。
  * **包含软删的成员**：历史记录必须继续引用那个已经不用的账号。
  */
-/**
- * 导入导出包时，把所有成员引用改成**当前操作者**（「谁导入就归谁」）。
- *
- * 导出包不含「原机器的成员」这层语义 —— 它只是某个期间的流水。
- * 如果这里也要求目标库认识那些 ULID，用户就永远没法把 A 机器导出的账
- * 导进 B 机器的自己名下。
- *
- * `confirmed_by` 清空而不是指向操作者：它是「谁确认入账」的历史事实，
- * 换个账号导入后不该被冒认成自己确认的。
- */
-function remapMembersToActor(pkg: ExportPackage, actorId: string): void {
-  for (const row of pkg.data.plans) {
-    if (typeof row['owner_id'] === 'string') row['owner_id'] = actorId;
-  }
-  for (const row of pkg.data.expenses) {
-    if (typeof row['owner_id'] === 'string') row['owner_id'] = actorId;
-  }
-  for (const row of pkg.data.planTodos) {
-    // ⚠ 不能清成空串：`confirmed_by TEXT REFERENCES users(id)` 是**外键**，
-    //   空串不是 NULL，会被当成一个 user id 去查，直接 FOREIGN KEY 失败。
-    //   而且 DDL 里还有 `CHECK (status <> 'confirmed' OR confirmed_by IS NOT NULL)`，
-    //   清空会让已确认的期次连 CHECK 都过不去。
-    //   语义上也该指向导入者 —— 「谁导入就归谁」。
-    if (typeof row['confirmed_by'] === 'string' && row['confirmed_by'] !== '') {
-      row['confirmed_by'] = actorId;
-    }
-  }
-}
-
 /** 恢复备份后的成员变化（供响应里回给管理员） */
 export interface MemberRestoreResult {
   /** 备份里的账号被写入（覆盖）的数量 */
@@ -685,40 +620,6 @@ function restoreUsers(db: DatabaseSync, pkg: ExportPackage, actorId: string): Me
   return { restored, removed, needsPassword };
 }
 
-function requireMembers(db: DatabaseSync, pkg: ExportPackage): void {
-  const referenced = new Set<string>();
-
-  for (const row of pkg.data.plans) {
-    if (typeof row['owner_id'] === 'string') referenced.add(row['owner_id']);
-  }
-  for (const row of pkg.data.expenses) {
-    if (typeof row['owner_id'] === 'string') referenced.add(row['owner_id']);
-  }
-  for (const row of pkg.data.planTodos) {
-    if (typeof row['confirmed_by'] === 'string' && row['confirmed_by'] !== '') {
-      referenced.add(row['confirmed_by']);
-    }
-  }
-
-  const missing: string[] = [];
-  for (const id of referenced) {
-    const found = db.prepare('SELECT 1 AS x FROM users WHERE id = ?').get(id);
-    if (found === undefined) {
-      const inPackage = pkg.data.members.find((row) => String(row['id']) === id);
-      const name = inPackage === undefined ? id : `${String(inPackage['display_name'])}（${id}）`;
-      missing.push(name);
-    }
-  }
-
-  if (missing.length > 0) {
-    throw conflict(
-      `数据包里引用了本系统里不存在的成员：${missing.join('、')}。`
-        + '请先在「家庭与账号」里建好这些账号再导入 —— 导入不会替你创建账号'
-        + '（否则会造出一批没有可用口令的账号）。',
-    );
-  }
-}
-
 function coerce(value: unknown): string | number | null {
   if (value === undefined || value === null) return null;
   if (typeof value === 'bigint') return Number(value);
@@ -740,15 +641,13 @@ function writeRow(
   table: TableName,
   row: Row,
   actorId: string,
-  overwrite: boolean,
-): 'created' | 'skipped' | 'overwritten' {
+): 'created' | 'overwritten' {
   const id = row['id'];
   if (typeof id !== 'string' || id === '') {
     throw badRequest(`${table} 里有一行缺少 id`);
   }
 
   const exists = db.prepare(`SELECT 1 AS x FROM ${table} WHERE id = ?`).get(id) !== undefined;
-  if (exists && !overwrite) return 'skipped';
 
   const { entity, columns } = TABLES[table];
   const values = columns.map((column) => coerce(row[column]));
@@ -815,8 +714,6 @@ export function mergePackage(
   actorId: string,
   options: MergeOptions,
 ): MergeReport {
-  const { overwrite } = options;
-
   const byTable: Record<TableName, TableReport> = {
     categories: { created: 0, skipped: 0, overwritten: 0 },
     payment_methods: { created: 0, skipped: 0, overwritten: 0 },
@@ -835,22 +732,20 @@ export function mergePackage(
   let snapshotPath: string | null = null;
 
   inTransaction(db, () => {
-    if (overwrite) {
-      // 恢复备份 = 整库覆盖（含账号与口令），见 restoreUsers。
-      // ⚠ 必须在 inTransaction 里面 —— 用户写入与后续数据写入是一个原子单元，
-      // 否则若数据写入回滚，账号却已被改/软删，留下「账号改了、账目没改」的半截态。
-      memberRestore = restoreUsers(db, pkg, actorId);
-    }
-
     // 冒烟：先抓一份当前全量存档。恢复是覆盖性的，这一步是它的安全网 ——
-    // 而且要**在事务里、在第一次写入之前**做，否则存档存的可能已经是半改过的状态。
+    // 必须**在事务里、且在第一次写入（含 restoreUsers）之前**做，
+    // 否则存档存的可能已经是半改过的状态（尤其是 users 已被覆盖/软删）。
     if (options.snapshot !== undefined) {
       snapshotPath = options.snapshot();
     }
 
+    // 本函数现在只有「恢复」一种用途（无 /api/import 路由暴露「只补缺」模式），
+    // 因此固定整库覆盖语义：先恢复账号，再覆盖各表。
+    memberRestore = restoreUsers(db, pkg, actorId);
+
     const write = (table: TableName, rows: readonly Row[]): void => {
       for (const row of rows) {
-        const outcome = writeRow(db, table, row, actorId, overwrite);
+        const outcome = writeRow(db, table, row, actorId);
         byTable[table][outcome] += 1;
       }
     };
@@ -872,7 +767,7 @@ export function mergePackage(
   );
 
   return {
-    mode: overwrite ? 'restore' : 'merge',
+    mode: 'restore',
     byTable,
     ...totals,
     snapshotPath,
@@ -1068,11 +963,13 @@ export function importExpensesCsv(
       inTransaction(db, () => {
         // 金额也走 validateAmount —— 否则 CSV 里一个天文数字会直接落库并污染报表
         validateAmount(cents);
+        // 备注与手工记账同口径：超长备注（多半是误粘贴）直接拒收该行
+        const note = validateNote(iNote >= 0 ? String(cells[iNote] ?? '') : '');
 
         insert.run(
           id, ownerId, cents, categoryId, paymentId,
           spendDate, postingDate, repaymentDate,
-          iNote >= 0 ? String(cells[iNote] ?? '') : '',
+          note,
           now, now,
         );
 
@@ -1091,7 +988,7 @@ export function importExpensesCsv(
             spend_date: spendDate,
             posting_date: postingDate,
             repayment_date: repaymentDate,
-            note: iNote >= 0 ? String(cells[iNote] ?? '') : '',
+            note,
             source: 'manual',
             plan_id: null,
             plan_period_seq: null,

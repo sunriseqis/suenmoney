@@ -11,6 +11,11 @@
  * 所有写操作完成后都 `dict.load(true)` 或 `plans.refresh()` 重新拉一次，
  * 不做「本地拼一个假对象塞进列表」—— 那样一旦服务端归一化过字段（比如
  * 二级分类继承父色），前端显示的就和真实数据不一致。
+ *
+ * TODO(audit): 本文件 1558 行，账目/计划/数据/家庭四区职责过重，待拆分。
+ *   建议：按 tab 拆 SettingsLedger / SettingsPlans / SettingsData / SettingsHousehold，
+ *   或抽 useSettingsDict / useSettingsMembers / useSettingsData 三个 composable。
+ *   拆分属重构，本次审计暂不落地，避免引入回归。
  */
 import { CalendarDays, Check, CreditCard, Database, Pencil, Plus, Tag, Trash2, Users, Wallet } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';

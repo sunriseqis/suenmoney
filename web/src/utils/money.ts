@@ -68,11 +68,22 @@ export function parseYuanToCents(input: string): number {
   const negative = input.startsWith('-');
   const abs = negative ? input.slice(1) : input;
 
-  const [intPart = '0', decPart = ''] = abs.split('.');
-  const yuan = Number(intPart === '' ? '0' : intPart);
-  const fen = Number((decPart + '00').slice(0, 2));
+  // 只接受「纯十进制数字」的整数/小数部分：拒绝科学计数法（'1e3'）、十六进制与多余小数点。
+  const parts = abs.split('.');
+  if (parts.length > 2) return 0;
+  const intPart = parts[0] ?? '';
+  const decPart = parts[1] ?? '';
+  const intStr = intPart === '' ? '0' : intPart;
+  if (!/^\d+$/.test(intStr)) return 0;
+  if (decPart !== '' && !/^\d+$/.test(decPart)) return 0;
 
-  if (!Number.isFinite(yuan) || !Number.isFinite(fen)) return 0;
+  const yuan = Number(intStr);
+  // 小数超过两位时四舍五入到分（第 3 位决定进位），避免 '1.239' 被静默截断成 1.23。
+  let fen = 0;
+  if (decPart !== '') {
+    fen = Math.round(Number((decPart + '00').slice(0, 3)) / 10);
+  }
+
   const cents = yuan * 100 + fen;
   return negative ? -cents : cents;
 }

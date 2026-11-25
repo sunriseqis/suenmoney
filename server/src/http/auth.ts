@@ -106,6 +106,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     resetRateLimit(key);
+    // 登录成功也重置纯 IP 桶：同 IP 的家人不该因为别人猜错口令而被连带锁 15 分钟
+    resetRateLimit(loginIpKey(request));
 
     const session = createSession(db, row.id, deviceLabel, config.sessionDays);
     return { token: session.token, expiresAt: session.expiresAt, user: toPublicUser(row) };

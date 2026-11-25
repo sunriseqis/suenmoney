@@ -25,10 +25,6 @@ const HW_DIR = join(ROOT, 'hw-native');
 const OUTPUT_DIR = join(ROOT, 'app');
 const SYNC_ONLY = process.argv.includes('--sync-only');
 
-// Windows 的可执行入口带 .exe/.cmd 后缀，直接 execFileSync('git') 会 ENOENT。
-// CI 只在 ubuntu 上验证过，所以这个 win32 分支必须在本地显式处理，不能指望 CI 兜住。
-const GIT_BIN = process.platform === 'win32' ? 'git.exe' : 'git';
-
 function log(msg) {
   console.log(`[build-hw] ${msg}`);
 }
@@ -43,10 +39,6 @@ function run(command, args, options = {}) {
   execFileSync(command, args, { stdio: 'inherit', ...options });
 }
 
-function output(command, args, options = {}) {
-  return execFileSync(command, args, { encoding: 'utf8', ...options }).trim();
-}
-
 async function readVersionName() {
   const raw = (await readFile(join(ROOT, 'VERSION'), 'utf8')).trim();
   if (!/^\d+(?:\.\d+)*$/.test(raw)) {
@@ -56,19 +48,12 @@ async function readVersionName() {
 }
 
 function readVersionCode(versionName) {
-  try {
-    const count = Number(output(GIT_BIN, ['rev-list', '--count', 'HEAD'], { cwd: ROOT }));
-    if (Number.isInteger(count) && count > 0) {
-      return { code: 10000 + count, source: `10000 + git 提交数 ${count}` };
-    }
-  } catch {
-    /* 无法执行 git 时回退到版本号推导 */
-  }
+  // versionCode 单一公式：major*1000000 + minor*10000 + patch*100（2.1.2 → 2010200）。
+  // 与 .github/workflows/build-hw.yml / build-ios.yml 及 app.json5/pbxproj 提交值一致，
+  // 不要再改回 10000+git 提交数（提交数与商店版本号量级不同，会导致拒绝升级）。
   const [major = 0, minor = 0, patch = 0] = versionName.split('.').map(Number);
-  return {
-    code: 10000 + major * 100 + minor * 10 + patch,
-    source: `按版本号推导`,
-  };
+  const code = major * 1000000 + minor * 10000 + patch * 100;
+  return { code, source: `${versionName} → ${code}` };
 }
 
 async function syncWeb() {

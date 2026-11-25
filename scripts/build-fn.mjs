@@ -110,26 +110,39 @@ async function ensureNodeRuntime() {
   }
 
   let tarball;
+  let reused = false;
   if (existsSync(cachedTarball)) {
     tarball = readFileSync(cachedTarball);
+    reused = true;
     ok(`复用缓存 ${cachedTarball}`);
   } else {
     tarball = await download(`${NODE_MIRROR}/node-${NODE_VERSION}-linux-x64.tar.xz`, cachedTarball);
     ok(`已下载 node-${NODE_VERSION}-linux-x64.tar.xz（${(tarball.length / 1048576).toFixed(1)}MB）`);
   }
 
-  // 校验和：参考实现那边裸 curl 没有任何校验，这里补上（拿不到官方 SHASUMS 就只记录）
+  // 校验和：**新下载的 tarball 必须校验，失败即中止**；仅复用时才允许跳过。
+  // 参考实现那边裸 curl 没有任何校验，这里把「下载过才强制校验」的语义补上。
   try {
     const sums = (await download(`${NODE_MIRROR}/SHASUMS256.txt`, join(CACHE, 'SHASUMS256.txt'))).toString();
     const line = sums.split('\n').find((l) => l.includes(`node-${NODE_VERSION}-linux-x64.tar.xz`));
-    if (line) {
+    if (!line) {
+      if (reused) {
+        ok('跳过 sha256 校验（SHASUMS256.txt 无对应条目，且为复用缓存）');
+      } else {
+        die('SHASUMS256.txt 里找不到 node 运行时条目，拒绝使用未校验的新下载包');
+      }
+    } else {
       const want = line.trim().split(/\s+/)[0];
       const got = sha256(tarball);
       if (want !== got) die(`Node 运行时校验失败\n        期望 ${want}\n        实际 ${got}`);
       ok(`sha256 校验通过 ${got.slice(0, 16)}…`);
     }
   } catch (e) {
-    ok(`跳过 sha256 校验（${e.message}）`);
+    if (reused) {
+      ok(`跳过 sha256 校验（${e.message}，复用缓存）`);
+    } else {
+      die(`sha256 校验失败（新下载的包必须校验）：${e.message}`);
+    }
   }
 
   // 解包只取 bin/node：不带 lib/，包体积小一半
@@ -322,7 +335,7 @@ function assemble(semver) {
 
   step(6, 'fnpack 工具链');
   if (SKIP_FNPACK) {
-    ok('跳过（--skip-fnpck）：payload 已就绪，可用 tar 手工校验结构');
+    ok('跳过（--skip-fnpack）：payload 已就绪，可用 tar 手工校验结构');
     console.log('\n完成（未出包）。下一步去掉 --skip-fnpack 即可出 .fpk。');
     return;
   }

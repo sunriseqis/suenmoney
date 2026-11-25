@@ -261,41 +261,9 @@ export async function rankMirrorsFor(
   const headSet = new Set(heads.map(h => h.prefix));
   const list = rankByProbe([...refined, ...coarse.filter(x => !headSet.has(x.prefix))]);
   rankCache.set(url, { at: Date.now(), list });
-  lastRanked = list.filter(x => x.ok && x.prefix).map(x => x.prefix).slice(0, 8);
   const usable = list.filter(x => x.ok).length;
   log.info('镜像探活完成：' + usable + '/' + list.length + ' 可用，最快 ' + (list[0]?.prefix || '直连') + '（' + (list[0]?.kbps ?? 0) + ' KB/s）');
   return list;
-}
-
-/** 最近一次择优出的可用镜像（按快慢），供 API 兜底复用，避免为 API 再扫一遍 */
-let lastRanked: string[] = [];
-
-/** 最近一次择优结果（同步读，可能为空） */
-export function lastRankedPrefixes(): string[] {
-  return lastRanked;
-}
-
-/**
- * GitHub **API** 的出口候选顺序（HTTP 代理出站已废弃，改为直连 + 镜像）。
- *
- * 顺序：配置的 API 基地址 → 官方 api.github.com → 最近择优过的镜像 → 内置候选池，
- * 去重后截断到 limit。调用方需要**校验响应是 JSON 数组**：有些镜像对任何路径都回 "ok"。
- */
-export function apiCandidates(
-  opts: { configuredBase?: string; ranked?: readonly string[]; limit?: number } = {},
-): string[] {
-  const base = String(opts.configuredBase || 'https://api.github.com').replace(/\/+$/, '');
-  const ordered: string[] = [base, 'https://api.github.com'];
-  for (const p of opts.ranked ?? []) ordered.push(p);
-  for (const p of mirrorCandidates().slice(1)) ordered.push(p);
-  const out: string[] = [];
-  for (const p of ordered) if (!out.includes(p)) out.push(p);
-  return out.slice(0, Math.max(2, opts.limit ?? 12));
-}
-
-export function resetMirrorRankCache(): void {
-  rankCache.clear();
-  lastRanked = [];
 }
 
 /** 校验 sha256；返回实际值，调用方自行比较 */
@@ -303,7 +271,6 @@ export function sha256Of(filePath: string): string {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
 }
 
-export { DEFAULT_MIRROR_HOSTS };
 
 
 /** 空闲超时：收不到数据就换镜像（不用总时长限制，大文件本来就慢） */

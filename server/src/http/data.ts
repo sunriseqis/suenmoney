@@ -5,7 +5,7 @@
  *
  * 这层解耦成本为零，但不写清楚就会被做成「必须带浏览器会话态」——
  * 而这个接口最可能的第二个消费者恰恰不是浏览器：cron 归档、CLI 备份、
- * 迁移脚本。它们只会发 `GET /api/export?scope=month&period=2026-09`。
+ * 迁移脚本。它们会发 `GET /api/backup`（全量备份）或 `GET /api/expenses.csv`（流水 CSV）。
  *
  * ## 全部仅 admin
  *
@@ -24,7 +24,6 @@ import {
   buildPackage,
   mergePackage,
   packageFileName,
-  parseScope,
   buildExpensesCsv,
   importExpensesCsv,
   validatePackage,
@@ -134,7 +133,6 @@ export async function dataRoutes(app: FastifyInstance): Promise<void> {
 
       const db = getDatabase();
       const report = mergePackage(db, pkg, auth.user.id, {
-        overwrite: true,
         snapshot: () => writePreRestoreSnapshot(db),
       });
 

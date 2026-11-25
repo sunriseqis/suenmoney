@@ -41,6 +41,7 @@ struct LoginPage {
   @State passwordFocus: boolean = false;
 
   aboutToAppear(): void {
+    ensureFonts(this.getUIContext());
     // 预填当前生效地址；改地址就在这一个框里改
     this.serverUrl = ServerConfig.get().baseUrl;
   }

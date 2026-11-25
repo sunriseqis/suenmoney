@@ -18,11 +18,11 @@ import { Configuration } from '@ohos.app.ability.Configuration';
 import { Db } from '../common/store/Db';
 import { ServerConfig } from '../common/net/ServerConfig';
 import { ThemeManager } from '../common/theme/ThemeManager';
-import { Fonts } from '../common/theme/Fonts';
 import { AuthStore } from '../common/auth/AuthStore';
 import { LastPick } from '../common/store/LastPick';
 import { SyncEngine } from '../common/sync/SyncEngine';
 import { NetworkMonitor } from '../common/sync/NetworkMonitor';
+import { VectorRunner } from '../common/contract/VectorRunner';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 
@@ -58,9 +58,11 @@ export default class EntryAbility extends UIAbility {
 
   private async bootstrap(): Promise<void> {
     hilog.info(DOMAIN, 'SuenMoneyBuild', 'client build %{public}s', CLIENT_BUILD);
+    // 三端共用测试向量自检（纯函数，结果打进 hilog 供验收核对）
+    const vectorReport = VectorRunner.runAll();
+    hilog.info(DOMAIN, 'SuenMoneyVector', '%{public}s', vectorReport);
     // 底座三件套：主题、服务端与令牌、本地库。
     // 顺序无关，但都必须在这里完成 —— 页面 aboutToAppear 时就要能拿到。
-    await Fonts.register(this.context);
     await ThemeManager.get().init(this.context);
     await ServerConfig.get().init(this.context);
     await LastPick.init(this.context);

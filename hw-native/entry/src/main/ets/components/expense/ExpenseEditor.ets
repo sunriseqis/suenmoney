@@ -17,9 +17,7 @@
 import {
   Api,
   CategoryNode,
-  ExpenseCreateRequest,
   ExpenseItem,
-  ExpensePatchRequest,
   ExpensePreview,
   PaymentMethodItem,
   PlanCreateRequest
@@ -286,6 +284,12 @@ export struct ExpenseEditor {
     return due.repaymentDate.substring(0, 7) !== this.spendDate.substring(0, 7);
   }
 
+  /** 预览还款日（无预览时返回空串，避免非空断言） */
+  private previewRepayment(): string {
+    const due = this.preview;
+    return due === null ? '' : due.repaymentDate;
+  }
+
   private findCategory(id: string): CategoryNode | null {
     for (const root of this.categories) {
       if (root.id === id) {
@@ -430,6 +434,7 @@ export struct ExpenseEditor {
           autoPost: false,
           note: this.note
         };
+        // TODO(offline): 计划创建仍走在线接口，断网时不可用；后续接入 outbox 离线队列。
         await Api.createPlan(planReq);
         /*
          * ⚠ 分期是**服务端写入**（本地队列表达不了 periods/purchaseDate），
@@ -1197,15 +1202,15 @@ export struct ExpenseEditor {
           Text('这笔会记在')
             .fontSize(10)
             .fontColor(this.tok().accent)
-          Text(this.monthLabel(this.preview!.repaymentDate))
+          Text(this.monthLabel(this.previewRepayment()))
             .fontSize(10)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.tok().accent)
-          Text(`（还款日 ${this.dateShort(this.preview!.repaymentDate)}）`)
+          Text(`（还款日 ${this.dateShort(this.previewRepayment())}）`)
             .fontSize(10)
             .fontColor(this.tok().accent)
         } else {
-          Text(this.preview === null ? '账期未取到' : `还款日 ${this.preview!.repaymentDate}`)
+          Text(this.preview === null ? '账期未取到' : `还款日 ${this.previewRepayment()}`)
             .fontSize(10)
             .fontColor(this.tok().ink3)
         }

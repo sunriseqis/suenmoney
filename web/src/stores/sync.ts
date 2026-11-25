@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 
 import {
   sync as syncApi,
+  users as usersApi,
   ApiError,
   detectAndSwitchServer,
   getActiveServerUrl,
@@ -39,6 +40,12 @@ import { usePlansStore } from './plans';
  * 超过后该条进入死信隔离（不再参与推送），防止毒丸数据永久卡死队列。
  */
 const OUTBOX_MAX_RETRY = 3;
+
+/**
+ * 单次增量拉取的最大翻页数，与 iOS(`maxPullPages = 50`)/hw(`MAX_PULL_PAGES = 50`) 对齐。
+ * 防止服务端异常（或契约变动）持续返回 `hasMore: true` 且非空时把同步卡进死循环。
+ */
+const MAX_PULL_PAGES = 50;
 
 /**
  * 离线写入失败时抛给上层的错误。
@@ -100,6 +107,28 @@ export const useSyncStore = defineStore('sync', () => {
 
   const hasPending = computed(() => pendingCount.value > 0);
   const deadLetterCount = computed(() => deadLetters.value.length);
+
+  /**
+   * 用户 id → 显示名 的本地缓存，用于给拉取到的流水行填「记录人」。
+   *
+   * 服务端 expense 同步快照只带 `owner_id`、不带 `owner_name`（见 server 的
+   * `toSyncExpense`），而「记录人」是流水行的可见字段。这里用 user 实体变更 +
+   * 服务端用户列表（`/api/users`）补齐，再按 ownerId 关联。
+   */
+  const ownerNames = new Map<string, string>();
+  let ownerNamesLoaded = false;
+
+  /** 从服务端用户列表重建 ownerNames（尽力而为，失败不阻断同步）。 */
+  async function refreshOwnerNames(): Promise<void> {
+    try {
+      const res = await usersApi.list();
+      ownerNames.clear();
+      for (const u of res.users) ownerNames.set(u.id, u.displayName);
+      ownerNamesLoaded = true;
+    } catch {
+      // 用户列表拉不到就保留现状，下次同步再补
+    }
+  }
 
   let syncDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -215,8 +244,9 @@ export const useSyncStore = defineStore('sync', () => {
       lastSyncVersion.value = await getMeta<number>('last_sync_version', 0);
       lastSyncedAt.value = await getMeta<string | null>('last_synced_at', null);
       await refreshPendingCount();
-    } catch {
-      // 忽略本地元信息读取失败
+    } catch (err) {
+      // 本地元信息损坏不能静默：否则用户毫不知情地从 0 开始全量重拉，且死信/待同步计数可能失真
+      console.warn('[sync] 读取本地同步元信息失败，将按全新客户端从头拉取', err);
     }
 
     // 监听网络底层状态变更
@@ -747,7 +777,7 @@ export const useSyncStore = defineStore('sync', () => {
     for (const item of [...rejectedCreates, ...rejectedOthers]) {
       const nextRetry = item.retryCount + 1;
       const label = item.action === 'create_expense' ? '新增' : '修改/删除';
-      if (nextRetry > OUTBOX_MAX_RETRY) {
+      if (nextRetry >= OUTBOX_MAX_RETRY) {
         await addOutboxItem({
           ...item,
           retryCount: nextRetry,
@@ -771,14 +801,22 @@ export const useSyncStore = defineStore('sync', () => {
     const auth = useAuthStore();
     if (!auth.isAuthenticated) return 0;
 
+    // 首次拉取前补齐「记录人」映射（服务端用户列表 + 当前用户），之后靠 user 变更增量维护
+    if (!ownerNamesLoaded) {
+      await refreshOwnerNames();
+    }
+    if (auth.user) ownerNames.set(auth.user.id, auth.user.displayName);
+
     let hasMore = true;
     let currentVer = lastSyncVersion.value;
     let totalPulled = 0;
     let anyDictChanged = false;
     let anyPlanChanged = false;
     let anyUserChanged = false;
+    let pagesPulled = 0;
 
-    while (hasMore) {
+    while (hasMore && pagesPulled < MAX_PULL_PAGES) {
+      pagesPulled++;
       const result = await syncApi.pull(currentVer, 200);
       if (result.changes.length === 0) break;
 
@@ -795,14 +833,21 @@ export const useSyncStore = defineStore('sync', () => {
            * 而 `ownerName` 只在新增时填、从不更新，结果是：
            *   · 别人改了显示名，本端永远看不到；
            *   · 流水「记录人」长期为空（甚至服务端的名字是 `张三`、本地显示空）。
-           * 标记 `anyUserChanged`，循环结束后重刷用户列表。
+           * 现在把 user 变更维护进 ownerNames，供下方 expense 落地时按 ownerId 关联。
            */
+          const displayName = String(change.payload['displayName'] ?? '');
+          if (change.op === 'delete') {
+            ownerNames.delete(change.entityId);
+          } else if (displayName !== '') {
+            ownerNames.set(change.entityId, displayName);
+          }
           anyUserChanged = true;
         } else if (change.entityType === 'expense') {
           if (change.op === 'delete') {
             await deleteCachedExpense(change.entityId);
           } else if (change.op === 'upsert' && change.payload) {
             const p = change.payload;
+            const ownerId = String(p['owner_id'] ?? '');
             const dict = useDictionariesStore();
             const cat = dict.findCategory(String(p['category_id'] ?? ''));
             const parentCat = cat?.parentId ? dict.findCategory(cat.parentId) : null;
@@ -810,8 +855,8 @@ export const useSyncStore = defineStore('sync', () => {
             await saveSingleCachedExpense(
               {
                 id: change.entityId,
-                ownerId: String(p['owner_id'] ?? ''),
-                ownerName: '',
+                ownerId,
+                ownerName: ownerNames.get(ownerId) ?? '',
                 amountCents: Number(p['amount_cents'] ?? 0),
                 categoryId: String(p['category_id'] ?? ''),
                 categoryName: cat?.name ?? '',
@@ -862,10 +907,11 @@ export const useSyncStore = defineStore('sync', () => {
       void plans.refresh();
     }
 
-    // 若用户有变动（改显示名/角色），通知 auth store 重刷「记录人」显示
+    // 若用户有变动（改显示名/角色），重建「记录人」映射并刷新当前用户
     if (anyUserChanged) {
       const authStore = useAuthStore();
       void authStore.refreshUser();
+      void refreshOwnerNames();
     }
 
     return totalPulled;

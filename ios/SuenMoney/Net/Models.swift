@@ -377,6 +377,14 @@ public struct PlanItem: Decodable, Identifiable {
     public let categoryIcon: String?
     public let paymentMethodId: String
     public let amountCents: Int
+    /// 分期总金额（服务端 `totalAmountCents`，非分期为 null）
+    public let totalAmountCents: Int?
+    /// 分期消费日（`purchaseDate`，非分期为 null）
+    public let purchaseDate: String?
+    /// 提前提醒天数（`remindDaysBefore`，缺省时本地按 3 处理）
+    public let remindDaysBefore: Int?
+    /// 计划备注（`note`，可为 null）
+    public let note: String?
     public let firstDueDate: String
     public let autoPost: Bool
     public let source: String

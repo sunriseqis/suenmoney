@@ -33,12 +33,8 @@ import { ProbeResult, ServerRouter } from '../../common/net/ServerRouter';
 import { PAY_OPTIONS, PayOption } from '../../common/ui/PaymentIcon';
 import {
   Api,
-  CategoryCreateRequest,
   CategoryNode,
-  CategoryPatchRequest,
-  PaymentCreateRequest,
   PaymentMethodItem,
-  PaymentPatchRequest,
   PlanCreateRequest,
   PlanItem,
   PlanTodoItem
@@ -576,6 +572,7 @@ export struct SettingsScreen {
         autoPost: this.formAutoPost,
         note: ''
       };
+      // TODO(offline): 计划写操作仍走在线接口，断网时不可用；后续接入 outbox 离线队列。
       await Api.createPlan(req);
       this.showToast('计划已创建');
       this.sheetOpen = false;
@@ -589,6 +586,7 @@ export struct SettingsScreen {
 
   private async endPlan(p: PlanItem): Promise<void> {
     try {
+      // TODO(offline): 计划写操作仍走在线接口，断网时不可用；后续接入 outbox 离线队列。
       await Api.endPlan(p.id);
       this.showToast('计划已终止');
       await this.reload();
@@ -610,6 +608,7 @@ export struct SettingsScreen {
 
   private async removePlan(p: PlanItem): Promise<void> {
     try {
+      // TODO(offline): 计划写操作仍走在线接口，断网时不可用；后续接入 outbox 离线队列。
       await Api.deletePlan(p.id);
       this.showToast('计划已删除');
       await this.reload();

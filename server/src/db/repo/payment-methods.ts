@@ -486,6 +486,25 @@ export function mergePaymentMethod(
     throw conflict('目标支付方式已停用，无法作为合并目标');
   }
 
+  /*
+   * 源支付方式还有「进行中」的计划时禁止合并。
+   *
+   * 计划待办的 posting_date 是按源账单周期推算的；合并会改掉 payment_method_id，
+   * 若不重算，后续 confirmTodo 会拿着旧入账日入账（月份归属可能错）。
+   * 历史确认待办已生成支出，追溯重算成本高、易错，因此这里选择**拦下**而非重算：
+   * 要求先结束这些计划、或把它们改到别的支付方式，再合并。
+   */
+  const activePlans = db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM plans WHERE payment_method_id = ? AND deleted_at IS NULL AND state = 'active'",
+    )
+    .get(sourceId);
+  if (Number(activePlans?.['n'] ?? 0) > 0) {
+    throw conflict(
+      '源支付方式还有进行中的计划，请先结束它们或把计划改到别的支付方式，再合并',
+    );
+  }
+
   const timestamp = nowIso();
   const targetCycle = toPaymentCycle(target);
 

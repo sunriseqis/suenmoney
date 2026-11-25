@@ -87,9 +87,20 @@ public final class Db: @unchecked Sendable {
         for sql in Db.createTables {
             try execute(sql)
         }
-        // 老库补列：ALTER 在列已存在时会失败，逐条忽略（幂等比判断版本更省事）
+        // 老库补列：只有「列已存在」允许忽略（幂等重跑的正常情况）；
+        // 缺表 / IO / 语法等其它失败必须抛出 —— 否则老库升级后静默缺列，
+        // 后续写入才爆出难定位的 SQL 错误。
         for sql in Db.migrations {
-            _ = try? execute(sql)
+            do {
+                try execute(sql)
+            } catch {
+                if let dbErr = error as? DbError,
+                   case .sql(let message) = dbErr,
+                   message.localizedCaseInsensitiveContains("duplicate column name") {
+                    continue
+                }
+                throw error
+            }
         }
         for sql in Db.createIndexes {
             try execute(sql)
@@ -119,6 +130,24 @@ public final class Db: @unchecked Sendable {
             let message = errMsg.map { String(cString: $0) } ?? "unknown"
             sqlite3_free(errMsg)
             throw DbError.sql("SQL 失败：\(message)\n\(sql)")
+        }
+    }
+
+    /// 在**单个事务**里执行一组写操作：任一步失败整体回滚。
+    ///
+    /// 外层持有递归锁直到提交/回滚完成，保证其他线程的写不会穿插进这个事务；
+    /// 内部再调 `run` / `execute` 时同一线程可重入，不会死锁。
+    public func transaction(_ body: () throws -> Void) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard handle != nil else { throw DbError.notOpen }
+        try execute("BEGIN")
+        do {
+            try body()
+            try execute("COMMIT")
+        } catch {
+            _ = try? execute("ROLLBACK")
+            throw error
         }
     }
 
@@ -338,9 +367,10 @@ public final class Db: @unchecked Sendable {
         ("meta", ["key", "value"]),
         ("categories", ["id", "parent_id", "name", "depth", "icon", "color", "sort_order", "is_enabled"]),
         ("payment_methods", ["id", "name", "type", "icon", "billing_day", "repayment_day", "is_enabled", "sort_order"]),
-        ("expenses", ["id", "owner_id", "amount_cents", "category_id", "payment_method_id", "spend_date", "posting_date", "repayment_date", "note", "source", "updated_at"]),
+        ("expenses", ["id", "owner_id", "amount_cents", "category_id", "payment_method_id", "spend_date", "posting_date", "repayment_date", "note", "source", "plan_id", "plan_period_seq", "updated_at"]),
         ("plans", ["id", "name", "category_id", "payment_method_id", "amount_cents", "total_amount_cents", "purchase_date", "first_due_date", "remind_days_before", "auto_post", "source", "state", "note", "updated_at"]),
-        ("plan_todos", ["id", "plan_id", "plan_name", "period_seq", "amount_cents", "repayment_date", "status", "will_auto_post", "updated_at"]),
+        ("plan_todos", ["id", "plan_id", "plan_name", "period_seq", "amount_cents", "repayment_date", "status", "will_auto_post", "ack_at", "expense_id", "posted_date", "updated_at"]),
+        ("users", ["id", "display_name", "role", "updated_at"]),
         ("outbox", ["id", "action", "entity_id", "payload", "created_at", "retry_count", "last_error"])
     ]
 

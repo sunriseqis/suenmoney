@@ -5,8 +5,6 @@ import {
   downloadAndInstallUpdate,
   getNativeAppVersion,
   getPlatform,
-  isAndroid,
-  isIos,
   isNativePlatform,
   isNativeUpdateSupported,
 } from '../src/platform/index.ts';
@@ -20,8 +18,8 @@ describe('Platform Environment Detection (平台环境判断)', () => {
 
   it('无 Capacitor 对象时默认为 web', () => {
     assert.strictEqual(getPlatform(), 'web');
-    assert.strictEqual(isIos(), false);
-    assert.strictEqual(isAndroid(), false);
+    assert.strictEqual(getPlatform() === 'ios', false);
+    assert.strictEqual(getPlatform() === 'android', false);
     assert.strictEqual(isNativePlatform(), false);
     assert.strictEqual(isNativeUpdateSupported(), false);
   });
@@ -35,8 +33,8 @@ describe('Platform Environment Detection (平台环境判断)', () => {
       },
     };
     assert.strictEqual(getPlatform(), 'ios');
-    assert.strictEqual(isIos(), true);
-    assert.strictEqual(isAndroid(), false);
+    assert.strictEqual(getPlatform() === 'ios', true);
+    assert.strictEqual(getPlatform() === 'android', false);
     assert.strictEqual(isNativePlatform(), true);
     assert.strictEqual(isNativeUpdateSupported(), true);
   });
@@ -50,8 +48,8 @@ describe('Platform Environment Detection (平台环境判断)', () => {
       },
     };
     assert.strictEqual(getPlatform(), 'android');
-    assert.strictEqual(isIos(), false);
-    assert.strictEqual(isAndroid(), true);
+    assert.strictEqual(getPlatform() === 'ios', false);
+    assert.strictEqual(getPlatform() === 'android', true);
     assert.strictEqual(isNativePlatform(), true);
     assert.strictEqual(isNativeUpdateSupported(), true);
   });
@@ -66,8 +64,8 @@ describe('Platform Environment Detection (平台环境判断)', () => {
       },
     };
     assert.strictEqual(getPlatform(), 'harmony');
-    assert.strictEqual(isIos(), false);
-    assert.strictEqual(isAndroid(), false);
+    assert.strictEqual(getPlatform() === 'ios', false);
+    assert.strictEqual(getPlatform() === 'android', false);
     assert.strictEqual(isNativePlatform(), true);
     assert.strictEqual(isNativeUpdateSupported(), true);
   });

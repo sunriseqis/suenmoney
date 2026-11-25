@@ -107,13 +107,6 @@ export function touchSession(db: DatabaseSync, sessionId: string, lastSeenAt: st
   db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').run(nowIso(), sessionId);
 }
 
-export function revokeSession(db: DatabaseSync, sessionId: string): void {
-  db.prepare('UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(
-    nowIso(),
-    sessionId,
-  );
-}
-
 export function revokeSessionByToken(db: DatabaseSync, token: string): void {
   db.prepare('UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL').run(
     nowIso(),
@@ -141,11 +134,4 @@ export function listSessions(db: DatabaseSync, userId: string): SessionInfo[] {
     )
     .all(userId, nowIso());
   return (rows as unknown as SessionRow[]).map(toSessionInfo);
-}
-
-export function purgeExpiredSessions(db: DatabaseSync): number {
-  const info = db
-    .prepare('DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL')
-    .run(nowIso());
-  return Number(info.changes);
 }

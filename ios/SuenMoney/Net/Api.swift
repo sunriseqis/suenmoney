@@ -290,7 +290,17 @@ public enum Api {
 
     // MARK: 工具
 
+    /// 查询**值**的编码：只放行 RFC3986 的 unreserved 字符（ASCII 字母数字 + `-._~`）。
+    ///
+    /// ⚠ 不能用 `.urlQueryAllowed`：它允许 `&` / `=` / `+` 等 query 分隔符，
+    /// 用户搜索词含 `&` 时会把 `q=A&B` 拆成 `q=A` + 游离参数 `B`。
+    private static let urlValueAllowed: CharacterSet = {
+        var cs = CharacterSet()
+        cs.insert(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        return cs
+    }()
+
     private static func enc(_ s: String) -> String {
-        s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s
+        s.addingPercentEncoding(withAllowedCharacters: urlValueAllowed) ?? s
     }
 }

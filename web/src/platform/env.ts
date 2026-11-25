@@ -138,44 +138,20 @@ export function getPlatform(): PlatformType {
   if (capPlatform === 'ios') return 'ios';
   if (capPlatform === 'android') return 'android';
 
-  // 备用兜底（某些运行环境下如果 Capacitor.getPlatform 尚未初始化）
-  const ua = navigator?.userAgent ?? '';
-  if (/iPad|iPhone|iPod/.test(ua)) return 'ios';
-  if (/Android/.test(ua)) return 'android';
-
+  // 不再用 UA 兜底判 ios/android：纯移动浏览器 UA 含 iPhone/Android，
+  // 会被误判成原生，从而让登录页错误暴露「服务器设置」入口。
   return 'web';
 }
 
-export function isIos(): boolean {
-  return getPlatform() === 'ios';
-}
-
-export function isAndroid(): boolean {
-  return getPlatform() === 'android';
-}
-
-export function isHarmony(): boolean {
-  return getPlatform() === 'harmony';
-}
-
-/** 动态安全加载 Capacitor 原生模块（纯 Web 运行时安全降级为 null） */
+/** 读取 Capacitor 运行时注入的原生插件（无 Capacitor 运行时 / 纯 Web 下安全降级为 null） */
 export async function getCapacitorPlugin<T = unknown>(pluginName: string): Promise<T | null> {
   if (!isNativePlatform()) return null;
   // 鸿蒙（新壳与老壳都是）没有 Capacitor 运行时，必须在这里拦一道。
-  // 不拦的后果不只是「拿不到插件」：`import('@capacitor/app')` 在纯 Web 下会成功返回
-  // 一个**代理对象**，而它是个 thenable —— 从 async 函数里 return 它等于让外层 Promise
-  // 去 then() 它，于是访问 `.then` 时抛出的 CapacitorException 发生在 try/catch 之外，
-  // 变成 unhandled rejection，把整条返回键/前后台链路静默打断（鸿蒙端最难查的那种故障）。
   if (getPlatform() === 'harmony') return null;
   try {
     const win = window as unknown as { Capacitor?: { Plugins?: Record<string, T> } };
     if (win.Capacitor?.Plugins?.[pluginName]) {
       return win.Capacitor.Plugins[pluginName];
-    }
-    // 动态尝试动态导入，防止构建期静态死绑定
-    if (pluginName === 'App') {
-      const mod = await import('@capacitor/app');
-      return mod.App as unknown as T;
     }
   } catch {
     // 纯 Web 环境或未安装该原生插件时安全降级

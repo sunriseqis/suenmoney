@@ -16,7 +16,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ApiError, auth as authApi, probeServerUrl, readServerUrl, writeServerUrl } from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
 import { useTheme } from '@/composables/useTheme';
-import { getPlatform } from '@/platform';
+import { isNativePlatform } from '@/platform';
 import { useAuthStore } from '@/stores/auth';
 import { PBtn, PField, PInput, PTag } from '@/ui';
 
@@ -38,7 +38,7 @@ const showServerConfig = ref(false);
 const customServerUrl = ref(readServerUrl());
 const testing = ref(false);
 const serverNotice = ref<string | null>(null);
-const isNative = computed(() => getPlatform() !== 'web');
+const isNative = computed(() => isNativePlatform());
 
 const isSetup = computed(() => mode.value === 'setup');
 const themeLabel = computed(() => (theme.proto.value === 'cyber' ? 'CYBERPUNK' : 'PLAYFUL'));

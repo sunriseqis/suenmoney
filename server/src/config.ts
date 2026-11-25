@@ -52,7 +52,7 @@ function readVersionFile(): string {
 
 export const config = {
   host: str('SUENMONEY_HOST', '0.0.0.0'),
-  port: num('SUENMONEY_PORT', 3310),
+  port: num('SUENMONEY_PORT', 5310),
 
   /**
    * 前端产物目录。服务端同时充当静态服务器（一个端口 = 页面 + 接口）。
@@ -124,7 +124,12 @@ export const config = {
  * 注意：这里**没有时区配置**，是刻意的。
  *
  * 业务日期一律以 'YYYY-MM-DD' 字符串落库，「今天」由客户端按本地时区判定后传入，
- * 服务端从不自行推算业务日期，也不做任何时区换算 —— 所以不存在
+ * 服务端绝大多数路径不自行推算业务日期、也不做任何时区换算 —— 所以不存在
  * 「容器跑 UTC 导致日切错位」这类问题，不需要 TZ 兜底代码。
- * 审计时间戳（created_at/updated_at）统一 UTC ISO8601，只用于排序与追溯。
+ *
+ * 唯一的已知例外：`plans.confirmTodo` 在客户端未显式传 `spendDate` 时，会用
+ * 服务器本地日期作为「实际入账日」（产品裁决：逾期确认的期次按「记录那天」入账，
+ * 见 `plans.ts` 的 `localToday`）。`settleAutoPost` 的 `today` 只用于判定「哪些期
+ * 已到期」，不参与入账日期。审计时间戳（created_at/updated_at）统一 UTC ISO8601，
+ * 只用于排序与追溯。
  */

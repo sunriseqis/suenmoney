@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 
-import { BEFORE_BACK_EVENT, exitNativeApp, setupHardwareBack } from '../src/platform/index.ts';
+import { BEFORE_BACK_EVENT, setupHardwareBack } from '../src/platform/index.ts';
 
 type TestWindow = Record<string, unknown> & {
   addEventListener?: (type: string, cb: (e: Event) => void) => void;
@@ -146,42 +146,6 @@ describe('鸿蒙返回键（hardware.ts）', () => {
     const cleanup = setupHardwareBack({ onBack: () => false, onExit: () => {} });
     cleanup();
     assert.strictEqual(win.__suenmoneyOnNativeBack, undefined);
-    (globalThis as { window?: unknown }).window = savedWindow;
-  });
-});
-
-describe('鸿蒙退出（exitNativeApp）', () => {
-  let savedWindow: unknown;
-
-  beforeEach(() => {
-    savedWindow = (globalThis as { window?: unknown }).window;
-  });
-
-  it('壳注入了 __suenmoneyExit 时走它（能力桥不存在时的唯一出路）', async () => {
-    const g = globalThis as { window?: unknown };
-    let exited = false;
-    g.window = {
-      __HARMONY_NEXT__: true,
-      __suenmoneyExit: () => {
-        exited = true;
-      },
-    };
-
-    await exitNativeApp();
-    assert.strictEqual(exited, true, '返回键的「退出应用」必须真的退出，否则按了没反应');
-    (globalThis as { window?: unknown }).window = savedWindow;
-  });
-
-  it('壳退出函数抛错时静默降级，不把异常抛回调用方', async () => {
-    const g = globalThis as { window?: unknown };
-    g.window = {
-      __HARMONY_NEXT__: true,
-      __suenmoneyExit: () => {
-        throw new Error('shell boom');
-      },
-    };
-
-    await exitNativeApp(); // 不应reject
     (globalThis as { window?: unknown }).window = savedWindow;
   });
 });

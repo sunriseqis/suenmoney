@@ -15,17 +15,6 @@ import { applyTheme, effectiveTheme, readStoredTheme, type ThemeChoice } from '@
 
 const choice = ref<ThemeChoice>(readStoredTheme() ?? 'dark');
 
-/** 系统是否偏好深色（跟随档位时用） */
-const systemPrefersDark = ref(
-  typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)').matches : true,
-);
-
-if (typeof matchMedia === 'function') {
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-    systemPrefersDark.value = e.matches;
-  });
-}
-
 export function useTheme() {
   /** 当前**实际生效**的明暗（system 已解析） */
   const effective = computed<'dark' | 'light'>(() => effectiveTheme(choice.value));
@@ -37,5 +26,5 @@ export function useTheme() {
     applyTheme(next);
   }
 
-  return { choice, systemPrefersDark, effective, proto, set };
+  return { choice, effective, proto, set };
 }

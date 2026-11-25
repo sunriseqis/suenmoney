@@ -1,6 +1,6 @@
 # SuenMoney 部署与运维指南
 
-SuenMoney 是专为家庭设计的精益记账系统。本文档介绍如何使用 Docker Compose 进行自托管生产部署、数据持久化配置与物理快照灾备。
+SuenMoney 是专为家庭设计的精益记账系统。本文档介绍如何使用 Docker Compose 进行自托管生产部署、数据持久化配置与备份灾备。
 
 ---
 
@@ -17,13 +17,13 @@ SuenMoney 是专为家庭设计的精益记账系统。本文档介绍如何使�
 │  - GET /assets/*    → 带内容哈希的静态资源      │
 │  - GET /ledger 等   → SPA 回退（同一份 index）  │
 │  - /api/*           → 接口（未命中回 JSON 404） │
-│  - node:sqlite 单文件库 + 每日 VACUUM INTO 快照 │
+│  - node:sqlite 单文件库（备份/灾备见第六节）  │
 └───────────────────────┬───────────────────────┘
                         │
                         ▼ (持久化卷 suenmoney-data → /app/data)
 ┌───────────────────────────────────────────────┐
 │  suenmoney.sqlite / -wal / -shm               │
-│  backups/snapshots/suenmoney-snapshot-*.sqlite│
+│  backups/pre-restore/*.json（恢复前快照）     │
 └───────────────────────────────────────────────┘
 ```
 
@@ -287,7 +287,7 @@ docker compose pull && docker compose up -d
 ### 1. 构建
 
 ```bash
-npm run fn:build          # → output/suenmoney-v<version>.fpk（+ .sha256）
+npm run fn:build          # → output/suenmoney-<version>.fpk（+ .sha256）
 ```
 
 七步流水线：版本注入 → 图标（矢量母版出 64/256）→ 自带 Node 运行时（**sha256 校验**）→
@@ -304,7 +304,7 @@ npm run fn:build          # → output/suenmoney-v<version>.fpk（+ .sha256）
 
 ### 2. 安装与目录
 
-应用中心上传 `output/suenmoney-v*.fpk` → 桌面出现 SuenMoney → 点开就是 `http://<NAS IP>:5310`。
+应用中心上传 `output/suenmoney-*.fpk` → 桌面出现 SuenMoney → 点开就是 `http://<NAS IP>:5310`。
 **只有一个端口 5310**（页面 + `/api` 同源同端口，同 Docker 形态）。
 
 | 变量 | 落点 | 内容 |
@@ -312,7 +312,7 @@ npm run fn:build          # → output/suenmoney-v<version>.fpk（+ .sha256）
 | `TRIM_APPDEST` | `/var/apps/suenmoney/target` | `bin/node`、`server/`、`web/dist/` —— **升级时整体替换，禁止往里放业务数据** |
 | `TRIM_PKGVAR` | `…/@appdata/suenmoney` | `data/suenmoney.sqlite`、`info.log`、`app.pid`、`stop.flag` |
 | `TRIM_PKGETC` | `…/@appconf/suenmoney` | `.env`（配置）、`env.example`（模板） |
-| `TRIM_DATA_SHARE_PATHS` | `…/suenmoney/backup` | `SUENMONEY_BACKUP_DIR`：物理快照（`VACUUM INTO`）落这里，文件管理器里可见 |
+| `TRIM_DATA_SHARE_PATHS` | `…/suenmoney/backup` | `SUENMONEY_BACKUP_DIR`：恢复前自动存档（`pre-restore/*.json`）落这里，文件管理器里可见 |
 
 ### 3. 生命周期
 

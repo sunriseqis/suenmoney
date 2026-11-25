@@ -25,23 +25,17 @@ on:
 permissions:
   contents: write
 
-# ⚠ **同一版本的四个 workflow 必须串行写 suenapp 的 Release body**。
+# ⚠ **所有 suenapp 发布 workflow 共用同一把全局锁**（不分版本、不分平台）。
 #
 # 四个 workflow 各自对同一个 Release body 做「GET 现有 body → 本地合并 → PUT 整体覆盖」。
 # 两个同时（或重叠窗口内）发布时，后 PUT 者会用只含自己那节的 body 覆盖先 PUT 者
 # 刚写入的那节 —— 别的平台的 SECTION 静默消失，且流程全绿（2026-11-20 实测复现）。
 #
-# 用 `suenapp-release-<版本>` 作并发组（不是按 ref）：两个版本的并发**应该**允许，
-# 只有同一版本的四个平台必须互斥。
-#
-# ⚠ 取消旧运行而不是排队：`cancel-in-progress: false` 会让后来的 run 排队等前面的
-# 跑完（顺序正确）。设 `true` 则会取消进行中的那个 —— 那是错的，被取消的 run
-# 可能已经写了一半。
+# 用固定 group 名 = 全局串行：发布目标是 suenapp 的同一个 Release，任何两个平台
+# 同时写 body 都会冲突（即使不同版本，softprops 也按 tag_name 找 Release）。
+# `cancel-in-progress: false` 让后来的 run **排队**而不是被取消（被取消的 run
+# 可能已经写了一半），顺序正确且绝对安全。
 concurrency:
-  # ⚠ **所有 suenapp 发布 workflow 共用同一把锁**（不分版本）。
-  # 发布目标是 suenapp 的同一个 Release，任何两个平台同时写 body 都会冲突 ——
-  # 即使是不同版本也会互相覆盖（因为 softprops 用的是 tag_name 找 Release）。
-  # 用固定的 group 名 = 全局串行，简单且绝对安全。
   group: suenapp-release-publish
   cancel-in-progress: false
 
@@ -54,7 +48,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          # versionCode 需计算提交历史数，必须是完整历史
+          # 完整历史便于排障/回滚；versionCode 现按版本号推导，不再依赖提交数
           fetch-depth: 0
 
       # 原生工程 `IPHONEOS_DEPLOYMENT_TARGET = 26.0`，必须 Xcode ≥ 26。
@@ -67,23 +61,13 @@ jobs:
       - name: Determine Version
         id: get_version
         run: |
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          VERSION_CODE=$((10000 + COMMIT_COUNT))
-          echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
-          echo "version_code=${VERSION_CODE}" >> $GITHUB_OUTPUT
-
           BASE_VER="1.0"
           if [ -f "VERSION" ]; then
             BASE_VER=$(cat VERSION | tr -d ' \n\r')
           fi
 
-          if [[ "${{ github.ref }}" == refs/tags/suenmoney-v* ]]; then
-            TAG_NAME="${GITHUB_REF#refs/tags/}"
-            RAW_VERSION="${TAG_NAME#suenmoney-v}"
-            VERSION="${TAG_NAME}"
-            VERSION_NAME="${RAW_VERSION}"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.custom_version }}" ]]; then
-            INPUT_VER="${{ inputs.custom_version }}"
+          INPUT_VER="${{ inputs.custom_version }}"
+          if [ -n "$INPUT_VER" ]; then
             if [[ "$INPUT_VER" == v* ]]; then
               VERSION="$INPUT_VER"
               VERSION_NAME="${INPUT_VER#v}"
@@ -95,6 +79,27 @@ jobs:
             VERSION_NAME="${BASE_VER}"
             VERSION="v${VERSION_NAME}"
           fi
+
+          # versionCode 单一公式：major*1000000 + minor*10000 + patch*100（2.1.2 → 2010200）。
+          # 与 scripts/build-ios.mjs / build-hw.mjs 及 pbxproj 提交值保持一致，
+          # 不要再改回 10000+commit 计数（提交数与商店版本号量级不同，会导致拒绝升级）。
+          VERSION_NAME="$(printf '%s' "${VERSION_NAME}" | tr -d '[:space:]')"
+          MAJOR="${VERSION_NAME%%.*}"
+          REST="${VERSION_NAME#*.}"
+          if [ "${REST}" = "${VERSION_NAME}" ]; then
+            MINOR=0; PATCH=0
+          else
+            MINOR="${REST%%.*}"
+            PATCH="${REST#*.}"
+            if [ "${PATCH}" = "${REST}" ]; then PATCH=0; fi
+            if [ -z "${PATCH}" ]; then PATCH=0; fi
+          fi
+          case "${MAJOR}${MINOR}${PATCH}" in
+            *[!0-9]*) echo "✖ 版本号含非数字：'${VERSION_NAME}'"; exit 1 ;;
+          esac
+          VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 10000 + PATCH * 100 ))
+          echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
+          echo "version_code=${VERSION_CODE}" >> $GITHUB_OUTPUT
 
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
@@ -174,7 +179,7 @@ jobs:
       # 所以先后发布不会互相覆盖。
       #
       # ⚠ tag 必须带 suenmoney- 前缀：suenapp 是 suenmusic / suenweb / suenmoney
-      #   䅆用的发行仓库，裸 vX.Y.Z 会直接改写别的项目的同名发行页（2026-10-31 出过事故）。
+      #   共用的发行仓库，裸 vX.Y.Z 会直接改写别的项目的同名发行页（2026-10-31 出过事故）。
       - name: Publish Release to sunriseqis/suenapp
         if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
         uses: softprops/action-gh-release@v2

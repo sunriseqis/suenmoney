@@ -68,26 +68,34 @@ public final class AuthStore {
         sessionExpired = false
     }
 
-    public func logout() {
-        ServerConfig.shared.clearToken()
-        current = nil
-        isAuthenticated = false
-
+    public func logout() throws {
         /*
-         主动登出要**清空本地业务数据**：家庭账本多人共用一台设备时，
-         A 登出、B 登录，B 在首次同步完成前会看到 A 的全部账目 —— 串号。
+         主动登出要**清空本地业务数据 + 离线队列**，并放进一个事务：任一清表失败
+         整体回滚并抛出、阻断登出 —— 家庭账本多人共用一台设备时，A 登出、B 登录，
+         B 在首次同步完成前会看到 A 的全部账目（串号）；更糟的是 outbox 里 A 未推上
+         去的离线账，会在 B 登录后**用 B 的 token 推上服务器**，直接写进 B 的账本。
 
-         只清业务表，`meta.schema_version` 保留；
+         所以：先清表（事务），成功后才清令牌/登录态。清一半失败时登录态保持不变，
+         用户仍能看到自己的账，而不是「登出了但数据没清干净」。
+
+         只清业务表与 outbox，`meta.schema_version` 保留；
          同步游标也重置为 0，下次登录会重新拉全量快照
          （`SyncEngine.pull` 里「本地空 → 快照」的分支会命中）。
          注意：**登录失效（401）不走这里** —— 那种情况要保留数据让用户继续看。
          */
-        try? ExpenseDao.clear()
-        try? PlanDao.clearAll()
-        try? Db.shared.run("DELETE FROM categories")
-        try? Db.shared.run("DELETE FROM payment_methods")
-        try? Db.shared.run("DELETE FROM users")
-        try? Db.shared.run("INSERT OR REPLACE INTO meta(key, value) VALUES ('sync_cursor', '0')")
+        try Db.shared.transaction {
+            try ExpenseDao.clear()
+            try PlanDao.clearAll()
+            try Db.shared.run("DELETE FROM categories")
+            try Db.shared.run("DELETE FROM payment_methods")
+            try Db.shared.run("DELETE FROM users")
+            try Db.shared.run("DELETE FROM outbox")
+            try Db.shared.run("INSERT OR REPLACE INTO meta(key, value) VALUES ('sync_cursor', '0')")
+        }
+
+        ServerConfig.shared.clearToken()
+        current = nil
+        isAuthenticated = false
     }
 
     /// 拉当前用户（启动时校验令牌是否还有效）

@@ -260,6 +260,22 @@ export interface SyncPushResult {
    */
   failedUpdateExpenseIds: string[];
   failedDeleteExpenseIds: string[];
+  /**
+   * 被拒绝的待办操作 id（确认/跳过/ack/撤销/恢复）。
+   * 与支出同理：客户端据此保留队列项重试，而不是当成功清掉。
+   */
+  failedConfirmedTodoIds: string[];
+  failedSkippedTodoIds: string[];
+  failedAckedTodoIds: string[];
+  failedRevertedTodoIds: string[];
+  failedRestoredTodoIds: string[];
+  /**
+   * 被拒绝的计划操作：新建按下标（与 expense 的新增失败下标同口径），
+   * 修改/删除按 id。
+   */
+  failedPlanIndexes: number[];
+  failedUpdatePlanIds: string[];
+  failedDeletePlanIds: string[];
   latestVersion: number;
 }
 
@@ -288,6 +304,14 @@ export function pushChanges(
   const failedExpenseIndexes: number[] = [];
   const failedUpdateExpenseIds: string[] = [];
   const failedDeleteExpenseIds: string[] = [];
+  const failedConfirmedTodoIds: string[] = [];
+  const failedSkippedTodoIds: string[] = [];
+  const failedAckedTodoIds: string[] = [];
+  const failedRevertedTodoIds: string[] = [];
+  const failedRestoredTodoIds: string[] = [];
+  const failedPlanIndexes: number[] = [];
+  const failedUpdatePlanIds: string[] = [];
+  const failedDeletePlanIds: string[] = [];
 
   inTransaction(db, () => {
     // 1. 新增支出：逐条校验入库。
@@ -350,7 +374,8 @@ export function pushChanges(
           confirmTodo(db, item.id, actorId, item.spendDate);
           confirmedTodosCount++;
         } catch {
-          // 忽略已被确认或跳过的待办
+          // 记录被拒 id：已被确认/跳过、所属计划已删、或期次已作废
+          failedConfirmedTodoIds.push(item.id);
         }
       }
     }
@@ -362,7 +387,8 @@ export function pushChanges(
           skipTodo(db, id, actorId);
           skippedTodosCount++;
         } catch {
-          // 忽略异常
+          // 记录被拒 id：非 pending、计划已删等
+          failedSkippedTodoIds.push(id);
         }
       }
     }
@@ -374,7 +400,8 @@ export function pushChanges(
           ackTodo(db, id, actorId);
           ackedTodosCount++;
         } catch {
-          // 忽略异常
+          // 记录被拒 id：非 pending、计划已删等
+          failedAckedTodoIds.push(id);
         }
       }
     }
@@ -386,7 +413,8 @@ export function pushChanges(
           revertTodoConfirm(db, id, actorId);
           revertedTodosCount++;
         } catch {
-          // 忽略：待办可能已在别的设备被撤销 / 状态已变
+          // 记录被拒 id：待办可能已在别的设备被撤销 / 状态已变
+          failedRevertedTodoIds.push(id);
         }
       }
     }
@@ -398,7 +426,8 @@ export function pushChanges(
           restoreSkippedTodo(db, id, actorId);
           restoredTodosCount++;
         } catch {
-          // 忽略：待办可能已被恢复 / 状态已变
+          // 记录被拒 id：待办可能已被恢复 / 状态已变
+          failedRestoredTodoIds.push(id);
         }
       }
     }
@@ -414,7 +443,7 @@ export function pushChanges(
      * 否则队列会永久卡在队头。
      */
     if (input.plans && input.plans.length > 0) {
-      for (const item of input.plans) {
+      for (const [index, item] of input.plans.entries()) {
         try {
           createPlan(db, {
             name: item.name,
@@ -433,7 +462,8 @@ export function pushChanges(
           });
           createdPlansCount++;
         } catch {
-          // 忽略：分类/支付方式可能已被停用，或期数非法
+          // 记录被拒下标：分类/支付方式可能已被停用，或期数非法
+          failedPlanIndexes.push(index);
         }
       }
     }
@@ -456,7 +486,8 @@ export function pushChanges(
           updatePlan(db, item.id, patch);
           updatedPlansCount++;
         } catch {
-          // 忽略：可能已被删除，或不是自己创建的
+          // 记录被拒 id：可能已被删除，或不是自己创建的
+          failedUpdatePlanIds.push(item.id);
         }
       }
     }
@@ -467,7 +498,8 @@ export function pushChanges(
           deletePlan(db, id, actorId);
           deletedPlansCount++;
         } catch {
-          // 忽略：已删除或不属于自己
+          // 记录被拒 id：已删除或不属于自己
+          failedDeletePlanIds.push(id);
         }
       }
     }
@@ -489,6 +521,14 @@ export function pushChanges(
     failedExpenseIndexes,
     failedUpdateExpenseIds,
     failedDeleteExpenseIds,
+    failedConfirmedTodoIds,
+    failedSkippedTodoIds,
+    failedAckedTodoIds,
+    failedRevertedTodoIds,
+    failedRestoredTodoIds,
+    failedPlanIndexes,
+    failedUpdatePlanIds,
+    failedDeletePlanIds,
     latestVersion: currentSyncVersion(db),
   };
 }

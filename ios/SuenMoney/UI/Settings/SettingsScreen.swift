@@ -1368,7 +1368,9 @@ public struct SettingsScreen: View {
                 .alert("退出登录", isPresented: $logoutConfirm) {
                     Button("取消", role: .cancel) {}
                     Button("退出", role: .destructive) {
-                        auth.logout()
+                        // logout 会先事务化清表 + 清 outbox，任一失败即抛错并保持登录态；
+                        // 这里 try? 吞掉错误 = 清表失败时「退出」按钮看似无响应（安全侧：绝不带病登出）。
+                        try? auth.logout()
                     }
                 } message: {
                     Text("将清空本机缓存的账目数据（服务端数据不受影响）。下次登录会重新拉取全量数据。")
@@ -1439,11 +1441,17 @@ public struct SettingsScreen: View {
                                 if !r.available || r.latest == nil {
                                     updateMsg = "已是最新版本（v\(vName)）"
                                 } else if let latest = r.latest {
-                                    let url = ServerConfig.shared.baseUrl
-                                        + r.downloadPath + "/" + (latest.fileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? latest.fileName)
-                                        + "?platform=ios&token=" + (r.downloadToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? r.downloadToken)
-                                    if let u = URL(string: url) {
-                                        await UIApplication.shared.open(u)
+                                    // 用 URLComponents 组 URL：query 值（token）里的 & / = 会被
+                                    // 正确百分号编码，裸拼字符串会让含特殊字符的 token 截断参数。
+                                    if var comps = URLComponents(string: ServerConfig.shared.baseUrl) {
+                                        comps.path = r.downloadPath + "/" + latest.fileName
+                                        comps.queryItems = [
+                                            URLQueryItem(name: "platform", value: "ios"),
+                                            URLQueryItem(name: "token", value: r.downloadToken)
+                                        ]
+                                        if let u = comps.url {
+                                            await UIApplication.shared.open(u)
+                                        }
                                     }
                                     updateMsg = "新版本 \(latest.versionName)：已交给系统下载"
                                 }

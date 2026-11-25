@@ -112,8 +112,12 @@ describe('parseYuanToCents', () => {
     assert.equal(parseYuanToCents('-.5'), -50);
   });
 
-  test('超过两位小数截断而不是四舍五入（键盘本身就限制两位）', () => {
-    assert.equal(parseYuanToCents('32.567'), 3256);
+  test('超过两位小数四舍五入（第 3 位决定进位），拒绝科学计数法', () => {
+    assert.equal(parseYuanToCents('32.567'), 3257);
+    assert.equal(parseYuanToCents('32.564'), 3256);
+    assert.equal(parseYuanToCents('1.999'), 200);
+    assert.equal(parseYuanToCents('1e3'), 0);
+    assert.equal(parseYuanToCents('1.2.3'), 0);
   });
 
   test('✱ 与 centsToInput 互为逆运算', () => {

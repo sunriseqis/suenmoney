@@ -30,8 +30,3 @@ export function ulid(now: number = Date.now()): string {
 
   return time + randomness;
 }
-
-/** 校验一个字符串是否是形状合法的 ULID（用于拒绝客户端传来的垃圾 ID）。 */
-export function isUlid(value: string): boolean {
-  return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
-}

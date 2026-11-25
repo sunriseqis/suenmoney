@@ -5,7 +5,7 @@ import math
 import base64
 from PIL import Image, ImageDraw
 
-ROOT_DIR = "/home/suenmoney"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SVG_PATH = os.path.join(ROOT_DIR, "docs/design/SuenMoney-sky-blue.svg")
 RES_DIR = os.path.join(ROOT_DIR, "android/app/src/main/res")
 WEB_PUBLIC = os.path.join(ROOT_DIR, "web/public")

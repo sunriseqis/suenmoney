@@ -21,7 +21,7 @@ import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
-import { chartColor, slotOf } from '../../common/theme/Palette';
+import { categoryColorOf } from '../../common/ui/CategoryIcon';
 import { formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
 import { Outbox } from '../../common/sync/Outbox';
 import { SyncEngine } from '../../common/sync/SyncEngine';
@@ -428,7 +428,7 @@ export struct DashboardScreen {
         id: c.categoryId,
         name: c.name,
         cents: c.cents,
-        color: chartColor(this.tok(), slotOf(c.color, c.categoryId))
+        color: categoryColorOf(c.name, c.color)
       });
     }
     let rest = 0;

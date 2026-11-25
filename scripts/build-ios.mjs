@@ -45,10 +45,6 @@ function run(command, args, options = {}) {
   execFileSync(command, args, { stdio: 'inherit', ...options });
 }
 
-function output(command, args, options = {}) {
-  return execFileSync(command, args, { encoding: 'utf8', ...options }).trim();
-}
-
 if (process.platform !== 'darwin' && !SYNC_ONLY) {
   fail(`iOS IPA 构建只能在 macOS 上跑（当前操作系统为 ${process.platform}）。`);
 }
@@ -62,19 +58,12 @@ async function readVersionName() {
 }
 
 function readVersionCode(versionName) {
-  try {
-    const count = Number(output('git', ['rev-list', '--count', 'HEAD'], { cwd: ROOT }));
-    if (Number.isInteger(count) && count > 0) {
-      return { code: 10000 + count, source: `10000 + git 提交数 ${count}` };
-    }
-  } catch {
-    /* 无法执行 git 时回退到版本号推导 */
-  }
+  // versionCode 单一公式：major*1000000 + minor*10000 + patch*100（2.1.2 → 2010200）。
+  // 与 .github/workflows/build-ios.yml / build-hw.yml 及 pbxproj 提交值一致，
+  // 不要再改回 10000+git 提交数（提交数与商店版本号量级不同，会导致拒绝升级）。
   const [major = 0, minor = 0, patch = 0] = versionName.split('.').map(Number);
-  return {
-    code: 10000 + major * 100 + minor * 10 + patch,
-    source: `按版本号推导`,
-  };
+  const code = major * 1000000 + minor * 10000 + patch * 100;
+  return { code, source: `${versionName} → ${code}` };
 }
 
 async function readTeamId() {

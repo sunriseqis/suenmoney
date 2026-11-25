@@ -2,7 +2,7 @@ import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 
 /**
- * 字体从 npm 包**本地**引入，不走 CDN —— 移动端是 Capacitor 打包，必须离线可用。
+ * 字体从 npm 包**本地**引入，不走 CDN —— 纯浏览器 / Docker 部署也必须离线可用。
  * 中文用 MiSans（56 个 unicode-range 分片，浏览器只下当前页用到的几片）。
  * 拉丁与数字按原型两套语言各配一套：candy 用 Outfit/Jakarta，cyber 用 Orbitron/JetBrains。
  */

@@ -2,9 +2,9 @@
  * WebDAV 远程安全备份管理。
  *
  * 核心机制：
- * 1. 采用 SQLite 原生 VACUUM INTO 生成完整的一致性物理库快照；
+ * 1. 打包当前全量数据为加密备份（AES-256-GCM，文件名 suenmoney-backup-YYYY-MM-DD.mn）；
  * 2. 通过 WebDAV 协议（PUT）上传至用户自建/托管的 WebDAV 存储（如坚果云、Nextcloud、NAS、Alist 等）；
- * 3. 严格保留最近 3 天（3 份）的远程备份，通过 PROPFIND 与 DELETE 自动轮转删除超期备份；
+ * 3. 严格保留最近 3 份远程备份，通过 PROPFIND 与 DELETE 自动轮转删除超期备份；
  * 4. 每日定时后台轮询自动备份，防止服务器单点灾难。
  */
 import type { DatabaseSync } from 'node:sqlite';
@@ -57,6 +57,13 @@ export function getWebdavConfig(db: DatabaseSync): WebdavConfig | null {
   }
 }
 
+/**
+ * TODO(security): WebDAV 密码与备份口令目前以明文 JSON 存入 `settings` 表。
+ *
+ * 风险面：本地库文件已含用户 password_hash，攻击者拿到库文件时本就能访问全部账目，
+ * 所以此处的增量风险有限；但要加固时，可用服务端本机密钥（如 `SUENMONEY_SECRET`）
+ * 对 `password` / `passphrase` 做对称加密后再落库，读取时解密，响应层不回传明文。
+ */
 export function saveWebdavConfig(db: DatabaseSync, config: WebdavConfig): void {
   const now = new Date().toISOString();
   db.prepare(
@@ -97,15 +104,34 @@ export function saveWebdavStatus(db: DatabaseSync, status: WebdavStatus): void {
   ).run(STATUS_KEY, JSON.stringify(status), now);
 }
 
+/**
+ * 归一化 WebDAV 远端目录路径。
+ *
+ * 折叠 `.` 与 `..`：`..` 上移一层（对空栈不生效，即不能越过根），
+ * 防止 `path="../x"` 之类写法让备份目录逃出用户预期位置。
+ */
+function normalizeRemotePath(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return '';
+  const segments: string[] = [];
+  for (const seg of trimmed.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') {
+      segments.pop();
+      continue;
+    }
+    segments.push(seg);
+  }
+  return '/' + segments.join('/');
+}
+
 export function normalizeWebdavUrls(
   url: string,
   path: string,
 ): { dirUrl: string; baseAuthUrl: string } {
   const cleanUrl = url.trim().replace(/\/+$/, '');
-  const cleanPath = path.trim()
-    ? (path.trim().startsWith('/') ? path.trim() : `/${path.trim()}`).replace(/\/+$/, '')
-    : '';
-  const dirUrl = `${cleanUrl}${cleanPath}/`;
+  const cleanPath = normalizeRemotePath(path);
+  const dirUrl = cleanPath === '/' || cleanPath === '' ? `${cleanUrl}/` : `${cleanUrl}${cleanPath}/`;
   return { dirUrl, baseAuthUrl: cleanUrl };
 }
 

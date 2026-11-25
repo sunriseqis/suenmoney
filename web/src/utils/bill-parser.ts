@@ -308,7 +308,7 @@ const KEYWORD_CATEGORY_MAP: Array<{ categoryNames: string[]; keywords: string[] 
     ],
   },
   {
-    categoryNames: ['数码数码', '数码电器', '数码', '电器'],
+    categoryNames: ['数码电器', '数码', '电器'],
     keywords: ['苹果', 'Apple', '小米', '华为', 'OPPO', 'vivo', '电脑', '数码', '京东电器', '顺电'],
   },
   {

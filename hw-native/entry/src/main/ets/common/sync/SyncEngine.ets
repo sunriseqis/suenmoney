@@ -403,6 +403,12 @@ export class SyncEngine {
       await store.executeSql(`DELETE FROM ${table} WHERE id = ?`, [entityId]);
       return;
     }
+    // 分类 / 支付方式：增量只 UPDATE 契约字段，color/icon 是本地个性化值，
+    // 直接 REPLACE 会把整行覆盖、冲空用户挑的配色/图标 —— 与 iOS mergeDictionary 同口径。
+    if (entityType === 'category' || entityType === 'payment_method') {
+      await mergeDictionary(entityType, entityId, payload);
+      return;
+    }
     const bucket = toBucket(entityType, payload);
     if (bucket === null) {
       return;
@@ -599,4 +605,68 @@ function toBucket(entityType: string, payload: object): relationalStore.ValuesBu
     return String(bucket['id']) === '' ? null : bucket;
   }
   return null;
+}
+
+/**
+ * 字典实体（分类 / 支付方式）的增量合并：只更新契约字段，保留本地 icon/color。
+ *
+ * 与 iOS `SyncEngine.swift` 的 `mergeDictionary` 同口径：REPLACE 会把整行覆盖，
+ * 本地个性化配色/图标就会在每次增量同步时被冲成空串。
+ */
+async function mergeDictionary(entityType: string, entityId: string, payload: object): Promise<void> {
+  const p = payload as Record<string, Object>;
+  const store = Db.get();
+
+  if (entityType === 'category') {
+    const rs = await store.querySql('SELECT id FROM categories WHERE id = ?', [entityId]);
+    const exists = rs.goToFirstRow();
+    rs.close();
+    if (exists) {
+      await store.executeSql(
+        'UPDATE categories SET parent_id = ?, name = ?, depth = ?, sort_order = ?, is_enabled = ? WHERE id = ?',
+        [str(p, 'parent_id', 'parentId'), str(p, 'name', 'name'),
+          num(p, 'depth', 'depth', 1), num(p, 'sort_order', 'sortOrder'),
+          bool(p, 'is_enabled', 'isEnabled', true) ? 1 : 0, entityId]
+      );
+    } else {
+      const bucket: relationalStore.ValuesBucket = {
+        'id': entityId,
+        'parent_id': str(p, 'parent_id', 'parentId'),
+        'name': str(p, 'name', 'name'),
+        'depth': num(p, 'depth', 'depth', 1),
+        'icon': '',
+        'color': '',
+        'sort_order': num(p, 'sort_order', 'sortOrder'),
+        'is_enabled': bool(p, 'is_enabled', 'isEnabled', true) ? 1 : 0
+      };
+      await store.insert('categories', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+    }
+    return;
+  }
+
+  // payment_method
+  const rs = await store.querySql('SELECT id FROM payment_methods WHERE id = ?', [entityId]);
+  const exists = rs.goToFirstRow();
+  rs.close();
+  const type = str(p, 'type', 'type', 'cash');
+  if (exists) {
+    await store.executeSql(
+      'UPDATE payment_methods SET name = ?, type = ?, billing_day = ?, repayment_day = ?, is_enabled = ?, sort_order = ? WHERE id = ?',
+      [str(p, 'name', 'name'), type, num(p, 'billing_day', 'billingDay'),
+        num(p, 'repayment_day', 'repaymentDay'), bool(p, 'is_enabled', 'isEnabled', true) ? 1 : 0,
+        num(p, 'sort_order', 'sortOrder'), entityId]
+    );
+  } else {
+    const bucket: relationalStore.ValuesBucket = {
+      'id': entityId,
+      'name': str(p, 'name', 'name'),
+      'type': type,
+      'icon': '',
+      'billing_day': num(p, 'billing_day', 'billingDay'),
+      'repayment_day': num(p, 'repayment_day', 'repaymentDay'),
+      'is_enabled': bool(p, 'is_enabled', 'isEnabled', true) ? 1 : 0,
+      'sort_order': num(p, 'sort_order', 'sortOrder')
+    };
+    await store.insert('payment_methods', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+  }
 }

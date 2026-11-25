@@ -49,7 +49,11 @@ struct SuenMoneyApp: App {
         // 4) 网络监听
         NetworkMonitor.shared.start()
 
+        #if DEBUG
         print("[SuenMoney] client build \(SuenMoneyApp.clientBuild)")
+        // 三端契约向量自检：只在 DEBUG 启动时跑一次，结果进日志便于验收
+        print("[SuenMoney] \(VectorRunner.runAll())")
+        #endif
     }
 
     var body: some Scene {

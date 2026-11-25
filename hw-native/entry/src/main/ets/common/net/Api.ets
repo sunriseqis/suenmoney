@@ -7,12 +7,6 @@
 import { ApiClient } from './ApiClient';
 
 // ── 通用 ────────────────────────────────────────────────────────────────────
-export interface HealthBody {
-  ok: boolean;
-  service: string;
-  version: string;
-}
-
 export interface LoginRequest {
   username: string;
   password: string;
@@ -79,10 +73,6 @@ export interface PaymentMethodList {
   paymentMethods: PaymentMethodItem[];
 }
 
-export interface UserList {
-  users: UserSummary[];
-}
-
 // ── 支出 ────────────────────────────────────────────────────────────────────
 export interface ExpenseItem {
   id: string;
@@ -112,23 +102,9 @@ export interface ExpenseItem {
   planId?: string | null;
 }
 
-export interface ExpensePage {
-  items: ExpenseItem[];
-  nextCursor: string | null;
-  hasMore: boolean;
-}
-
 export interface ExpensePreview {
   postingDate: string;
   repaymentDate: string;
-}
-
-export interface ExpenseCreateRequest {
-  amountCents: number;
-  categoryId: string;
-  paymentMethodId: string;
-  spendDate: string;
-  note: string;
 }
 
 /** `GET /api/update/check` 里 latest 字段（服务端缓存好的产物） */
@@ -153,19 +129,6 @@ export interface UpdateCheckReply {
   latest: UpdateArtifact | null;
   downloadPath: string;
   downloadToken: string;
-}
-
-export interface ExpenseCreateBody {
-  expense: ExpenseItem;
-}
-
-/** 编辑用：所有字段可选（服务端按传入字段更新） */
-export interface ExpensePatchRequest {
-  amountCents: number;
-  categoryId: string;
-  paymentMethodId: string;
-  spendDate: string;
-  note: string;
 }
 
 // ── 报表 ────────────────────────────────────────────────────────────────────
@@ -207,11 +170,6 @@ export interface YearAgoCompare {
   change?: MonthChange;
 }
 
-export interface YearAgoRef {
-  label: string;
-  totalCents: number;
-}
-
 export interface LargestExpense {
   expenseId: string;
   categoryName: string;
@@ -240,7 +198,8 @@ export interface MemberBucket {
   name: string;
   cents: number;
   count: number;
-  ratio: number;
+  /** 服务端不返回此字段（实测），保留可选以对齐契约与 iOS */
+  ratio?: number | null;
 }
 
 export interface RollingMonth {
@@ -256,7 +215,7 @@ export interface MonthlyReport {
   previous: MonthPointRef;
   change: MonthChange;
   /** 去年同月（服务端返回；缺省视为 0） */
-  yearAgo?: YearAgoRef;
+  yearAgo?: YearAgoCompare;
   largest: LargestExpense | null;
   categories: CategoryBucket[];
   paymentMethods: PaymentBucket[];
@@ -372,31 +331,6 @@ export interface PlanTodoItem {
   ackAt?: string | null;
 }
 
-export interface UserCreateRequest {
-  username: string;
-  displayName: string;
-  password: string;
-  role: string;
-}
-
-export interface UserPatchRequest {
-  displayName: string;
-  role: string;
-}
-
-export interface PaymentMergeRequest {
-  intoId: string;
-}
-
-export interface TodoConfirmRequest {
-  spendDate: string;
-}
-
-export interface PlanTodoList {
-  settled: number;
-  todos: PlanTodoItem[];
-}
-
 // ── 同步 ────────────────────────────────────────────────────────────────────
 export interface SyncCreateExpense {
   id: string;
@@ -485,45 +419,7 @@ export interface SyncPullBody {
   hasMore: boolean;
 }
 
-export interface SyncStatusBody {
-  latestVersion: number;
-}
-
 // ── 设置类写操作的请求体 ────────────────────────────────────────────────────
-export interface CategoryCreateRequest {
-  name: string;
-  parentId: string;
-  icon: string;
-  color: string;
-  sortOrder: number;
-}
-
-export interface CategoryPatchRequest {
-  name: string;
-  icon: string;
-  color: string;
-  parentId: string | null;
-  isEnabled: boolean;
-}
-
-export interface PaymentCreateRequest {
-  name: string;
-  type: string;
-  icon: string;
-  billingDay: number;
-  repaymentDay: number;
-  sortOrder: number;
-}
-
-export interface PaymentPatchRequest {
-  name: string;
-  icon: string;
-  billingDay: number;
-  repaymentDay: number;
-  sortOrder: number;
-  isEnabled: boolean;
-}
-
 export interface PlanCreateRequest {
   name: string;
   categoryId: string;
@@ -548,12 +444,6 @@ export interface PlanCreateRequest {
 export class Api {
   private static http(): ApiClient {
     return ApiClient.get();
-  }
-
-  static health(): Promise<HealthBody> {
-    const o = Api.http().options('GET');
-    o.withAuth = false;
-    return Api.http().request<HealthBody>('/api/health', o);
   }
 
   static login(username: string, password: string): Promise<LoginBody> {
@@ -585,64 +475,6 @@ export class Api {
     return Api.http().get<PaymentMethodList>('/api/payment-methods');
   }
 
-  static users(): Promise<UserList> {
-    return Api.http().get<UserList>('/api/users');
-  }
-
-  /**
-   * 流水列表。检索条件交给服务端（q / categoryId / paymentMethodId / ownerId），
-   * **排序在本地做** —— 服务端不提供 sort 参数，而「按金额」只是在当前页内重排，
-   * 与 Web 的实现一致（Web 也是在拿到的一页里排）。
-   */
-  static expenses(
-    month: string,
-    limit: number,
-    cursor: string | null,
-    q: string = '',
-    categoryId: string = '',
-    paymentMethodId: string = '',
-    ownerId: string = ''
-  ): Promise<ExpensePage> {
-    let path = `/api/expenses?month=${month}&limit=${limit}`;
-    if (cursor !== null && cursor !== '') {
-      path += `&cursor=${encodeURIComponent(cursor)}`;
-    }
-    if (q !== '') {
-      path += `&q=${encodeURIComponent(q)}`;
-    }
-    if (categoryId !== '') {
-      path += `&categoryId=${encodeURIComponent(categoryId)}`;
-    }
-    if (paymentMethodId !== '') {
-      path += `&paymentMethodId=${encodeURIComponent(paymentMethodId)}`;
-    }
-    if (ownerId !== '') {
-      path += `&ownerId=${encodeURIComponent(ownerId)}`;
-    }
-    return Api.http().get<ExpensePage>(path);
-  }
-
-  /** 账期预览：这笔会记在哪个月（服务端算，不在客户端重实现账单周期） */
-  static previewExpense(spendDate: string, paymentMethodId: string): Promise<ExpensePreview> {
-    const o = Api.http().options('POST');
-    const body: ExpenseCreateRequest = {
-      amountCents: 0,
-      categoryId: '',
-      paymentMethodId: paymentMethodId,
-      spendDate: spendDate,
-      note: ''
-    };
-    // 预览只需要日期与支付方式；其余字段服务端忽略
-    o.body = JSON.stringify(body);
-    return Api.http().request<ExpensePreview>('/api/expenses/preview', o);
-  }
-
-  static createExpense(req: ExpenseCreateRequest): Promise<ExpenseCreateBody> {
-    const o = Api.http().options('POST');
-    o.body = JSON.stringify(req);
-    return Api.http().request<ExpenseCreateBody>('/api/expenses', o);
-  }
-
   // ── 更新通道（对齐 suenmusic：服务端从 GitHub Releases 拉产物到本地，客户端从本地下载）──
 
   /**
@@ -654,17 +486,6 @@ export class Api {
     const q = `?platform=${platform}&version_name=${encodeURIComponent(versionName)}`
       + `&version_code=${versionCode}${force ? '&force=1' : ''}`;
     return Api.http().get<UpdateCheckReply>(`/api/update/check${q}`);
-  }
-
-  static updateExpense(id: string, req: ExpensePatchRequest): Promise<ExpenseCreateBody> {
-    const o = Api.http().options('PATCH');
-    o.body = JSON.stringify(req);
-    return Api.http().request<ExpenseCreateBody>(`/api/expenses/${id}`, o);
-  }
-
-  static deleteExpense(id: string): Promise<void> {
-    const o = Api.http().options('DELETE');
-    return Api.http().request<void>(`/api/expenses/${id}`, o);
   }
 
   static monthlyReport(month: string): Promise<MonthlyReportBody> {
@@ -681,92 +502,6 @@ export class Api {
 
   static plans(): Promise<PlanList> {
     return Api.http().get<PlanList>('/api/plans');
-  }
-
-  /** 传 today 才会触发服务端「到期自动入账」结算 */
-  /**
-   * 提醒列表（流水页顶卡）：**只取该提醒的期次**，不是所有待办。
-   *
-   * 服务端 `reminderToday` 口径 = 进入提醒窗口（还款日 − remind_days_before，默认 3 天）
-   * 的 pending，加上「被忽略但已逾期的非自动入账期次」（逾期重现）。
-   * 计划详情/设置页要看全部待办，走 planTodosAll。
-   */
-  static planTodos(today: string): Promise<PlanTodoList> {
-    return Api.http().get<PlanTodoList>(`/api/plan-todos?reminderToday=${today}&today=${today}`);
-  }
-
-  /** 全部 pending 待办（设置页「待处理期次」用，不做提醒窗口过滤） */
-  static planTodosAll(today: string): Promise<PlanTodoList> {
-    return Api.http().get<PlanTodoList>(`/api/plan-todos?status=pending&today=${today}`);
-  }
-
-  /** 入账（手动确认）：可带 spendDate，但报表月份归属仍按还款日，不受影响 */
-  static confirmTodo(id: string, spendDate: string = ''): Promise<object> {
-    const o = Api.http().options('POST');
-    if (spendDate === '') {
-      o.body = '{}';
-    } else {
-      const body: TodoConfirmRequest = { spendDate: spendDate };
-      o.body = JSON.stringify(body);
-    }
-    return Api.http().request<object>(`/api/plan-todos/${id}/confirm`, o);
-  }
-
-  /** 确认（自动入账型待办） */
-  static ackTodo(id: string): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = '{}';
-    return Api.http().request<object>(`/api/plan-todos/${id}/ack`, o);
-  }
-
-  /** 忽略本期（不可逆：跳过的期次不会回到待办） */
-  static skipTodo(id: string): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = '{}';
-    return Api.http().request<object>(`/api/plan-todos/${id}/skip`, o);
-  }
-
-  // ── 分类 ──
-  static createCategory(req: CategoryCreateRequest): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = JSON.stringify(req);
-    return Api.http().request<object>('/api/categories', o);
-  }
-
-  static patchCategory(id: string, req: CategoryPatchRequest): Promise<object> {
-    const o = Api.http().options('PATCH');
-    o.body = JSON.stringify(req);
-    return Api.http().request<object>(`/api/categories/${id}`, o);
-  }
-
-  static deleteCategory(id: string): Promise<void> {
-    const o = Api.http().options('DELETE');
-    return Api.http().request<void>(`/api/categories/${id}`, o);
-  }
-
-  // ── 支付方式 ──
-  static createPayment(req: PaymentCreateRequest): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = JSON.stringify(req);
-    return Api.http().request<object>('/api/payment-methods', o);
-  }
-
-  static patchPayment(id: string, req: PaymentPatchRequest): Promise<object> {
-    const o = Api.http().options('PATCH');
-    o.body = JSON.stringify(req);
-    return Api.http().request<object>(`/api/payment-methods/${id}`, o);
-  }
-
-  static mergePayment(id: string, intoId: string): Promise<object> {
-    const o = Api.http().options('POST');
-    const body: PaymentMergeRequest = { intoId: intoId };
-    o.body = JSON.stringify(body);
-    return Api.http().request<object>(`/api/payment-methods/${id}/merge`, o);
-  }
-
-  static deletePayment(id: string): Promise<void> {
-    const o = Api.http().options('DELETE');
-    return Api.http().request<void>(`/api/payment-methods/${id}`, o);
   }
 
   // ── 计划 ──
@@ -787,18 +522,6 @@ export class Api {
     return Api.http().request<void>(`/api/plans/${id}`, o);
   }
 
-  static createUser(req: UserCreateRequest): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = JSON.stringify(req);
-    return Api.http().request<object>('/api/users', o);
-  }
-
-  static patchUser(id: string, req: UserPatchRequest): Promise<object> {
-    const o = Api.http().options('PATCH');
-    o.body = JSON.stringify(req);
-    return Api.http().request<object>(`/api/users/${id}`, o);
-  }
-
   static syncPush(req: SyncPushRequest): Promise<SyncPushBody> {
     const o = Api.http().options('POST');
     o.readTimeoutMs = 20000;
@@ -813,28 +536,5 @@ export class Api {
 
   static syncPull(since: number, limit: number): Promise<SyncPullBody> {
     return Api.http().get<SyncPullBody>(`/api/sync/pull?since=${since}&limit=${limit}`);
-  }
-
-  /** 撤销入账（该期次回到待办，软删对应支出） */
-  static revertTodo(id: string): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = '{}';
-    return Api.http().request<object>(`/api/plan-todos/${id}/revert`, o);
-  }
-
-  /** 恢复被跳过的期次（恢复后不再当场自动入账） */
-  static restoreTodo(id: string): Promise<object> {
-    const o = Api.http().options('POST');
-    o.body = '{}';
-    return Api.http().request<object>(`/api/plan-todos/${id}/restore`, o);
-  }
-
-  /** 已处理期次（confirmed / skipped） */
-  static doneTodos(status: string): Promise<PlanTodoList> {
-    return Api.http().get<PlanTodoList>(`/api/plan-todos?status=${status}`);
-  }
-
-  static syncStatus(): Promise<SyncStatusBody> {
-    return Api.http().get<SyncStatusBody>('/api/sync/status');
   }
 }

@@ -110,9 +110,3 @@ export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {
     setDepth(db, depth);
   }
 }
-
-/** 当前最大的同步版本号 = 服务端最新状态。新设备首次同步的起点。 */
-export function currentSyncVersion(db: DatabaseSync): number {
-  const row = db.prepare('SELECT value FROM sync_sequence WHERE id = 1').get();
-  return row === undefined ? 0 : Number(row['value']);
-}

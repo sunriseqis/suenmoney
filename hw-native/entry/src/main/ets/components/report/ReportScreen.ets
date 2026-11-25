@@ -13,7 +13,7 @@ import { Api, CategoryBucket, DailyPoint, MemberBucket, MonthlyReport, MonthlyRe
 import { LengthMetrics } from '@kit.ArkUI';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
-import { chartColor, slotOf } from '../../common/theme/Palette';
+import { chartColor } from '../../common/theme/Palette';
 import { formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf } from '../../common/ui/UiStyle';
 import { categoryColorOf } from '../../common/ui/CategoryIcon';
@@ -316,7 +316,7 @@ export struct ReportScreen {
     rows.sort((a: CategoryBucket, b: CategoryBucket) => b.cents - a.cents);
     const out: DimRow[] = [];
     for (const c of rows.slice(0, 7)) {
-      out.push({ name: c.name, cents: c.cents, color: chartColor(this.tok(), slotOf(c.color, c.categoryId)) });
+      out.push({ name: c.name, cents: c.cents, color: categoryColorOf(c.name, c.color) });
     }
     let rest = 0;
     for (const c of rows.slice(7)) {

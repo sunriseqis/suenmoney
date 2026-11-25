@@ -969,8 +969,6 @@ export function endPlan(db: DatabaseSync, id: string, actorId: string): PlanApi 
 }
 
 /**
- * 删除计划：
-/**
  * 删除计划。
  *
  * 1. **物理删除**未执行的待办（pending），skipped 落入下一步软删除；
@@ -1483,7 +1481,9 @@ export function settleAutoPost(db: DatabaseSync, today: string): number {
 
   for (const row of rows) {
     try {
-      // 自动入账以计划所有者作为记录人 —— 它没有「点确认的人」
+      // 自动入账以计划所有者作为记录人 —— 它没有「点确认的人」。
+      // `today` 只用于上面 WHERE 的「哪些期已到期」判定，不参与入账日期；
+      // 实际入账日仍走 confirmTodo 的默认值（localToday = 记录那天，见 localToday）。
       confirmTodo(db, String(row.id), String(row.owner_id));
       settled += 1;
     } catch {

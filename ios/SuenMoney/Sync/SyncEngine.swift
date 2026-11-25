@@ -278,8 +278,14 @@ public actor SyncEngine {
         let body = try await Api.syncPull(since: cursor, limit: 200)
         var applied = 0
         for change in body.changes {
-            try applyChange(change.entityType, change.entityId, change.op, change.payload)
-            applied += 1
+            do {
+                try applyChange(change.entityType, change.entityId, change.op, change.payload)
+                applied += 1
+            } catch {
+                // 单条坏数据不能卡死整轮：记日志、跳过该条，游标仍按本页推进。
+                // 服务端是唯一数据源，被跳过的条目等服务端数据修复后由下次快照兜底。
+                print("[SyncEngine] applyChange 跳过 \(change.entityType)/\(change.entityId) \(change.op)：\(error)")
+            }
         }
         /*
          ⚠ 游标只能推进到**本页最后一条真正应用过的变更**（`cursorAfter`）。

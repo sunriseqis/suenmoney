@@ -173,37 +173,3 @@ function canGoBack(): boolean {
   if (typeof window === 'undefined') return false;
   return window.history.length > 1;
 }
-
-export async function exitNativeApp(): Promise<void> {
-  // 鸿蒙：优先走能力桥的 exit。
-  const bridge = getNativeBridge();
-  if (bridge?.exit) {
-    try {
-      bridge.exit();
-    } catch {
-      // 壳退出失败时静默降级，交给壳侧默认行为
-    }
-    return;
-  }
-
-  // 鸿蒙：壳实际注入的是 window.__suenmoneyExit（Index.ets 的 injectExitHandler），
-  // 而**不是** window.__suenmoney 能力桥对象。少了这一条，返回键走到最后一步
-  // 「无人拦截 → 允许退出」时什么都不会发生：桥读不到、Capacitor 插件也没有，
-  // 于是「返回键退出应用」静默失效 —— 用户按返回键毫无反应，比直接退出更难排查。
-  if (typeof window !== 'undefined') {
-    const shellExit = (window as unknown as { __suenmoneyExit?: () => void }).__suenmoneyExit;
-    if (typeof shellExit === 'function') {
-      try {
-        shellExit();
-      } catch {
-        // 壳退出失败时静默降级，交给壳侧默认行为
-      }
-      return;
-    }
-  }
-
-  const appPlugin = await getCapacitorPlugin<{ exitApp: () => Promise<void> }>('App');
-  if (appPlugin) {
-    void appPlugin.exitApp();
-  }
-}

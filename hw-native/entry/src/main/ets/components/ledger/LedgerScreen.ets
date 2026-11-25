@@ -24,7 +24,7 @@ import { DATA_VERSION_KEY, SyncEngine, SyncReport } from '../../common/sync/Sync
 import { CachedCategory, DictionaryDao } from '../../common/store/DictionaryDao';
 import { THEME_STORAGE_KEY, ThemeManager } from '../../common/theme/ThemeManager';
 import { cardShadow, fontBodyOf, fontDisplayOf, fontMonoOf, mixHex, parseShadow, radiusOf, fieldTextColor, fieldHintColor } from '../../common/ui/UiStyle';
-import { CATEGORY_COLORS, parseCategoryColorIndex, deriveColorIndex } from '../../common/ui/CategoryIcon';
+import { categoryColorOf } from '../../common/ui/CategoryIcon';
 import { CatIconView } from '../../common/ui/CatIconView';
 import { CANDY, CYBER, ThemeTokens } from '../../common/theme/AppTheme';
 import { daysUntil, formatMonthLabel, formatYuan, shiftMonth } from '../../common/contract/Contract';
@@ -564,7 +564,7 @@ export struct LedgerScreen {
     return `${Number(date.substring(8, 10))}日`;
   }
 
-  /** 分类色（离线时字典可能为空 → 走哈希兜底；二级分类的颜色跟一级走） */
+  /** 分类色：显式色号 > 按名字推导（主题随 CategoryIcon 切换，candy/cyber 一致） */
   private categoryColorOf(row: ExpenseItem): string {
     const cat = this.categoryNames.get(row.categoryId);
     let colorField = '';
@@ -579,12 +579,7 @@ export struct LedgerScreen {
     if (colorField === '') {
       colorField = row.parentCategoryColor ?? row.categoryColor ?? '';
     }
-    // 用 web 同款的 16 色调色板（--chart-1..16）；脏数据/未设时按名字推导
-    const idx = parseCategoryColorIndex(colorField);
-    if (idx !== null) {
-      return CATEGORY_COLORS[idx - 1];
-    }
-    return CATEGORY_COLORS[deriveColorIndex(this.categoryNameOf(row)) - 1];
+    return categoryColorOf(this.categoryNameOf(row), colorField);
   }
 
   private categoryNameOf(row: ExpenseItem): string {
@@ -632,6 +627,18 @@ export struct LedgerScreen {
       return null;
     }
     return (this.periodTotalCents() - this.prevTotalCents) / this.prevTotalCents;
+  }
+
+  /** 环比胶囊文案（无上期时为 ''） */
+  private deltaRatioText(): string {
+    const r = this.deltaRatio();
+    return r === null ? '' : `${(r * 100).toFixed(1)}%`;
+  }
+
+  /** 环比是否上涨（无上期按 false，落跌/平色） */
+  private deltaRatioUp(): boolean {
+    const r = this.deltaRatio();
+    return r !== null && r > 0;
   }
 
   /** 日均：当月总额 / 已过天数（与 Web perDayCents 同义） */
@@ -814,17 +821,17 @@ export struct LedgerScreen {
         .alignItems(VerticalAlign.Bottom)
         if (this.deltaRatio() !== null) {
           // delta-pill：文本即语义色（涨=红跌=绿），描边跟文本走；不额外加符号
-          Text(`${(this.deltaRatio()! * 100).toFixed(1)}%`)
+          Text(this.deltaRatioText())
             .fontSize(10.5)
             .fontWeight(FontWeight.Bold)
             .fontFamily(fontMonoOf())
             .fontFeature('"tnum" on')
-            .fontColor(this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok)
+            .fontColor(this.deltaRatioUp() ? this.tok().danger : this.tok().ok)
             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
             .borderRadius(radiusOf(this.tok(), this.isCyber(), this.tok().rPill))
             .border({
               width: this.isCyber() ? 1 : 1.5,
-              color: this.deltaRatio()! > 0 ? this.tok().danger : this.tok().ok
+              color: this.deltaRatioUp() ? this.tok().danger : this.tok().ok
             })
         }
       }

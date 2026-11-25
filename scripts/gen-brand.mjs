@@ -31,9 +31,6 @@ const BRAND = join(ROOT, 'docs/design/brand');
 const DIST = join(BRAND, 'dist');
 const CHECK = process.argv.includes('--check');
 
-/** 尺寸 → 用哪个母版。阈值来自 README，不许在这里再发明一套。 */
-const SMALL_MAX = 31; // <32px 用简化版（键位改圆点）
-
 const svg = (name) => readFileSync(join(BRAND, name), 'utf8');
 
 /** 母版缓存：同一份 SVG 反复用，不要每次都读盘 */
@@ -41,10 +38,6 @@ const SRC = {
   master: svg('mark-dark.svg'),
   light: svg('mark-light.svg'),
 };
-
-function pick(size) {
-  return SRC.master;
-}
 
 /**
  * 渲染一张 PNG。
@@ -82,7 +75,7 @@ async function main() {
   }
 
   // ── 2) Web / PWA ──
-  await emit(pick(32), 32, 'web/public/favicon.png');        // index.html 只引这一个
+  await emit(SRC.master, 32, 'web/public/favicon.png');        // index.html 只引这一个
   await emit(SRC.master, 180, 'web/public/icon.png');        // apple-touch-icon
   await emit(SRC.master, 512, 'web/public/icon-512.png');
   await emit(SRC.master, 512, 'web/public/logo.png');
@@ -114,7 +107,7 @@ async function main() {
 
   console.log(CHECK ? '将写入以下文件：' : '已生成：');
   for (const w of written) console.log('  ' + w);
-  console.log(`\n共 ${written.length} 项。尺寸阈值：<${SMALL_MAX + 1}px 用简化版（键位改圆点）。`);
+  console.log(`\n共 ${written.length} 项。`);
 }
 
 main().catch((e) => {

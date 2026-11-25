@@ -176,7 +176,7 @@ export function validateAmount(amountCents: number): void {
   }
 }
 
-function validateNote(note: string): string {
+export function validateNote(note: string): string {
   const trimmed = note.trim();
   if (trimmed.length > MAX_NOTE_LENGTH) {
     throw badRequest(`备注不能超过 ${MAX_NOTE_LENGTH} 个字`);
@@ -477,7 +477,7 @@ function insertBatchItem(
   timestamp: string,
   categoryCache: Map<string, CategoryRow>,
   methodCache: Map<string, PaymentMethodRow>,
-): string {
+): { id: string; created: boolean } {
   validateAmount(item.amountCents);
   const note = validateNote(item.note ?? '');
 
@@ -504,7 +504,8 @@ function insertBatchItem(
   // ⚠ 区分「活着」与「已软删」：命中已软删行不算"创建"，但也不能重新插入（主键冲突）
   const existing = db.prepare('SELECT id FROM expenses WHERE id = ?').get(id);
   if (existing !== undefined) {
-    return id;
+    // 幂等命中：id 仍要返回（幂等语义的载体），但不算「新建」。
+    return { id, created: false };
   }
 
   const row: ExpenseRow = {
@@ -528,7 +529,7 @@ function insertBatchItem(
   };
 
   insertExpense(db, row, ownerId);
-  return id;
+  return { id, created: true };
 }
 
 function assertBatchSize(count: number): void {
@@ -561,15 +562,24 @@ export function batchCreateExpenses(
     const methodCache = new Map<string, PaymentMethodRow>();
 
     const expenseIds: string[] = [];
+    let createdCount = 0;
     const timestamp = nowIso();
 
     for (const item of input.items) {
-      expenseIds.push(
-        insertBatchItem(db, item, ownerId, deviceId ?? null, timestamp, categoryCache, methodCache),
+      const { id, created } = insertBatchItem(
+        db,
+        item,
+        ownerId,
+        deviceId ?? null,
+        timestamp,
+        categoryCache,
+        methodCache,
       );
+      expenseIds.push(id);
+      if (created) createdCount += 1;
     }
 
-    return { createdCount: expenseIds.length, expenseIds };
+    return { createdCount, expenseIds };
   });
 }
 
@@ -601,22 +611,24 @@ export function batchCreateExpensesTolerant(
 
   const expenseIds: string[] = [];
   const failed: BatchCreateFailure[] = [];
+  let createdCount = 0;
   const timestamp = nowIso();
 
   input.items.forEach((item, index) => {
     try {
       // 独立事务：坏行仅回滚自己，成功行照常 COMMIT 并落 recordChange
-      const id = inTransaction(db, () =>
+      const { id, created } = inTransaction(db, () =>
         insertBatchItem(db, item, ownerId, deviceId ?? null, timestamp, categoryCache, methodCache),
       );
       expenseIds.push(id);
+      if (created) createdCount += 1;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       failed.push({ index, reason });
     }
   });
 
-  return { createdCount: expenseIds.length, expenseIds, failed };
+  return { createdCount, expenseIds, failed };
 }
 
 /** 计划生成支出时复用（source='plan'）。 */

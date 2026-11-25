@@ -40,7 +40,6 @@ public final class ServerConfig: @unchecked Sendable {
     /// 启动时读一次（App.init 里调用）
     public func load() {
         token = Keychain.read(key: keyToken) ?? ""
-        print("[ServerConfig] load: tokenLen=\(token.count) servers=\(servers.count) active=\(active)")
         if let raw = UserDefaults.standard.string(forKey: keyServers),
            let data = raw.data(using: .utf8),
            let parsed = try? JSONDecoder().decode([String].self, from: data),
@@ -50,6 +49,9 @@ public final class ServerConfig: @unchecked Sendable {
         let savedActive = UserDefaults.standard.string(forKey: keyActive) ?? ""
         // 没存过生效地址：取候选首项；候选也是空（首次装包）→ 保持空，让登录页显示占位符
         active = savedActive.isEmpty ? (servers.first ?? "") : savedActive
+        #if DEBUG
+        print("[ServerConfig] load: tokenLen=\(token.count) servers=\(servers.count) active=\(active)")
+        #endif
     }
 
     public var authToken: String { token }

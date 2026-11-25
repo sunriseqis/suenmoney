@@ -105,10 +105,10 @@ public enum PlanDao {
             try Db.shared.run("""
                 INSERT OR REPLACE INTO plan_todos
                   (id, plan_id, plan_name, period_seq, amount_cents, repayment_date,
-                   status, will_auto_post, expense_id, posted_date, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   status, will_auto_post, ack_at, expense_id, posted_date, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, [t.id, t.planId, t.planName, t.periodSeq, t.amountCents, t.repaymentDate,
-                      t.status, t.willAutoPost ? 1 : 0, t.expenseId ?? "", t.postedDate ?? "",
+                      t.status, t.willAutoPost ? 1 : 0, t.ackAt ?? "", t.expenseId ?? "", t.postedDate ?? "",
                       ISO8601DateFormatter().string(from: Date())])
         }
     }
@@ -122,8 +122,9 @@ public enum PlanDao {
                    purchase_date, first_due_date, remind_days_before, auto_post, source, state,
                    note, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, [p.id, p.name, p.categoryId, p.paymentMethodId, p.amountCents, NSNull(),
-                      NSNull(), p.firstDueDate, 3, p.autoPost ? 1 : 0, p.source, p.state, "",
+                """, [p.id, p.name, p.categoryId, p.paymentMethodId, p.amountCents,
+                      p.totalAmountCents, p.purchaseDate, p.firstDueDate,
+                      p.remindDaysBefore ?? 3, p.autoPost ? 1 : 0, p.source, p.state, p.note ?? "",
                       ISO8601DateFormatter().string(from: Date())])
         }
     }

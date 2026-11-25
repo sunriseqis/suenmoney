@@ -41,15 +41,6 @@ export function getDatabase(): DatabaseSync {
   return instance ?? openDatabase();
 }
 
-export function closeDatabase(): void {
-  if (!instance) return;
-  try {
-    instance.close();
-  } finally {
-    instance = null;
-  }
-}
-
 /**
  * 应用未执行的迁移。
  *
